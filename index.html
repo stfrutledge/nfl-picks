@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFL Picks Dashboard - 2025 Season</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <img src="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg" alt="NFL Logo" class="nfl-logo">
+                <div class="header-text">
+                    <h1>NFL Picks Dashboard</h1>
+                    <p class="subtitle">2025 Regular Season Tracker</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- CSV Upload Section -->
+        <section id="upload-section" class="upload-area">
+            <div id="drop-zone" class="drop-zone">
+                <div class="drop-zone-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p>Drag & drop your CSV file here</p>
+                    <p class="or-text">or</p>
+                    <label class="file-input-label">
+                        <input type="file" id="file-input" accept=".csv" hidden>
+                        <span class="btn btn-primary">Choose File</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard Content (hidden until CSV loaded) -->
+        <main id="dashboard" class="dashboard hidden">
+            <!-- Category Tabs -->
+            <section class="category-tabs">
+                <button class="tab active" data-category="blazin">Blazin' 5</button>
+                <button class="tab" data-category="line">Line Picks</button>
+                <button class="tab" data-category="winner">Straight Up</button>
+                <button class="tab tab-picks" data-category="make-picks">Make Picks</button>
+            </section>
+
+            <!-- Leaderboard -->
+            <section class="leaderboard" id="leaderboard">
+                <!-- Cards will be injected here -->
+            </section>
+
+            <!-- Charts Section -->
+            <section class="charts-grid">
+                <div class="chart-container">
+                    <h3>Weekly Performance Trend</h3>
+                    <canvas id="trend-chart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Current Standings</h3>
+                    <canvas id="standings-chart"></canvas>
+                </div>
+            </section>
+
+            <!-- Streaks Section -->
+            <section class="streaks-section">
+                <h3>Recent Performance</h3>
+                <div class="streaks-grid" id="streaks-grid">
+                    <!-- Streak cards will be injected here -->
+                </div>
+            </section>
+
+            <!-- Make Picks Section (hidden by default) -->
+            <section id="make-picks-section" class="make-picks-section hidden">
+                <div class="picks-header">
+                    <h2>Week <span id="picks-week-num">15</span> Picks</h2>
+                    <p class="picks-subtitle">Select a picker and make their picks for the upcoming games</p>
+                </div>
+
+                <!-- Week Selection -->
+                <div class="week-selector">
+                    <label for="week-dropdown">Select Week:</label>
+                    <select id="week-dropdown" class="week-dropdown">
+                        <!-- Week options will be injected here -->
+                    </select>
+                    <span id="week-loading" class="week-loading hidden">Loading...</span>
+                </div>
+
+                <!-- Picker Selection -->
+                <div class="picker-selector">
+                    <label>Selecting picks for:</label>
+                    <div class="picker-buttons" id="picker-buttons">
+                        <button class="picker-btn active" data-picker="Stephen">Stephen</button>
+                        <button class="picker-btn" data-picker="Sean">Sean</button>
+                        <button class="picker-btn" data-picker="Dylan">Dylan</button>
+                        <button class="picker-btn" data-picker="Jason">Jason</button>
+                        <button class="picker-btn" data-picker="Daniel">Daniel</button>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="picks-actions">
+                    <button class="btn btn-secondary" id="clear-picks-btn">Clear My Picks</button>
+                    <button class="btn btn-primary" id="export-picks-btn">Export All</button>
+                </div>
+
+                <!-- Games List -->
+                <div class="games-list" id="games-list">
+                    <!-- Games will be injected here -->
+                </div>
+
+                <!-- Scoring Summary -->
+                <div class="scoring-summary" id="scoring-summary">
+                    <h3>Week 15 Scoring Summary</h3>
+                    <div class="scoring-table-container">
+                        <table class="scoring-table" id="scoring-table">
+                            <!-- Scoring will be injected here -->
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Data loaded from CSV export</p>
+        </footer>
+    </div>
+
+    <script src="parser.js"></script>
+    <script src="charts.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
