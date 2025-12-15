@@ -25,15 +25,250 @@ function parseNFLPicksCSV(csvText) {
 
     const rows = result.data;
 
+    // Extract base stats
+    const blazin5 = extractBlazin5Overall(rows);
+
+    // Extract and merge gambling winnings into blazin5 stats
+    const winnings = extractGamblingWinnings(rows);
+    Object.keys(winnings).forEach(name => {
+        if (blazin5[name]) {
+            blazin5[name].winnings = winnings[name].winnings;
+            blazin5[name].winningsRaw = winnings[name].winningsRaw;
+        }
+    });
+
+    // Extract best/worst team data and merge into linePicks
+    const teamRecords = extractBestWorstTeams(rows);
+    const linePicks = extractLinePicksOverall(rows);
+    Object.keys(teamRecords).forEach(name => {
+        if (linePicks[name]) {
+            linePicks[name].bestTeam = teamRecords[name].best;
+            linePicks[name].worstTeam = teamRecords[name].worst;
+        }
+    });
+
     return {
-        linePicks: extractLinePicksOverall(rows),
-        blazin5: extractBlazin5Overall(rows),
+        linePicks: linePicks,
+        blazin5: blazin5,
         winnerPicks: extractWinnerPicksOverall(rows),
         weeklyLinePicks: extractWeeklyPercentages(rows, 'line'),
         weeklyBlazin5: extractWeeklyPercentages(rows, 'blazin5'),
         weeklyWinnerPicks: extractWeeklyPercentages(rows, 'winner'),
+        favoritesVsUnderdogs: extractFavoritesVsUnderdogs(rows),
+        loneWolf: extractLoneWolfPicks(rows),
+        universalAgreement: extractUniversalAgreement(rows),
         currentWeek: detectCurrentWeek(rows)
     };
+}
+
+/**
+ * Extract Lone Wolf Picks data (when only one picker chose a line)
+ */
+function extractLoneWolfPicks(rows) {
+    const data = {};
+
+    // Find "Lone Wolf Picks" section
+    let startRow = -1;
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row && row[0] && row[0].toString().includes('Lone Wolf Picks')) {
+            startRow = i + 2; // Skip header row
+            break;
+        }
+    }
+
+    if (startRow === -1) return data;
+
+    for (let i = startRow; i < startRow + 5 && i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[0]) continue;
+
+        const name = row[0].trim();
+        if (PICKERS.includes(name)) {
+            data[name] = {
+                wins: parseInt(row[1]) || 0,
+                losses: parseInt(row[2]) || 0,
+                pushes: parseInt(row[3]) || 0,
+                percentage: parsePercentage(row[4]),
+                totalPicks: parseInt(row[5]) || 0
+            };
+        }
+    }
+
+    return data;
+}
+
+/**
+ * Extract Universal Agreement data (when all pickers chose the same line)
+ */
+function extractUniversalAgreement(rows) {
+    // Find "Universal Agreement" section
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row && row[0] && row[0].toString().includes('Universal Agreement')) {
+            // Data is 2 rows down
+            const dataRow = rows[i + 2];
+            if (dataRow && dataRow[0] === 'Group') {
+                return {
+                    wins: parseInt(dataRow[1]) || 0,
+                    losses: parseInt(dataRow[2]) || 0,
+                    pushes: parseInt(dataRow[3]) || 0,
+                    percentage: parsePercentage(dataRow[4]),
+                    totalPicks: parseInt(dataRow[5]) || 0
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Extract Best/Worst Team records for each picker
+ */
+function extractBestWorstTeams(rows) {
+    const data = {};
+
+    // Find "Record by Team (Line Picks)" section
+    let startRow = -1;
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row && row[0] && row[0].toString().includes('Record by Team')) {
+            startRow = i + 3; // Skip header rows to get to data
+            break;
+        }
+    }
+
+    if (startRow === -1) return data;
+
+    // Parse each picker's best/worst team (rows after headers)
+    for (let i = startRow; i < startRow + 5 && i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[0]) continue;
+
+        const name = row[0].trim();
+        if (PICKERS.includes(name)) {
+            data[name] = {
+                best: {
+                    team: (row[1] || '').trim(),
+                    percentage: parsePercentage(row[2]),
+                    record: (row[3] || '').trim()
+                },
+                worst: {
+                    team: (row[4] || '').trim(),
+                    percentage: parsePercentage(row[5]),
+                    record: (row[6] || '').trim()
+                }
+            };
+        }
+    }
+
+    return data;
+}
+
+/**
+ * Extract Favorites vs Underdogs performance data
+ */
+function extractFavoritesVsUnderdogs(rows) {
+    const data = {
+        favorites: {},
+        underdogs: {}
+    };
+
+    // Find "When Picking Favorites" section
+    let favStartRow = -1;
+    let undStartRow = -1;
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[0]) continue;
+        const cell = row[0].toString().trim();
+
+        if (cell === 'When Picking Favorites') {
+            favStartRow = i + 2; // Skip header row
+        }
+        if (cell === 'When Picking Underdogs') {
+            undStartRow = i + 2; // Skip header row
+        }
+    }
+
+    // Parse favorites data
+    if (favStartRow !== -1) {
+        for (let i = favStartRow; i < favStartRow + 5 && i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || !row[0]) continue;
+            const name = row[0].trim();
+            if (PICKERS.includes(name)) {
+                data.favorites[name] = {
+                    wins: parseInt(row[1]) || 0,
+                    losses: parseInt(row[2]) || 0,
+                    pushes: parseInt(row[3]) || 0,
+                    percentage: parsePercentage(row[4]),
+                    totalPicks: parseInt(row[5]) || 0
+                };
+            }
+        }
+    }
+
+    // Parse underdogs data
+    if (undStartRow !== -1) {
+        for (let i = undStartRow; i < undStartRow + 5 && i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || !row[0]) continue;
+            const name = row[0].trim();
+            if (PICKERS.includes(name)) {
+                data.underdogs[name] = {
+                    wins: parseInt(row[1]) || 0,
+                    losses: parseInt(row[2]) || 0,
+                    pushes: parseInt(row[3]) || 0,
+                    percentage: parsePercentage(row[4]),
+                    totalPicks: parseInt(row[5]) || 0
+                };
+            }
+        }
+    }
+
+    return data;
+}
+
+/**
+ * Extract Gambling Winnings from "Potential Blazin' 5 Gambling Winnings" section
+ * Located around rows 119-125 (0-indexed: 118-124)
+ */
+function extractGamblingWinnings(rows) {
+    const winnings = {};
+
+    // Find the "Potential Blazin' 5 Gambling Winnings" section
+    let startRow = -1;
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row && row[0] && row[0].toString().includes('Potential Blazin')) {
+            startRow = i + 2; // Skip header row to get to data
+            break;
+        }
+    }
+
+    if (startRow === -1) return winnings;
+
+    // Parse winnings for each picker (rows after the header)
+    for (let i = startRow; i < startRow + 6 && i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[0]) continue;
+
+        const name = row[0].trim();
+        if (PICKERS_WITH_COWHERD.includes(name)) {
+            // Winnings is in column 4 (e.g., "$26.00" or "-$70.00")
+            const winningsStr = (row[4] || '').toString().trim();
+            const winningsNum = parseFloat(winningsStr.replace(/[$,]/g, ''));
+
+            winnings[name] = {
+                winnings: winningsStr,
+                winningsRaw: isNaN(winningsNum) ? 0 : winningsNum
+            };
+        }
+    }
+
+    return winnings;
 }
 
 /**
@@ -205,7 +440,7 @@ function extractWeeklyPercentages(rows, type) {
         // Fallback if not found
         if (weekCol === -1) weekCol = 54;
 
-        for (let rowIdx = 4; rowIdx <= 17; rowIdx++) {
+        for (let rowIdx = 4; rowIdx <= 21; rowIdx++) {
             const row = rows[rowIdx];
             if (!row) continue;
 
@@ -241,7 +476,7 @@ function extractWeeklyPercentages(rows, type) {
         // Fallback if not found
         if (weekCol === -1) weekCol = 46;
 
-        for (let rowIdx = 4; rowIdx <= 17; rowIdx++) {
+        for (let rowIdx = 4; rowIdx <= 21; rowIdx++) {
             const row = rows[rowIdx];
             if (!row) continue;
 
@@ -276,7 +511,7 @@ function extractWeeklyPercentages(rows, type) {
         // Fallback if not found
         if (weekCol === -1) weekCol = 54;
 
-        for (let rowIdx = 25; rowIdx <= 42; rowIdx++) {
+        for (let rowIdx = 25; rowIdx <= 45; rowIdx++) {
             const row = rows[rowIdx];
             if (!row) continue;
 

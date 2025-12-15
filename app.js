@@ -12,6 +12,50 @@ let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: {
 const TOTAL_WEEKS = 18;
 const CURRENT_NFL_WEEK = 15;
 
+// Team name aliases (CSV name -> standard name)
+const TEAM_NAME_MAP = {
+    'Buccs': 'Buccaneers',
+    'Bucs': 'Buccaneers',
+    'TB': 'Buccaneers',
+    'NYJ': 'Jets',
+    'JAX': 'Jaguars',
+    'CLE': 'Browns',
+    'CHI': 'Bears',
+    'BUF': 'Bills',
+    'NE': 'Patriots',
+    'BAL': 'Ravens',
+    'CIN': 'Bengals',
+    'ARI': 'Cardinals',
+    'HOU': 'Texans',
+    'LV': 'Raiders',
+    'PHI': 'Eagles',
+    'LAC': 'Chargers',
+    'KC': 'Chiefs',
+    'WSH': 'Commanders',
+    'NYG': 'Giants',
+    'IND': 'Colts',
+    'SEA': 'Seahawks',
+    'TEN': 'Titans',
+    'SF': '49ers',
+    'GB': 'Packers',
+    'DEN': 'Broncos',
+    'DET': 'Lions',
+    'LAR': 'Rams',
+    'CAR': 'Panthers',
+    'NO': 'Saints',
+    'MIN': 'Vikings',
+    'DAL': 'Cowboys',
+    'MIA': 'Dolphins',
+    'PIT': 'Steelers',
+    'ATL': 'Falcons'
+};
+
+// Helper to get team logo URL (handles aliases)
+function getTeamLogo(teamName) {
+    const normalized = TEAM_NAME_MAP[teamName] || teamName;
+    return TEAM_LOGOS[normalized] || '';
+}
+
 // NFL Team Logos (ESPN CDN)
 const TEAM_LOGOS = {
     'Falcons': 'https://a.espncdn.com/i/teamlogos/nfl/500/atl.png',
@@ -50,27 +94,134 @@ const TEAM_LOGOS = {
 
 // NFL Games by Week - Full structure for all weeks
 // Week 15 has full data, other weeks are placeholders that can be populated
+// NFL Week 15 2025: Thu Dec 11, Sun Dec 14, Mon Dec 15
 const NFL_GAMES_BY_WEEK = {
     15: [
-        { id: 1, away: 'Falcons', home: 'Buccaneers', spread: 4.5, favorite: 'home', day: 'Thursday', time: '8:15 PM ET', location: 'Tampa, FL', stadium: 'Raymond James Stadium' },
-        { id: 2, away: 'Jets', home: 'Jaguars', spread: 13.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', location: 'Jacksonville, FL', stadium: 'EverBank Stadium' },
-        { id: 3, away: 'Browns', home: 'Bears', spread: 7.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', location: 'Chicago, IL', stadium: 'Soldier Field' },
-        { id: 4, away: 'Bills', home: 'Patriots', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', location: 'Foxborough, MA', stadium: 'Gillette Stadium' },
-        { id: 5, away: 'Ravens', home: 'Bengals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', location: 'Cincinnati, OH', stadium: 'Paycor Stadium' },
-        { id: 6, away: 'Cardinals', home: 'Texans', spread: 9.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', location: 'Houston, TX', stadium: 'NRG Stadium' },
-        { id: 7, away: 'Raiders', home: 'Eagles', spread: 11.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', location: 'Philadelphia, PA', stadium: 'Lincoln Financial Field' },
-        { id: 8, away: 'Chargers', home: 'Chiefs', spread: 5.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', location: 'Kansas City, MO', stadium: 'GEHA Field at Arrowhead Stadium' },
-        { id: 9, away: 'Commanders', home: 'Giants', spread: 2.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
-        { id: 10, away: 'Colts', home: 'Seahawks', spread: 13.5, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', location: 'Seattle, WA', stadium: 'Lumen Field' },
-        { id: 11, away: 'Titans', home: '49ers', spread: 12.5, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', location: 'Santa Clara, CA', stadium: 'Levi\'s Stadium' },
-        { id: 12, away: 'Packers', home: 'Broncos', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
-        { id: 13, away: 'Lions', home: 'Rams', spread: 6, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', location: 'Inglewood, CA', stadium: 'SoFi Stadium' },
-        { id: 14, away: 'Panthers', home: 'Saints', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
-        { id: 15, away: 'Vikings', home: 'Cowboys', spread: 5.5, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
-        { id: 16, away: 'Dolphins', home: 'Steelers', spread: 3, favorite: 'home', day: 'Monday', time: '8:15 PM ET', location: 'Pittsburgh, PA', stadium: 'Acrisure Stadium' }
+        { id: 1, away: 'Falcons', home: 'Buccaneers', spread: 4.5, favorite: 'home', day: 'Thursday', time: '8:15 PM ET', kickoff: '2025-12-11T20:15:00-05:00', location: 'Tampa, FL', stadium: 'Raymond James Stadium' },
+        { id: 2, away: 'Jets', home: 'Jaguars', spread: 13.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Jacksonville, FL', stadium: 'EverBank Stadium' },
+        { id: 3, away: 'Browns', home: 'Bears', spread: 7.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Chicago, IL', stadium: 'Soldier Field' },
+        { id: 4, away: 'Bills', home: 'Patriots', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Foxborough, MA', stadium: 'Gillette Stadium' },
+        { id: 5, away: 'Ravens', home: 'Bengals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Cincinnati, OH', stadium: 'Paycor Stadium' },
+        { id: 6, away: 'Cardinals', home: 'Texans', spread: 9.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
+        { id: 7, away: 'Raiders', home: 'Eagles', spread: 11.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Philadelphia, PA', stadium: 'Lincoln Financial Field' },
+        { id: 8, away: 'Chargers', home: 'Chiefs', spread: 5.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Kansas City, MO', stadium: 'GEHA Field at Arrowhead Stadium' },
+        { id: 9, away: 'Commanders', home: 'Giants', spread: 2.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
+        { id: 10, away: 'Colts', home: 'Seahawks', spread: 13.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Seattle, WA', stadium: 'Lumen Field' },
+        { id: 11, away: 'Titans', home: '49ers', spread: 12.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Santa Clara, CA', stadium: 'Levi\'s Stadium' },
+        { id: 12, away: 'Packers', home: 'Broncos', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
+        { id: 13, away: 'Lions', home: 'Rams', spread: 6, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Inglewood, CA', stadium: 'SoFi Stadium' },
+        { id: 14, away: 'Panthers', home: 'Saints', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
+        { id: 15, away: 'Vikings', home: 'Cowboys', spread: 5.5, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-14T20:20:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
+        { id: 16, away: 'Dolphins', home: 'Steelers', spread: 3, favorite: 'home', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-15T20:15:00-05:00', location: 'Pittsburgh, PA', stadium: 'Acrisure Stadium' }
     ]
     // Other weeks can be added here or loaded dynamically
 };
+
+/**
+ * Check if a game is locked (kickoff time has passed)
+ */
+function isGameLocked(game) {
+    if (!game.kickoff) return false;
+    const kickoffTime = new Date(game.kickoff);
+    const now = new Date();
+    return now >= kickoffTime;
+}
+
+// Live scores cache (populated from ESPN API)
+let liveScoresCache = {};
+let liveScoresRefreshInterval = null;
+
+/**
+ * Fetch live scores from ESPN API
+ */
+async function fetchLiveScores() {
+    try {
+        const response = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
+        const data = await response.json();
+
+        const scores = {};
+
+        if (data.events) {
+            data.events.forEach(event => {
+                const competitors = event.competitions[0].competitors;
+                const homeTeam = competitors.find(c => c.homeAway === 'home');
+                const awayTeam = competitors.find(c => c.homeAway === 'away');
+                const status = event.status;
+
+                // Create a key based on team names
+                const gameKey = `${awayTeam.team.displayName}@${homeTeam.team.displayName}`;
+
+                scores[gameKey] = {
+                    homeTeam: homeTeam.team.displayName,
+                    awayTeam: awayTeam.team.displayName,
+                    homeScore: parseInt(homeTeam.score) || 0,
+                    awayScore: parseInt(awayTeam.score) || 0,
+                    status: status.type.name, // STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_FINAL, etc.
+                    statusDetail: status.type.shortDetail || status.type.detail,
+                    period: status.period,
+                    clock: status.displayClock,
+                    completed: status.type.completed
+                };
+            });
+        }
+
+        liveScoresCache = scores;
+        return scores;
+    } catch (error) {
+        console.error('Error fetching live scores:', error);
+        return liveScoresCache; // Return cached data on error
+    }
+}
+
+/**
+ * Get live score info for a specific game
+ */
+function getLiveGameStatus(game) {
+    // Try to match by team names
+    const awayName = game.away;
+    const homeName = game.home;
+
+    // Search through cache for matching game
+    for (const [key, scoreData] of Object.entries(liveScoresCache)) {
+        if ((scoreData.homeTeam.includes(homeName) || homeName.includes(scoreData.homeTeam.split(' ').pop())) &&
+            (scoreData.awayTeam.includes(awayName) || awayName.includes(scoreData.awayTeam.split(' ').pop()))) {
+            return scoreData;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Start auto-refresh for live scores (every 30 seconds)
+ */
+function startLiveScoresRefresh() {
+    // Clear any existing interval
+    if (liveScoresRefreshInterval) {
+        clearInterval(liveScoresRefreshInterval);
+    }
+
+    // Fetch immediately
+    fetchLiveScores().then(() => {
+        renderGames(); // Re-render games with new scores
+    });
+
+    // Then refresh every 30 seconds
+    liveScoresRefreshInterval = setInterval(async () => {
+        await fetchLiveScores();
+        renderGames();
+    }, 30000);
+}
+
+/**
+ * Stop live scores refresh
+ */
+function stopLiveScoresRefresh() {
+    if (liveScoresRefreshInterval) {
+        clearInterval(liveScoresRefreshInterval);
+        liveScoresRefreshInterval = null;
+    }
+}
 
 // Game Results by Week - Update as games finish
 // Format: { week: { gameId: { winner: 'away'|'home', awayScore: X, homeScore: Y } } }
@@ -92,9 +243,6 @@ function getResultsForWeek(week) {
 }
 
 // DOM Elements
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const uploadSection = document.getElementById('upload-section');
 const dashboard = document.getElementById('dashboard');
 const leaderboard = document.getElementById('leaderboard');
 const streaksGrid = document.getElementById('streaks-grid');
@@ -119,15 +267,14 @@ initializePicksStorage();
  * Initialize the application
  */
 function init() {
-    setupFileUpload();
     setupTabs();
     setupWeekButtons();
     setupPickerButtons();
     setupPicksActions();
     loadPicksFromStorage();
 
-    // Try to auto-load CSV from data.csv
-    tryAutoLoadCSV();
+    // Load data from Google Sheets
+    loadFromGoogleSheets();
 }
 
 /**
@@ -212,44 +359,6 @@ async function setCurrentWeek(week) {
     renderScoringSummary();
 }
 
-/**
- * Setup file upload handlers
- */
-function setupFileUpload() {
-    // Drag and drop
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.classList.add('drag-over');
-    });
-
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('drag-over');
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('drag-over');
-
-        const file = e.dataTransfer.files[0];
-        if (file && file.name.endsWith('.csv')) {
-            loadCSVFile(file);
-        } else {
-            alert('Please upload a CSV file');
-        }
-    });
-
-    // Click to upload
-    dropZone.addEventListener('click', () => {
-        fileInput.click();
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            loadCSVFile(file);
-        }
-    });
-}
 
 /**
  * Setup category tab switching
@@ -291,29 +400,12 @@ function setupPicksActions() {
     document.getElementById('export-picks-btn')?.addEventListener('click', exportAllPicks);
 }
 
-/**
- * Load and parse CSV file
- */
-function loadCSVFile(file) {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-        const csvText = e.target.result;
-        loadCSVData(csvText);
-    };
-
-    reader.readAsText(file);
-}
 
 /**
  * Load CSV data from text content
  */
 function loadCSVData(csvText) {
     dashboardData = parseNFLPicksCSV(csvText);
-
-    // Show dashboard
-    uploadSection.classList.add('hidden');
-    dashboard.classList.remove('hidden');
 
     // Update week info (if element exists)
     const currentWeekEl = document.getElementById('current-week');
@@ -327,8 +419,8 @@ function loadCSVData(csvText) {
         picksWeekNum.textContent = dashboardData.currentWeek + 1;
     }
 
-    // Render initial view
-    renderDashboard();
+    // Render initial view using setActiveCategory to ensure proper section visibility
+    setActiveCategory(currentCategory);
 }
 
 // Google Sheets base URL and sheet IDs
@@ -347,46 +439,25 @@ const WEEK_SHEET_GIDS = {
 const weeklyPicksCache = {};
 
 /**
- * Try to auto-load CSV from Google Sheets or local file
+ * Load data from published Google Sheet
  */
-function tryAutoLoadCSV() {
-    // First try Google Sheets
-    if (GOOGLE_SHEETS_CSV_URL) {
-        console.log('Fetching from Google Sheets...');
-        fetch(GOOGLE_SHEETS_CSV_URL)
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to fetch from Google Sheets');
-                return response.text();
-            })
-            .then(csvText => {
-                console.log('Loaded data from Google Sheets');
-                loadCSVData(csvText);
-            })
-            .catch(err => {
-                console.log('Google Sheets fetch failed, trying local file...', err);
-                tryLocalCSV();
-            });
-    } else {
-        tryLocalCSV();
-    }
-}
-
-/**
- * Try to load from local data.csv file
- */
-function tryLocalCSV() {
-    fetch('data.csv')
+function loadFromGoogleSheets() {
+    console.log('Fetching from Google Sheets...');
+    fetch(GOOGLE_SHEETS_CSV_URL, {
+        method: 'GET',
+        redirect: 'follow'
+    })
         .then(response => {
-            if (!response.ok) throw new Error('No data.csv found');
+            if (!response.ok) throw new Error('Failed to fetch from Google Sheets');
             return response.text();
         })
         .then(csvText => {
-            console.log('Auto-loaded data.csv');
+            console.log('Loaded data from Google Sheets');
             loadCSVData(csvText);
         })
         .catch(err => {
-            console.log('No auto-load CSV found, showing upload UI');
-            // Keep upload section visible
+            console.error('Failed to load data from Google Sheets:', err);
+            dashboard.innerHTML = '<div class="error-message">Failed to load data. Please refresh the page to try again.</div>';
         });
 }
 
@@ -413,10 +484,13 @@ function setActiveCategory(category) {
         streaksSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
-        // Render the picks interface
-        renderGames();
+        // Start live scores refresh and render the picks interface
+        startLiveScoresRefresh();
         renderScoringSummary();
     } else {
+        // Stop live scores refresh when leaving picks tab
+        stopLiveScoresRefresh();
+
         // Show dashboard sections, hide picks
         leaderboard.classList.remove('hidden');
         chartsSection?.classList.remove('hidden');
@@ -455,7 +529,80 @@ function renderDashboard() {
     renderLeaderboard(stats);
     renderStreaks(stats);
     renderTrendChart(weeklyData, currentCategory);
-    renderStandingsChart(stats, currentCategory);
+
+    // Only show Favorites vs Underdogs chart on Line Picks tab
+    const standingsChartContainer = document.getElementById('standings-chart')?.closest('.chart-container');
+    if (standingsChartContainer) {
+        if (currentCategory === 'line') {
+            standingsChartContainer.classList.remove('hidden');
+            renderFavUnderdogChart(dashboardData.favoritesVsUnderdogs);
+        } else {
+            standingsChartContainer.classList.add('hidden');
+        }
+    }
+
+    // Only show insights on Blazin' 5 tab
+    const insightsSection = document.querySelector('.insights-section');
+    if (insightsSection) {
+        if (currentCategory === 'blazin') {
+            insightsSection.classList.remove('hidden');
+            renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
+        } else {
+            insightsSection.classList.add('hidden');
+        }
+    }
+}
+
+/**
+ * Render Group Insights section (Lone Wolf + Consensus)
+ */
+function renderInsights(loneWolf, consensus) {
+    // Render Consensus card
+    const consensusCard = document.getElementById('consensus-card');
+    if (consensusCard && consensus) {
+        consensusCard.innerHTML = `
+            <div class="insight-header">
+                <span class="insight-icon">🤝</span>
+                <span class="insight-title">When We All Agree</span>
+            </div>
+            <div class="insight-stat">
+                <span class="insight-percentage ${consensus.percentage >= 50 ? 'positive' : 'negative'}">${consensus.percentage?.toFixed(1)}%</span>
+                <span class="insight-record">${consensus.wins}-${consensus.losses}-${consensus.pushes}</span>
+            </div>
+            <p class="insight-description">Group record when all 5 pickers choose the same line</p>
+        `;
+    }
+
+    // Render Lone Wolf card
+    const loneWolfCard = document.getElementById('lone-wolf-card');
+    if (loneWolfCard && loneWolf && Object.keys(loneWolf).length > 0) {
+        // Sort by percentage
+        const sorted = Object.entries(loneWolf)
+            .map(([name, data]) => ({ name, ...data }))
+            .sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+
+        const rows = sorted.map((picker, idx) => `
+            <div class="lone-wolf-row ${idx === 0 ? 'leader' : ''}">
+                <span class="lone-wolf-rank">${idx + 1}</span>
+                <span class="lone-wolf-name">${picker.name}</span>
+                <span class="lone-wolf-pct ${picker.percentage >= 50 ? 'positive' : 'negative'}">${picker.percentage?.toFixed(1)}%</span>
+                <span class="lone-wolf-record">${picker.wins}-${picker.losses}-${picker.pushes}</span>
+            </div>
+        `).join('');
+
+        loneWolfCard.innerHTML = `
+            <div class="insight-header lone-wolf-header">
+                <img src="https://pbs.twimg.com/media/Crt1l8jWAAAmNyH.jpg" alt="Lone Wolf" class="lone-wolf-image">
+                <div>
+                    <span class="insight-title">Lone Wolf Picks</span>
+                    <p class="insight-subtitle">Success rate when only one picker takes a line</p>
+                </div>
+            </div>
+            <div class="lone-wolf-leaderboard">
+                ${rows}
+            </div>
+        `;
+    }
 }
 
 /**
@@ -494,11 +641,34 @@ function renderLeaderboard(stats) {
                         <span class="stat-value">${picker.bestWeek || '-'}</span>
                     </div>
                 </div>
-                ${picker.yearChange ? `
-                    <div class="year-change ${yearChangeClass}">
-                        ${picker.yearChange}
+                ${picker.bestTeam && picker.worstTeam ? `
+                <div class="team-records">
+                    <div class="team-record best">
+                        <img src="${getTeamLogo(picker.bestTeam.team)}" alt="${picker.bestTeam.team}" class="team-badge-logo">
+                        <span class="team-badge-name">${picker.bestTeam.team}</span>
+                        <span class="team-badge-stats">${picker.bestTeam.record} (${picker.bestTeam.percentage?.toFixed(0)}%)</span>
                     </div>
+                    <div class="team-record worst">
+                        <img src="${getTeamLogo(picker.worstTeam.team)}" alt="${picker.worstTeam.team}" class="team-badge-logo">
+                        <span class="team-badge-name">${picker.worstTeam.team}</span>
+                        <span class="team-badge-stats">${picker.worstTeam.record} (${picker.worstTeam.percentage?.toFixed(0)}%)</span>
+                    </div>
+                </div>
                 ` : ''}
+                <div class="year-comparison">
+                    ${picker.yearChange ? `
+                        <div class="year-change ${yearChangeClass}">
+                            <span class="comparison-label">vs Last Year:</span>
+                            <span class="comparison-value">${picker.yearChange}</span>
+                        </div>
+                    ` : ''}
+                    ${picker.winnings !== undefined ? `
+                        <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
+                            <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
+                            <span class="comparison-value">${picker.winningsRaw >= 0 ? '+' : ''}${picker.winnings}</span>
+                        </div>
+                    ` : ''}
+                </div>
             </div>
         `;
     }).join('');
@@ -573,6 +743,12 @@ function renderGames() {
         const hasLinePick = linePick !== undefined;
         const hasWinnerPick = winnerPick !== undefined;
         const hasBothPicks = hasLinePick && hasWinnerPick;
+        const locked = isGameLocked(game);
+
+        // Get live score data if available
+        const liveData = getLiveGameStatus(game);
+        const isInProgress = liveData && liveData.status === 'STATUS_IN_PROGRESS';
+        const isFinal = liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
 
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
@@ -580,22 +756,42 @@ function renderGames() {
         const awaySpreadDisplay = awaySpread > 0 ? `+${awaySpread}` : awaySpread;
         const homeSpreadDisplay = homeSpread > 0 ? `+${homeSpread}` : homeSpread;
 
+        const cardClasses = [
+            'game-card',
+            hasBothPicks ? 'has-pick' : (hasLinePick || hasWinnerPick ? 'has-partial-pick' : ''),
+            locked ? 'game-locked' : '',
+            isFinal ? 'game-final' : '',
+            isInProgress ? 'game-in-progress' : ''
+        ].filter(Boolean).join(' ');
+
+        // Build status badge
+        let statusBadge = '';
+        if (isFinal) {
+            statusBadge = `<span class="status-badge final">FINAL</span>`;
+        } else if (isInProgress) {
+            const clockDisplay = liveData.clock ? `${liveData.clock} Q${liveData.period}` : 'Live';
+            statusBadge = `<span class="status-badge in-progress">${liveData.awayScore} - ${liveData.homeScore} (${clockDisplay})</span>`;
+        } else if (locked) {
+            statusBadge = '<span class="locked-badge">LOCKED</span>';
+        }
+
         return `
-            <div class="game-card ${hasBothPicks ? 'has-pick' : hasLinePick || hasWinnerPick ? 'has-partial-pick' : ''}" data-game-id="${game.id}">
+            <div class="${cardClasses}" data-game-id="${game.id}">
                 <div class="game-header">
                     <span class="game-time">${game.time}</span>
+                    ${statusBadge}
                     <span class="game-day">${game.day}</span>
                 </div>
 
                 <div class="game-matchup-line">
                     <span class="away-team">
                         <img src="${TEAM_LOGOS[game.away]}" alt="${game.away}" class="team-logo">
-                        ${game.away} (${awaySpreadDisplay})
+                        ${game.away} ${isFinal || isInProgress ? `<strong>${liveData?.awayScore || ''}</strong>` : `(${awaySpreadDisplay})`}
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
                         <img src="${TEAM_LOGOS[game.home]}" alt="${game.home}" class="team-logo">
-                        ${game.home} (${homeSpreadDisplay})
+                        ${game.home} ${isFinal || isInProgress ? `<strong>${liveData?.homeScore || ''}</strong>` : `(${homeSpreadDisplay})`}
                     </span>
                 </div>
 
@@ -604,11 +800,13 @@ function renderGames() {
                         <span class="pick-label">Line Pick (ATS)</span>
                         <div class="pick-options">
                             <button class="pick-btn ${linePick === 'away' ? 'selected' : ''}"
-                                    data-game-id="${game.id}" data-pick-type="line" data-team="away">
+                                    data-game-id="${game.id}" data-pick-type="line" data-team="away"
+                                    ${locked ? 'disabled' : ''}>
                                 ${game.away} ${awaySpreadDisplay}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''}"
-                                    data-game-id="${game.id}" data-pick-type="line" data-team="home">
+                                    data-game-id="${game.id}" data-pick-type="line" data-team="home"
+                                    ${locked ? 'disabled' : ''}>
                                 ${game.home} ${homeSpreadDisplay}
                             </button>
                         </div>
@@ -617,11 +815,13 @@ function renderGames() {
                         <span class="pick-label">Straight Up (Winner)</span>
                         <div class="pick-options">
                             <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''}"
-                                    data-game-id="${game.id}" data-pick-type="winner" data-team="away">
+                                    data-game-id="${game.id}" data-pick-type="winner" data-team="away"
+                                    ${locked ? 'disabled' : ''}>
                                 ${game.away}
                             </button>
                             <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''}"
-                                    data-game-id="${game.id}" data-pick-type="winner" data-team="home">
+                                    data-game-id="${game.id}" data-pick-type="winner" data-team="home"
+                                    ${locked ? 'disabled' : ''}>
                                 ${game.home}
                             </button>
                         </div>

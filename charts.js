@@ -142,17 +142,18 @@ function renderTrendChart(weeklyData, category) {
 }
 
 /**
- * Create or update the standings bar chart
+ * Create or update the favorites vs underdogs chart
  */
-function renderStandingsChart(stats, category) {
+function renderFavUnderdogChart(favUnderdogData) {
     const ctx = document.getElementById('standings-chart').getContext('2d');
 
-    // Sort pickers by percentage
-    const sorted = getSortedPickers(stats);
+    if (!favUnderdogData || !favUnderdogData.favorites || !favUnderdogData.underdogs) {
+        return;
+    }
 
-    const labels = sorted.map(p => p.name);
-    const data = sorted.map(p => p.percentage || 0);
-    const colors = sorted.map(p => CHART_COLORS[p.name]);
+    const labels = PICKERS;
+    const favData = labels.map(p => favUnderdogData.favorites[p]?.percentage || 0);
+    const undData = labels.map(p => favUnderdogData.underdogs[p]?.percentage || 0);
 
     // Destroy existing chart
     if (standingsChart) {
@@ -163,22 +164,41 @@ function renderStandingsChart(stats, category) {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Win %',
-                data: data,
-                backgroundColor: colors,
-                borderColor: colors,
-                borderWidth: 0,
-                borderRadius: 4
-            }]
+            datasets: [
+                {
+                    label: 'Favorites',
+                    data: favData,
+                    backgroundColor: '#dc2626',
+                    borderColor: '#dc2626',
+                    borderWidth: 0,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Underdogs',
+                    data: undData,
+                    backgroundColor: '#00b112',
+                    borderColor: '#00b112',
+                    borderWidth: 0,
+                    borderRadius: 4
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            indexAxis: 'y',
             plugins: {
                 legend: {
-                    display: false
+                    position: 'bottom',
+                    labels: {
+                        color: '#666666',
+                        usePointStyle: true,
+                        padding: 20,
+                        font: {
+                            family: "'Inter', sans-serif",
+                            size: 11,
+                            weight: '600'
+                        }
+                    }
                 },
                 tooltip: {
                     backgroundColor: '#1a1a1a',
@@ -196,13 +216,32 @@ function renderStandingsChart(stats, category) {
                     },
                     callbacks: {
                         label: function(context) {
-                            return `${context.parsed.x.toFixed(2)}%`;
+                            const picker = context.label;
+                            const type = context.dataset.label.toLowerCase();
+                            const data = type === 'favorites'
+                                ? favUnderdogData.favorites[picker]
+                                : favUnderdogData.underdogs[picker];
+                            const record = data ? `${data.wins}-${data.losses}-${data.pushes}` : '';
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}% (${record})`;
                         }
                     }
                 }
             },
             scales: {
                 x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        color: '#1a1a1a',
+                        font: {
+                            family: "'Libre Franklin', sans-serif",
+                            size: 11,
+                            weight: '700'
+                        }
+                    }
+                },
+                y: {
                     grid: {
                         color: '#e5e5e5'
                     },
@@ -217,20 +256,7 @@ function renderStandingsChart(stats, category) {
                         }
                     },
                     min: 40,
-                    max: 70
-                },
-                y: {
-                    grid: {
-                        display: false
-                    },
-                    ticks: {
-                        color: '#1a1a1a',
-                        font: {
-                            family: "'Libre Franklin', sans-serif",
-                            size: 12,
-                            weight: '700'
-                        }
-                    }
+                    max: 60
                 }
             }
         }

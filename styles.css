@@ -99,52 +99,12 @@ header h1 {
     z-index: 100;
 }
 
-/* Upload Area */
-.upload-area {
+/* Error Message */
+.error-message {
     padding: 40px 20px;
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
-.drop-zone {
-    border: 2px dashed var(--border-color);
-    border-radius: 8px;
-    padding: 60px 20px;
     text-align: center;
-    background: var(--bg-primary);
-    transition: all 0.2s ease;
-    cursor: pointer;
-}
-
-.drop-zone:hover,
-.drop-zone.drag-over {
-    border-color: var(--accent-green);
-    background: rgba(0, 177, 18, 0.03);
-}
-
-.drop-zone-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-}
-
-.upload-icon {
-    width: 40px;
-    height: 40px;
-    color: var(--text-light);
-}
-
-.drop-zone p {
     color: var(--text-secondary);
-    font-size: 0.95rem;
-}
-
-.or-text {
-    font-size: 0.8rem;
-    color: var(--text-light);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+    font-size: 1rem;
 }
 
 .btn {
@@ -404,22 +364,115 @@ header h1 {
     margin-bottom: 16px;
 }
 
-.year-change {
+/* Team Records Badges */
+.team-records {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    font-size: 0.85rem;
-    padding: 12px;
-    background: var(--bg-secondary);
-    font-weight: 600;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border-color);
 }
 
-.year-change.up {
+.team-record {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+}
+
+.team-record.best {
+    background: rgba(0, 177, 18, 0.08);
+    border: 1px solid rgba(0, 177, 18, 0.2);
+}
+
+.team-record.worst {
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.team-badge-logo {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+
+.team-badge-name {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    min-width: 70px;
+}
+
+.team-record.best .team-badge-name {
     color: var(--accent-green);
 }
 
-.year-change.down {
+.team-record.worst .team-badge-name {
+    color: #dc2626;
+}
+
+.team-badge-stats {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.75rem;
+}
+
+/* Year Comparison Section */
+.year-comparison {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    border-radius: 0 0 8px 8px;
+}
+
+.year-change,
+.betting-winnings {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.85rem;
+    padding: 10px 16px;
+    font-weight: 600;
+}
+
+.year-change {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.betting-winnings {
+    border-top: none;
+}
+
+.comparison-label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.comparison-value {
+    font-weight: 700;
+}
+
+.year-change.up .comparison-value {
+    color: var(--accent-green);
+}
+
+.year-change.down .comparison-value {
+    color: #dc2626;
+}
+
+.betting-winnings.positive .comparison-value {
+    color: var(--accent-green);
+}
+
+.betting-winnings.negative .comparison-value {
     color: #dc2626;
 }
 
@@ -452,6 +505,163 @@ header h1 {
 
 .chart-container canvas {
     max-height: 350px;
+}
+
+/* Insights Section */
+.insights-section {
+    padding: 0 20px 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.insights-section h3 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 20px;
+}
+
+.insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.insight-card {
+    background: var(--bg-primary);
+    border-radius: 8px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.insight-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.insight-icon {
+    font-size: 2rem;
+}
+
+.insight-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.insight-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-top: 2px;
+}
+
+.insight-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.insight-percentage {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 2.5rem;
+    font-weight: 900;
+}
+
+.insight-percentage.positive {
+    color: var(--accent-green);
+}
+
+.insight-percentage.negative {
+    color: #dc2626;
+}
+
+.insight-record {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.insight-description {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+/* Lone Wolf Card */
+.lone-wolf-image {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.lone-wolf-header {
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.lone-wolf-leaderboard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.lone-wolf-row {
+    display: grid;
+    grid-template-columns: 24px 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+}
+
+.lone-wolf-row.leader {
+    background: rgba(0, 177, 18, 0.1);
+    border: 1px solid rgba(0, 177, 18, 0.2);
+}
+
+.lone-wolf-rank {
+    font-weight: 800;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.lone-wolf-row.leader .lone-wolf-rank {
+    color: var(--accent-green);
+}
+
+.lone-wolf-name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+}
+
+.lone-wolf-pct {
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.lone-wolf-pct.positive {
+    color: var(--accent-green);
+}
+
+.lone-wolf-pct.negative {
+    color: #dc2626;
+}
+
+.lone-wolf-record {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
 }
 
 /* Streaks Section */
@@ -526,6 +736,15 @@ footer {
     text-align: center;
     padding: 30px 20px;
     font-size: 0.8rem;
+}
+
+footer a {
+    color: var(--accent-green);
+    text-decoration: none;
+}
+
+footer a:hover {
+    text-decoration: underline;
 }
 
 /* Responsive */
@@ -734,6 +953,74 @@ footer {
     border-left: 4px solid #f59e0b;
 }
 
+.game-card.game-locked {
+    opacity: 0.7;
+    background: var(--bg-secondary);
+}
+
+.game-card.game-locked .picks-row {
+    pointer-events: none;
+}
+
+.locked-badge {
+    background: #dc2626;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.status-badge.final {
+    background: var(--bg-dark);
+    color: white;
+}
+
+.status-badge.in-progress {
+    background: var(--accent-green);
+    color: white;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.game-card.game-final {
+    border-left: 4px solid var(--bg-dark);
+}
+
+.game-card.game-in-progress {
+    border-left: 4px solid var(--accent-green);
+}
+
+.game-matchup-line strong {
+    font-size: 1.1em;
+    color: var(--text-primary);
+}
+
+.pick-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-secondary);
+}
+
+.pick-btn:disabled:hover {
+    border-color: var(--border-color);
+    background: var(--bg-secondary);
+}
+
 .game-header {
     display: flex;
     justify-content: space-between;
@@ -880,8 +1167,8 @@ footer {
 }
 
 .pick-btn.selected {
-    border-color: var(--accent-green);
-    background: var(--accent-green);
+    border-color: #3b82f6;
+    background: #3b82f6;
     color: white;
 }
 
