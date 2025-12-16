@@ -16,10 +16,24 @@ const CHART_COLORS = {
 };
 
 /**
+ * Get chart colors based on current theme
+ */
+function getChartColors() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return {
+        grid: isDark ? '#333333' : '#e5e5e5',
+        text: isDark ? '#a0a0a0' : '#666666',
+        tooltipBg: isDark ? '#2a2a2a' : '#1a1a1a',
+        tooltipBorder: isDark ? '#444444' : '#333333'
+    };
+}
+
+/**
  * Create or update the weekly trend line chart
  */
 function renderTrendChart(weeklyData, category) {
     const ctx = document.getElementById('trend-chart').getContext('2d');
+    const colors = getChartColors();
 
     // Determine which pickers to show
     const pickers = category === 'blazin' ? PICKERS_WITH_COWHERD : PICKERS;
@@ -75,7 +89,7 @@ function renderTrendChart(weeklyData, category) {
                 legend: {
                     position: 'bottom',
                     labels: {
-                        color: '#666666',
+                        color: colors.text,
                         usePointStyle: true,
                         padding: 20,
                         font: {
@@ -86,10 +100,10 @@ function renderTrendChart(weeklyData, category) {
                     }
                 },
                 tooltip: {
-                    backgroundColor: '#1a1a1a',
+                    backgroundColor: colors.tooltipBg,
                     titleColor: '#ffffff',
                     bodyColor: '#999999',
-                    borderColor: '#333333',
+                    borderColor: colors.tooltipBorder,
                     borderWidth: 1,
                     padding: 12,
                     titleFont: {
@@ -109,10 +123,10 @@ function renderTrendChart(weeklyData, category) {
             scales: {
                 x: {
                     grid: {
-                        color: '#e5e5e5'
+                        color: colors.grid
                     },
                     ticks: {
-                        color: '#666666',
+                        color: colors.text,
                         font: {
                             family: "'Inter', sans-serif",
                             size: 11
@@ -121,10 +135,10 @@ function renderTrendChart(weeklyData, category) {
                 },
                 y: {
                     grid: {
-                        color: '#e5e5e5'
+                        color: colors.grid
                     },
                     ticks: {
-                        color: '#666666',
+                        color: colors.text,
                         font: {
                             family: "'Inter', sans-serif",
                             size: 11
@@ -133,8 +147,8 @@ function renderTrendChart(weeklyData, category) {
                             return value + '%';
                         }
                     },
-                    min: 30,
-                    max: 70
+                    min: 0,
+                    max: 100
                 }
             }
         }
@@ -146,6 +160,7 @@ function renderTrendChart(weeklyData, category) {
  */
 function renderFavUnderdogChart(favUnderdogData) {
     const ctx = document.getElementById('standings-chart').getContext('2d');
+    const colors = getChartColors();
 
     if (!favUnderdogData || !favUnderdogData.favorites || !favUnderdogData.underdogs) {
         return;
@@ -190,7 +205,7 @@ function renderFavUnderdogChart(favUnderdogData) {
                 legend: {
                     position: 'bottom',
                     labels: {
-                        color: '#666666',
+                        color: colors.text,
                         usePointStyle: true,
                         padding: 20,
                         font: {
@@ -201,10 +216,10 @@ function renderFavUnderdogChart(favUnderdogData) {
                     }
                 },
                 tooltip: {
-                    backgroundColor: '#1a1a1a',
+                    backgroundColor: colors.tooltipBg,
                     titleColor: '#ffffff',
                     bodyColor: '#999999',
-                    borderColor: '#333333',
+                    borderColor: colors.tooltipBorder,
                     borderWidth: 1,
                     padding: 12,
                     titleFont: {
@@ -233,7 +248,7 @@ function renderFavUnderdogChart(favUnderdogData) {
                         display: false
                     },
                     ticks: {
-                        color: '#1a1a1a',
+                        color: colors.text,
                         font: {
                             family: "'Libre Franklin', sans-serif",
                             size: 11,
@@ -243,10 +258,10 @@ function renderFavUnderdogChart(favUnderdogData) {
                 },
                 y: {
                     grid: {
-                        color: '#e5e5e5'
+                        color: colors.grid
                     },
                     ticks: {
-                        color: '#666666',
+                        color: colors.text,
                         font: {
                             family: "'Inter', sans-serif",
                             size: 11

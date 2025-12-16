@@ -3,14 +3,34 @@
  */
 
 let dashboardData = null;
-let currentCategory = 'blazin';
+let currentCategory = 'make-picks';
 let currentPicker = 'Stephen';
-let currentWeek = 16;
+let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
 
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
-const CURRENT_NFL_WEEK = 16;
+
+/**
+ * Calculate current NFL week based on date
+ * 2025 NFL Season: Week 1 started September 4, 2025
+ */
+function calculateCurrentNFLWeek() {
+    const SEASON_START = new Date('2025-09-02T00:00:00'); // Tuesday before Week 1
+    const now = new Date();
+
+    // If before season start, return week 1
+    if (now < SEASON_START) return 1;
+
+    // Calculate weeks elapsed (each NFL week starts on Tuesday)
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    const weeksElapsed = Math.floor((now - SEASON_START) / msPerWeek);
+
+    // Clamp to valid range (1-18)
+    return Math.min(Math.max(weeksElapsed + 1, 1), TOTAL_WEEKS);
+}
+
+const CURRENT_NFL_WEEK = calculateCurrentNFLWeek();
 
 // Team name aliases (CSV name -> standard name)
 const TEAM_NAME_MAP = {
@@ -285,14 +305,57 @@ initializePicksStorage();
  * Initialize the application
  */
 function init() {
+    // Initialize currentWeek with calculated value
+    currentWeek = CURRENT_NFL_WEEK;
+
     setupTabs();
     setupWeekButtons();
     setupPickerButtons();
     setupPicksActions();
+    setupDarkMode();
     loadPicksFromStorage();
+
+    // Show loading state
+    showLoadingState();
 
     // Load data from Google Sheets
     loadFromGoogleSheets();
+}
+
+/**
+ * Setup dark mode toggle
+ */
+function setupDarkMode() {
+    const toggle = document.getElementById('dark-mode-toggle');
+    if (!toggle) return;
+
+    // Load saved preference
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+
+    // Toggle handler
+    toggle.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+        if (newTheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
+
+        localStorage.setItem('theme', newTheme);
+        showToast(newTheme === 'dark' ? 'Dark mode enabled' : 'Light mode enabled');
+
+        // Re-render charts with new colors
+        if (dashboardData && currentCategory !== 'make-picks') {
+            renderDashboard();
+        }
+    });
 }
 
 /**
@@ -415,6 +478,7 @@ function setupPicksActions() {
     document.getElementById('clear-picks-btn')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
     document.getElementById('randomize-picks-btn')?.addEventListener('click', randomizePicks);
+    document.getElementById('copy-picks-btn')?.addEventListener('click', copyPicksToClipboard);
 }
 
 
@@ -433,10 +497,11 @@ function loadCSVData(csvText) {
     // Update picks week number
     const picksWeekNum = document.getElementById('picks-week-num');
     if (picksWeekNum) {
-        picksWeekNum.textContent = dashboardData.currentWeek + 1;
+        picksWeekNum.textContent = currentWeek;
     }
 
-    // Render initial view using setActiveCategory to ensure proper section visibility
+    // Hide loading state and render initial view
+    hideLoadingState();
     setActiveCategory(currentCategory);
 }
 
@@ -457,28 +522,45 @@ const weeklyPicksCache = {};
 
 /**
  * Load data from published Google Sheet
+ * Tries direct fetch first, falls back to CORS proxies if needed
  */
-function loadFromGoogleSheets() {
-    // Use CORS proxy since Google Sheets doesn't support CORS for browser requests
-    const CORS_PROXY = 'https://corsproxy.io/?';
-    const proxyUrl = CORS_PROXY + encodeURIComponent(GOOGLE_SHEETS_CSV_URL);
+async function loadFromGoogleSheets() {
+    const CORS_PROXIES = [
+        '', // Try direct first
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url='
+    ];
+
     console.log('Fetching from Google Sheets...');
-    fetch(proxyUrl, {
-        method: 'GET'
-        
-    })
-        .then(response => {
-            if (!response.ok) throw new Error('Failed to fetch from Google Sheets');
-            return response.text();
-        })
-        .then(csvText => {
-            console.log('Loaded data from Google Sheets');
+
+    for (const proxy of CORS_PROXIES) {
+        try {
+            const url = proxy ? proxy + encodeURIComponent(GOOGLE_SHEETS_CSV_URL) : GOOGLE_SHEETS_CSV_URL;
+            const response = await fetch(url, { method: 'GET' });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const csvText = await response.text();
+
+            // Validate we got actual CSV data (not an error page)
+            if (csvText.includes('<!DOCTYPE') || csvText.length < 100) {
+                throw new Error('Invalid response');
+            }
+
+            console.log('Loaded data from Google Sheets' + (proxy ? ' via proxy' : ' directly'));
             loadCSVData(csvText);
-        })
-        .catch(err => {
-            console.error('Failed to load data from Google Sheets:', err);
-            dashboard.innerHTML = '<div class="error-message">Failed to load data. Please refresh the page to try again.</div>';
-        });
+            return;
+        } catch (err) {
+            console.warn(`Fetch attempt failed${proxy ? ' with ' + proxy : ' (direct)'}:`, err.message);
+        }
+    }
+
+    // All attempts failed
+    console.error('Failed to load data from Google Sheets after all attempts');
+    hideLoadingState();
+    dashboard.innerHTML = '<div class="error-message">Failed to load data. Please refresh the page to try again.</div>';
 }
 
 /**
@@ -497,11 +579,15 @@ function setActiveCategory(category) {
     const chartsSection = document.querySelector('.charts-grid');
     const streaksSection = document.querySelector('.streaks-section');
 
+    // Get insights section reference
+    const insightsSection = document.querySelector('.insights-section');
+
     if (category === 'make-picks') {
         // Show picks section, hide others
         leaderboard.classList.add('hidden');
         chartsSection?.classList.add('hidden');
         streaksSection?.classList.add('hidden');
+        insightsSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -706,9 +792,6 @@ function renderStreaks(stats) {
         if (last3 >= 55) streakClass = 'hot';
         else if (last3 < 45) streakClass = 'cold';
 
-        const highest = picker.highestPct || 0;
-        const lowest = picker.lowestPct || 0;
-
         return `
             <div class="streak-card">
                 <div class="picker-name">
@@ -719,14 +802,6 @@ function renderStreaks(stats) {
                     <div>
                         <span class="streak-label">Last 3 Weeks</span>
                         <div class="streak-value ${streakClass}">${last3?.toFixed ? last3.toFixed(2) : last3}%</div>
-                    </div>
-                    <div>
-                        <span class="streak-label">Season High</span>
-                        <div class="streak-value">${highest?.toFixed ? highest.toFixed(2) : highest}%</div>
-                    </div>
-                    <div>
-                        <span class="streak-label">Season Low</span>
-                        <div class="streak-value">${lowest?.toFixed ? lowest.toFixed(2) : lowest}%</div>
                     </div>
                 </div>
             </div>
@@ -860,7 +935,113 @@ function renderGames() {
     document.querySelectorAll('.pick-btn').forEach(btn => {
         btn.addEventListener('click', handlePickSelect);
     });
+
+    // Setup keyboard navigation
+    setupKeyboardNavigation();
 }
+
+/**
+ * Setup keyboard navigation for games list
+ */
+function setupKeyboardNavigation() {
+    const gameCards = document.querySelectorAll('.game-card');
+    if (gameCards.length === 0) return;
+
+    // Make first game card focusable
+    gameCards.forEach((card, idx) => {
+        card.setAttribute('tabindex', idx === 0 ? '0' : '-1');
+        card.dataset.gameIndex = idx;
+    });
+
+    // Add keyboard event listener to games list
+    const gamesList = document.getElementById('games-list');
+    if (!gamesList) return;
+
+    gamesList.addEventListener('keydown', handleGameKeydown);
+}
+
+/**
+ * Handle keyboard navigation in games list
+ */
+function handleGameKeydown(e) {
+    const gameCards = Array.from(document.querySelectorAll('.game-card'));
+    const focusedCard = document.activeElement.closest('.game-card');
+
+    if (!focusedCard || !gameCards.includes(focusedCard)) return;
+
+    const currentIndex = parseInt(focusedCard.dataset.gameIndex);
+    const gameId = focusedCard.dataset.gameId;
+
+    switch (e.key) {
+        case 'ArrowUp':
+            e.preventDefault();
+            if (currentIndex > 0) {
+                focusGameCard(gameCards[currentIndex - 1]);
+            }
+            break;
+
+        case 'ArrowDown':
+            e.preventDefault();
+            if (currentIndex < gameCards.length - 1) {
+                focusGameCard(gameCards[currentIndex + 1]);
+            }
+            break;
+
+        case '1':
+        case 'a':
+        case 'A':
+            // Select away team for line pick
+            e.preventDefault();
+            simulatePickClick(gameId, 'line', 'away');
+            break;
+
+        case '2':
+        case 'h':
+        case 'H':
+            // Select home team for line pick
+            e.preventDefault();
+            simulatePickClick(gameId, 'line', 'home');
+            break;
+
+        case '3':
+            // Select away team for winner pick
+            e.preventDefault();
+            simulatePickClick(gameId, 'winner', 'away');
+            break;
+
+        case '4':
+            // Select home team for winner pick
+            e.preventDefault();
+            simulatePickClick(gameId, 'winner', 'home');
+            break;
+    }
+}
+
+/**
+ * Focus a game card and update tabindex
+ */
+function focusGameCard(card) {
+    document.querySelectorAll('.game-card').forEach(c => {
+        c.setAttribute('tabindex', '-1');
+    });
+    card.setAttribute('tabindex', '0');
+    card.focus();
+}
+
+/**
+ * Simulate a pick button click
+ */
+function simulatePickClick(gameId, pickType, team) {
+    const btn = document.querySelector(
+        `.pick-btn[data-game-id="${gameId}"][data-pick-type="${pickType}"][data-team="${team}"]`
+    );
+    if (btn && !btn.disabled) {
+        btn.click();
+    }
+}
+
+// Track last selected pick for animation
+let lastSelectedPick = null;
 
 /**
  * Handle pick selection (line or winner)
@@ -888,6 +1069,7 @@ function handlePickSelect(e) {
     }
 
     // Toggle selection
+    let isNewSelection = false;
     if (allPicks[currentWeek][currentPicker][gameId][pickType] === team) {
         delete allPicks[currentWeek][currentPicker][gameId][pickType];
         // Clean up empty game object
@@ -896,6 +1078,7 @@ function handlePickSelect(e) {
         }
     } else {
         allPicks[currentWeek][currentPicker][gameId][pickType] = team;
+        isNewSelection = true;
 
         // If picking a favorite on the line, automatically pick them to win
         if (pickType === 'line') {
@@ -908,12 +1091,30 @@ function handlePickSelect(e) {
         }
     }
 
+    // Track for animation
+    if (isNewSelection) {
+        lastSelectedPick = { gameId, pickType, team };
+    } else {
+        lastSelectedPick = null;
+    }
+
     // Save to localStorage
     savePicksToStorage();
 
     // Re-render
     renderGames();
     renderScoringSummary();
+
+    // Apply animation to newly selected button
+    if (lastSelectedPick) {
+        const selector = `.pick-btn[data-game-id="${lastSelectedPick.gameId}"][data-pick-type="${lastSelectedPick.pickType}"][data-team="${lastSelectedPick.team}"]`;
+        const newBtn = document.querySelector(selector);
+        if (newBtn) {
+            newBtn.classList.add('just-selected');
+            setTimeout(() => newBtn.classList.remove('just-selected'), 400);
+        }
+        lastSelectedPick = null;
+    }
 }
 
 /**
@@ -1184,6 +1385,90 @@ function exportAllPicks() {
 }
 
 /**
+ * Copy current picker's picks to clipboard in a shareable format
+ */
+function copyPicksToClipboard() {
+    const weekGames = getGamesForWeek(currentWeek);
+    const weekPicks = allPicks[currentWeek] || {};
+    const pickerPicks = weekPicks[currentPicker] || {};
+
+    if (weekGames.length === 0) {
+        showToast('No games available for this week');
+        return;
+    }
+
+    let pickCount = 0;
+    let text = `${currentPicker}'s Week ${currentWeek} Picks\n`;
+    text += '━'.repeat(30) + '\n\n';
+
+    weekGames.forEach(game => {
+        const gameIdStr = String(game.id);
+        const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+
+        if (gamePicks.line || gamePicks.winner) {
+            pickCount++;
+            const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+            const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+
+            text += `${game.away} @ ${game.home}\n`;
+
+            if (gamePicks.line) {
+                const lineTeam = gamePicks.line === 'away' ? game.away : game.home;
+                const spread = gamePicks.line === 'away' ? awaySpread : homeSpread;
+                const spreadStr = spread > 0 ? `+${spread}` : spread;
+                text += `  ATS: ${lineTeam} (${spreadStr})\n`;
+            }
+
+            if (gamePicks.winner) {
+                const winnerTeam = gamePicks.winner === 'away' ? game.away : game.home;
+                text += `  Winner: ${winnerTeam}\n`;
+            }
+
+            text += '\n';
+        }
+    });
+
+    if (pickCount === 0) {
+        showToast('No picks to copy');
+        return;
+    }
+
+    text += `${pickCount}/${weekGames.length} games picked`;
+
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Picks copied! Ready to share.');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showToast('Failed to copy picks');
+    });
+}
+
+/**
+ * Show a toast notification
+ */
+function showToast(message) {
+    // Remove existing toast if any
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Trigger animation
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Remove after delay
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2500);
+}
+
+/**
  * Randomize picks for the current picker
  * Rule: If picking the favorite on the line, also pick them to win straight up
  */
@@ -1295,6 +1580,26 @@ function loadPicksFromStorage() {
             console.error('Failed to load picks from storage, clearing...', e);
             localStorage.removeItem('nflPicks');
         }
+    }
+}
+
+/**
+ * Show loading state
+ */
+function showLoadingState() {
+    const loadingState = document.getElementById('loading-state');
+    if (loadingState) {
+        loadingState.classList.remove('hidden');
+    }
+}
+
+/**
+ * Hide loading state
+ */
+function hideLoadingState() {
+    const loadingState = document.getElementById('loading-state');
+    if (loadingState) {
+        loadingState.classList.add('hidden');
     }
 }
 

@@ -17,6 +17,10 @@
                     <h1>NFL Picks Dashboard</h1>
                     <p class="subtitle">2025 Regular Season Tracker</p>
                 </div>
+                <button class="dark-mode-toggle" id="dark-mode-toggle" title="Toggle dark mode">
+                    <span class="icon-sun">&#9728;</span>
+                    <span class="icon-moon">&#9790;</span>
+                </button>
             </div>
         </header>
 
@@ -24,19 +28,25 @@
         <main id="dashboard" class="dashboard">
             <!-- Category Tabs -->
             <section class="category-tabs">
-                <button class="tab active" data-category="blazin">Blazin' 5</button>
+                <button class="tab tab-picks active" data-category="make-picks">Make Picks</button>
+                <button class="tab" data-category="blazin">Blazin' 5</button>
                 <button class="tab" data-category="line">Line Picks</button>
                 <button class="tab" data-category="winner">Straight Up</button>
-                <button class="tab tab-picks" data-category="make-picks">Make Picks</button>
+            </section>
+
+            <!-- Loading State -->
+            <section class="loading-state" id="loading-state">
+                <div class="loading-spinner"></div>
+                <p>Loading picks data...</p>
             </section>
 
             <!-- Leaderboard -->
-            <section class="leaderboard" id="leaderboard">
+            <section class="leaderboard hidden" id="leaderboard">
                 <!-- Cards will be injected here -->
             </section>
 
             <!-- Charts Section -->
-            <section class="charts-grid">
+            <section class="charts-grid hidden">
                 <div class="chart-container">
                     <h3>Weekly Performance Trend</h3>
                     <canvas id="trend-chart"></canvas>
@@ -48,7 +58,7 @@
             </section>
 
             <!-- Insights Section -->
-            <section class="insights-section">
+            <section class="insights-section hidden">
                 <h3>Group Insights</h3>
                 <div class="insights-grid" id="insights-grid">
                     <!-- Consensus callout -->
@@ -63,18 +73,17 @@
             </section>
 
             <!-- Streaks Section -->
-            <section class="streaks-section">
+            <section class="streaks-section hidden">
                 <h3>Recent Performance</h3>
                 <div class="streaks-grid" id="streaks-grid">
                     <!-- Streak cards will be injected here -->
                 </div>
             </section>
 
-            <!-- Make Picks Section (hidden by default) -->
-            <section id="make-picks-section" class="make-picks-section hidden">
+            <!-- Make Picks Section -->
+            <section id="make-picks-section" class="make-picks-section">
                 <div class="picks-header">
                     <h2>Week <span id="picks-week-num">15</span> Picks</h2>
-                    <p class="picks-subtitle">Select a picker and make their picks for the upcoming games</p>
                 </div>
 
                 <!-- Week and Picker Selection -->
@@ -108,6 +117,11 @@
                 <!-- Games List -->
                 <div class="games-list" id="games-list">
                     <!-- Games will be injected here -->
+                </div>
+
+                <!-- Share Button -->
+                <div class="share-picks-container">
+                    <button class="btn btn-primary" id="copy-picks-btn">Share Picks</button>
                 </div>
 
                 <!-- Scoring Summary -->
