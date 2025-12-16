@@ -820,16 +820,23 @@ footer a:hover {
     margin-top: 8px;
 }
 
+/* Selection Row - Week and Picker side by side */
+.selection-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
 /* Week Selector */
 .week-selector {
     background: var(--bg-primary);
     border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 16px;
+    padding: 16px 20px;
     border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     gap: 12px;
+    flex: 1;
 }
 
 .week-selector label {
@@ -871,19 +878,41 @@ footer a:hover {
 .picker-selector {
     background: var(--bg-primary);
     border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 24px;
+    padding: 16px 20px;
     border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
 }
 
 .picker-selector label {
-    display: block;
-    margin-bottom: 12px;
     color: var(--text-secondary);
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: 600;
+}
+
+.picker-dropdown {
+    padding: 10px 16px;
+    border-radius: 4px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-width: 120px;
+}
+
+.picker-dropdown:hover {
+    border-color: var(--text-light);
+}
+
+.picker-dropdown:focus {
+    outline: none;
+    border-color: var(--accent-green);
 }
 
 .picker-buttons {

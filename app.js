@@ -5,12 +5,12 @@
 let dashboardData = null;
 let currentCategory = 'blazin';
 let currentPicker = 'Stephen';
-let currentWeek = 15;
+let currentWeek = 16;
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
 
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
-const CURRENT_NFL_WEEK = 15;
+const CURRENT_NFL_WEEK = 16;
 
 // Team name aliases (CSV name -> standard name)
 const TEAM_NAME_MAP = {
@@ -113,6 +113,24 @@ const NFL_GAMES_BY_WEEK = {
         { id: 14, away: 'Panthers', home: 'Saints', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
         { id: 15, away: 'Vikings', home: 'Cowboys', spread: 5.5, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-14T20:20:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
         { id: 16, away: 'Dolphins', home: 'Steelers', spread: 3, favorite: 'home', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-15T20:15:00-05:00', location: 'Pittsburgh, PA', stadium: 'Acrisure Stadium' }
+    ],
+    16: [
+        { id: 1, away: 'Rams', home: 'Seahawks', spread: 1.5, favorite: 'home', day: 'Thursday', time: '8:15 PM ET', kickoff: '2025-12-19T20:15:00-05:00', location: 'Seattle, WA', stadium: 'Lumen Field' },
+        { id: 2, away: 'Eagles', home: 'Commanders', spread: 6.5, favorite: 'away', day: 'Saturday', time: '5:00 PM ET', kickoff: '2025-12-21T17:00:00-05:00', location: 'Landover, MD', stadium: 'Northwest Stadium' },
+        { id: 3, away: 'Packers', home: 'Bears', spread: 1.5, favorite: 'away', day: 'Saturday', time: '8:20 PM ET', kickoff: '2025-12-21T20:20:00-05:00', location: 'Chicago, IL', stadium: 'Soldier Field' },
+        { id: 4, away: 'Bills', home: 'Browns', spread: 10, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Cleveland, OH', stadium: 'Huntington Bank Field' },
+        { id: 5, away: 'Chargers', home: 'Cowboys', spread: 1.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
+        { id: 6, away: 'Chiefs', home: 'Titans', spread: 3.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Nashville, TN', stadium: 'Nissan Stadium' },
+        { id: 7, away: 'Bengals', home: 'Dolphins', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Miami Gardens, FL', stadium: 'Hard Rock Stadium' },
+        { id: 8, away: 'Jets', home: 'Saints', spread: 4.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
+        { id: 9, away: 'Vikings', home: 'Giants', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
+        { id: 10, away: 'Buccaneers', home: 'Panthers', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Charlotte, NC', stadium: 'Bank of America Stadium' },
+        { id: 11, away: 'Jaguars', home: 'Broncos', spread: 3, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-22T16:05:00-05:00', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
+        { id: 12, away: 'Falcons', home: 'Cardinals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-22T16:05:00-05:00', location: 'Glendale, AZ', stadium: 'State Farm Stadium' },
+        { id: 13, away: 'Steelers', home: 'Lions', spread: 7, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-22T16:25:00-05:00', location: 'Detroit, MI', stadium: 'Ford Field' },
+        { id: 14, away: 'Raiders', home: 'Texans', spread: 14.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-22T16:25:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
+        { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-22T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
+        { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-23T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
     ]
     // Other weeks can be added here or loaded dynamically
 };
@@ -373,21 +391,20 @@ function setupTabs() {
 }
 
 /**
- * Setup picker selection buttons
+ * Setup picker selection dropdown
  */
 function setupPickerButtons() {
-    const pickerButtons = document.querySelectorAll('.picker-btn');
-    pickerButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            currentPicker = btn.dataset.picker;
+    const pickerDropdown = document.getElementById('picker-dropdown');
+    if (!pickerDropdown) return;
 
-            // Update active state
-            pickerButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+    // Set initial value
+    pickerDropdown.value = currentPicker;
 
-            // Re-render games with current picker's selections
-            renderGames();
-        });
+    pickerDropdown.addEventListener('change', (e) => {
+        currentPicker = e.target.value;
+        // Re-render games with current picker's selections
+        renderGames();
+        renderScoringSummary();
     });
 }
 
@@ -397,7 +414,7 @@ function setupPickerButtons() {
 function setupPicksActions() {
     document.getElementById('clear-picks-btn')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
-    document.getElementById('export-picks-btn')?.addEventListener('click', exportAllPicks);
+    document.getElementById('randomize-picks-btn')?.addEventListener('click', randomizePicks);
 }
 
 
@@ -442,10 +459,13 @@ const weeklyPicksCache = {};
  * Load data from published Google Sheet
  */
 function loadFromGoogleSheets() {
+    // Use CORS proxy since Google Sheets doesn't support CORS for browser requests
+    const CORS_PROXY = 'https://corsproxy.io/?';
+    const proxyUrl = CORS_PROXY + encodeURIComponent(GOOGLE_SHEETS_CSV_URL);
     console.log('Fetching from Google Sheets...');
-    fetch(GOOGLE_SHEETS_CSV_URL, {
-        method: 'GET',
-        redirect: 'follow'
+    fetch(proxyUrl, {
+        method: 'GET'
+        
     })
         .then(response => {
             if (!response.ok) throw new Error('Failed to fetch from Google Sheets');
@@ -1161,6 +1181,60 @@ function exportAllPicks() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+/**
+ * Randomize picks for the current picker
+ * Rule: If picking the favorite on the line, also pick them to win straight up
+ */
+function randomizePicks() {
+    const weekGames = getGamesForWeek(currentWeek);
+    
+    if (weekGames.length === 0) {
+        alert('No games available for this week.');
+        return;
+    }
+
+    // Ensure structure exists
+    if (!allPicks[currentWeek]) {
+        allPicks[currentWeek] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker]) {
+        allPicks[currentWeek][currentPicker] = {};
+    }
+
+    // Randomize each game
+    weekGames.forEach(game => {
+        const gameIdStr = String(game.id);
+        
+        // Skip locked games
+        if (isGameLocked(game)) return;
+
+        // Random line pick (50/50 away or home)
+        const linePick = Math.random() < 0.5 ? 'away' : 'home';
+        
+        // Winner pick logic:
+        // If we picked the favorite on the line, they must also be our winner pick
+        // Otherwise, random winner pick
+        let winnerPick;
+        if (linePick === game.favorite) {
+            // Picked favorite to cover, so pick them to win
+            winnerPick = linePick;
+        } else {
+            // Picked underdog to cover, winner can be random
+            winnerPick = Math.random() < 0.5 ? 'away' : 'home';
+        }
+
+        allPicks[currentWeek][currentPicker][gameIdStr] = {
+            line: linePick,
+            winner: winnerPick
+        };
+    });
+
+    // Save and re-render
+    savePicksToStorage();
+    renderGames();
+    renderScoringSummary();
 }
 
 /**

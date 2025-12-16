@@ -77,31 +77,32 @@
                     <p class="picks-subtitle">Select a picker and make their picks for the upcoming games</p>
                 </div>
 
-                <!-- Week Selection -->
-                <div class="week-selector">
-                    <label for="week-dropdown">Select Week:</label>
-                    <select id="week-dropdown" class="week-dropdown">
-                        <!-- Week options will be injected here -->
-                    </select>
-                    <span id="week-loading" class="week-loading hidden">Loading...</span>
-                </div>
+                <!-- Week and Picker Selection -->
+                <div class="selection-row">
+                    <div class="week-selector">
+                        <label for="week-dropdown">Select Week:</label>
+                        <select id="week-dropdown" class="week-dropdown">
+                            <!-- Week options will be injected here -->
+                        </select>
+                        <span id="week-loading" class="week-loading hidden">Loading...</span>
+                    </div>
 
-                <!-- Picker Selection -->
-                <div class="picker-selector">
-                    <label>Selecting picks for:</label>
-                    <div class="picker-buttons" id="picker-buttons">
-                        <button class="picker-btn active" data-picker="Stephen">Stephen</button>
-                        <button class="picker-btn" data-picker="Sean">Sean</button>
-                        <button class="picker-btn" data-picker="Dylan">Dylan</button>
-                        <button class="picker-btn" data-picker="Jason">Jason</button>
-                        <button class="picker-btn" data-picker="Daniel">Daniel</button>
+                    <div class="picker-selector">
+                        <label for="picker-dropdown">Picks for:</label>
+                        <select id="picker-dropdown" class="picker-dropdown">
+                            <option value="Stephen">Stephen</option>
+                            <option value="Sean">Sean</option>
+                            <option value="Dylan">Dylan</option>
+                            <option value="Jason">Jason</option>
+                            <option value="Daniel">Daniel</option>
+                        </select>
                     </div>
                 </div>
 
                 <!-- Actions -->
                 <div class="picks-actions">
                     <button class="btn btn-secondary" id="clear-picks-btn">Clear My Picks</button>
-                    <button class="btn btn-primary" id="export-picks-btn">Export All</button>
+                    <button class="btn btn-primary" id="randomize-picks-btn">Randomize Picks</button>
                 </div>
 
                 <!-- Games List -->
