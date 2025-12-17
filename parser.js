@@ -666,12 +666,20 @@ function getSortedPickers(stats) {
 
 /**
  * Parse a weekly picks sheet CSV
- * This function should be customized based on your actual sheet structure
  *
- * Expected structure (adjust based on your actual format):
- * - Row headers with game info (Away Team, Home Team, Spread, etc.)
- * - Columns for each picker's line pick and winner pick
- * - Results columns (if games have been played)
+ * CSV Structure:
+ * Row 0: ,Dylan,,,Sean,,,Daniel,,,Jason,,,Stephen,,,... (player names)
+ * Row 1: Game,Line Pick,Winner Pick,Blazin' 5,Line Pick,Winner Pick,... (headers)
+ * Row 2+: "Cowboys (+8.5) @ Eagles (-8.5)",Eagles (-8.5),Eagles,,... (game data)
+ *
+ * Column layout per picker (3 cols each):
+ * - Dylan: cols 1-3
+ * - Sean: cols 4-6
+ * - Daniel: cols 7-9
+ * - Jason: cols 10-12
+ * - Stephen: cols 13-15
+ * - Result: col 16
+ * - Right side has game details: Visiting Team, Spread, Score, Home Team, Spread, Score
  */
 function parseWeeklyPicksCSV(csvText, weekNum) {
     const result = Papa.parse(csvText, {
@@ -692,149 +700,173 @@ function parseWeeklyPicksCSV(csvText, weekNum) {
         weekData.picks[picker] = {};
     });
 
-    // Try to detect column positions by searching headers
-    // This is a flexible approach that can adapt to different layouts
+    // Column indices for each picker's picks (Line Pick, Winner Pick, Blazin' 5)
+    const pickerColumns = {
+        'Dylan': { line: 1, winner: 2, blazin: 3 },
+        'Sean': { line: 4, winner: 5, blazin: 6 },
+        'Daniel': { line: 7, winner: 8, blazin: 9 },
+        'Jason': { line: 10, winner: 11, blazin: 12 },
+        'Stephen': { line: 13, winner: 14, blazin: 15 }
+    };
 
-    let headerRowIdx = -1;
-    let awayTeamCol = -1;
+    // Result column
+    const resultCol = 16;
+
+    // Find game data columns on the right side (Visiting Team, Spread, Score, Home Team, Spread, Score)
+    // These start around column 37
+    let visitingTeamCol = -1;
+    let visitingSpreadCol = -1;
+    let visitingScoreCol = -1;
     let homeTeamCol = -1;
-    let spreadCol = -1;
-    let awayScoreCol = -1;
+    let homeSpreadCol = -1;
     let homeScoreCol = -1;
-    const pickerLineCols = {};  // { picker: colIndex }
-    const pickerWinnerCols = {}; // { picker: colIndex }
 
-    // Search for header row (look for "Away" or team-related headers)
-    for (let rowIdx = 0; rowIdx < Math.min(10, rows.length); rowIdx++) {
-        const row = rows[rowIdx];
-        if (!row) continue;
-
-        for (let colIdx = 0; colIdx < row.length; colIdx++) {
-            const cell = (row[colIdx] || '').toString().trim().toLowerCase();
-
-            if (cell === 'away' || cell === 'away team') {
-                headerRowIdx = rowIdx;
-                awayTeamCol = colIdx;
-            }
-            if (cell === 'home' || cell === 'home team') {
-                homeTeamCol = colIdx;
-            }
-            if (cell === 'spread' || cell === 'line') {
-                spreadCol = colIdx;
-            }
-            if (cell === 'away score' || cell === 'away pts') {
-                awayScoreCol = colIdx;
-            }
-            if (cell === 'home score' || cell === 'home pts') {
-                homeScoreCol = colIdx;
-            }
-
-            // Look for picker columns
-            PICKERS.forEach(picker => {
-                const pickerLower = picker.toLowerCase();
-                if (cell === pickerLower || cell === `${pickerLower} line` || cell === `${pickerLower} ats`) {
-                    pickerLineCols[picker] = colIdx;
-                }
-                if (cell === `${pickerLower} winner` || cell === `${pickerLower} su` || cell === `${pickerLower} straight`) {
-                    pickerWinnerCols[picker] = colIdx;
-                }
-            });
+    // Search for the game data columns in the header row
+    const headerRow = rows[1];
+    if (headerRow) {
+        for (let col = 30; col < headerRow.length; col++) {
+            const cell = (headerRow[col] || '').toString().trim().toLowerCase();
+            if (cell === 'visiting team') visitingTeamCol = col;
+            if (cell === 'home team') homeTeamCol = col;
         }
-
-        if (headerRowIdx !== -1) break;
+        // Score columns are typically 2 positions after team columns
+        if (visitingTeamCol !== -1) {
+            visitingSpreadCol = visitingTeamCol + 1;
+            visitingScoreCol = visitingTeamCol + 2;
+        }
+        if (homeTeamCol !== -1) {
+            homeSpreadCol = homeTeamCol + 1;
+            homeScoreCol = homeTeamCol + 2;
+        }
     }
 
-    // If we found headers, parse the games
-    if (headerRowIdx !== -1 && awayTeamCol !== -1 && homeTeamCol !== -1) {
-        let gameId = 1;
+    // Parse game rows (starting from row 2)
+    let gameId = 1;
+    for (let rowIdx = 2; rowIdx < rows.length; rowIdx++) {
+        const row = rows[rowIdx];
+        if (!row || !row[0]) continue;
 
-        for (let rowIdx = headerRowIdx + 1; rowIdx < rows.length; rowIdx++) {
-            const row = rows[rowIdx];
-            if (!row) continue;
+        const gameCell = row[0].toString().trim();
 
-            const awayTeam = (row[awayTeamCol] || '').toString().trim();
-            const homeTeam = (row[homeTeamCol] || '').toString().trim();
+        // Skip empty rows or summary rows
+        if (!gameCell || !gameCell.includes('@')) continue;
 
-            // Skip empty rows or non-game rows
+        // Parse game cell: "Cowboys (+8.5) @ Eagles (-8.5)"
+        const gameMatch = gameCell.match(/^(.+?)\s*\(([+-]?\d+\.?\d*)\)\s*@\s*(.+?)\s*\(([+-]?\d+\.?\d*)\)$/);
+
+        let awayTeam = '';
+        let homeTeam = '';
+        let awaySpread = 0;
+        let homeSpread = 0;
+
+        if (gameMatch) {
+            awayTeam = gameMatch[1].trim();
+            awaySpread = parseFloat(gameMatch[2]);
+            homeTeam = gameMatch[3].trim();
+            homeSpread = parseFloat(gameMatch[4]);
+        } else {
+            // Try simpler format or get from right-side columns
+            if (visitingTeamCol !== -1 && homeTeamCol !== -1) {
+                awayTeam = (row[visitingTeamCol] || '').toString().trim();
+                homeTeam = (row[homeTeamCol] || '').toString().trim();
+                awaySpread = parseFloat(row[visitingSpreadCol]) || 0;
+                homeSpread = parseFloat(row[homeSpreadCol]) || 0;
+            }
             if (!awayTeam || !homeTeam) continue;
-
-            // Parse spread
-            let spread = 0;
-            let favorite = 'home';
-            if (spreadCol !== -1 && row[spreadCol]) {
-                const spreadStr = row[spreadCol].toString().trim();
-                const spreadNum = parseFloat(spreadStr.replace(/[^-\d.]/g, ''));
-                if (!isNaN(spreadNum)) {
-                    spread = Math.abs(spreadNum);
-                    // Negative spread means home is favorite, positive means away
-                    favorite = spreadNum < 0 ? 'home' : 'away';
-                }
-            }
-
-            // Create game object
-            const game = {
-                id: gameId,
-                away: awayTeam,
-                home: homeTeam,
-                spread: spread,
-                favorite: favorite,
-                day: '',
-                time: '',
-                location: '',
-                stadium: ''
-            };
-            weekData.games.push(game);
-
-            // Parse results if available
-            if (awayScoreCol !== -1 && homeScoreCol !== -1) {
-                const awayScore = parseInt(row[awayScoreCol]);
-                const homeScore = parseInt(row[homeScoreCol]);
-                if (!isNaN(awayScore) && !isNaN(homeScore)) {
-                    weekData.results[gameId] = {
-                        awayScore: awayScore,
-                        homeScore: homeScore,
-                        winner: awayScore > homeScore ? 'away' : 'home'
-                    };
-                }
-            }
-
-            // Parse picker picks
-            PICKERS.forEach(picker => {
-                const lineCol = pickerLineCols[picker];
-                const winnerCol = pickerWinnerCols[picker];
-
-                if (lineCol !== undefined && row[lineCol]) {
-                    const linePick = (row[lineCol] || '').toString().trim().toLowerCase();
-                    if (linePick) {
-                        // Try to match to away or home team
-                        if (!weekData.picks[picker][gameId]) {
-                            weekData.picks[picker][gameId] = {};
-                        }
-                        if (linePick.includes(awayTeam.toLowerCase()) || awayTeam.toLowerCase().includes(linePick)) {
-                            weekData.picks[picker][gameId].line = 'away';
-                        } else if (linePick.includes(homeTeam.toLowerCase()) || homeTeam.toLowerCase().includes(linePick)) {
-                            weekData.picks[picker][gameId].line = 'home';
-                        }
-                    }
-                }
-
-                if (winnerCol !== undefined && row[winnerCol]) {
-                    const winnerPick = (row[winnerCol] || '').toString().trim().toLowerCase();
-                    if (winnerPick) {
-                        if (!weekData.picks[picker][gameId]) {
-                            weekData.picks[picker][gameId] = {};
-                        }
-                        if (winnerPick.includes(awayTeam.toLowerCase()) || awayTeam.toLowerCase().includes(winnerPick)) {
-                            weekData.picks[picker][gameId].winner = 'away';
-                        } else if (winnerPick.includes(homeTeam.toLowerCase()) || homeTeam.toLowerCase().includes(winnerPick)) {
-                            weekData.picks[picker][gameId].winner = 'home';
-                        }
-                    }
-                }
-            });
-
-            gameId++;
         }
+
+        // Determine favorite based on spread (negative spread = favorite)
+        const spread = Math.abs(awaySpread);
+        const favorite = awaySpread < 0 ? 'away' : 'home';
+
+        // Create game object
+        const game = {
+            id: gameId,
+            away: awayTeam,
+            home: homeTeam,
+            spread: spread,
+            favorite: favorite,
+            day: '',
+            time: '',
+            location: '',
+            stadium: ''
+        };
+        weekData.games.push(game);
+
+        // Parse result from column 16 (e.g., "Eagles 24-20")
+        const resultCell = (row[resultCol] || '').toString().trim();
+        if (resultCell) {
+            const scoreMatch = resultCell.match(/(.+?)\s+(\d+)-(\d+)/);
+            if (scoreMatch) {
+                const winningTeam = scoreMatch[1].trim();
+                const winScore = parseInt(scoreMatch[2]);
+                const loseScore = parseInt(scoreMatch[3]);
+
+                // Determine which team won and assign scores
+                const winnerIsAway = awayTeam.toLowerCase().includes(winningTeam.toLowerCase()) ||
+                                     winningTeam.toLowerCase().includes(awayTeam.toLowerCase());
+
+                weekData.results[gameId] = {
+                    awayScore: winnerIsAway ? winScore : loseScore,
+                    homeScore: winnerIsAway ? loseScore : winScore,
+                    winner: winnerIsAway ? 'away' : 'home'
+                };
+            }
+        }
+
+        // Also try to get scores from right-side columns
+        if (!weekData.results[gameId] && visitingScoreCol !== -1 && homeScoreCol !== -1) {
+            const awayScore = parseInt(row[visitingScoreCol]);
+            const homeScore = parseInt(row[homeScoreCol]);
+            if (!isNaN(awayScore) && !isNaN(homeScore)) {
+                weekData.results[gameId] = {
+                    awayScore: awayScore,
+                    homeScore: homeScore,
+                    winner: awayScore > homeScore ? 'away' : 'home'
+                };
+            }
+        }
+
+        // Parse each picker's picks
+        PICKERS.forEach(picker => {
+            const cols = pickerColumns[picker];
+            if (!cols) return;
+
+            const linePick = (row[cols.line] || '').toString().trim();
+            const winnerPick = (row[cols.winner] || '').toString().trim();
+
+            if (!weekData.picks[picker][gameId]) {
+                weekData.picks[picker][gameId] = {};
+            }
+
+            // Match line pick to away or home team
+            if (linePick) {
+                const linePickLower = linePick.toLowerCase();
+                const awayLower = awayTeam.toLowerCase();
+                const homeLower = homeTeam.toLowerCase();
+
+                if (linePickLower.includes(awayLower) || awayLower.includes(linePickLower.split(' ')[0])) {
+                    weekData.picks[picker][gameId].line = 'away';
+                } else if (linePickLower.includes(homeLower) || homeLower.includes(linePickLower.split(' ')[0])) {
+                    weekData.picks[picker][gameId].line = 'home';
+                }
+            }
+
+            // Match winner pick to away or home team
+            if (winnerPick) {
+                const winnerPickLower = winnerPick.toLowerCase();
+                const awayLower = awayTeam.toLowerCase();
+                const homeLower = homeTeam.toLowerCase();
+
+                if (winnerPickLower.includes(awayLower) || awayLower.includes(winnerPickLower.split(' ')[0])) {
+                    weekData.picks[picker][gameId].winner = 'away';
+                } else if (winnerPickLower.includes(homeLower) || homeLower.includes(winnerPickLower.split(' ')[0])) {
+                    weekData.picks[picker][gameId].winner = 'home';
+                }
+            }
+        });
+
+        gameId++;
     }
 
     return weekData;

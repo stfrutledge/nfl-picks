@@ -152,13 +152,32 @@ const NFL_GAMES_BY_WEEK = {
         { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-22T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
         { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-23T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
     ]
-    // Other weeks can be added here or loaded dynamically
 };
 
+// Immediately merge historical games if available (historical-data.js loads before app.js)
+if (typeof HISTORICAL_GAMES !== 'undefined') {
+    for (const week in HISTORICAL_GAMES) {
+        if (!NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0) {
+            NFL_GAMES_BY_WEEK[week] = HISTORICAL_GAMES[week];
+        }
+    }
+    console.log('Historical games merged into NFL_GAMES_BY_WEEK');
+}
+
 /**
- * Check if a game is locked (kickoff time has passed)
+ * Check if a game is locked (past week or kickoff time has passed)
+ * @param {object} game - The game object
+ * @param {number} week - The week number (optional, defaults to currentWeek)
  */
-function isGameLocked(game) {
+function isGameLocked(game, week = null) {
+    const checkWeek = week !== null ? week : currentWeek;
+
+    // All games from previous weeks are locked (historical data)
+    if (checkWeek < CURRENT_NFL_WEEK) {
+        return true;
+    }
+
+    // For current/future weeks, check kickoff time
     if (!game.kickoff) return false;
     const kickoffTime = new Date(game.kickoff);
     const now = new Date();
@@ -270,6 +289,16 @@ const NFL_RESULTS_BY_WEEK = {
     // }
 };
 
+// Merge historical results if available
+if (typeof HISTORICAL_RESULTS !== 'undefined') {
+    for (const week in HISTORICAL_RESULTS) {
+        if (!NFL_RESULTS_BY_WEEK[week]) {
+            NFL_RESULTS_BY_WEEK[week] = HISTORICAL_RESULTS[week];
+        }
+    }
+    console.log('Historical results merged into NFL_RESULTS_BY_WEEK');
+}
+
 // Helper function to get games for current week
 function getGamesForWeek(week) {
     return NFL_GAMES_BY_WEEK[week] || [];
@@ -301,12 +330,30 @@ function initializePicksStorage() {
 }
 initializePicksStorage();
 
+// Merge historical picks if available
+if (typeof HISTORICAL_PICKS !== 'undefined') {
+    for (const week in HISTORICAL_PICKS) {
+        if (!allPicks[week]) {
+            allPicks[week] = {};
+        }
+        for (const picker in HISTORICAL_PICKS[week]) {
+            if (!allPicks[week][picker] || Object.keys(allPicks[week][picker]).length === 0) {
+                allPicks[week][picker] = HISTORICAL_PICKS[week][picker];
+            }
+        }
+    }
+    console.log('Historical picks merged into allPicks');
+}
+
 /**
  * Initialize the application
  */
 function init() {
     // Initialize currentWeek with calculated value
     currentWeek = CURRENT_NFL_WEEK;
+
+    // Note: Historical data (games, results, picks) is merged immediately when app.js loads
+    // See the merge blocks after NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, and initializePicksStorage()
 
     setupTabs();
     setupWeekButtons();
@@ -410,11 +457,23 @@ async function setCurrentWeek(week) {
 
     // Fetch week data if we have a GID for it and it's not cached
     if (WEEK_SHEET_GIDS[week] && !weeklyPicksCache[week]) {
-        try {
-            const url = `${GOOGLE_SHEETS_BASE_URL}&gid=${WEEK_SHEET_GIDS[week]}`;
-            const response = await fetch(url);
-            if (response.ok) {
+        const weekUrl = `${GOOGLE_SHEETS_BASE_URL}&gid=${WEEK_SHEET_GIDS[week]}`;
+        const CORS_PROXIES = [
+            '', // Try direct first
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url='
+        ];
+
+        for (const proxy of CORS_PROXIES) {
+            try {
+                const url = proxy ? proxy + encodeURIComponent(weekUrl) : weekUrl;
+                const response = await fetch(url, { method: 'GET' });
+
+                if (!response.ok) continue;
+
                 const csvText = await response.text();
+                if (csvText.includes('<!DOCTYPE') || csvText.length < 50) continue;
+
                 const weekData = parseWeeklyPicksCSV(csvText, week);
                 weeklyPicksCache[week] = weekData;
 
@@ -422,15 +481,18 @@ async function setCurrentWeek(week) {
                 if (weekData.picks) {
                     allPicks[week] = weekData.picks;
                 }
-                if (weekData.games) {
+                if (weekData.games && weekData.games.length > 0) {
                     NFL_GAMES_BY_WEEK[week] = weekData.games;
                 }
                 if (weekData.results) {
                     NFL_RESULTS_BY_WEEK[week] = weekData.results;
                 }
+
+                console.log(`Loaded week ${week} data` + (proxy ? ' via proxy' : ' directly'));
+                break;
+            } catch (err) {
+                // Try next proxy
             }
-        } catch (err) {
-            console.error(`Failed to fetch week ${week} data:`, err);
         }
     }
 
@@ -518,11 +580,26 @@ function loadCSVData(csvText) {
 const GOOGLE_SHEETS_BASE_URL = 'https://docs.google.com/spreadsheets/d/1JuftzmWWIlquN1oKrFqPNaGjMu9ysdnCHqCDj9lYzfE/export?format=csv';
 const GOOGLE_SHEETS_CSV_URL = GOOGLE_SHEETS_BASE_URL + '&gid=0';
 
-// Sheet GIDs for each week tab (you'll need to get these from the Google Sheet URL)
-// When you click a tab, the URL shows gid=XXXXX
+// Sheet GIDs for each week tab
 const WEEK_SHEET_GIDS = {
-    // These need to be populated with actual GIDs from your Google Sheet
-    // Example: 1: '123456789', 2: '987654321', etc.
+    1: '1734615654',
+    2: '1689030244',
+    3: '1682701664',
+    4: '64532151',
+    5: '1746053715',
+    6: '198483855',
+    7: '1162901378',
+    8: '2082913151',
+    9: '1101281524',
+    10: '238951705',
+    11: '323147745',
+    12: '1165295828',
+    13: '1809558420',
+    14: '1764593710',
+    15: '1886857596',
+    16: '1562551321',
+    17: '1473362295',
+    18: '2065335001'
 };
 
 // Cache for loaded week data
@@ -935,7 +1012,8 @@ function renderGames() {
 
         // Build status badge
         let statusBadge = '';
-        if (isFinal) {
+        const isHistoricalWeek = currentWeek < CURRENT_NFL_WEEK;
+        if (isFinal || isHistoricalWeek) {
             statusBadge = `<span class="status-badge final">FINAL</span>`;
         } else if (isInProgress) {
             const clockDisplay = liveData.clock ? `${liveData.clock} Q${liveData.period}` : 'Live';
