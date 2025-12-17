@@ -875,6 +875,96 @@ header h1 {
     color: var(--text-secondary);
 }
 
+/* Group Stats Section */
+.group-stats-section {
+    padding: 0 40px 40px;
+    width: 100%;
+}
+
+.group-stats-section h3 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 20px;
+}
+
+.group-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.group-stat-card {
+    background: var(--bg-primary);
+    border-radius: 8px;
+    padding: 24px;
+    border: 1px solid var(--border-color);
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.group-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.group-stat-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.group-stat-icon {
+    font-size: 1.5rem;
+}
+
+.group-stat-label {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.group-stat-percentage {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 3rem;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 8px;
+}
+
+.group-stat-percentage.positive {
+    color: var(--accent-green);
+}
+
+.group-stat-percentage.negative {
+    color: #dc2626;
+}
+
+.group-stat-record {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.group-stat-total {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.group-stat-description {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin: 0;
+}
+
 /* Footer */
 footer {
     background: var(--bg-dark);
@@ -902,10 +992,15 @@ footer a:hover {
     .charts-grid,
     .insights-section,
     .streaks-section,
+    .group-stats-section,
     .make-picks-section,
     footer {
         padding-left: 24px;
         padding-right: 24px;
+    }
+
+    .group-stats-grid {
+        grid-template-columns: repeat(3, 1fr);
     }
 }
 
@@ -916,10 +1011,19 @@ footer a:hover {
     .charts-grid,
     .insights-section,
     .streaks-section,
+    .group-stats-section,
     .make-picks-section,
     footer {
         padding-left: 16px;
         padding-right: 16px;
+    }
+
+    .group-stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .group-stat-percentage {
+        font-size: 2.5rem;
     }
 
     header h1 {

@@ -397,6 +397,10 @@ async function setCurrentWeek(week) {
     if (picksWeekNum) {
         picksWeekNum.textContent = week;
     }
+    const scoringWeekNum = document.getElementById('scoring-week-num');
+    if (scoringWeekNum) {
+        scoringWeekNum.textContent = week;
+    }
 
     // Show loading indicator
     const loadingIndicator = document.getElementById('week-loading');
@@ -499,6 +503,10 @@ function loadCSVData(csvText) {
     if (picksWeekNum) {
         picksWeekNum.textContent = currentWeek;
     }
+    const scoringWeekNum = document.getElementById('scoring-week-num');
+    if (scoringWeekNum) {
+        scoringWeekNum.textContent = currentWeek;
+    }
 
     // Hide loading state and render initial view
     hideLoadingState();
@@ -578,6 +586,7 @@ function setActiveCategory(category) {
     const makePicksSection = document.getElementById('make-picks-section');
     const chartsSection = document.querySelector('.charts-grid');
     const streaksSection = document.querySelector('.streaks-section');
+    const groupStatsSection = document.querySelector('.group-stats-section');
 
     // Get insights section reference
     const insightsSection = document.querySelector('.insights-section');
@@ -588,6 +597,7 @@ function setActiveCategory(category) {
         chartsSection?.classList.add('hidden');
         streaksSection?.classList.add('hidden');
         insightsSection?.classList.add('hidden');
+        groupStatsSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -601,6 +611,7 @@ function setActiveCategory(category) {
         leaderboard.classList.remove('hidden');
         chartsSection?.classList.remove('hidden');
         streaksSection?.classList.remove('hidden');
+        groupStatsSection?.classList.remove('hidden');
         makePicksSection?.classList.add('hidden');
 
         renderDashboard();
@@ -657,6 +668,11 @@ function renderDashboard() {
             insightsSection.classList.add('hidden');
         }
     }
+
+    // Render Group Overall Stats
+    if (dashboardData.groupOverall) {
+        renderGroupStats(dashboardData.groupOverall);
+    }
 }
 
 /**
@@ -709,6 +725,64 @@ function renderInsights(loneWolf, consensus) {
             </div>
         `;
     }
+}
+
+/**
+ * Render Group Overall Stats section
+ */
+function renderGroupStats(groupOverall) {
+    const grid = document.getElementById('group-stats-grid');
+    if (!grid) return;
+
+    const categories = [
+        {
+            key: 'blazin5',
+            label: "Blazin' 5",
+            icon: '🔥',
+            description: 'Combined Blazin\' 5 picks performance'
+        },
+        {
+            key: 'linePicks',
+            label: 'Line Picks',
+            icon: '📊',
+            description: 'Combined against-the-spread picks'
+        },
+        {
+            key: 'winnerPicks',
+            label: 'Straight Up',
+            icon: '🏆',
+            description: 'Combined winner predictions'
+        }
+    ];
+
+    grid.innerHTML = categories.map(cat => {
+        const data = groupOverall[cat.key];
+        if (!data) return '';
+
+        const total = data.wins + data.losses + data.pushes;
+        const percentage = data.percentage || 0;
+        const isWinning = percentage >= 50;
+        const pushText = data.pushes > 0 ? `-${data.pushes}` : '';
+
+        return `
+            <div class="group-stat-card">
+                <div class="group-stat-header">
+                    <span class="group-stat-icon">${cat.icon}</span>
+                    <span class="group-stat-label">${cat.label}</span>
+                </div>
+                <div class="group-stat-percentage ${isWinning ? 'positive' : 'negative'}">
+                    ${percentage.toFixed(1)}%
+                </div>
+                <div class="group-stat-record">
+                    ${data.wins}-${data.losses}${pushText}
+                </div>
+                <div class="group-stat-total">
+                    ${total} total picks
+                </div>
+                <p class="group-stat-description">${cat.description}</p>
+            </div>
+        `;
+    }).join('');
 }
 
 /**

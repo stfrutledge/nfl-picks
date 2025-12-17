@@ -57,8 +57,101 @@ function parseNFLPicksCSV(csvText) {
         favoritesVsUnderdogs: extractFavoritesVsUnderdogs(rows),
         loneWolf: extractLoneWolfPicks(rows),
         universalAgreement: extractUniversalAgreement(rows),
+        groupOverall: extractGroupOverall(rows),
         currentWeek: detectCurrentWeek(rows)
     };
+}
+
+/**
+ * Extract Group Overall stats (combined performance across all pickers)
+ * Located in the "Group Overall" section of the CSV
+ */
+function extractGroupOverall(rows) {
+    const data = {
+        blazin5: { wins: 0, losses: 0, pushes: 0, percentage: null },
+        linePicks: { wins: 0, losses: 0, pushes: 0, percentage: null },
+        winnerPicks: { wins: 0, losses: 0, pushes: 0, percentage: null },
+        weeklyData: []
+    };
+
+    // Find "Group Overall" section
+    let startRow = -1;
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row && row[0] && row[0].toString().includes('Group Overall')) {
+            startRow = i;
+            break;
+        }
+    }
+
+    if (startRow === -1) return data;
+
+    // The structure after "Group Overall" header:
+    // Row +1: "Blazin' 5", "", "", "Line Picks", "", "", "Winner Picks"
+    // Row +2: "Week", "Win", "Loss", "Push", "Win", "Loss", "Push", "Win", "Loss", "Push"
+    // Rows +3 to +17: Weekly data (weeks 1-15)
+    // Row after weekly: "Total", totals...
+    // Row after Total: percentages
+
+    // Find the Total row
+    for (let i = startRow; i < Math.min(startRow + 25, rows.length); i++) {
+        const row = rows[i];
+        if (!row) continue;
+
+        const firstCell = (row[0] || '').toString().trim();
+
+        if (firstCell === 'Total') {
+            // Parse totals: Blazin'5 (cols 1-3), Line Picks (cols 4-6), Winner (cols 7-9)
+            data.blazin5.wins = parseInt(row[1]) || 0;
+            data.blazin5.losses = parseInt(row[2]) || 0;
+            data.blazin5.pushes = parseInt(row[3]) || 0;
+
+            data.linePicks.wins = parseInt(row[4]) || 0;
+            data.linePicks.losses = parseInt(row[5]) || 0;
+            data.linePicks.pushes = parseInt(row[6]) || 0;
+
+            data.winnerPicks.wins = parseInt(row[7]) || 0;
+            data.winnerPicks.losses = parseInt(row[8]) || 0;
+            data.winnerPicks.pushes = parseInt(row[9]) || 0;
+
+            // Next row has percentages
+            const pctRow = rows[i + 1];
+            if (pctRow) {
+                data.blazin5.percentage = parsePercentage(pctRow[0]) || parsePercentage(pctRow[1]);
+                data.linePicks.percentage = parsePercentage(pctRow[3]) || parsePercentage(pctRow[4]);
+                data.winnerPicks.percentage = parsePercentage(pctRow[6]) || parsePercentage(pctRow[7]);
+            }
+
+            break;
+        }
+
+        // Also collect weekly data
+        const weekNum = parseInt(firstCell);
+        if (weekNum >= 1 && weekNum <= 18) {
+            data.weeklyData.push({
+                week: weekNum,
+                blazin5: { wins: parseInt(row[1]) || 0, losses: parseInt(row[2]) || 0, pushes: parseInt(row[3]) || 0 },
+                linePicks: { wins: parseInt(row[4]) || 0, losses: parseInt(row[5]) || 0, pushes: parseInt(row[6]) || 0 },
+                winnerPicks: { wins: parseInt(row[7]) || 0, losses: parseInt(row[8]) || 0, pushes: parseInt(row[9]) || 0 }
+            });
+        }
+    }
+
+    // Calculate percentages if not found
+    if (data.blazin5.percentage === null) {
+        const total = data.blazin5.wins + data.blazin5.losses;
+        data.blazin5.percentage = total > 0 ? (data.blazin5.wins / total * 100) : 0;
+    }
+    if (data.linePicks.percentage === null) {
+        const total = data.linePicks.wins + data.linePicks.losses;
+        data.linePicks.percentage = total > 0 ? (data.linePicks.wins / total * 100) : 0;
+    }
+    if (data.winnerPicks.percentage === null) {
+        const total = data.winnerPicks.wins + data.winnerPicks.losses;
+        data.winnerPicks.percentage = total > 0 ? (data.winnerPicks.wins / total * 100) : 0;
+    }
+
+    return data;
 }
 
 /**
