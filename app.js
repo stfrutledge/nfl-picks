@@ -1032,12 +1032,12 @@ function renderGames() {
 
                 <div class="game-matchup-line">
                     <span class="away-team">
-                        <img src="${TEAM_LOGOS[game.away]}" alt="${game.away}" class="team-logo">
+                        <img src="${getTeamLogo(game.away)}" alt="${game.away}" class="team-logo">
                         ${game.away} ${isFinal || isInProgress ? `<strong>${liveData?.awayScore || ''}</strong>` : `(${awaySpreadDisplay})`}
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
-                        <img src="${TEAM_LOGOS[game.home]}" alt="${game.home}" class="team-logo">
+                        <img src="${getTeamLogo(game.home)}" alt="${game.home}" class="team-logo">
                         ${game.home} ${isFinal || isInProgress ? `<strong>${liveData?.homeScore || ''}</strong>` : `(${homeSpreadDisplay})`}
                     </span>
                 </div>
@@ -1405,9 +1405,9 @@ function renderScoringSummary() {
         bodyHtml += `
             <tr>
                 <td class="game-col">
-                    <img src="${TEAM_LOGOS[game.away]}" alt="${game.away}" class="table-team-logo">
+                    <img src="${getTeamLogo(game.away)}" alt="${game.away}" class="table-team-logo">
                     ${game.away} @
-                    <img src="${TEAM_LOGOS[game.home]}" alt="${game.home}" class="table-team-logo">
+                    <img src="${getTeamLogo(game.home)}" alt="${game.home}" class="table-team-logo">
                     ${game.home}
                 </td>
                 <td class="result-col">${resultDisplay}</td>
