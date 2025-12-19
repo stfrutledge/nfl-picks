@@ -165,7 +165,7 @@ if (typeof HISTORICAL_GAMES !== 'undefined') {
 }
 
 /**
- * Check if a game is locked (past week or kickoff time has passed)
+ * Check if a game is locked (past week, kickoff time has passed, or game is final)
  * @param {object} game - The game object
  * @param {number} week - The week number (optional, defaults to currentWeek)
  */
@@ -174,6 +174,18 @@ function isGameLocked(game, week = null) {
 
     // All games from previous weeks are locked (historical data)
     if (checkWeek < CURRENT_NFL_WEEK) {
+        return true;
+    }
+
+    // Check if game has a stored result (completed game)
+    const weekResults = getResultsForWeek(checkWeek);
+    if (weekResults && weekResults[game.id]) {
+        return true;
+    }
+
+    // Check if game is final from live scores
+    const liveData = getLiveGameStatus(game);
+    if (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) {
         return true;
     }
 
@@ -806,31 +818,39 @@ function renderInsights(loneWolf, consensus) {
 
 /**
  * Render Group Overall Stats section
+ * Shows only the relevant category based on current tab
  */
 function renderGroupStats(groupOverall) {
     const grid = document.getElementById('group-stats-grid');
     if (!grid) return;
 
-    const categories = [
-        {
-            key: 'blazin5',
-            label: "Blazin' 5",
-            icon: '🔥',
-            description: 'Combined Blazin\' 5 picks performance'
-        },
-        {
+    // Map current category to the relevant group stat
+    const categoryMap = {
+        'line': {
             key: 'linePicks',
             label: 'Line Picks',
             icon: '📊',
             description: 'Combined against-the-spread picks'
         },
-        {
+        'blazin': {
+            key: 'blazin5',
+            label: "Blazin' 5",
+            icon: '🔥',
+            description: 'Combined Blazin\' 5 picks performance'
+        },
+        'winner': {
             key: 'winnerPicks',
             label: 'Straight Up',
             icon: '🏆',
             description: 'Combined winner predictions'
         }
-    ];
+    };
+
+    // Get only the category relevant to the current tab
+    const cat = categoryMap[currentCategory];
+    if (!cat) return;
+
+    const categories = [cat];
 
     grid.innerHTML = categories.map(cat => {
         const data = groupOverall[cat.key];
@@ -989,12 +1009,14 @@ function renderGames() {
         const hasLinePick = linePick !== undefined;
         const hasWinnerPick = winnerPick !== undefined;
         const hasBothPicks = hasLinePick && hasWinnerPick;
-        const locked = isGameLocked(game);
 
         // Get live score data if available
         const liveData = getLiveGameStatus(game);
         const isInProgress = liveData && liveData.status === 'STATUS_IN_PROGRESS';
         const isFinal = liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
+
+        // Game is locked if: isGameLocked returns true OR game is final from live data
+        const locked = isGameLocked(game) || isFinal;
 
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;

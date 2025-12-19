@@ -65,6 +65,7 @@ function parseNFLPicksCSV(csvText) {
 /**
  * Extract Group Overall stats (combined performance across all pickers)
  * Located in the "Group Overall" section of the CSV
+ * Falls back to calculating from individual picker stats if section not found
  */
 function extractGroupOverall(rows) {
     const data = {
@@ -84,7 +85,10 @@ function extractGroupOverall(rows) {
         }
     }
 
-    if (startRow === -1) return data;
+    if (startRow === -1) {
+        // Fallback: calculate from individual picker stats
+        return calculateGroupOverallFromPickers(rows);
+    }
 
     // The structure after "Group Overall" header:
     // Row +1: "Blazin' 5", "", "", "Line Picks", "", "", "Winner Picks"
@@ -150,6 +154,59 @@ function extractGroupOverall(rows) {
         const total = data.winnerPicks.wins + data.winnerPicks.losses;
         data.winnerPicks.percentage = total > 0 ? (data.winnerPicks.wins / total * 100) : 0;
     }
+
+    return data;
+}
+
+/**
+ * Calculate Group Overall stats by summing individual picker stats
+ * Used as fallback when "Group Overall" section is not found in CSV
+ */
+function calculateGroupOverallFromPickers(rows) {
+    const data = {
+        blazin5: { wins: 0, losses: 0, pushes: 0, percentage: null },
+        linePicks: { wins: 0, losses: 0, pushes: 0, percentage: null },
+        winnerPicks: { wins: 0, losses: 0, pushes: 0, percentage: null },
+        weeklyData: []
+    };
+
+    // Extract individual stats and sum them
+    const linePicksStats = extractLinePicksOverall(rows);
+    const blazin5Stats = extractBlazin5Overall(rows);
+    const winnerPicksStats = extractWinnerPicksOverall(rows);
+
+    // Sum Line Picks
+    Object.values(linePicksStats).forEach(picker => {
+        data.linePicks.wins += picker.wins || 0;
+        data.linePicks.losses += picker.losses || 0;
+        data.linePicks.pushes += picker.pushes || 0;
+    });
+
+    // Sum Blazin' 5 (only count actual pickers, not Cowherd)
+    PICKERS.forEach(name => {
+        if (blazin5Stats[name]) {
+            data.blazin5.wins += blazin5Stats[name].wins || 0;
+            data.blazin5.losses += blazin5Stats[name].losses || 0;
+            data.blazin5.pushes += blazin5Stats[name].pushes || 0;
+        }
+    });
+
+    // Sum Winner Picks
+    Object.values(winnerPicksStats).forEach(picker => {
+        data.winnerPicks.wins += picker.wins || 0;
+        data.winnerPicks.losses += picker.losses || 0;
+        data.winnerPicks.pushes += picker.draws || picker.pushes || 0;
+    });
+
+    // Calculate percentages
+    const lineTotal = data.linePicks.wins + data.linePicks.losses;
+    data.linePicks.percentage = lineTotal > 0 ? (data.linePicks.wins / lineTotal * 100) : 0;
+
+    const blazinTotal = data.blazin5.wins + data.blazin5.losses;
+    data.blazin5.percentage = blazinTotal > 0 ? (data.blazin5.wins / blazinTotal * 100) : 0;
+
+    const winnerTotal = data.winnerPicks.wins + data.winnerPicks.losses;
+    data.winnerPicks.percentage = winnerTotal > 0 ? (data.winnerPicks.wins / winnerTotal * 100) : 0;
 
     return data;
 }
