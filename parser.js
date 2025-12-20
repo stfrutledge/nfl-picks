@@ -901,10 +901,34 @@ function parseWeeklyPicksCSV(csvText, weekNum) {
                 const linePickLower = linePick.toLowerCase();
                 const awayLower = awayTeam.toLowerCase();
                 const homeLower = homeTeam.toLowerCase();
+                const pickFirstWord = linePickLower.split(' ')[0];
 
-                if (linePickLower.includes(awayLower) || awayLower.includes(linePickLower.split(' ')[0])) {
+                // Team abbreviation mappings
+                const teamAbbreviations = {
+                    'jags': 'jaguars',
+                    'niners': '49ers',
+                    'cards': 'cardinals',
+                    'pats': 'patriots',
+                    'bucs': 'buccaneers',
+                    'buccs': 'buccaneers',
+                    'pack': 'packers',
+                    'vikes': 'vikings',
+                    'bolts': 'chargers',
+                    'boys': 'cowboys',
+                    'skins': 'commanders',
+                    'commies': 'commanders',
+                    'fins': 'dolphins',
+                    'hawks': 'seahawks',
+                    'birds': 'eagles',
+                    'philly': 'eagles'
+                };
+
+                // Expand abbreviation if present
+                const expandedPick = teamAbbreviations[pickFirstWord] || pickFirstWord;
+
+                if (linePickLower.includes(awayLower) || awayLower.includes(pickFirstWord) || awayLower.includes(expandedPick)) {
                     weekData.picks[picker][gameId].line = 'away';
-                } else if (linePickLower.includes(homeLower) || homeLower.includes(linePickLower.split(' ')[0])) {
+                } else if (linePickLower.includes(homeLower) || homeLower.includes(pickFirstWord) || homeLower.includes(expandedPick)) {
                     weekData.picks[picker][gameId].line = 'home';
                 }
             }
@@ -923,11 +947,9 @@ function parseWeeklyPicksCSV(csvText, weekNum) {
             }
 
             // Check if this is a Blazin' 5 pick (marked with * in the blazin column)
-            // The column might contain just "*", or the team name, or team name with *
+            // Only the * marker indicates a Blazin' 5 pick
             const blazinPick = (row[cols.blazin] || '').toString().trim();
-            const hasBlazinMarker = blazinPick === '*' ||
-                                    blazinPick.includes('*') ||
-                                    (blazinPick.length > 0 && blazinPick !== 'Blazin\' 5');
+            const hasBlazinMarker = blazinPick === '*' || blazinPick.includes('*');
 
             if (hasBlazinMarker) {
                 weekData.picks[picker][gameId].blazin = true;

@@ -4,7 +4,7 @@
 
 let dashboardData = null;
 let currentCategory = 'make-picks';
-let currentPicker = 'Stephen';
+let currentPicker = localStorage.getItem('selectedPicker') || 'Stephen';
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
 
@@ -136,21 +136,21 @@ const NFL_GAMES_BY_WEEK = {
     ],
     16: [
         { id: 1, away: 'Rams', home: 'Seahawks', spread: 1.5, favorite: 'home', day: 'Thursday', time: '8:15 PM ET', kickoff: '2025-12-19T20:15:00-05:00', location: 'Seattle, WA', stadium: 'Lumen Field' },
-        { id: 2, away: 'Eagles', home: 'Commanders', spread: 6.5, favorite: 'away', day: 'Saturday', time: '5:00 PM ET', kickoff: '2025-12-21T17:00:00-05:00', location: 'Landover, MD', stadium: 'Northwest Stadium' },
-        { id: 3, away: 'Packers', home: 'Bears', spread: 1.5, favorite: 'away', day: 'Saturday', time: '8:20 PM ET', kickoff: '2025-12-21T20:20:00-05:00', location: 'Chicago, IL', stadium: 'Soldier Field' },
-        { id: 4, away: 'Bills', home: 'Browns', spread: 10, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Cleveland, OH', stadium: 'Huntington Bank Field' },
-        { id: 5, away: 'Chargers', home: 'Cowboys', spread: 1.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
-        { id: 6, away: 'Chiefs', home: 'Titans', spread: 3.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Nashville, TN', stadium: 'Nissan Stadium' },
-        { id: 7, away: 'Bengals', home: 'Dolphins', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Miami Gardens, FL', stadium: 'Hard Rock Stadium' },
-        { id: 8, away: 'Jets', home: 'Saints', spread: 4.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
-        { id: 9, away: 'Vikings', home: 'Giants', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
-        { id: 10, away: 'Buccaneers', home: 'Panthers', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-22T13:00:00-05:00', location: 'Charlotte, NC', stadium: 'Bank of America Stadium' },
-        { id: 11, away: 'Jaguars', home: 'Broncos', spread: 3, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-22T16:05:00-05:00', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
-        { id: 12, away: 'Falcons', home: 'Cardinals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-22T16:05:00-05:00', location: 'Glendale, AZ', stadium: 'State Farm Stadium' },
-        { id: 13, away: 'Steelers', home: 'Lions', spread: 7, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-22T16:25:00-05:00', location: 'Detroit, MI', stadium: 'Ford Field' },
-        { id: 14, away: 'Raiders', home: 'Texans', spread: 14.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-22T16:25:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
-        { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-22T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
-        { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-23T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
+        { id: 2, away: 'Eagles', home: 'Commanders', spread: 6.5, favorite: 'away', day: 'Saturday', time: '5:00 PM ET', kickoff: '2025-12-20T17:00:00-05:00', location: 'Landover, MD', stadium: 'Northwest Stadium' },
+        { id: 3, away: 'Packers', home: 'Bears', spread: 1.5, favorite: 'away', day: 'Saturday', time: '8:20 PM ET', kickoff: '2025-12-20T20:20:00-05:00', location: 'Chicago, IL', stadium: 'Soldier Field' },
+        { id: 4, away: 'Bills', home: 'Browns', spread: 10, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Cleveland, OH', stadium: 'Huntington Bank Field' },
+        { id: 5, away: 'Chargers', home: 'Cowboys', spread: 1.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
+        { id: 6, away: 'Chiefs', home: 'Titans', spread: 3.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Nashville, TN', stadium: 'Nissan Stadium' },
+        { id: 7, away: 'Bengals', home: 'Dolphins', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Miami Gardens, FL', stadium: 'Hard Rock Stadium' },
+        { id: 8, away: 'Jets', home: 'Saints', spread: 4.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
+        { id: 9, away: 'Vikings', home: 'Giants', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
+        { id: 10, away: 'Buccaneers', home: 'Panthers', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Charlotte, NC', stadium: 'Bank of America Stadium' },
+        { id: 11, away: 'Jaguars', home: 'Broncos', spread: 3, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-21T16:05:00-05:00', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
+        { id: 12, away: 'Falcons', home: 'Cardinals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-21T16:05:00-05:00', location: 'Glendale, AZ', stadium: 'State Farm Stadium' },
+        { id: 13, away: 'Steelers', home: 'Lions', spread: 7, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-21T16:25:00-05:00', location: 'Detroit, MI', stadium: 'Ford Field' },
+        { id: 14, away: 'Raiders', home: 'Texans', spread: 14.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-21T16:25:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
+        { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-21T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
+        { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-22T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
     ]
 };
 
@@ -273,12 +273,14 @@ function startLiveScoresRefresh() {
     // Fetch immediately
     fetchLiveScores().then(() => {
         renderGames(); // Re-render games with new scores
+        renderScoringSummary(); // Update scoring summary with live results
     });
 
     // Then refresh every 30 seconds
     liveScoresRefreshInterval = setInterval(async () => {
         await fetchLiveScores();
         renderGames();
+        renderScoringSummary();
     }, 30000);
 }
 
@@ -372,6 +374,13 @@ function init() {
     setupPickerButtons();
     setupPicksActions();
     setupDarkMode();
+    setupWeekNavigation();
+    setupGameFilters();
+    setupConfirmModal();
+    setupKeyboardLegend();
+    setupProgressBarPreference();
+    setupRetryButton();
+    setupBackToTop();
     loadPicksFromStorage();
 
     // Restore Stephen's week 16 Seahawks pick that was accidentally cleared
@@ -404,7 +413,7 @@ function restoreStephenWeek16Pick() {
         winner: 'home'   // Seahawks to win
     };
 
-    savePicksToStorage();
+    savePicksToStorage(false); // No toast for automated restore
     console.log('Restored Stephen\'s week 16 Seahawks pick (Game 1, home)');
 }
 
@@ -546,6 +555,9 @@ async function setCurrentWeek(week) {
         loadingIndicator.classList.add('hidden');
     }
 
+    // Update navigation buttons
+    updateWeekNavButtons();
+
     // Re-render
     renderGames();
     renderScoringSummary();
@@ -576,6 +588,7 @@ function setupPickerButtons() {
 
     pickerDropdown.addEventListener('change', (e) => {
         currentPicker = e.target.value;
+        localStorage.setItem('selectedPicker', currentPicker);
         // Re-render games with current picker's selections
         renderGames();
         renderScoringSummary();
@@ -588,8 +601,250 @@ function setupPickerButtons() {
 function setupPicksActions() {
     document.getElementById('clear-picks-btn')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
-    document.getElementById('randomize-picks-btn')?.addEventListener('click', randomizePicks);
+    document.getElementById('randomize-picks-btn')?.addEventListener('click', () => {
+        randomizePicks();
+        closeDropdown();
+    });
     document.getElementById('copy-picks-btn')?.addEventListener('click', copyPicksToClipboard);
+
+    // Quick picks dropdown
+    document.getElementById('quick-picks-btn')?.addEventListener('click', toggleDropdown);
+    document.getElementById('pick-favorites-btn')?.addEventListener('click', () => {
+        pickAllFavorites();
+        closeDropdown();
+    });
+    document.getElementById('pick-underdogs-btn')?.addEventListener('click', () => {
+        pickAllUnderdogs();
+        closeDropdown();
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('quick-picks-dropdown');
+        if (dropdown && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('open');
+        }
+    });
+}
+
+/**
+ * Toggle the quick picks dropdown
+ */
+function toggleDropdown(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('quick-picks-dropdown');
+    if (dropdown) {
+        dropdown.classList.toggle('open');
+    }
+}
+
+/**
+ * Close the dropdown
+ */
+function closeDropdown() {
+    const dropdown = document.getElementById('quick-picks-dropdown');
+    if (dropdown) {
+        dropdown.classList.remove('open');
+    }
+}
+
+/**
+ * Pick all favorites for the current picker
+ */
+function pickAllFavorites() {
+    const weekGames = getGamesForWeek(currentWeek);
+
+    if (weekGames.length === 0) {
+        showToast('No games available');
+        return;
+    }
+
+    // Ensure structure exists
+    if (!allPicks[currentWeek]) {
+        allPicks[currentWeek] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker]) {
+        allPicks[currentWeek][currentPicker] = {};
+    }
+
+    let pickedCount = 0;
+    weekGames.forEach(game => {
+        const gameIdStr = String(game.id);
+
+        // Skip locked games
+        if (isGameLocked(game)) return;
+
+        // Pick the favorite for both line and winner
+        allPicks[currentWeek][currentPicker][gameIdStr] = {
+            line: game.favorite,
+            winner: game.favorite
+        };
+        pickedCount++;
+    });
+
+    savePicksToStorage();
+    renderGames();
+    renderScoringSummary();
+    showToast(`Picked ${pickedCount} favorites`);
+}
+
+/**
+ * Pick all underdogs for the current picker
+ */
+function pickAllUnderdogs() {
+    const weekGames = getGamesForWeek(currentWeek);
+
+    if (weekGames.length === 0) {
+        showToast('No games available');
+        return;
+    }
+
+    // Ensure structure exists
+    if (!allPicks[currentWeek]) {
+        allPicks[currentWeek] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker]) {
+        allPicks[currentWeek][currentPicker] = {};
+    }
+
+    let pickedCount = 0;
+    weekGames.forEach(game => {
+        const gameIdStr = String(game.id);
+
+        // Skip locked games
+        if (isGameLocked(game)) return;
+
+        // Pick the underdog
+        const underdog = game.favorite === 'home' ? 'away' : 'home';
+
+        // For line pick, pick underdog
+        // For winner, random (underdogs often lose straight up)
+        allPicks[currentWeek][currentPicker][gameIdStr] = {
+            line: underdog,
+            winner: Math.random() < 0.5 ? 'away' : 'home'
+        };
+        pickedCount++;
+    });
+
+    savePicksToStorage();
+    renderGames();
+    renderScoringSummary();
+    showToast(`Picked ${pickedCount} underdogs`);
+}
+
+/**
+ * Update the pick progress indicator
+ */
+function updatePickProgress() {
+    const picksMade = document.getElementById('picks-made');
+    const picksTotal = document.getElementById('picks-total');
+    const progressFill = document.getElementById('progress-fill');
+
+    if (!picksMade || !picksTotal || !progressFill) return;
+
+    const weekGames = getGamesForWeek(currentWeek);
+    const weekPicks = allPicks[currentWeek]?.[currentPicker] || {};
+
+    // Count complete picks (both line and winner selected)
+    let complete = 0;
+    weekGames.forEach(game => {
+        const gameIdStr = String(game.id);
+        const gamePicks = weekPicks[gameIdStr] || weekPicks[game.id] || {};
+        if (gamePicks.line && gamePicks.winner) {
+            complete++;
+        }
+    });
+
+    const total = weekGames.length;
+    const percentage = total > 0 ? (complete / total) * 100 : 0;
+
+    picksMade.textContent = complete;
+    picksTotal.textContent = total;
+    progressFill.style.width = `${percentage}%`;
+
+    // Update color based on completion
+    progressFill.classList.remove('complete', 'partial');
+    if (percentage === 100) {
+        progressFill.classList.add('complete');
+    } else if (percentage > 0) {
+        progressFill.classList.add('partial');
+    }
+}
+
+// Countdown interval reference
+let countdownInterval = null;
+
+/**
+ * Update individual game countdowns
+ */
+function updateGameCountdowns() {
+    const countdownElements = document.querySelectorAll('.game-lock-countdown');
+    const now = new Date();
+
+    countdownElements.forEach(el => {
+        const kickoff = el.dataset.kickoff;
+        if (!kickoff) return;
+
+        const kickoffTime = new Date(kickoff);
+        const diff = kickoffTime - now;
+
+        if (diff <= 0) {
+            // Game has started - hide countdown, will be updated on next render
+            el.innerHTML = '<span class="countdown-locked">Locked</span>';
+            el.classList.add('locked');
+            return;
+        }
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        let timeStr;
+        if (hours > 24) {
+            const days = Math.floor(hours / 24);
+            timeStr = `${days}d ${hours % 24}h`;
+        } else if (hours > 0) {
+            timeStr = `${hours}h ${minutes}m`;
+        } else if (minutes > 0) {
+            timeStr = `${minutes}m ${seconds}s`;
+        } else {
+            timeStr = `${seconds}s`;
+        }
+
+        // Check if urgent (less than 1 hour)
+        const isUrgent = diff < 60 * 60 * 1000;
+        el.classList.toggle('urgent', isUrgent);
+
+        el.innerHTML = `<span class="countdown-label">Game begins in</span> <span class="countdown-time">${timeStr}</span>`;
+    });
+}
+
+/**
+ * Start the countdown timer for individual games
+ */
+function startCountdownTimer() {
+    // Clear existing interval
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+
+    // Update immediately
+    updateGameCountdowns();
+
+    // Update every second
+    countdownInterval = setInterval(() => {
+        updateGameCountdowns();
+    }, 1000);
+}
+
+/**
+ * Stop the countdown timer
+ */
+function stopCountdownTimer() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
 }
 
 
@@ -695,8 +950,7 @@ async function loadFromGoogleSheets() {
 
     // All attempts failed
     console.error('Failed to load data from Google Sheets after all attempts');
-    hideLoadingState();
-    dashboard.innerHTML = '<div class="error-message">Failed to load data. Please refresh the page to try again.</div>';
+    showErrorState('Unable to load picks data. Please check your internet connection and try again.');
 }
 
 /**
@@ -715,9 +969,13 @@ function setActiveCategory(category) {
     const chartsSection = document.querySelector('.charts-grid');
     const streaksSection = document.querySelector('.streaks-section');
     const groupStatsSection = document.querySelector('.group-stats-section');
+    const teamFrequencySection = document.querySelector('.team-frequency-section');
+    const picksStatusBar = document.getElementById('picks-status-bar');
 
     // Get insights section reference
     const insightsSection = document.querySelector('.insights-section');
+
+    const keyboardToggle = document.getElementById('keyboard-toggle-btn');
 
     if (category === 'make-picks') {
         // Show picks section, hide others
@@ -726,7 +984,16 @@ function setActiveCategory(category) {
         streaksSection?.classList.add('hidden');
         insightsSection?.classList.add('hidden');
         groupStatsSection?.classList.add('hidden');
+        teamFrequencySection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
+
+        // Show progress bar only if not dismissed this session
+        if (shouldShowProgressBar()) {
+            picksStatusBar?.classList.remove('hidden');
+        }
+
+        // Show keyboard shortcuts toggle
+        keyboardToggle?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
         startLiveScoresRefresh();
@@ -741,6 +1008,11 @@ function setActiveCategory(category) {
         streaksSection?.classList.remove('hidden');
         groupStatsSection?.classList.remove('hidden');
         makePicksSection?.classList.add('hidden');
+        picksStatusBar?.classList.add('hidden');
+
+        // Hide keyboard shortcuts toggle and legend
+        keyboardToggle?.classList.add('hidden');
+        document.getElementById('keyboard-legend')?.classList.remove('show');
 
         renderDashboard();
     }
@@ -933,69 +1205,61 @@ function renderGroupStats(groupOverall) {
 }
 
 /**
- * Calculate team pick frequency for Blazin' 5 picks
+ * Calculate team pick frequency and win rate for Blazin' 5 picks
  * Aggregates how often each picker selected each team for their Blazin' 5
- * Only counts picks marked with * (blazin: true)
+ * and tracks wins/losses/pushes for each team
+ * Only counts picks marked with * (blazin: true) from the weekly CSV data
  */
 function calculateBlazinTeamFrequency() {
     const frequency = {};
+
     PICKERS.forEach(picker => {
         frequency[picker] = {};
     });
 
-    // Go through all weeks with picks data
+    // Go through all weeks - only use weeklyPicksCache which has the authoritative blazin markers
     for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const weekPicks = allPicks[week];
-        const weekGames = getGamesForWeek(week);
-
-        // Also check weeklyPicksCache for blazin data
         const cachedWeek = weeklyPicksCache[week];
+        if (!cachedWeek || !cachedWeek.picks) continue;
+
+        const weekGames = getGamesForWeek(week);
+        const weekResults = getResultsForWeek(week);
 
         if (!weekGames || weekGames.length === 0) continue;
 
         PICKERS.forEach(picker => {
-            // First check cached data (has blazin markers from *)
-            if (cachedWeek && cachedWeek.picks && cachedWeek.picks[picker]) {
-                const cachedPicks = cachedWeek.picks[picker];
-                Object.keys(cachedPicks).forEach(gameId => {
-                    const pick = cachedPicks[gameId];
+            const cachedPicks = cachedWeek.picks[picker];
+            if (!cachedPicks) return;
+
+            Object.keys(cachedPicks).forEach(gameId => {
+                const pick = cachedPicks[gameId];
+
+                if (pick.blazin && pick.line) {
                     const game = weekGames.find(g => String(g.id) === String(gameId));
+                    if (!game) return;
 
-                    // Only count if marked as Blazin' 5 pick
-                    if (game && pick.blazin && pick.line) {
-                        const team = pick.line === 'away' ? game.away : game.home;
-                        const normalizedTeam = TEAM_NAME_MAP[team] || team;
+                    const team = pick.line === 'away' ? game.away : game.home;
+                    const normalizedTeam = TEAM_NAME_MAP[team] || team;
 
-                        if (!frequency[picker][normalizedTeam]) {
-                            frequency[picker][normalizedTeam] = 0;
-                        }
-                        frequency[picker][normalizedTeam]++;
+                    if (!frequency[picker][normalizedTeam]) {
+                        frequency[picker][normalizedTeam] = { picks: 0, wins: 0, losses: 0, pushes: 0 };
                     }
-                });
-            }
+                    frequency[picker][normalizedTeam].picks++;
 
-            // Also check allPicks for any blazin-marked picks
-            const pickerPicks = weekPicks ? weekPicks[picker] : null;
-            if (pickerPicks) {
-                Object.keys(pickerPicks).forEach(gameId => {
-                    const pick = pickerPicks[gameId];
-                    const game = weekGames.find(g => String(g.id) === String(gameId));
-
-                    // Only count if marked as Blazin' 5 pick
-                    if (game && pick.blazin && pick.line) {
-                        const team = pick.line === 'away' ? game.away : game.home;
-                        const normalizedTeam = TEAM_NAME_MAP[team] || team;
-
-                        // Avoid double counting from cache
-                        if (!cachedWeek || !cachedWeek.picks || !cachedWeek.picks[picker]) {
-                            if (!frequency[picker][normalizedTeam]) {
-                                frequency[picker][normalizedTeam] = 0;
-                            }
-                            frequency[picker][normalizedTeam]++;
+                    // Check result if available
+                    const result = weekResults[game.id];
+                    if (result) {
+                        const atsWinner = calculateATSWinner(game, result);
+                        if (atsWinner === 'push') {
+                            frequency[picker][normalizedTeam].pushes++;
+                        } else if (pick.line === atsWinner) {
+                            frequency[picker][normalizedTeam].wins++;
+                        } else {
+                            frequency[picker][normalizedTeam].losses++;
                         }
                     }
-                });
-            }
+                }
+            });
         });
     }
 
@@ -1113,9 +1377,9 @@ async function renderTeamPickFrequency() {
 
     // Build a card for each picker showing their most picked teams
     const html = PICKERS.map(picker => {
-        const teamCounts = frequency[picker];
-        const sortedTeams = Object.entries(teamCounts)
-            .sort((a, b) => b[1] - a[1])
+        const teamData = frequency[picker];
+        const sortedTeams = Object.entries(teamData)
+            .sort((a, b) => b[1].picks - a[1].picks)
             .slice(0, 5); // Top 5 teams
 
         if (sortedTeams.length === 0) {
@@ -1130,12 +1394,14 @@ async function renderTeamPickFrequency() {
             `;
         }
 
-        const totalPicks = Object.values(teamCounts).reduce((a, b) => a + b, 0);
-        const maxCount = sortedTeams[0][1];
+        const totalPicks = Object.values(teamData).reduce((a, b) => a + b.picks, 0);
+        const maxCount = sortedTeams[0][1].picks;
 
-        const teamRows = sortedTeams.map(([team, count], idx) => {
-            const pct = ((count / totalPicks) * 100).toFixed(1);
-            const barWidth = (count / maxCount) * 100;
+        const teamRows = sortedTeams.map(([team, data], idx) => {
+            const decided = data.wins + data.losses;
+            const winPct = decided > 0 ? ((data.wins / decided) * 100).toFixed(0) : '-';
+            const winPctClass = decided > 0 ? (data.wins / decided >= 0.5 ? 'positive' : 'negative') : '';
+            const barWidth = (data.picks / maxCount) * 100;
             return `
                 <div class="team-freq-row ${idx === 0 ? 'top-team' : ''}">
                     <div class="team-freq-info">
@@ -1146,8 +1412,8 @@ async function renderTeamPickFrequency() {
                         <div class="team-freq-bar" style="width: ${barWidth}%"></div>
                     </div>
                     <div class="team-freq-stats">
-                        <span class="team-freq-count">${count}</span>
-                        <span class="team-freq-pct">${pct}%</span>
+                        <span class="team-freq-count">${data.picks}</span>
+                        <span class="team-freq-pct ${winPctClass}">${winPct}${winPct !== '-' ? '%' : ''}</span>
                     </div>
                 </div>
             `;
@@ -1275,25 +1541,45 @@ function renderGames() {
     const gamesList = document.getElementById('games-list');
     if (!gamesList) return;
 
-    const weekGames = getGamesForWeek(currentWeek);
+    let weekGames = getGamesForWeek(currentWeek);
     const weekPicks = allPicks[currentWeek] || {};
     const pickerPicks = weekPicks[currentPicker] || {};
+    const isHistoricalWeek = currentWeek < CURRENT_NFL_WEEK;
+
+    // Apply filter
+    if (currentGameFilter !== 'all') {
+        weekGames = weekGames.filter(game => {
+            const liveData = getLiveGameStatus(game);
+            const isFinal = (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) || isHistoricalWeek;
+            if (currentGameFilter === 'completed') return isFinal;
+            if (currentGameFilter === 'upcoming') return !isFinal;
+            return true;
+        });
+    }
 
     if (weekGames.length === 0) {
+        const filterMessage = currentGameFilter === 'all' ? '' : ` (${currentGameFilter})`;
         gamesList.innerHTML = `
             <div class="no-games-message">
-                <p>No games data available for Week ${currentWeek}.</p>
-                <p class="no-games-subtitle">Game data can be added to NFL_GAMES_BY_WEEK in app.js</p>
+                <p>No games${filterMessage} for Week ${currentWeek}.</p>
+                <p class="no-games-subtitle">${currentGameFilter !== 'all' ? 'Try changing the filter above.' : 'Game data can be added to NFL_GAMES_BY_WEEK in app.js'}</p>
             </div>
         `;
         return;
     }
+
+    // Count current blazin picks for the week
+    const blazinCount = weekGames.reduce((count, g) => {
+        const gPicks = pickerPicks[String(g.id)] || pickerPicks[g.id] || {};
+        return count + (gPicks.blazin ? 1 : 0);
+    }, 0);
 
     gamesList.innerHTML = weekGames.map(game => {
         const gameIdStr = String(game.id);
         const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
         const linePick = gamePicks.line;
         const winnerPick = gamePicks.winner;
+        const isBlazin = gamePicks.blazin || false;
         const hasLinePick = linePick !== undefined;
         const hasWinnerPick = winnerPick !== undefined;
         const hasBothPicks = hasLinePick && hasWinnerPick;
@@ -1312,6 +1598,30 @@ function renderGames() {
         const awaySpreadDisplay = awaySpread > 0 ? `+${awaySpread}` : awaySpread;
         const homeSpreadDisplay = homeSpread > 0 ? `+${homeSpread}` : homeSpread;
 
+        // Calculate pick results for completed games
+        const gameCompleted = isFinal || isHistoricalWeek;
+        let lineAwayResult = '', lineHomeResult = '', winnerAwayResult = '', winnerHomeResult = '';
+        if (gameCompleted) {
+            const result = getResultsForWeek(currentWeek)[game.id];
+            if (result) {
+                const atsWinner = calculateATSWinner(game, result);
+                // Line pick results
+                if (linePick === 'away') {
+                    lineAwayResult = atsWinner === 'push' ? 'push' : (atsWinner === 'away' ? 'correct' : 'incorrect');
+                }
+                if (linePick === 'home') {
+                    lineHomeResult = atsWinner === 'push' ? 'push' : (atsWinner === 'home' ? 'correct' : 'incorrect');
+                }
+                // Winner pick results
+                if (winnerPick === 'away') {
+                    winnerAwayResult = result.winner === 'away' ? 'correct' : 'incorrect';
+                }
+                if (winnerPick === 'home') {
+                    winnerHomeResult = result.winner === 'home' ? 'correct' : 'incorrect';
+                }
+            }
+        }
+
         const cardClasses = [
             'game-card',
             hasBothPicks ? 'has-pick' : (hasLinePick || hasWinnerPick ? 'has-partial-pick' : ''),
@@ -1322,7 +1632,6 @@ function renderGames() {
 
         // Build status badge
         let statusBadge = '';
-        const isHistoricalWeek = currentWeek < CURRENT_NFL_WEEK;
         if (isFinal || isHistoricalWeek) {
             statusBadge = `<span class="status-badge final">FINAL</span>`;
         } else if (isInProgress) {
@@ -1332,23 +1641,56 @@ function renderGames() {
             statusBadge = '<span class="locked-badge">LOCKED</span>';
         }
 
+        // Build lock countdown for unlocked games or final score for completed games
+        let gameStatusDisplay = '';
+        const historicalResult = getResultsForWeek(currentWeek)[game.id];
+        const scoreData = liveData || historicalResult;
+        if (gameCompleted && scoreData) {
+            const awayScore = scoreData.awayScore ?? '';
+            const homeScore = scoreData.homeScore ?? '';
+            const awayWon = awayScore > homeScore;
+            const homeWon = homeScore > awayScore;
+            gameStatusDisplay = `
+                <div class="game-final-score">
+                    <span class="final-score-team ${awayWon ? 'winner' : ''}">
+                        <span class="final-team-name">${game.away}</span>
+                        <span class="final-team-score">${awayScore}</span>
+                    </span>
+                    <span class="final-score-divider">-</span>
+                    <span class="final-score-team ${homeWon ? 'winner' : ''}">
+                        <span class="final-team-score">${homeScore}</span>
+                        <span class="final-team-name">${game.home}</span>
+                    </span>
+                </div>`;
+        } else if (!locked && game.kickoff) {
+            gameStatusDisplay = `<div class="game-lock-countdown" data-kickoff="${game.kickoff}"></div>`;
+        }
+
+        // Blazin star button - disabled if locked, no line pick, or already at 5 and not already selected
+        const canToggleBlazin = !locked && hasLinePick && (isBlazin || blazinCount < 5);
+        const blazinDisabled = locked || !hasLinePick || (!isBlazin && blazinCount >= 5);
+        const blazinTitle = blazinDisabled
+            ? (locked ? 'Game is locked' : (!hasLinePick ? 'Make a line pick first' : 'Maximum 5 Blazin picks reached'))
+            : (isBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5');
+
         return `
-            <div class="${cardClasses}" data-game-id="${game.id}">
+            <div class="${cardClasses}" data-game-id="${game.id}" data-kickoff="${game.kickoff || ''}">
                 <div class="game-header">
                     <span class="game-time">${game.time}</span>
                     ${statusBadge}
                     <span class="game-day">${game.day}</span>
                 </div>
+                ${gameStatusDisplay}
 
                 <div class="game-matchup-line">
                     <span class="away-team">
                         <img src="${getTeamLogo(game.away)}" alt="${game.away}" class="team-logo">
-                        ${game.away} ${isFinal || isInProgress ? `<strong>${liveData?.awayScore || ''}</strong>` : `(${awaySpreadDisplay})`}
+                        ${game.away} (${awaySpreadDisplay})
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
                         <img src="${getTeamLogo(game.home)}" alt="${game.home}" class="team-logo">
-                        ${game.home} ${isFinal || isInProgress ? `<strong>${liveData?.homeScore || ''}</strong>` : `(${homeSpreadDisplay})`}
+                        ${game.home} (${homeSpreadDisplay})
                     </span>
                 </div>
 
@@ -1356,12 +1698,12 @@ function renderGames() {
                     <div class="pick-type">
                         <span class="pick-label">Line Pick (ATS)</span>
                         <div class="pick-options">
-                            <button class="pick-btn ${linePick === 'away' ? 'selected' : ''}"
+                            <button class="pick-btn ${linePick === 'away' ? 'selected' : ''} ${lineAwayResult}"
                                     data-game-id="${game.id}" data-pick-type="line" data-team="away"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.away} ${awaySpreadDisplay}
                             </button>
-                            <button class="pick-btn ${linePick === 'home' ? 'selected' : ''}"
+                            <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}"
                                     data-game-id="${game.id}" data-pick-type="line" data-team="home"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.home} ${homeSpreadDisplay}
@@ -1371,12 +1713,12 @@ function renderGames() {
                     <div class="pick-type">
                         <span class="pick-label">Straight Up (Winner)</span>
                         <div class="pick-options">
-                            <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''}"
+                            <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''} ${winnerAwayResult}"
                                     data-game-id="${game.id}" data-pick-type="winner" data-team="away"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.away}
                             </button>
-                            <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''}"
+                            <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''} ${winnerHomeResult}"
                                     data-game-id="${game.id}" data-pick-type="winner" data-team="home"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.home}
@@ -1385,9 +1727,17 @@ function renderGames() {
                     </div>
                 </div>
 
-                <div class="game-location">
-                    <span class="location-city">${game.location}</span>
-                    <span class="location-stadium">${game.stadium}</span>
+                <div class="game-footer">
+                    <div class="game-location">
+                        <span class="location-city">${game.location}</span>
+                        <span class="location-stadium">${game.stadium}</span>
+                    </div>
+                    <button class="blazin-star ${isBlazin ? 'active' : ''}"
+                            data-game-id="${game.id}"
+                            ${blazinDisabled ? 'disabled' : ''}
+                            title="${blazinTitle}">
+                        <span class="blazin-label">B5</span>${isBlazin ? '★' : '☆'}
+                    </button>
                 </div>
             </div>
         `;
@@ -1398,8 +1748,17 @@ function renderGames() {
         btn.addEventListener('click', handlePickSelect);
     });
 
+    // Add click handlers for blazin star buttons
+    document.querySelectorAll('.blazin-star').forEach(btn => {
+        btn.addEventListener('click', handleBlazinToggle);
+    });
+
     // Setup keyboard navigation
     setupKeyboardNavigation();
+
+    // Update progress indicator and countdown
+    updatePickProgress();
+    startCountdownTimer();
 }
 
 /**
@@ -1530,9 +1889,14 @@ function handlePickSelect(e) {
         allPicks[currentWeek][currentPicker][gameId] = {};
     }
 
+    // Get current selection state
+    const currentSelection = allPicks[currentWeek][currentPicker][gameId][pickType];
+    const isDeselecting = currentSelection === team;
+    const otherTeam = team === 'home' ? 'away' : 'home';
+    let autoSelectWinner = false;
+
     // Toggle selection
-    let isNewSelection = false;
-    if (allPicks[currentWeek][currentPicker][gameId][pickType] === team) {
+    if (isDeselecting) {
         delete allPicks[currentWeek][currentPicker][gameId][pickType];
         // Clean up empty game object
         if (Object.keys(allPicks[currentWeek][currentPicker][gameId]).length === 0) {
@@ -1540,7 +1904,6 @@ function handlePickSelect(e) {
         }
     } else {
         allPicks[currentWeek][currentPicker][gameId][pickType] = team;
-        isNewSelection = true;
 
         // If picking a favorite on the line, automatically pick them to win
         if (pickType === 'line') {
@@ -1549,34 +1912,135 @@ function handlePickSelect(e) {
             if (game && game.favorite === team) {
                 // Picked the favorite to cover, auto-select them as winner
                 allPicks[currentWeek][currentPicker][gameId].winner = team;
+                autoSelectWinner = true;
             }
         }
-    }
-
-    // Track for animation
-    if (isNewSelection) {
-        lastSelectedPick = { gameId, pickType, team };
-    } else {
-        lastSelectedPick = null;
     }
 
     // Save to localStorage
     savePicksToStorage();
 
-    // Re-render
-    renderGames();
-    renderScoringSummary();
-
-    // Apply animation to newly selected button
-    if (lastSelectedPick) {
-        const selector = `.pick-btn[data-game-id="${lastSelectedPick.gameId}"][data-pick-type="${lastSelectedPick.pickType}"][data-team="${lastSelectedPick.team}"]`;
-        const newBtn = document.querySelector(selector);
-        if (newBtn) {
-            newBtn.classList.add('just-selected');
-            setTimeout(() => newBtn.classList.remove('just-selected'), 400);
-        }
-        lastSelectedPick = null;
+    // Update only the relevant buttons instead of re-rendering all games
+    // Deselect the other team's button in the same row
+    const otherBtn = document.querySelector(`.pick-btn[data-game-id="${gameId}"][data-pick-type="${pickType}"][data-team="${otherTeam}"]`);
+    if (otherBtn) {
+        otherBtn.classList.remove('selected');
     }
+
+    // Toggle the clicked button
+    if (isDeselecting) {
+        btn.classList.remove('selected');
+    } else {
+        btn.classList.add('selected');
+        btn.classList.add('just-selected');
+        setTimeout(() => btn.classList.remove('just-selected'), 400);
+    }
+
+    // Handle auto-selection of winner button
+    if (autoSelectWinner) {
+        const winnerBtn = document.querySelector(`.pick-btn[data-game-id="${gameId}"][data-pick-type="winner"][data-team="${team}"]`);
+        const otherWinnerBtn = document.querySelector(`.pick-btn[data-game-id="${gameId}"][data-pick-type="winner"][data-team="${otherTeam}"]`);
+        if (winnerBtn) {
+            winnerBtn.classList.add('selected');
+        }
+        if (otherWinnerBtn) {
+            otherWinnerBtn.classList.remove('selected');
+        }
+    }
+
+    // Update progress bar
+    updatePickProgress();
+
+    // Update Blazin' 5 star buttons (enable/disable based on line picks)
+    const pickerPicks = allPicks[currentWeek][currentPicker] || {};
+    const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
+    document.querySelectorAll('.blazin-star').forEach(starBtn => {
+        const isActive = starBtn.classList.contains('active');
+        const gameCard = starBtn.closest('.game-card');
+        const isLocked = gameCard && gameCard.classList.contains('game-locked');
+        const starGameId = starBtn.dataset.gameId;
+        const starGamePicks = pickerPicks[starGameId] || {};
+        const hasStarLinePick = starGamePicks.line !== undefined;
+
+        if (isLocked) {
+            starBtn.disabled = true;
+        } else if (!hasStarLinePick && !isActive) {
+            starBtn.disabled = true;
+            starBtn.title = 'Make a line pick first';
+        } else if (isActive) {
+            starBtn.disabled = false;
+        } else {
+            starBtn.disabled = blazinCount >= 5;
+        }
+    });
+
+    // Update scoring summary
+    renderScoringSummary();
+}
+
+/**
+ * Handle Blazin' 5 star toggle
+ */
+function handleBlazinToggle(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const btn = e.currentTarget;
+    const gameId = btn.dataset.gameId;
+
+    if (!gameId || btn.disabled) return;
+
+    // Initialize picks structure
+    if (!allPicks[currentWeek]) {
+        allPicks[currentWeek] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker]) {
+        allPicks[currentWeek][currentPicker] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker][gameId]) {
+        allPicks[currentWeek][currentPicker][gameId] = {};
+    }
+
+    // Toggle blazin status
+    const currentBlazin = allPicks[currentWeek][currentPicker][gameId].blazin || false;
+    const newBlazin = !currentBlazin;
+    allPicks[currentWeek][currentPicker][gameId].blazin = newBlazin;
+
+    // Update just this button
+    btn.classList.toggle('active', newBlazin);
+    btn.innerHTML = `<span class="blazin-label">B5</span>${newBlazin ? '★' : '☆'}`;
+    btn.title = newBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5';
+
+    // Count current blazin picks and update other star buttons
+    const pickerPicks = allPicks[currentWeek][currentPicker] || {};
+    const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
+
+    // Enable/disable other star buttons based on count and line picks
+    document.querySelectorAll('.blazin-star').forEach(starBtn => {
+        const isActive = starBtn.classList.contains('active');
+        const gameCard = starBtn.closest('.game-card');
+        const isLocked = gameCard && gameCard.classList.contains('game-locked');
+        const starGameId = starBtn.dataset.gameId;
+        const starGamePicks = pickerPicks[starGameId] || {};
+        const hasStarLinePick = starGamePicks.line !== undefined;
+
+        if (isLocked) {
+            starBtn.disabled = true;
+            starBtn.title = 'Game is locked';
+        } else if (!hasStarLinePick && !isActive) {
+            starBtn.disabled = true;
+            starBtn.title = 'Make a line pick first';
+        } else if (isActive) {
+            starBtn.disabled = false;
+            starBtn.title = 'Remove from Blazin 5';
+        } else {
+            starBtn.disabled = blazinCount >= 5;
+            starBtn.title = blazinCount >= 5 ? 'Maximum 5 Blazin picks reached' : 'Add to Blazin 5';
+        }
+    });
+
+    // Save to localStorage
+    savePicksToStorage();
 }
 
 /**
@@ -1636,7 +2100,20 @@ function renderScoringSummary() {
             const gameIdStr = String(game.id);
             const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
             const cachedGamePicks = cachedPicks[gameIdStr] || cachedPicks[game.id] || {};
-            const result = weekResults[game.id];
+
+            // Get result from historical data or live scores
+            let result = weekResults[game.id];
+            if (!result) {
+                // Try to get result from live scores for completed games
+                const liveData = getLiveGameStatus(game);
+                if (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) {
+                    result = {
+                        winner: liveData.homeScore > liveData.awayScore ? 'home' : 'away',
+                        homeScore: liveData.homeScore,
+                        awayScore: liveData.awayScore
+                    };
+                }
+            }
 
             if (!result) return;
 
@@ -1671,7 +2148,12 @@ function renderScoringSummary() {
     });
 
     // Build simple table
-    const hasResults = Object.keys(weekResults).length > 0;
+    // Check if there are results from historical data or any completed live games
+    const hasLiveResults = weekGames.some(game => {
+        const liveData = getLiveGameStatus(game);
+        return liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
+    });
+    const hasResults = Object.keys(weekResults).length > 0 || hasLiveResults;
 
     let headerHtml = `
         <thead>
@@ -1712,27 +2194,32 @@ function renderScoringSummary() {
  * Clear current picker's picks for the current week (only unlocked games)
  */
 function clearCurrentPickerPicks() {
-    if (confirm(`Clear Week ${currentWeek} picks for ${currentPicker}? (Locked games will be preserved)`)) {
-        if (allPicks[currentWeek] && allPicks[currentWeek][currentPicker]) {
-            const games = getGamesForWeek(currentWeek);
-            const preservedPicks = {};
+    showConfirmModal(
+        'Clear Picks',
+        `Clear Week ${currentWeek} picks for ${currentPicker}? Picks for locked/completed games will be preserved.`,
+        () => {
+            if (allPicks[currentWeek] && allPicks[currentWeek][currentPicker]) {
+                const games = getGamesForWeek(currentWeek);
+                const preservedPicks = {};
 
-            // Preserve picks for locked games
-            games.forEach(game => {
-                const gameIdStr = String(game.id);
-                const existingPick = allPicks[currentWeek][currentPicker][gameIdStr];
+                // Preserve picks for locked games
+                games.forEach(game => {
+                    const gameIdStr = String(game.id);
+                    const existingPick = allPicks[currentWeek][currentPicker][gameIdStr];
 
-                if (existingPick && isGameLocked(game)) {
-                    preservedPicks[gameIdStr] = existingPick;
-                }
-            });
+                    if (existingPick && isGameLocked(game)) {
+                        preservedPicks[gameIdStr] = existingPick;
+                    }
+                });
 
-            allPicks[currentWeek][currentPicker] = preservedPicks;
+                allPicks[currentWeek][currentPicker] = preservedPicks;
+            }
+            savePicksToStorage();
+            renderGames();
+            renderScoringSummary();
+            showToast('Picks cleared');
         }
-        savePicksToStorage();
-        renderGames();
-        renderScoringSummary();
-    }
+    );
 }
 
 /**
@@ -2005,8 +2492,8 @@ function loadPicksFromStorage() {
                         });
                     }
                 });
-                // Save migrated data
-                savePicksToStorage();
+                // Save migrated data (no toast for migration)
+                savePicksToStorage(false);
             }
         } catch (e) {
             console.error('Failed to load picks from storage, clearing...', e);
@@ -2033,6 +2520,305 @@ function hideLoadingState() {
     if (loadingState) {
         loadingState.classList.add('hidden');
     }
+}
+
+/**
+ * Show error state
+ */
+function showErrorState(message) {
+    hideLoadingState();
+    const errorState = document.getElementById('error-state');
+    const errorMessage = document.getElementById('error-message');
+    if (errorState) {
+        errorState.classList.remove('hidden');
+        if (errorMessage && message) {
+            errorMessage.textContent = message;
+        }
+    }
+}
+
+/**
+ * Hide error state
+ */
+function hideErrorState() {
+    const errorState = document.getElementById('error-state');
+    if (errorState) {
+        errorState.classList.add('hidden');
+    }
+}
+
+// Current game filter
+let currentGameFilter = 'all';
+
+/**
+ * Setup game filters
+ */
+function setupGameFilters() {
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filter = btn.dataset.filter;
+            currentGameFilter = filter;
+
+            // Update active state
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Re-render games with filter
+            renderGames();
+        });
+    });
+}
+
+/**
+ * Setup week navigation buttons
+ */
+function setupWeekNavigation() {
+    const prevBtn = document.getElementById('prev-week-btn');
+    const nextBtn = document.getElementById('next-week-btn');
+
+    prevBtn?.addEventListener('click', () => {
+        if (currentWeek > 1) {
+            setCurrentWeek(currentWeek - 1);
+        }
+    });
+
+    nextBtn?.addEventListener('click', () => {
+        if (currentWeek < CURRENT_NFL_WEEK) {
+            setCurrentWeek(currentWeek + 1);
+        }
+    });
+
+    updateWeekNavButtons();
+}
+
+/**
+ * Update week navigation button states
+ */
+function updateWeekNavButtons() {
+    const prevBtn = document.getElementById('prev-week-btn');
+    const nextBtn = document.getElementById('next-week-btn');
+
+    if (prevBtn) prevBtn.disabled = currentWeek <= 1;
+    if (nextBtn) nextBtn.disabled = currentWeek >= CURRENT_NFL_WEEK;
+}
+
+/**
+ * Update week UI after navigation
+ */
+function updateWeekUI() {
+    const weekDropdown = document.getElementById('week-dropdown');
+    if (weekDropdown) weekDropdown.value = currentWeek;
+
+    document.getElementById('picks-week-num').textContent = currentWeek;
+    document.getElementById('scoring-week-num').textContent = currentWeek;
+
+    updateWeekNavButtons();
+    renderGames();
+    renderScoringSummary();
+}
+
+/**
+ * Show confirmation modal
+ */
+let modalConfirmCallback = null;
+
+function showConfirmModal(title, message, onConfirm) {
+    const modal = document.getElementById('confirm-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalMessage = document.getElementById('modal-message');
+
+    if (modal && modalTitle && modalMessage) {
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+        modalConfirmCallback = onConfirm;
+        modal.classList.add('show');
+    }
+}
+
+function hideConfirmModal() {
+    const modal = document.getElementById('confirm-modal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+    modalConfirmCallback = null;
+}
+
+function setupConfirmModal() {
+    document.getElementById('modal-cancel-btn')?.addEventListener('click', hideConfirmModal);
+    document.getElementById('modal-confirm-btn')?.addEventListener('click', () => {
+        if (modalConfirmCallback) {
+            modalConfirmCallback();
+        }
+        hideConfirmModal();
+    });
+
+    // Close on overlay click
+    document.getElementById('confirm-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'confirm-modal') {
+            hideConfirmModal();
+        }
+    });
+}
+
+/**
+ * Export picks to JSON file
+ */
+function exportPicks() {
+    const data = {
+        exportDate: new Date().toISOString(),
+        picks: allPicks
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nfl-picks-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Picks exported successfully');
+}
+
+/**
+ * Import picks from JSON file
+ */
+function importPicks(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.picks) {
+                // Merge imported picks with existing
+                Object.keys(data.picks).forEach(week => {
+                    if (!allPicks[week]) allPicks[week] = {};
+                    Object.keys(data.picks[week]).forEach(picker => {
+                        if (!allPicks[week][picker]) allPicks[week][picker] = {};
+                        Object.assign(allPicks[week][picker], data.picks[week][picker]);
+                    });
+                });
+                savePicksToStorage();
+                renderGames();
+                renderScoringSummary();
+                showToast('Picks imported successfully');
+            } else {
+                showToast('Invalid file format');
+            }
+        } catch (err) {
+            showToast('Failed to import picks');
+            console.error('Import error:', err);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function setupExportImport() {
+    document.getElementById('export-picks-btn')?.addEventListener('click', exportPicks);
+    document.getElementById('import-picks-btn')?.addEventListener('click', () => {
+        document.getElementById('import-file-input')?.click();
+    });
+    document.getElementById('import-file-input')?.addEventListener('change', (e) => {
+        if (e.target.files[0]) {
+            importPicks(e.target.files[0]);
+            e.target.value = ''; // Reset for next import
+        }
+    });
+}
+
+/**
+ * Setup keyboard shortcuts legend
+ */
+function setupKeyboardLegend() {
+    const toggleBtn = document.getElementById('keyboard-toggle-btn');
+    const legend = document.getElementById('keyboard-legend');
+    const closeBtn = document.getElementById('keyboard-legend-close');
+
+    toggleBtn?.addEventListener('click', () => {
+        legend?.classList.toggle('show');
+    });
+
+    closeBtn?.addEventListener('click', () => {
+        legend?.classList.remove('show');
+    });
+
+    // Add global keyboard shortcuts for week navigation
+    document.addEventListener('keydown', (e) => {
+        // Only when on Make Picks tab and not in an input
+        if (currentCategory !== 'make-picks') return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+        if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            if (currentWeek > 1) {
+                currentWeek--;
+                updateWeekUI();
+            }
+        } else if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            if (currentWeek < CURRENT_NFL_WEEK) {
+                currentWeek++;
+                updateWeekUI();
+            }
+        } else if (e.key === '?') {
+            legend?.classList.toggle('show');
+        }
+    });
+}
+
+/**
+ * Progress bar dismiss preference
+ */
+function setupProgressBarPreference() {
+    const closeBtn = document.getElementById('picks-status-close');
+    closeBtn?.addEventListener('click', () => {
+        const statusBar = document.getElementById('picks-status-bar');
+        if (statusBar) {
+            statusBar.classList.add('hidden');
+            sessionStorage.setItem('progressBarDismissed', 'true');
+        }
+    });
+}
+
+function shouldShowProgressBar() {
+    return sessionStorage.getItem('progressBarDismissed') !== 'true';
+}
+
+/**
+ * Setup retry button for error state
+ */
+function setupRetryButton() {
+    document.getElementById('retry-btn')?.addEventListener('click', () => {
+        hideErrorState();
+        showLoadingState();
+        loadFromGoogleSheets();
+    });
+}
+
+/**
+ * Setup back to top button
+ */
+function setupBackToTop() {
+    const backToTopBtn = document.getElementById('back-to-top');
+    if (!backToTopBtn) return;
+
+    // Show/hide button based on scroll position
+    window.addEventListener('scroll', () => {
+        if (window.scrollY > 300) {
+            backToTopBtn.classList.add('visible');
+        } else {
+            backToTopBtn.classList.remove('visible');
+        }
+    });
+
+    // Scroll to top when clicked
+    backToTopBtn.addEventListener('click', () => {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    });
 }
 
 // Initialize when DOM is ready

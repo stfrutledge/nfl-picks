@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFL Picks Dashboard - 2025 Season</title>
+    <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -38,6 +39,14 @@
             <section class="loading-state" id="loading-state">
                 <div class="loading-spinner"></div>
                 <p>Loading picks data...</p>
+            </section>
+
+            <!-- Error State -->
+            <section class="error-state hidden" id="error-state">
+                <div class="error-icon">⚠️</div>
+                <h3>Failed to Load Data</h3>
+                <p id="error-message">Unable to connect to the data source. Please check your internet connection.</p>
+                <button class="btn btn-primary" id="retry-btn">Try Again</button>
             </section>
 
             <!-- Leaderboard -->
@@ -75,7 +84,7 @@
             <!-- Team Pick Frequency Section (Blazin' 5 only) -->
             <section class="team-frequency-section hidden">
                 <h3>Team Pick Frequency</h3>
-                <p class="section-subtitle">How often each picker selects each team (Top 5)</p>
+                <p class="section-subtitle">Top 5 teams picked with win percentage</p>
                 <div class="team-frequency-grid" id="team-frequency-grid">
                     <!-- Team frequency cards will be injected here -->
                 </div>
@@ -107,9 +116,13 @@
                 <div class="selection-row">
                     <div class="week-selector">
                         <label for="week-dropdown">Select Week:</label>
-                        <select id="week-dropdown" class="week-dropdown">
-                            <!-- Week options will be injected here -->
-                        </select>
+                        <div class="week-nav-row">
+                            <button class="week-nav-btn" id="prev-week-btn" title="Previous Week">&#8592;</button>
+                            <select id="week-dropdown" class="week-dropdown">
+                                <!-- Week options will be injected here -->
+                            </select>
+                            <button class="week-nav-btn" id="next-week-btn" title="Next Week">&#8594;</button>
+                        </div>
                         <span id="week-loading" class="week-loading hidden">Loading...</span>
                     </div>
 
@@ -125,10 +138,26 @@
                     </div>
                 </div>
 
+                <!-- Game Filters -->
+                <div class="game-filters">
+                    <button class="filter-btn active" data-filter="all">All Games</button>
+                    <button class="filter-btn" data-filter="upcoming">Upcoming</button>
+                    <button class="filter-btn" data-filter="completed">Completed</button>
+                </div>
+
                 <!-- Actions -->
                 <div class="picks-actions">
                     <button class="btn btn-secondary" id="clear-picks-btn">Clear My Picks</button>
-                    <button class="btn btn-primary" id="randomize-picks-btn">Randomize Picks</button>
+                    <div class="dropdown" id="quick-picks-dropdown">
+                        <button class="btn btn-primary dropdown-toggle" id="quick-picks-btn">
+                            Quick Picks <span class="dropdown-arrow">▼</span>
+                        </button>
+                        <div class="dropdown-menu" id="quick-picks-menu">
+                            <button class="dropdown-item" id="randomize-picks-btn">Randomize</button>
+                            <button class="dropdown-item" id="pick-favorites-btn">Pick All Favorites</button>
+                            <button class="dropdown-item" id="pick-underdogs-btn">Pick All Underdogs</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Games List -->
@@ -157,6 +186,69 @@
             <p>Data pulled from <a href="https://docs.google.com/spreadsheets/d/1JuftzmWWIlquN1oKrFqPNaGjMu9ysdnCHqCDj9lYzfE" target="_blank" rel="noopener">published Google Sheet</a></p>
         </footer>
     </div>
+
+    <!-- Sticky Pick Progress Bar -->
+    <div class="picks-status-bar hidden" id="picks-status-bar">
+        <div class="pick-progress">
+            <div class="progress-text">
+                <span id="picks-made">0</span>/<span id="picks-total">0</span> picks made
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
+        <button class="picks-status-close" id="picks-status-close" title="Dismiss">&times;</button>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-content">
+            <h3 class="modal-title" id="modal-title">Confirm Action</h3>
+            <p class="modal-message" id="modal-message">Are you sure you want to proceed?</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
+                <button class="btn btn-danger" id="modal-confirm-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Toggle -->
+    <button class="keyboard-toggle-btn hidden" id="keyboard-toggle-btn" title="Keyboard Shortcuts">?</button>
+
+    <!-- Keyboard Shortcuts Legend -->
+    <div class="keyboard-legend" id="keyboard-legend">
+        <div class="keyboard-legend-header">
+            <span class="keyboard-legend-title">Keyboard Shortcuts</span>
+            <button class="keyboard-legend-close" id="keyboard-legend-close">&times;</button>
+        </div>
+        <div class="keyboard-shortcut">
+            <span class="keyboard-key">↑↓</span>
+            <span class="keyboard-desc">Navigate between games</span>
+        </div>
+        <div class="keyboard-shortcut">
+            <span class="keyboard-key">1</span>
+            <span class="keyboard-desc">Select away team (line)</span>
+        </div>
+        <div class="keyboard-shortcut">
+            <span class="keyboard-key">2</span>
+            <span class="keyboard-desc">Select home team (line)</span>
+        </div>
+        <div class="keyboard-shortcut">
+            <span class="keyboard-key">3</span>
+            <span class="keyboard-desc">Select away team (winner)</span>
+        </div>
+        <div class="keyboard-shortcut">
+            <span class="keyboard-key">4</span>
+            <span class="keyboard-desc">Select home team (winner)</span>
+        </div>
+        <div class="keyboard-shortcut">
+            <span class="keyboard-key">←→</span>
+            <span class="keyboard-desc">Previous/Next week</span>
+        </div>
+    </div>
+
+    <!-- Back to Top Button -->
+    <button class="back-to-top" id="back-to-top" title="Back to top">&#8593;</button>
 
     <script src="parser.js"></script>
     <script src="charts.js"></script>

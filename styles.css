@@ -274,6 +274,21 @@ header h1 {
     transform: translateX(-50%) translateY(0);
 }
 
+/* Auto-save toast - smaller and less intrusive */
+.toast-autosave {
+    padding: 10px 16px;
+    font-size: 0.8rem;
+    background: var(--accent-green);
+    bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toast-autosave .toast-icon {
+    font-size: 1rem;
+}
+
 /* Pick Confirmation Animation - only for the button just clicked */
 .pick-btn.just-selected {
     animation: pickPulse 0.4s ease;
@@ -288,7 +303,7 @@ header h1 {
 /* Dashboard */
 .dashboard {
     animation: fadeIn 0.3s ease;
-    padding-bottom: 60px;
+    padding-bottom: 80px;
 }
 
 @keyframes fadeIn {
@@ -329,6 +344,9 @@ header h1 {
     border-bottom: 1px solid var(--border-color);
     padding: 0 40px;
     width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 90;
 }
 
 .tab {
@@ -1255,14 +1273,32 @@ footer a:hover {
 /* Games List */
 .games-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
     gap: 16px;
     margin-bottom: 24px;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 400px) {
     .games-list {
         grid-template-columns: 1fr;
+    }
+
+    .game-card {
+        padding: 16px;
+    }
+
+    .game-matchup-line {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .game-matchup-line .at-symbol {
+        display: none;
+    }
+
+    .picks-row {
+        grid-template-columns: 1fr;
+        gap: 16px;
     }
 }
 
@@ -1289,16 +1325,6 @@ footer a:hover {
     margin: -20px -20px 16px -20px;
     padding: 12px 20px;
     border-radius: 7px 7px 0 0;
-}
-
-.game-card.has-pick {
-    border-color: var(--accent-green);
-    border-left: 4px solid var(--accent-green);
-}
-
-.game-card.has-partial-pick {
-    border-color: #f59e0b;
-    border-left: 4px solid #f59e0b;
 }
 
 .game-card.game-locked {
@@ -1351,6 +1377,59 @@ footer a:hover {
 
 .game-card.game-in-progress {
     border-left: 4px solid var(--accent-green);
+}
+
+/* Game Footer */
+.game-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 12px;
+    margin-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.game-footer .game-location {
+    text-align: left;
+    margin-top: 0;
+}
+
+/* Blazin' 5 Star Button */
+.blazin-star {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: var(--text-light);
+    padding: 6px 10px;
+    transition: all 0.2s ease;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.blazin-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.blazin-star:hover:not(:disabled) {
+    border-color: #f59e0b;
+    color: #f59e0b;
+}
+
+.blazin-star.active {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: white;
+}
+
+.blazin-star:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .game-matchup-line strong {
@@ -1520,6 +1599,25 @@ footer a:hover {
     color: white;
 }
 
+/* Pick result states for completed games */
+.pick-btn.selected.correct {
+    border-color: var(--accent-green);
+    background: var(--accent-green);
+    color: white;
+}
+
+.pick-btn.selected.incorrect {
+    border-color: #dc2626;
+    background: #dc2626;
+    color: white;
+}
+
+.pick-btn.selected.push {
+    border-color: #f59e0b;
+    background: #f59e0b;
+    color: white;
+}
+
 .game-matchup {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -1590,6 +1688,89 @@ footer a:hover {
     text-transform: uppercase;
 }
 
+/* Sticky Pick Progress Bar */
+.picks-status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+}
+
+[data-theme="dark"] .picks-status-bar {
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.picks-status-bar .pick-progress {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 500px;
+}
+
+.picks-status-close {
+    position: absolute;
+    right: 16px;
+    background: none;
+    border: none;
+    color: var(--text-light);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.picks-status-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+
+.progress-text {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.progress-text span {
+    color: var(--text-primary);
+}
+
+.progress-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    overflow: hidden;
+    min-width: 100px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent-green);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.progress-fill.complete {
+    background: var(--accent-green);
+}
+
+.progress-fill.partial {
+    background: #f59e0b;
+}
+
 /* Picks Actions */
 .picks-actions {
     display: flex;
@@ -1597,6 +1778,80 @@ footer a:hover {
     flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 30px;
+}
+
+/* Dropdown */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dropdown-arrow {
+    font-size: 0.7rem;
+    transition: transform 0.2s ease;
+}
+
+.dropdown.open .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 180px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 100;
+}
+
+.dropdown.open .dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    text-align: left;
+    background: none;
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.dropdown-item:first-child {
+    border-radius: 5px 5px 0 0;
+}
+
+.dropdown-item:last-child {
+    border-radius: 0 0 5px 5px;
+}
+
+.dropdown-item:hover {
+    background: var(--bg-secondary);
+}
+
+.dropdown-item:not(:last-child) {
+    border-bottom: 1px solid var(--border-color);
 }
 
 /* Share Picks Button */
@@ -1863,6 +2118,15 @@ footer a:hover {
 .team-freq-pct {
     font-size: 0.75rem;
     color: var(--text-light);
+    font-weight: 600;
+}
+
+.team-freq-pct.positive {
+    color: var(--accent-green);
+}
+
+.team-freq-pct.negative {
+    color: #dc2626;
 }
 
 .team-frequency-card .no-data {
@@ -1892,5 +2156,561 @@ footer a:hover {
     .team-freq-row {
         grid-template-columns: 100px 1fr 50px;
     }
+}
+
+/* Game Final Score Display */
+.game-final-score {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}
+
+.final-score-team {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+}
+
+.final-score-team.winner .final-team-score {
+    color: var(--accent-green);
+}
+
+.final-team-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-light);
+}
+
+.final-team-score {
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.final-score-divider {
+    color: var(--text-light);
+    font-size: 0.8rem;
+}
+
+/* Individual Game Lock Countdown */
+.game-lock-countdown {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.game-lock-countdown .countdown-label {
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.game-lock-countdown .countdown-time {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-family: 'Libre Franklin', sans-serif;
+}
+
+.game-lock-countdown.urgent {
+    background: rgba(220, 38, 38, 0.1);
+    border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.game-lock-countdown.urgent .countdown-label {
+    color: #dc2626;
+}
+
+.game-lock-countdown.urgent .countdown-time {
+    color: #dc2626;
+    animation: pulse 1s infinite;
+}
+
+.game-lock-countdown.locked {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.game-lock-countdown .countdown-locked {
+    color: var(--text-light);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+}
+
+/* Error State */
+.error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+}
+
+.error-state .error-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+}
+
+.error-state h3 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.error-state p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+}
+
+.error-state .btn {
+    padding: 10px 24px;
+}
+
+/* Week Navigation */
+.week-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.week-nav-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.week-nav-btn:hover:not(:disabled) {
+    background: var(--bg-primary);
+    border-color: var(--text-light);
+    color: var(--text-primary);
+}
+
+.week-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Game Filters */
+.game-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.filter-btn {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.filter-btn:hover {
+    border-color: var(--text-light);
+}
+
+.filter-btn.active {
+    background: var(--bg-dark);
+    border-color: var(--bg-dark);
+    color: white;
+}
+
+[data-theme="dark"] .filter-btn.active {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
+}
+
+/* Season Summary */
+.season-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.season-stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.season-stat-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.season-stat-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.season-stat-pct {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+}
+
+.season-stat-pct.good {
+    color: var(--accent-green);
+    background: rgba(0, 177, 18, 0.1);
+}
+
+.season-stat-pct.bad {
+    color: #dc2626;
+    background: rgba(220, 38, 38, 0.1);
+}
+
+/* Confirm Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+}
+
+.modal-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: var(--shadow-lg);
+    transform: scale(0.9);
+    transition: transform 0.2s ease;
+}
+
+.modal-overlay.show .modal-content {
+    transform: scale(1);
+}
+
+.modal-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+.modal-message {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.modal-actions .btn {
+    padding: 10px 20px;
+    font-size: 0.85rem;
+}
+
+/* Export/Import Section */
+.data-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.data-actions .btn-icon {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Keyboard Shortcuts Legend */
+.keyboard-legend {
+    position: fixed;
+    bottom: 70px;
+    right: 20px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    transition: all 0.2s ease;
+    max-width: 280px;
+}
+
+.keyboard-legend.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.keyboard-legend-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.keyboard-legend-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.keyboard-legend-close {
+    background: none;
+    border: none;
+    color: var(--text-light);
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.keyboard-legend-close:hover {
+    color: var(--text-primary);
+}
+
+.keyboard-shortcut {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 0.8rem;
+}
+
+.keyboard-key {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    min-width: 28px;
+    text-align: center;
+}
+
+.keyboard-desc {
+    color: var(--text-secondary);
+}
+
+.keyboard-toggle-btn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    font-size: 1rem;
+    color: var(--text-secondary);
+    transition: all 0.15s ease;
+    z-index: 95;
+}
+
+/* Adjust keyboard button when picks status bar is visible */
+.picks-status-bar:not(.hidden) ~ .keyboard-toggle-btn {
+    bottom: 80px;
+}
+
+.keyboard-toggle-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+/* Print Styles */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+
+    header, footer, .category-tabs, .picks-actions,
+    .share-picks-container, .picks-status-bar,
+    .keyboard-toggle-btn, .keyboard-legend,
+    .dark-mode-toggle, .game-lock-countdown,
+    .week-nav-btn, .filter-btn, .data-actions {
+        display: none !important;
+    }
+
+    .container {
+        max-width: 100%;
+    }
+
+    .make-picks-section {
+        padding: 0 !important;
+    }
+
+    .games-list {
+        display: block;
+    }
+
+    .game-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        margin-bottom: 16px;
+        border: 1px solid #ccc;
+        box-shadow: none;
+    }
+
+    .pick-btn {
+        border: 1px solid #ccc !important;
+        background: white !important;
+        color: black !important;
+    }
+
+    .pick-btn.selected {
+        background: #e0e0e0 !important;
+        font-weight: bold;
+    }
+
+    .pick-btn.correct {
+        background: #d4edda !important;
+    }
+
+    .pick-btn.incorrect {
+        background: #f8d7da !important;
+    }
+
+    .scoring-summary {
+        break-before: page;
+    }
+}
+
+/* Entrance Animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.game-card {
+    animation: slideIn 0.3s ease forwards;
+}
+
+.games-list .game-card:nth-child(1) { animation-delay: 0s; }
+.games-list .game-card:nth-child(2) { animation-delay: 0.03s; }
+.games-list .game-card:nth-child(3) { animation-delay: 0.06s; }
+.games-list .game-card:nth-child(4) { animation-delay: 0.09s; }
+.games-list .game-card:nth-child(5) { animation-delay: 0.12s; }
+.games-list .game-card:nth-child(6) { animation-delay: 0.15s; }
+.games-list .game-card:nth-child(7) { animation-delay: 0.18s; }
+.games-list .game-card:nth-child(8) { animation-delay: 0.21s; }
+.games-list .game-card:nth-child(9) { animation-delay: 0.24s; }
+.games-list .game-card:nth-child(10) { animation-delay: 0.27s; }
+.games-list .game-card:nth-child(11) { animation-delay: 0.3s; }
+.games-list .game-card:nth-child(12) { animation-delay: 0.33s; }
+.games-list .game-card:nth-child(13) { animation-delay: 0.36s; }
+.games-list .game-card:nth-child(14) { animation-delay: 0.39s; }
+.games-list .game-card:nth-child(15) { animation-delay: 0.42s; }
+.games-list .game-card:nth-child(16) { animation-delay: 0.45s; }
+
+.leaderboard .picker-card,
+.charts-grid .chart-container,
+.insights-grid .insight-card {
+    animation: slideIn 0.4s ease forwards;
+}
+
+/* Back to Top Button */
+.back-to-top {
+    position: fixed;
+    bottom: 84px;
+    right: 30px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    color: white;
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+    z-index: 95;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.back-to-top.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.back-to-top:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.back-to-top:active {
+    transform: translateY(0);
+}
+
+/* Adjust position when picks status bar is visible */
+.picks-status-bar:not(.hidden) ~ .back-to-top {
+    bottom: 134px;
 }
 
