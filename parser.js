@@ -921,6 +921,22 @@ function parseWeeklyPicksCSV(csvText, weekNum) {
                     weekData.picks[picker][gameId].winner = 'home';
                 }
             }
+
+            // Check if this is a Blazin' 5 pick (marked with * in the blazin column)
+            // The column might contain just "*", or the team name, or team name with *
+            const blazinPick = (row[cols.blazin] || '').toString().trim();
+            const hasBlazinMarker = blazinPick === '*' ||
+                                    blazinPick.includes('*') ||
+                                    (blazinPick.length > 0 && blazinPick !== 'Blazin\' 5');
+
+            if (hasBlazinMarker) {
+                weekData.picks[picker][gameId].blazin = true;
+                // Store the team picked for Blazin' 5 (use line pick team)
+                if (weekData.picks[picker][gameId].line) {
+                    weekData.picks[picker][gameId].blazinTeam =
+                        weekData.picks[picker][gameId].line === 'away' ? awayTeam : homeTeam;
+                }
+            }
         });
 
         gameId++;

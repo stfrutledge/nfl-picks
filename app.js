@@ -374,11 +374,38 @@ function init() {
     setupDarkMode();
     loadPicksFromStorage();
 
+    // Restore Stephen's week 16 Seahawks pick that was accidentally cleared
+    restoreStephenWeek16Pick();
+
     // Show loading state
     showLoadingState();
 
     // Load data from Google Sheets
     loadFromGoogleSheets();
+}
+
+/**
+ * One-time fix: Restore Stephen's week 16 Seahawks pick that was accidentally cleared
+ * Week 16 Game 1: Rams @ Seahawks, Seahawks -1.5 (home favorite)
+ */
+function restoreStephenWeek16Pick() {
+    // Initialize week 16 picks if needed
+    if (!allPicks[16]) {
+        allPicks[16] = {};
+    }
+    if (!allPicks[16]['Stephen']) {
+        allPicks[16]['Stephen'] = {};
+    }
+
+    // Week 16, Game ID 1 is Rams @ Seahawks, Seahawks are home and favored (-1.5)
+    // Stephen picked Seahawks -1.5
+    allPicks[16]['Stephen']['1'] = {
+        line: 'home',    // Seahawks are home
+        winner: 'home'   // Seahawks to win
+    };
+
+    savePicksToStorage();
+    console.log('Restored Stephen\'s week 16 Seahawks pick (Game 1, home)');
 }
 
 /**
@@ -479,7 +506,13 @@ async function setCurrentWeek(week) {
         for (const proxy of CORS_PROXIES) {
             try {
                 const url = proxy ? proxy + encodeURIComponent(weekUrl) : weekUrl;
-                const response = await fetch(url, { method: 'GET' });
+
+                // Add 10 second timeout to prevent hanging on slow proxies
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch(url, { method: 'GET', signal: controller.signal });
+                clearTimeout(timeoutId);
 
                 if (!response.ok) continue;
 
@@ -633,7 +666,13 @@ async function loadFromGoogleSheets() {
     for (const proxy of CORS_PROXIES) {
         try {
             const url = proxy ? proxy + encodeURIComponent(GOOGLE_SHEETS_CSV_URL) : GOOGLE_SHEETS_CSV_URL;
-            const response = await fetch(url, { method: 'GET' });
+
+            // Add 10 second timeout to prevent hanging on slow proxies
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+            const response = await fetch(url, { method: 'GET', signal: controller.signal });
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -755,6 +794,17 @@ function renderDashboard() {
             renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
         } else {
             insightsSection.classList.add('hidden');
+        }
+    }
+
+    // Only show team pick frequency on Blazin' 5 tab
+    const teamFrequencySection = document.querySelector('.team-frequency-section');
+    if (teamFrequencySection) {
+        if (currentCategory === 'blazin') {
+            teamFrequencySection.classList.remove('hidden');
+            renderTeamPickFrequency();
+        } else {
+            teamFrequencySection.classList.add('hidden');
         }
     }
 
@@ -880,6 +930,244 @@ function renderGroupStats(groupOverall) {
             </div>
         `;
     }).join('');
+}
+
+/**
+ * Calculate team pick frequency for Blazin' 5 picks
+ * Aggregates how often each picker selected each team for their Blazin' 5
+ * Only counts picks marked with * (blazin: true)
+ */
+function calculateBlazinTeamFrequency() {
+    const frequency = {};
+    PICKERS.forEach(picker => {
+        frequency[picker] = {};
+    });
+
+    // Go through all weeks with picks data
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const weekPicks = allPicks[week];
+        const weekGames = getGamesForWeek(week);
+
+        // Also check weeklyPicksCache for blazin data
+        const cachedWeek = weeklyPicksCache[week];
+
+        if (!weekGames || weekGames.length === 0) continue;
+
+        PICKERS.forEach(picker => {
+            // First check cached data (has blazin markers from *)
+            if (cachedWeek && cachedWeek.picks && cachedWeek.picks[picker]) {
+                const cachedPicks = cachedWeek.picks[picker];
+                Object.keys(cachedPicks).forEach(gameId => {
+                    const pick = cachedPicks[gameId];
+                    const game = weekGames.find(g => String(g.id) === String(gameId));
+
+                    // Only count if marked as Blazin' 5 pick
+                    if (game && pick.blazin && pick.line) {
+                        const team = pick.line === 'away' ? game.away : game.home;
+                        const normalizedTeam = TEAM_NAME_MAP[team] || team;
+
+                        if (!frequency[picker][normalizedTeam]) {
+                            frequency[picker][normalizedTeam] = 0;
+                        }
+                        frequency[picker][normalizedTeam]++;
+                    }
+                });
+            }
+
+            // Also check allPicks for any blazin-marked picks
+            const pickerPicks = weekPicks ? weekPicks[picker] : null;
+            if (pickerPicks) {
+                Object.keys(pickerPicks).forEach(gameId => {
+                    const pick = pickerPicks[gameId];
+                    const game = weekGames.find(g => String(g.id) === String(gameId));
+
+                    // Only count if marked as Blazin' 5 pick
+                    if (game && pick.blazin && pick.line) {
+                        const team = pick.line === 'away' ? game.away : game.home;
+                        const normalizedTeam = TEAM_NAME_MAP[team] || team;
+
+                        // Avoid double counting from cache
+                        if (!cachedWeek || !cachedWeek.picks || !cachedWeek.picks[picker]) {
+                            if (!frequency[picker][normalizedTeam]) {
+                                frequency[picker][normalizedTeam] = 0;
+                            }
+                            frequency[picker][normalizedTeam]++;
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    return frequency;
+}
+
+/**
+ * Load all weekly data for Blazin' 5 analysis
+ * Fetches each week's sheet to get the * markers
+ */
+async function loadAllWeeklyDataForBlazin() {
+    const container = document.getElementById('team-frequency-grid');
+
+    // Only use corsproxy.io which we know works
+    const proxy = 'https://corsproxy.io/?';
+
+    let loadedWeeks = 0;
+    let failedWeeks = 0;
+
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        if (weeklyPicksCache[week]) {
+            loadedWeeks++;
+            continue; // Already cached
+        }
+        if (!WEEK_SHEET_GIDS[week]) continue; // No GID for this week
+
+        // Update loading message with progress
+        if (container) {
+            container.innerHTML = `<div class="loading-message">Loading week ${week} of ${CURRENT_NFL_WEEK}...</div>`;
+        }
+
+        const weekUrl = `${GOOGLE_SHEETS_BASE_URL}&gid=${WEEK_SHEET_GIDS[week]}`;
+
+        try {
+            const url = proxy + encodeURIComponent(weekUrl);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+            const response = await fetch(url, { method: 'GET', signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                console.warn(`Week ${week}: HTTP ${response.status}`);
+                failedWeeks++;
+                continue;
+            }
+
+            const csvText = await response.text();
+            if (csvText.includes('<!DOCTYPE') || csvText.length < 50) {
+                console.warn(`Week ${week}: Invalid response`);
+                failedWeeks++;
+                continue;
+            }
+
+            const weekData = parseWeeklyPicksCSV(csvText, week);
+            weeklyPicksCache[week] = weekData;
+
+            // Merge blazin picks into allPicks
+            if (weekData.picks) {
+                if (!allPicks[week]) allPicks[week] = {};
+                for (const picker in weekData.picks) {
+                    if (!allPicks[week][picker]) allPicks[week][picker] = {};
+                    for (const gameId in weekData.picks[picker]) {
+                        const pick = weekData.picks[picker][gameId];
+                        if (!allPicks[week][picker][gameId]) {
+                            allPicks[week][picker][gameId] = {};
+                        }
+                        // Merge blazin marker
+                        if (pick.blazin) {
+                            allPicks[week][picker][gameId].blazin = true;
+                            allPicks[week][picker][gameId].blazinTeam = pick.blazinTeam;
+                        }
+                        // Also merge line/winner if not present
+                        if (pick.line && !allPicks[week][picker][gameId].line) {
+                            allPicks[week][picker][gameId].line = pick.line;
+                        }
+                        if (pick.winner && !allPicks[week][picker][gameId].winner) {
+                            allPicks[week][picker][gameId].winner = pick.winner;
+                        }
+                    }
+                }
+            }
+
+            // Count blazin picks for debugging
+            let blazinCount = 0;
+            for (const picker in weekData.picks) {
+                for (const gameId in weekData.picks[picker]) {
+                    if (weekData.picks[picker][gameId].blazin) {
+                        blazinCount++;
+                    }
+                }
+            }
+            console.log(`Week ${week}: ${blazinCount} Blazin' 5 picks found`);
+            loadedWeeks++;
+        } catch (err) {
+            console.warn(`Week ${week}: ${err.message}`);
+            failedWeeks++;
+        }
+    }
+
+    console.log(`Blazin' 5 data: ${loadedWeeks} weeks loaded, ${failedWeeks} failed`);
+}
+
+/**
+ * Render Team Pick Frequency section for Blazin' 5 tab
+ */
+async function renderTeamPickFrequency() {
+    const container = document.getElementById('team-frequency-grid');
+    if (!container) return;
+
+    // First, load all weekly data to get blazin markers
+    await loadAllWeeklyDataForBlazin();
+
+    const frequency = calculateBlazinTeamFrequency();
+
+    // Build a card for each picker showing their most picked teams
+    const html = PICKERS.map(picker => {
+        const teamCounts = frequency[picker];
+        const sortedTeams = Object.entries(teamCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5); // Top 5 teams
+
+        if (sortedTeams.length === 0) {
+            return `
+                <div class="team-frequency-card">
+                    <div class="team-frequency-header">
+                        <span class="picker-color color-${picker.toLowerCase()}"></span>
+                        <span class="picker-name">${picker}</span>
+                    </div>
+                    <div class="no-data">No pick data available</div>
+                </div>
+            `;
+        }
+
+        const totalPicks = Object.values(teamCounts).reduce((a, b) => a + b, 0);
+        const maxCount = sortedTeams[0][1];
+
+        const teamRows = sortedTeams.map(([team, count], idx) => {
+            const pct = ((count / totalPicks) * 100).toFixed(1);
+            const barWidth = (count / maxCount) * 100;
+            return `
+                <div class="team-freq-row ${idx === 0 ? 'top-team' : ''}">
+                    <div class="team-freq-info">
+                        <img src="${getTeamLogo(team)}" alt="${team}" class="team-freq-logo">
+                        <span class="team-freq-name">${team}</span>
+                    </div>
+                    <div class="team-freq-bar-container">
+                        <div class="team-freq-bar" style="width: ${barWidth}%"></div>
+                    </div>
+                    <div class="team-freq-stats">
+                        <span class="team-freq-count">${count}</span>
+                        <span class="team-freq-pct">${pct}%</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="team-frequency-card">
+                <div class="team-frequency-header">
+                    <span class="picker-color color-${picker.toLowerCase()}"></span>
+                    <span class="picker-name">${picker}</span>
+                    <span class="total-picks">${totalPicks} picks</span>
+                </div>
+                <div class="team-freq-rows">
+                    ${teamRows}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = html;
 }
 
 /**
@@ -1310,7 +1598,7 @@ function calculateATSWinner(game, result) {
 }
 
 /**
- * Render scoring summary table
+ * Render scoring summary table - Simple per-player summary
  */
 function renderScoringSummary() {
     const scoringTable = document.getElementById('scoring-table');
@@ -1319,6 +1607,7 @@ function renderScoringSummary() {
     const weekGames = getGamesForWeek(currentWeek);
     const weekResults = getResultsForWeek(currentWeek);
     const weekPicks = allPicks[currentWeek] || {};
+    const cachedWeek = weeklyPicksCache[currentWeek];
 
     // Update the summary header
     const summaryHeader = document.querySelector('.scoring-summary h3');
@@ -1327,149 +1616,118 @@ function renderScoringSummary() {
     }
 
     if (weekGames.length === 0) {
-        scoringTable.innerHTML = '<tbody><tr><td colspan="7" class="no-games-message">No games data available for this week.</td></tr></tbody>';
+        scoringTable.innerHTML = '<tbody><tr><td colspan="4" class="no-games-message">No games data available for this week.</td></tr></tbody>';
         return;
     }
 
-    // Build header row
+    // Calculate stats for each picker
+    const stats = {};
+    PICKERS.forEach(picker => {
+        stats[picker] = {
+            lineWins: 0, lineLosses: 0, linePushes: 0,
+            suWins: 0, suLosses: 0,
+            blazinWins: 0, blazinLosses: 0, blazinPushes: 0
+        };
+
+        const pickerPicks = weekPicks[picker] || {};
+        const cachedPicks = cachedWeek?.picks?.[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+            const cachedGamePicks = cachedPicks[gameIdStr] || cachedPicks[game.id] || {};
+            const result = weekResults[game.id];
+
+            if (!result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isBlazin = gamePicks.blazin || cachedGamePicks.blazin;
+
+            // Line pick result
+            const linePick = gamePicks.line || cachedGamePicks.line;
+            if (linePick) {
+                if (atsWinner === 'push') {
+                    stats[picker].linePushes++;
+                    if (isBlazin) stats[picker].blazinPushes++;
+                } else if (linePick === atsWinner) {
+                    stats[picker].lineWins++;
+                    if (isBlazin) stats[picker].blazinWins++;
+                } else {
+                    stats[picker].lineLosses++;
+                    if (isBlazin) stats[picker].blazinLosses++;
+                }
+            }
+
+            // Straight up result
+            const winnerPick = gamePicks.winner || cachedGamePicks.winner;
+            if (winnerPick) {
+                if (winnerPick === result.winner) {
+                    stats[picker].suWins++;
+                } else {
+                    stats[picker].suLosses++;
+                }
+            }
+        });
+    });
+
+    // Build simple table
+    const hasResults = Object.keys(weekResults).length > 0;
+
     let headerHtml = `
         <thead>
             <tr>
-                <th class="game-col">Game</th>
-                <th class="result-col">Result</th>
-                ${PICKERS.map(picker => `<th class="picker-col">${picker}</th>`).join('')}
+                <th>Picker</th>
+                <th>Line (ATS)</th>
+                <th>Straight Up</th>
+                <th>Blazin' 5</th>
             </tr>
         </thead>
     `;
 
-    // Track totals for each picker
-    const totals = {};
-    PICKERS.forEach(picker => {
-        totals[picker] = { lineWins: 0, lineLosses: 0, winnerWins: 0, winnerLosses: 0 };
-    });
-
-    // Build body rows
     let bodyHtml = '<tbody>';
-
-    weekGames.forEach(game => {
-        const gameIdStr = String(game.id);
-        const result = weekResults[game.id];
-        const atsWinner = result ? calculateATSWinner(game, result) : null;
-
-        // Format result display
-        let resultDisplay = '<span class="pending">Pending</span>';
-        if (result) {
-            resultDisplay = `
-                <div class="result-score">
-                    <span>${game.away} ${result.awayScore}</span>
-                    <span>${game.home} ${result.homeScore}</span>
-                </div>
-            `;
-        }
-
-        // Build picker columns
-        const pickerCells = PICKERS.map(picker => {
-            const pickerPicks = weekPicks[picker] || {};
-            const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
-            const linePick = gamePicks.line;
-            const winnerPick = gamePicks.winner;
-
-            if (!linePick && !winnerPick) {
-                return '<td class="picker-cell no-pick">-</td>';
-            }
-
-            let lineResult = '';
-            let winnerResult = '';
-
-            if (result) {
-                // Check line pick
-                if (linePick) {
-                    if (atsWinner === 'push') {
-                        lineResult = 'push';
-                    } else if (linePick === atsWinner) {
-                        lineResult = 'win';
-                        totals[picker].lineWins++;
-                    } else {
-                        lineResult = 'loss';
-                        totals[picker].lineLosses++;
-                    }
-                }
-
-                // Check winner pick
-                if (winnerPick) {
-                    if (winnerPick === result.winner) {
-                        winnerResult = 'win';
-                        totals[picker].winnerWins++;
-                    } else {
-                        winnerResult = 'loss';
-                        totals[picker].winnerLosses++;
-                    }
-                }
-            }
-
-            const lineTeam = linePick === 'away' ? game.away : linePick === 'home' ? game.home : '-';
-            const winnerTeam = winnerPick === 'away' ? game.away : winnerPick === 'home' ? game.home : '-';
-
-            return `
-                <td class="picker-cell">
-                    <div class="pick-result ${lineResult}">
-                        <span class="pick-type-label">ATS:</span> ${lineTeam}
-                        ${lineResult ? `<span class="result-icon ${lineResult}">${lineResult === 'win' ? '✓' : lineResult === 'loss' ? '✗' : '—'}</span>` : ''}
-                    </div>
-                    <div class="pick-result ${winnerResult}">
-                        <span class="pick-type-label">SU:</span> ${winnerTeam}
-                        ${winnerResult ? `<span class="result-icon ${winnerResult}">${winnerResult === 'win' ? '✓' : '✗'}</span>` : ''}
-                    </div>
-                </td>
-            `;
-        }).join('');
+    PICKERS.forEach(picker => {
+        const s = stats[picker];
+        const linePush = s.linePushes > 0 ? `-${s.linePushes}` : '';
+        const blazinPush = s.blazinPushes > 0 ? `-${s.blazinPushes}` : '';
+        const blazinTotal = s.blazinWins + s.blazinLosses + s.blazinPushes;
 
         bodyHtml += `
             <tr>
-                <td class="game-col">
-                    <img src="${getTeamLogo(game.away)}" alt="${game.away}" class="table-team-logo">
-                    ${game.away} @
-                    <img src="${getTeamLogo(game.home)}" alt="${game.home}" class="table-team-logo">
-                    ${game.home}
+                <td class="picker-name-cell">
+                    <span class="picker-color color-${picker.toLowerCase()}"></span>
+                    ${picker}
                 </td>
-                <td class="result-col">${resultDisplay}</td>
-                ${pickerCells}
+                <td class="stat-cell">${hasResults ? `${s.lineWins}-${s.lineLosses}${linePush}` : '-'}</td>
+                <td class="stat-cell">${hasResults ? `${s.suWins}-${s.suLosses}` : '-'}</td>
+                <td class="stat-cell">${hasResults && blazinTotal > 0 ? `${s.blazinWins}-${s.blazinLosses}${blazinPush}` : '-'}</td>
             </tr>
         `;
     });
-
     bodyHtml += '</tbody>';
 
-    // Build totals row
-    const hasResults = Object.keys(weekResults).length > 0;
-    let footerHtml = '';
-    if (hasResults) {
-        footerHtml = `
-            <tfoot>
-                <tr class="totals-row">
-                    <td class="game-col"><strong>Totals</strong></td>
-                    <td class="result-col"></td>
-                    ${PICKERS.map(picker => `
-                        <td class="picker-col totals-cell">
-                            <div>ATS: ${totals[picker].lineWins}-${totals[picker].lineLosses}</div>
-                            <div>SU: ${totals[picker].winnerWins}-${totals[picker].winnerLosses}</div>
-                        </td>
-                    `).join('')}
-                </tr>
-            </tfoot>
-        `;
-    }
-
-    scoringTable.innerHTML = headerHtml + bodyHtml + footerHtml;
+    scoringTable.innerHTML = headerHtml + bodyHtml;
 }
 
 /**
- * Clear current picker's picks for the current week
+ * Clear current picker's picks for the current week (only unlocked games)
  */
 function clearCurrentPickerPicks() {
-    if (confirm(`Clear all Week ${currentWeek} picks for ${currentPicker}?`)) {
-        if (allPicks[currentWeek]) {
-            allPicks[currentWeek][currentPicker] = {};
+    if (confirm(`Clear Week ${currentWeek} picks for ${currentPicker}? (Locked games will be preserved)`)) {
+        if (allPicks[currentWeek] && allPicks[currentWeek][currentPicker]) {
+            const games = getGamesForWeek(currentWeek);
+            const preservedPicks = {};
+
+            // Preserve picks for locked games
+            games.forEach(game => {
+                const gameIdStr = String(game.id);
+                const existingPick = allPicks[currentWeek][currentPicker][gameIdStr];
+
+                if (existingPick && isGameLocked(game)) {
+                    preservedPicks[gameIdStr] = existingPick;
+                }
+            });
+
+            allPicks[currentWeek][currentPicker] = preservedPicks;
         }
         savePicksToStorage();
         renderGames();
