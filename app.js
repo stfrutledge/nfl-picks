@@ -381,6 +381,8 @@ function init() {
     setupProgressBarPreference();
     setupRetryButton();
     setupBackToTop();
+    initCollapsibleSections();
+    setupPullToRefresh();
     loadPicksFromStorage();
 
     // Restore Stephen's week 16 Seahawks pick that was accidentally cleared
@@ -2819,6 +2821,183 @@ function setupBackToTop() {
             behavior: 'smooth'
         });
     });
+}
+
+/**
+ * Collapsible Sections
+ * Allows users to collapse/expand chart and insight sections
+ */
+const COLLAPSED_SECTIONS_KEY = 'collapsedSections';
+
+function getCollapsedSections() {
+    try {
+        const saved = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+        return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveCollapsedSections(sections) {
+    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(sections));
+}
+
+function toggleSection(sectionId) {
+    const section = document.querySelector(`[data-section="${sectionId}"]`);
+    if (!section) return;
+
+    const isCollapsed = section.classList.toggle('collapsed');
+
+    // Update icon
+    const icon = section.querySelector('.collapse-toggle-icon');
+    if (icon) {
+        icon.textContent = isCollapsed ? '+' : '−';
+    }
+
+    // Save state to localStorage
+    const collapsedSections = getCollapsedSections();
+    if (isCollapsed) {
+        collapsedSections[sectionId] = true;
+    } else {
+        delete collapsedSections[sectionId];
+    }
+    saveCollapsedSections(collapsedSections);
+}
+
+function initCollapsibleSections() {
+    const collapsedSections = getCollapsedSections();
+
+    // Apply saved collapsed states
+    Object.keys(collapsedSections).forEach(sectionId => {
+        const section = document.querySelector(`[data-section="${sectionId}"]`);
+        if (section && collapsedSections[sectionId]) {
+            section.classList.add('collapsed');
+            // Update icon to +
+            const icon = section.querySelector('.collapse-toggle-icon');
+            if (icon) {
+                icon.textContent = '+';
+            }
+        }
+    });
+}
+
+/**
+ * Pull to Refresh
+ * Mobile gesture to refresh live scores
+ */
+function setupPullToRefresh() {
+    const pullIndicator = document.getElementById('pull-to-refresh');
+    if (!pullIndicator) return;
+
+    // Only enable on touch devices
+    if (!('ontouchstart' in window)) return;
+
+    const textEl = pullIndicator.querySelector('.pull-to-refresh-text');
+    const PULL_THRESHOLD = 80; // Pixels to pull before refresh triggers
+    const MAX_PULL = 120; // Maximum pull distance
+
+    let startY = 0;
+    let currentY = 0;
+    let isPulling = false;
+    let isRefreshing = false;
+
+    function canPull() {
+        // Only allow pull when at top of page
+        return window.scrollY <= 0;
+    }
+
+    function handleTouchStart(e) {
+        if (isRefreshing || !canPull()) return;
+        startY = e.touches[0].clientY;
+        isPulling = false;
+    }
+
+    function handleTouchMove(e) {
+        if (isRefreshing) return;
+
+        currentY = e.touches[0].clientY;
+        const pullDistance = currentY - startY;
+
+        // Only pull when scrolled to top and pulling down
+        if (pullDistance > 0 && canPull()) {
+            // Prevent default only when we're actually pulling
+            if (pullDistance > 10) {
+                e.preventDefault();
+                isPulling = true;
+
+                // Apply resistance to pull
+                const resistedPull = Math.min(pullDistance * 0.5, MAX_PULL);
+
+                pullIndicator.classList.add('pulling');
+                pullIndicator.style.setProperty('--pull-height', `${resistedPull}px`);
+
+                // Update text and state based on pull distance
+                if (resistedPull >= PULL_THRESHOLD) {
+                    pullIndicator.classList.add('ready');
+                    if (textEl) textEl.textContent = 'Release to refresh';
+                } else {
+                    pullIndicator.classList.remove('ready');
+                    if (textEl) textEl.textContent = 'Pull to refresh';
+                }
+            }
+        }
+    }
+
+    function handleTouchEnd() {
+        if (isRefreshing) return;
+
+        const pullDistance = currentY - startY;
+        const resistedPull = Math.min(pullDistance * 0.5, MAX_PULL);
+
+        if (isPulling && resistedPull >= PULL_THRESHOLD) {
+            // Trigger refresh
+            triggerRefresh();
+        } else {
+            // Reset without refresh
+            resetPullIndicator();
+        }
+
+        isPulling = false;
+        startY = 0;
+        currentY = 0;
+    }
+
+    async function triggerRefresh() {
+        isRefreshing = true;
+        pullIndicator.classList.remove('pulling', 'ready');
+        pullIndicator.classList.add('refreshing');
+        pullIndicator.style.removeProperty('--pull-height');
+        if (textEl) textEl.textContent = 'Refreshing...';
+
+        try {
+            // Refresh live scores
+            await fetchLiveScores();
+            renderGames();
+            renderScoringSummary();
+
+            // Show success briefly
+            if (textEl) textEl.textContent = 'Updated!';
+            await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+            console.error('Pull to refresh failed:', error);
+            if (textEl) textEl.textContent = 'Refresh failed';
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        resetPullIndicator();
+        isRefreshing = false;
+    }
+
+    function resetPullIndicator() {
+        pullIndicator.classList.remove('pulling', 'ready', 'refreshing');
+        pullIndicator.style.removeProperty('--pull-height');
+        if (textEl) textEl.textContent = 'Pull to refresh';
+    }
+
+    // Add touch listeners with passive: false for touchmove to allow preventDefault
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
 }
 
 // Initialize when DOM is ready

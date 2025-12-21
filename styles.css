@@ -645,9 +645,6 @@ header h1 {
 
 /* Charts Section */
 .charts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
-    gap: 24px;
     padding: 0 40px 30px;
     width: 100%;
 }
@@ -1058,7 +1055,7 @@ footer a:hover {
         font-size: 1rem;
     }
 
-    .charts-grid {
+    .charts-grid-content {
         grid-template-columns: 1fr;
     }
 
@@ -2712,5 +2709,189 @@ footer a:hover {
 /* Adjust position when picks status bar is visible */
 .picks-status-bar:not(.hidden) ~ .back-to-top {
     bottom: 134px;
+}
+
+/* Collapsible Sections */
+.collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    padding: 8px 0;
+    margin-bottom: 12px;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.collapsible-header:hover {
+    background: var(--bg-secondary);
+    margin-left: -8px;
+    margin-right: -8px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.collapsible-header h3 {
+    margin-bottom: 0;
+}
+
+.collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.collapsible-header:hover .collapse-toggle {
+    background: var(--bg-primary);
+    border-color: var(--text-light);
+    color: var(--text-primary);
+}
+
+.collapse-toggle-icon {
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.collapsible-content {
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.2s ease;
+    max-height: 2000px;
+    opacity: 1;
+}
+
+.collapsible-section.collapsed .collapsible-content {
+    max-height: 0;
+    opacity: 0;
+}
+
+/* Adjust specific section styles for collapsible headers */
+.charts-grid.collapsible-section,
+.insights-section.collapsible-section,
+.team-frequency-section.collapsible-section,
+.group-stats-section.collapsible-section,
+.streaks-section.collapsible-section,
+.scoring-summary.collapsible-section {
+    padding-top: 0;
+}
+
+.charts-grid .collapsible-header,
+.insights-section .collapsible-header,
+.team-frequency-section .collapsible-header,
+.group-stats-section .collapsible-header,
+.streaks-section .collapsible-header {
+    margin-bottom: 20px;
+}
+
+.scoring-summary .collapsible-header {
+    margin-bottom: 16px;
+}
+
+/* Section header title styling for collapsible sections */
+.section-header-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+/* Charts grid specific - needs wrapper for grid content */
+.charts-grid-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+    gap: 24px;
+}
+
+@media (max-width: 768px) {
+    .charts-grid-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Pull to Refresh */
+.pull-to-refresh {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 0;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    z-index: 1000;
+    transition: height 0.2s ease;
+}
+
+.pull-to-refresh.pulling {
+    height: var(--pull-height, 0px);
+    transition: none;
+}
+
+.pull-to-refresh.refreshing {
+    height: 60px;
+}
+
+.pull-to-refresh-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.pull-to-refresh-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease;
+}
+
+.pull-to-refresh-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.pull-to-refresh.ready .pull-to-refresh-icon {
+    transform: rotate(180deg);
+}
+
+.pull-to-refresh.refreshing .pull-to-refresh-icon {
+    animation: ptr-spin 1s linear infinite;
+}
+
+@keyframes ptr-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.pull-to-refresh-text {
+    min-width: 100px;
+}
+
+/* Only show on touch devices */
+@media (hover: hover) and (pointer: fine) {
+    .pull-to-refresh {
+        display: none;
+    }
 }
 

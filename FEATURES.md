@@ -71,7 +71,7 @@ Weekly Power Rankings
 
 Collapsible Sections
 - Allow users to collapse charts or insights they do not want
-- Status: Pending
+- Status: Completed
 
 Swipe Navigation
 - Swipe left or right to change weeks on mobile
@@ -97,7 +97,7 @@ Game Result Animations
 
 Pull to Refresh
 - Mobile gesture to refresh live scores
-- Status: Pending
+- Status: Completed
 
 ---
 
@@ -178,8 +178,19 @@ Remember Selected Picker
 - Remembers your choice when you return to the page
 - Completed: December 2024
 
+Collapsible Sections
+- Click section headers to collapse/expand charts and insights
+- Collapsed state persists in localStorage across sessions
+- Completed: December 2024
+
+Pull to Refresh
+- Mobile gesture to refresh live scores
+- Pull down from top of page to trigger refresh
+- Shows spinner and status updates during refresh
+- Completed: December 2024
+
 ---
 
 ## Notes
 
-Last updated: December 20, 2024
+Last updated: December 21, 2024

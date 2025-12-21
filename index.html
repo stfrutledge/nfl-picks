@@ -10,6 +10,18 @@
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
+    <!-- Pull to Refresh Indicator (mobile only) -->
+    <div class="pull-to-refresh" id="pull-to-refresh">
+        <div class="pull-to-refresh-content">
+            <div class="pull-to-refresh-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+                </svg>
+            </div>
+            <span class="pull-to-refresh-text">Pull to refresh</span>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <div class="header-content">
@@ -55,54 +67,82 @@
             </section>
 
             <!-- Charts Section -->
-            <section class="charts-grid hidden">
-                <div class="chart-container">
-                    <h3>Weekly Performance Trend</h3>
-                    <canvas id="trend-chart"></canvas>
+            <section class="charts-grid hidden collapsible-section" data-section="charts">
+                <div class="collapsible-header" onclick="toggleSection('charts')">
+                    <h3 class="section-header-title">Charts</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
                 </div>
-                <div class="chart-container">
-                    <h3>Favorites vs Underdogs</h3>
-                    <canvas id="standings-chart"></canvas>
+                <div class="collapsible-content">
+                    <div class="charts-grid-content">
+                        <div class="chart-container">
+                            <h3>Weekly Performance Trend</h3>
+                            <canvas id="trend-chart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Favorites vs Underdogs</h3>
+                            <canvas id="standings-chart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </section>
 
             <!-- Insights Section -->
-            <section class="insights-section hidden">
-                <h3>Group Insights</h3>
-                <div class="insights-grid" id="insights-grid">
-                    <!-- Consensus callout -->
-                    <div class="insight-card consensus" id="consensus-card">
-                        <!-- Injected by JS -->
-                    </div>
-                    <!-- Lone Wolf leaderboard -->
-                    <div class="insight-card lone-wolf" id="lone-wolf-card">
-                        <!-- Injected by JS -->
+            <section class="insights-section hidden collapsible-section" data-section="insights">
+                <div class="collapsible-header" onclick="toggleSection('insights')">
+                    <h3 class="section-header-title">Group Insights</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="insights-grid" id="insights-grid">
+                        <!-- Consensus callout -->
+                        <div class="insight-card consensus" id="consensus-card">
+                            <!-- Injected by JS -->
+                        </div>
+                        <!-- Lone Wolf leaderboard -->
+                        <div class="insight-card lone-wolf" id="lone-wolf-card">
+                            <!-- Injected by JS -->
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- Team Pick Frequency Section (Blazin' 5 only) -->
-            <section class="team-frequency-section hidden">
-                <h3>Team Pick Frequency</h3>
-                <p class="section-subtitle">Top 5 teams picked with win percentage</p>
-                <div class="team-frequency-grid" id="team-frequency-grid">
-                    <!-- Team frequency cards will be injected here -->
+            <section class="team-frequency-section hidden collapsible-section" data-section="team-frequency">
+                <div class="collapsible-header" onclick="toggleSection('team-frequency')">
+                    <h3 class="section-header-title">Team Pick Frequency</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <p class="section-subtitle">Top 5 teams picked with win percentage</p>
+                    <div class="team-frequency-grid" id="team-frequency-grid">
+                        <!-- Team frequency cards will be injected here -->
+                    </div>
                 </div>
             </section>
 
             <!-- Group Overall Stats Section -->
-            <section class="group-stats-section hidden">
-                <h3>Group Performance</h3>
-                <div class="group-stats-grid" id="group-stats-grid">
-                    <!-- Group stats cards will be injected here -->
+            <section class="group-stats-section hidden collapsible-section" data-section="group-stats">
+                <div class="collapsible-header" onclick="toggleSection('group-stats')">
+                    <h3 class="section-header-title">Group Performance</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="group-stats-grid" id="group-stats-grid">
+                        <!-- Group stats cards will be injected here -->
+                    </div>
                 </div>
             </section>
 
             <!-- Streaks Section -->
-            <section class="streaks-section hidden">
-                <h3>Recent Performance</h3>
-                <div class="streaks-grid" id="streaks-grid">
-                    <!-- Streak cards will be injected here -->
+            <section class="streaks-section hidden collapsible-section" data-section="streaks">
+                <div class="collapsible-header" onclick="toggleSection('streaks')">
+                    <h3 class="section-header-title">Recent Performance</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="streaks-grid" id="streaks-grid">
+                        <!-- Streak cards will be injected here -->
+                    </div>
                 </div>
             </section>
 
@@ -171,12 +211,17 @@
                 </div>
 
                 <!-- Scoring Summary -->
-                <div class="scoring-summary" id="scoring-summary">
-                    <h3>Week <span id="scoring-week-num">--</span> Scoring Summary</h3>
-                    <div class="scoring-table-container">
-                        <table class="scoring-table" id="scoring-table">
-                            <!-- Scoring will be injected here -->
-                        </table>
+                <div class="scoring-summary collapsible-section" id="scoring-summary" data-section="scoring">
+                    <div class="collapsible-header" onclick="toggleSection('scoring')">
+                        <h3 class="section-header-title">Week <span id="scoring-week-num">--</span> Scoring Summary</h3>
+                        <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="scoring-table-container">
+                            <table class="scoring-table" id="scoring-table">
+                                <!-- Scoring will be injected here -->
+                            </table>
+                        </div>
                     </div>
                 </div>
             </section>
