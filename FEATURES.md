@@ -1,196 +1,259 @@
-# NFL Picks Dashboard - Feature Ideas
+# NFL Picks Dashboard - Improvement Roadmap
 
-Reference document for planned features and improvements.
+Based on comprehensive UX audit performed December 2024.
 
----
-
-## Top 5 Recommendations
-
-1. Head to Head Comparisons
-   - Compare any two pickers side by side
-   - Show records, weekly trends, team preferences
-   - Status: Pending
-
-2. Hot and Cold Streaks Dashboard
-   - Show current winning and losing streaks
-   - Include historical context
-   - Status: Pending
-
-3. Sparkline Mini Charts
-   - Small inline trend charts next to picker names
-   - Show recent performance visually
-   - Status: Pending
-
-4. Pick Confidence Heatmap
-   - Visualize which games have most or least agreement among pickers
-   - Status: Pending
-
-5. Upset Alert Tracker
-   - Highlight games where underdogs won
-   - Show who correctly picked them
-   - Status: Pending
+**Overall Score: 6.8/10** - Functional but needs polish
 
 ---
 
-## Data Driven Features
+## Critical Priority - COMPLETED
 
-### High Priority
-
-Fade the Public Analysis
-- Track when all pickers agree but lose
-- Show inverse strategy success rate
-- Status: Pending
-
-### Medium Priority
-
-Team Performance by Picker
-- Show which teams each picker gets right or wrong consistently
-- Status: Pending
-
-Prime Time Performance
-- Separate stats for Thursday, Sunday Night, Monday Night games
-- Status: Pending
-
-Divisional Game Analysis
-- Track performance on divisional matchups
-- Status: Pending
-
-Spread Size Analysis
-- Performance by spread bracket (1-3 pts, 3.5-7 pts, 7.5+ pts)
-- Status: Pending
-
-Weekly Power Rankings
-- Dynamic ranking that weights recent performance more heavily
-- Status: Pending
+All critical accessibility violations have been fixed.
 
 ---
 
-## UX and UI Improvements
+## High Priority (Next Sprint)
 
-### Medium Priority
+### Onboarding & Discoverability
 
-Collapsible Sections
-- Allow users to collapse charts or insights they do not want
-- Status: Completed
+5. **Add First-Visit Onboarding**
+   - Brief overlay explaining key features
+   - Show only once, store in localStorage
+   - Explain: How to make picks, what tabs mean, keyboard shortcuts
+   - Effort: Medium
+   - Status: Completed (December 2024)
 
-Swipe Navigation
-- Swipe left or right to change weeks on mobile
-- Status: Pending
+6. **Add Info Tooltips for Terminology**
+   - "What is Blazin' 5?" info icon
+   - "Line Picks vs Straight Up" explanation
+   - Hover or click to reveal
+   - Effort: Low
+   - Status: Pending
 
-Bottom Navigation Bar
-- Fixed bottom nav for mobile instead of top tabs
-- Status: Pending
+7. **Improve Loading Experience**
+   - Add skeleton screens during data fetch
+   - Show loading progress indicator
+   - Reduce perceived 10-second wait time
+   - Effort: Medium
+   - Status: Pending
 
-### Low Priority
+### Mobile Experience
 
-Animated Stat Changes
-- Animate number transitions when switching weeks or pickers
-- Status: Pending
+8. **Reposition Mobile Floating Buttons**
+   - Back-to-top, keyboard toggle, progress bar overlap
+   - Stack vertically or show only one at a time
+   - Effort: Low
+   - Status: Pending
 
-Color Coded Spread Indicators
-- Visual indication of spread size with colors
-- Status: Pending
+9. **Add Swipe Gestures for Week Navigation**
+   - Swipe left/right to change weeks on mobile
+   - More intuitive than arrow buttons
+   - Effort: Medium
+   - Status: Pending
 
-Game Result Animations
-- Subtle celebration animation for correct picks
-- Status: Pending
+### Error Handling
 
-Pull to Refresh
-- Mobile gesture to refresh live scores
-- Status: Completed
+10. **Improve Error Messages**
+    - Replace generic "Unable to load picks data"
+    - Add specific messages: "Check your internet connection"
+    - Suggest recovery actions
+    - Effort: Medium
+    - Status: Pending
 
----
-
-## New Analytics Features
-
-### High Priority
-
-Season Projections
-- Project final season records based on current pace
-- Status: Pending
-
-### Medium Priority
-
-What If Calculator
-- Show records if picker had picked all favorites or all underdogs
-- Status: Pending
-
-Betting ROI Tracker
-- Show hypothetical $100 per game ROI for all categories
-- Status: Pending
-
-Weekly MVP and LVP Badges
-- Highlight best and worst performer each week
-- Status: Pending
-
-Clutch Rating
-- Performance in close games (spread under 3 points)
-- Status: Pending
-
-### Low Priority
-
-Pick Distribution Chart
-- Pie chart showing how often each picker agrees with others
-- Status: Pending
+11. **Add Offline Detection**
+    - Detect when user is offline
+    - Show cached data with "Offline" indicator
+    - Effort: Medium
+    - Status: Pending
 
 ---
 
-## Quality of Life
+## Medium Priority (Roadmap)
 
-Quick Week Jump
-- Type week number to jump directly
-- Status: Pending
+### Accessibility Continued
 
-Improved Print View
-- Better print layout for physical copies
-- Status: Pending
+12. **Add Page Landmarks**
+    - Add `<main>`, `<nav>`, `<aside>` tags
+    - Include skip-to-content link
+    - Effort: Low
+    - Status: Pending
 
-Game Start Notifications
-- Browser notification when game is about to lock
-- Status: Pending
+13. **Add Scope to Table Headers**
+    - Scoring summary table missing proper header scopes
+    - Effort: Low
+    - Status: Pending
 
-Keyboard Shortcut Improvements
-- Additional shortcuts for common actions
-- Status: Pending
+14. **Add ARIA Live Regions for Score Updates**
+    - Announce live score changes to screen readers
+    - Effort: Medium
+    - Status: Pending
+
+### Features
+
+15. **Add Search/Filter Games**
+    - Search by team name
+    - Filter by game status (upcoming, in progress, final)
+    - Effort: Medium
+    - Status: Pending
+
+16. **Add Picker Comparison Mode**
+    - Compare two pickers side-by-side
+    - Show head-to-head record
+    - Effort: High
+    - Status: Pending
+
+17. **Add Notes to Picks**
+    - Optional text field for pick reasoning
+    - "Injury to key player", "Home field advantage"
+    - Effort: Medium
+    - Status: Pending
+
+18. **Implement PWA/Offline Support**
+    - Service worker for caching
+    - Works offline with cached data
+    - Installable on mobile
+    - Effort: High
+    - Status: Pending
+
+### Performance
+
+19. **Lazy Load Charts**
+    - Only render charts when section is expanded
+    - Destroy chart instances when collapsed
+    - Effort: Medium
+    - Status: Pending
+
+20. **Reduce Live Score Polling on Mobile**
+    - Increase interval from 30s to 60s on mobile
+    - Reduce battery drain
+    - Effort: Low
+    - Status: Pending
+
+---
+
+## Low Priority (Nice-to-Have)
+
+### Delight Factors
+
+21. **Add Celebration Animation**
+    - Confetti when all picks are complete (100%)
+    - Effort: Low
+    - Status: Pending
+
+22. **Add Streak Badges**
+    - Show "Hot Hand" badge after 3-game win streak
+    - Visual indicator next to picker names
+    - Effort: Medium
+    - Status: Pending
+
+23. **Add Social Sharing**
+    - Share picks as image for social media
+    - Generate shareable summary card
+    - Effort: High
+    - Status: Pending
+
+24. **Add Seasonal Themes**
+    - Playoff theme during playoffs
+    - Super Bowl special styling
+    - Effort: Low
+    - Status: Pending
+
+### UX Polish
+
+25. **Scroll to Top on Week Change**
+    - Changing weeks should scroll page to top
+    - Prevent disorientation
+    - Effort: Low
+    - Status: Pending
+
+26. **Add Undo for Destructive Actions**
+    - Undo clear picks within 5 seconds
+    - Effort: Medium
+    - Status: Pending
+
+27. **Show Last Updated Timestamp**
+    - "Scores updated at 3:45 PM"
+    - Indicates live data freshness
+    - Effort: Low
+    - Status: Pending
+
+28. **Add Copy Confirmation Animation**
+    - Highlight animation when "Copy Picks" succeeds
+    - More visible than toast alone
+    - Effort: Low
+    - Status: Pending
+
+---
+
+## Technical Debt
+
+### Code Quality Issues Affecting UX
+
+29. **Add Team Logo Fallbacks**
+    - ESPN CDN occasionally fails
+    - Show team abbreviation or color swatch as fallback
+    - Effort: Low
+    - Status: Pending
+
+30. **Validate Parsed CSV Data**
+    - Brittle parsing depends on exact column positions
+    - Add validation and error reporting
+    - Effort: Medium
+    - Status: Pending
+
+31. **Fix Chart.js Memory Leaks**
+    - Chart instances need explicit destroy on re-render
+    - Effort: Low
+    - Status: Pending
+
+32. **Consider TypeScript Migration**
+    - Prevent type-related bugs
+    - Improve maintainability
+    - Effort: High
+    - Status: Pending
 
 ---
 
 ## Completed Features
 
-Sticky Tabs and Back to Top
-- Category tabs stay visible when scrolling
-- Floating back to top button appears after scrolling 300px
-- Completed: December 2024
+### December 2024
 
-Blazin' 5 Selector
-- Star button on each game card to mark Blazin' 5 picks
-- Maximum 5 picks per week enforced
-- Requires line pick before B5 can be selected
-- Completed: December 2024
+**Accessibility Fixes (Critical)**
+- Alt Text on Team Logos - All logos now have descriptive alt text ("Chiefs logo")
+- Color Contrast Fix - `--text-light` updated to WCAG AA compliant values
+- Escape Key for Modals - Confirm dialogs can now be closed with Escape key
+- Aria Labels on Buttons - All icon-only buttons now have screen reader labels
 
-Live Scoring Summary
-- Scoring summary updates with live ESPN scores for completed games
-- Shows real-time results as games finish
-- Completed: December 2024
+**Onboarding & Discoverability**
+- First-Visit Onboarding - Welcome overlay explaining picks, Blazin' 5, tabs, and keyboard shortcuts
 
-Remember Selected Picker
-- Picker dropdown selection persists in localStorage
-- Remembers your choice when you return to the page
-- Completed: December 2024
-
-Collapsible Sections
-- Click section headers to collapse/expand charts and insights
-- Collapsed state persists in localStorage across sessions
-- Completed: December 2024
-
-Pull to Refresh
-- Mobile gesture to refresh live scores
-- Pull down from top of page to trigger refresh
-- Shows spinner and status updates during refresh
-- Completed: December 2024
+**Features**
+- Collapsible Sections - Click headers to collapse/expand
+- Pull to Refresh - Mobile gesture for live scores
+- Remember Selected Picker - Persists in localStorage
+- Live Scoring Summary - Real-time ESPN scores
+- Blazin' 5 Selector - Star button with 5-pick limit
+- Sticky Tabs and Back to Top - Fixed navigation
 
 ---
 
-## Notes
+## Audit Summary
 
-Last updated: December 21, 2024
+### Strengths
+- Professional visual design (9/10)
+- Good responsive layouts
+- Rich feature set
+- Thoughtful details (dark mode, keyboard shortcuts)
+- Accessibility basics now covered (7/10) - contrast, alt text, keyboard nav fixed
+
+### Remaining Weaknesses
+- Discoverability (6/10) - some features still unexplained (info tooltips pending)
+- Error handling (5/10) - generic messages, no recovery
+- Onboarding now addressed with welcome overlay
+
+### Key Insight
+Works great for existing users who know the context. Confusing for newcomers who won't know what "Blazin' 5" means or how to make picks.
+
+---
+
+Last updated: December 22, 2024

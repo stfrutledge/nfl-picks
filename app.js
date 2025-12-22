@@ -383,10 +383,8 @@ function init() {
     setupBackToTop();
     initCollapsibleSections();
     setupPullToRefresh();
+    setupOnboarding();
     loadPicksFromStorage();
-
-    // Restore Stephen's week 16 Seahawks pick that was accidentally cleared
-    restoreStephenWeek16Pick();
 
     // Show loading state
     showLoadingState();
@@ -944,6 +942,11 @@ async function loadFromGoogleSheets() {
 
             console.log('Loaded data from Google Sheets' + (proxy ? ' via proxy' : ' directly'));
             loadCSVData(csvText);
+            // Also load weekly picks data from individual week tabs
+            loadAllWeeklyDataForBlazin().then(() => {
+                // Re-render games after picks are loaded from sheets
+                renderGames();
+            });
             return;
         } catch (err) {
             console.warn(`Fetch attempt failed${proxy ? ' with ' + proxy : ' (direct)'}:`, err.message);
@@ -1363,6 +1366,11 @@ async function loadAllWeeklyDataForBlazin() {
     }
 
     console.log(`Blazin' 5 data: ${loadedWeeks} weeks loaded, ${failedWeeks} failed`);
+
+    // Save merged picks to localStorage so they persist
+    if (loadedWeeks > 0) {
+        savePicksToStorage();
+    }
 }
 
 /**
@@ -1407,7 +1415,7 @@ async function renderTeamPickFrequency() {
             return `
                 <div class="team-freq-row ${idx === 0 ? 'top-team' : ''}">
                     <div class="team-freq-info">
-                        <img src="${getTeamLogo(team)}" alt="${team}" class="team-freq-logo">
+                        <img src="${getTeamLogo(team)}" alt="${team} logo" class="team-freq-logo">
                         <span class="team-freq-name">${team}</span>
                     </div>
                     <div class="team-freq-bar-container">
@@ -1477,12 +1485,12 @@ function renderLeaderboard(stats) {
                 ${picker.bestTeam && picker.worstTeam ? `
                 <div class="team-records">
                     <div class="team-record best">
-                        <img src="${getTeamLogo(picker.bestTeam.team)}" alt="${picker.bestTeam.team}" class="team-badge-logo">
+                        <img src="${getTeamLogo(picker.bestTeam.team)}" alt="${picker.bestTeam.team} logo" class="team-badge-logo">
                         <span class="team-badge-name">${picker.bestTeam.team}</span>
                         <span class="team-badge-stats">${picker.bestTeam.record} (${picker.bestTeam.percentage?.toFixed(0)}%)</span>
                     </div>
                     <div class="team-record worst">
-                        <img src="${getTeamLogo(picker.worstTeam.team)}" alt="${picker.worstTeam.team}" class="team-badge-logo">
+                        <img src="${getTeamLogo(picker.worstTeam.team)}" alt="${picker.worstTeam.team} logo" class="team-badge-logo">
                         <span class="team-badge-name">${picker.worstTeam.team}</span>
                         <span class="team-badge-stats">${picker.worstTeam.record} (${picker.worstTeam.percentage?.toFixed(0)}%)</span>
                     </div>
@@ -1686,12 +1694,12 @@ function renderGames() {
 
                 <div class="game-matchup-line">
                     <span class="away-team">
-                        <img src="${getTeamLogo(game.away)}" alt="${game.away}" class="team-logo">
+                        <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo">
                         ${game.away} (${awaySpreadDisplay})
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
-                        <img src="${getTeamLogo(game.home)}" alt="${game.home}" class="team-logo">
+                        <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo">
                         ${game.home} (${homeSpreadDisplay})
                     </span>
                 </div>
@@ -2239,6 +2247,23 @@ function resetAllPicks() {
 }
 
 /**
+ * Clear all local picks and reimport from Google Sheets
+ * Run in console: clearAndReimportFromSheets()
+ */
+function clearAndReimportFromSheets() {
+    if (confirm('Clear all local picks and reimport from Google Sheets? This will replace any picks you made locally.')) {
+        // Clear localStorage
+        localStorage.removeItem('nflPicks');
+        // Clear in-memory data
+        allPicks = {};
+        // Clear weekly cache to force re-fetch
+        Object.keys(weeklyPicksCache).forEach(key => delete weeklyPicksCache[key]);
+        // Reload the page to fetch fresh data from Google Sheets
+        location.reload();
+    }
+}
+
+/**
  * Export all picks to a text/CSV format
  */
 function exportAllPicks() {
@@ -2658,6 +2683,68 @@ function setupConfirmModal() {
     document.getElementById('confirm-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'confirm-modal') {
             hideConfirmModal();
+        }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('confirm-modal');
+            if (modal && modal.classList.contains('show')) {
+                hideConfirmModal();
+            }
+        }
+    });
+}
+
+/**
+ * Setup first-visit onboarding overlay
+ */
+function setupOnboarding() {
+    const ONBOARDING_KEY = 'nfl-picks-onboarding-seen';
+    const overlay = document.getElementById('onboarding-overlay');
+    const closeBtn = document.getElementById('onboarding-close-btn');
+    const dontShowCheckbox = document.getElementById('onboarding-dont-show');
+
+    if (!overlay || !closeBtn) return;
+
+    // Check if user has seen onboarding before
+    const hasSeenOnboarding = localStorage.getItem(ONBOARDING_KEY) === 'true';
+
+    if (!hasSeenOnboarding) {
+        // Show onboarding after a brief delay to let page load
+        setTimeout(() => {
+            overlay.classList.add('show');
+        }, 500);
+    }
+
+    // Close button handler
+    closeBtn.addEventListener('click', () => {
+        overlay.classList.remove('show');
+
+        // Save preference if checkbox is checked
+        if (dontShowCheckbox && dontShowCheckbox.checked) {
+            localStorage.setItem(ONBOARDING_KEY, 'true');
+        }
+    });
+
+    // Close on overlay click (outside modal)
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.classList.remove('show');
+            if (dontShowCheckbox && dontShowCheckbox.checked) {
+                localStorage.setItem(ONBOARDING_KEY, 'true');
+            }
+        }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && overlay.classList.contains('show')) {
+            overlay.classList.remove('show');
+            if (dontShowCheckbox && dontShowCheckbox.checked) {
+                localStorage.setItem(ONBOARDING_KEY, 'true');
+            }
         }
     });
 }

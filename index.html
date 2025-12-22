@@ -30,9 +30,9 @@
                     <h1>NFL Picks Dashboard</h1>
                     <p class="subtitle">2025 Regular Season Tracker</p>
                 </div>
-                <button class="dark-mode-toggle" id="dark-mode-toggle" title="Toggle dark mode">
-                    <span class="icon-sun">&#9728;</span>
-                    <span class="icon-moon">&#9790;</span>
+                <button class="dark-mode-toggle" id="dark-mode-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+                    <span class="icon-sun" aria-hidden="true">&#9728;</span>
+                    <span class="icon-moon" aria-hidden="true">&#9790;</span>
                 </button>
             </div>
         </header>
@@ -157,11 +157,11 @@
                     <div class="week-selector">
                         <label for="week-dropdown">Select Week:</label>
                         <div class="week-nav-row">
-                            <button class="week-nav-btn" id="prev-week-btn" title="Previous Week">&#8592;</button>
+                            <button class="week-nav-btn" id="prev-week-btn" title="Previous Week" aria-label="Go to previous week">&#8592;</button>
                             <select id="week-dropdown" class="week-dropdown">
                                 <!-- Week options will be injected here -->
                             </select>
-                            <button class="week-nav-btn" id="next-week-btn" title="Next Week">&#8594;</button>
+                            <button class="week-nav-btn" id="next-week-btn" title="Next Week" aria-label="Go to next week">&#8594;</button>
                         </div>
                         <span id="week-loading" class="week-loading hidden">Loading...</span>
                     </div>
@@ -242,7 +242,54 @@
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
         </div>
-        <button class="picks-status-close" id="picks-status-close" title="Dismiss">&times;</button>
+        <button class="picks-status-close" id="picks-status-close" title="Dismiss" aria-label="Dismiss progress bar">&times;</button>
+    </div>
+
+    <!-- Onboarding Overlay (first visit only) -->
+    <div class="onboarding-overlay" id="onboarding-overlay">
+        <div class="onboarding-modal">
+            <div class="onboarding-header">
+                <h2>Welcome to NFL Picks Dashboard</h2>
+                <p>Track and compare NFL picks across the season</p>
+            </div>
+            <div class="onboarding-steps">
+                <div class="onboarding-step">
+                    <div class="step-icon">🏈</div>
+                    <div class="step-content">
+                        <h3>Make Your Picks</h3>
+                        <p>Select a week and picker, then click team buttons to make your picks. Choose both <strong>Line Picks</strong> (against the spread) and <strong>Straight Up</strong> (winner) picks.</p>
+                    </div>
+                </div>
+                <div class="onboarding-step">
+                    <div class="step-icon">⭐</div>
+                    <div class="step-content">
+                        <h3>Blazin' 5</h3>
+                        <p>Mark your 5 most confident picks each week using the star button. These are tracked separately for bragging rights!</p>
+                    </div>
+                </div>
+                <div class="onboarding-step">
+                    <div class="step-icon">📊</div>
+                    <div class="step-content">
+                        <h3>View the Tabs</h3>
+                        <p>Switch tabs to see leaderboards for <strong>Blazin' 5</strong>, <strong>Line Picks</strong>, and <strong>Straight Up</strong> categories with charts and insights.</p>
+                    </div>
+                </div>
+                <div class="onboarding-step">
+                    <div class="step-icon">⌨️</div>
+                    <div class="step-content">
+                        <h3>Keyboard Shortcuts</h3>
+                        <p>Use arrow keys to navigate games, number keys (1-4) to make picks quickly. Press <strong>?</strong> to see all shortcuts.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="onboarding-footer">
+                <button class="btn btn-primary" id="onboarding-close-btn">Get Started</button>
+                <label class="onboarding-checkbox">
+                    <input type="checkbox" id="onboarding-dont-show" checked>
+                    <span>Don't show this again</span>
+                </label>
+            </div>
+        </div>
     </div>
 
     <!-- Confirmation Modal -->
@@ -258,13 +305,13 @@
     </div>
 
     <!-- Keyboard Shortcuts Toggle -->
-    <button class="keyboard-toggle-btn hidden" id="keyboard-toggle-btn" title="Keyboard Shortcuts">?</button>
+    <button class="keyboard-toggle-btn hidden" id="keyboard-toggle-btn" title="Keyboard Shortcuts" aria-label="Show keyboard shortcuts">?</button>
 
     <!-- Keyboard Shortcuts Legend -->
     <div class="keyboard-legend" id="keyboard-legend">
         <div class="keyboard-legend-header">
             <span class="keyboard-legend-title">Keyboard Shortcuts</span>
-            <button class="keyboard-legend-close" id="keyboard-legend-close">&times;</button>
+            <button class="keyboard-legend-close" id="keyboard-legend-close" aria-label="Close keyboard shortcuts">&times;</button>
         </div>
         <div class="keyboard-shortcut">
             <span class="keyboard-key">↑↓</span>
@@ -293,7 +340,7 @@
     </div>
 
     <!-- Back to Top Button -->
-    <button class="back-to-top" id="back-to-top" title="Back to top">&#8593;</button>
+    <button class="back-to-top" id="back-to-top" title="Back to top" aria-label="Scroll back to top">&#8593;</button>
 
     <script src="parser.js"></script>
     <script src="charts.js"></script>
