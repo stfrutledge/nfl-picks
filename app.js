@@ -917,10 +917,14 @@ async function loadFromGoogleSheets() {
     ];
 
     console.log('Fetching from Google Sheets...');
+    updateLoadingProgress(15, 'Connecting to data source...');
 
-    for (const proxy of CORS_PROXIES) {
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+        const proxy = CORS_PROXIES[i];
         try {
             const url = proxy ? proxy + encodeURIComponent(GOOGLE_SHEETS_CSV_URL) : GOOGLE_SHEETS_CSV_URL;
+
+            updateLoadingProgress(25, 'Fetching dashboard data...');
 
             // Add 10 second timeout to prevent hanging on slow proxies
             const controller = new AbortController();
@@ -933,6 +937,7 @@ async function loadFromGoogleSheets() {
                 throw new Error(`HTTP ${response.status}`);
             }
 
+            updateLoadingProgress(50, 'Processing data...');
             const csvText = await response.text();
 
             // Validate we got actual CSV data (not an error page)
@@ -940,9 +945,12 @@ async function loadFromGoogleSheets() {
                 throw new Error('Invalid response');
             }
 
+            updateLoadingProgress(70, 'Preparing charts...');
             console.log('Loaded data from Google Sheets' + (proxy ? ' via proxy' : ' directly'));
             loadCSVData(csvText);
+
             // Also load weekly picks data from individual week tabs
+            updateLoadingProgress(85, 'Loading weekly picks...');
             loadAllWeeklyDataForBlazin().then(() => {
                 // Re-render games after picks are loaded from sheets
                 renderGames();
@@ -950,6 +958,10 @@ async function loadFromGoogleSheets() {
             return;
         } catch (err) {
             console.warn(`Fetch attempt failed${proxy ? ' with ' + proxy : ' (direct)'}:`, err.message);
+            // Update progress message on retry
+            if (i < CORS_PROXIES.length - 1) {
+                updateLoadingProgress(20, 'Retrying connection...');
+            }
         }
     }
 
@@ -2530,12 +2542,44 @@ function loadPicksFromStorage() {
 }
 
 /**
- * Show loading state
+ * Show loading state with skeleton screens
  */
 function showLoadingState() {
     const loadingState = document.getElementById('loading-state');
+    const skeletonGames = document.getElementById('skeleton-games');
+    const skeletonLeaderboard = loadingState?.querySelector('.skeleton-leaderboard');
+
     if (loadingState) {
         loadingState.classList.remove('hidden');
+
+        // Show appropriate skeleton based on active tab
+        if (currentCategory === 'picks') {
+            if (skeletonGames) skeletonGames.style.display = 'grid';
+            if (skeletonLeaderboard) skeletonLeaderboard.style.display = 'none';
+        } else {
+            if (skeletonGames) skeletonGames.style.display = 'none';
+            if (skeletonLeaderboard) skeletonLeaderboard.style.display = 'grid';
+        }
+
+        // Reset progress
+        updateLoadingProgress(0, 'Loading dashboard data...');
+    }
+}
+
+/**
+ * Update loading progress indicator
+ * @param {number} percent - Progress percentage (0-100)
+ * @param {string} message - Status message to display
+ */
+function updateLoadingProgress(percent, message) {
+    const progressFill = document.getElementById('loading-progress-fill');
+    const progressText = document.getElementById('loading-progress-text');
+
+    if (progressFill) {
+        progressFill.style.width = `${percent}%`;
+    }
+    if (progressText && message) {
+        progressText.textContent = message;
     }
 }
 
@@ -2545,7 +2589,13 @@ function showLoadingState() {
 function hideLoadingState() {
     const loadingState = document.getElementById('loading-state');
     if (loadingState) {
-        loadingState.classList.add('hidden');
+        // Complete the progress bar before hiding
+        updateLoadingProgress(100, 'Ready!');
+
+        // Brief delay to show completion, then hide
+        setTimeout(() => {
+            loadingState.classList.add('hidden');
+        }, 200);
     }
 }
 

@@ -226,11 +226,15 @@ header h1 {
 .loading-state {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 80px 40px;
+    padding: 20px 40px;
     gap: 16px;
     width: 100%;
+}
+
+@media (max-width: 768px) {
+    .loading-state {
+        padding: 16px;
+    }
 }
 
 .loading-state p {
@@ -249,6 +253,207 @@ header h1 {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* Skeleton Loading Styles */
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton {
+    background: linear-gradient(90deg,
+        var(--bg-secondary) 25%,
+        rgba(200, 200, 200, 0.3) 50%,
+        var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+}
+
+[data-theme="dark"] .skeleton {
+    background: linear-gradient(90deg,
+        var(--bg-secondary) 25%,
+        rgba(100, 100, 100, 0.3) 50%,
+        var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+}
+
+.skeleton-text {
+    height: 1rem;
+    margin-bottom: 8px;
+}
+
+.skeleton-text.sm {
+    height: 0.75rem;
+    width: 60%;
+}
+
+.skeleton-text.lg {
+    height: 1.5rem;
+    width: 40%;
+}
+
+.skeleton-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.skeleton-stat {
+    width: 50px;
+    height: 2rem;
+    border-radius: 4px;
+}
+
+/* Skeleton Card Layouts */
+.skeleton-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    animation: fadeIn 0.3s ease;
+}
+
+.skeleton-leaderboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+    padding: 20px 0;
+}
+
+.skeleton-picker-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.skeleton-picker-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.skeleton-picker-body {
+    padding: 20px;
+}
+
+.skeleton-picker-stats {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.skeleton-picker-stats .skeleton {
+    flex: 1;
+    height: 60px;
+    border-radius: 6px;
+}
+
+.skeleton-picker-bar {
+    height: 8px;
+    border-radius: 4px;
+    margin-top: 12px;
+}
+
+.skeleton-games {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+    gap: 16px;
+    padding: 20px 0;
+}
+
+@media (max-width: 768px) {
+    .skeleton-games {
+        grid-template-columns: 1fr;
+    }
+    .skeleton-leaderboard {
+        grid-template-columns: 1fr;
+    }
+}
+
+.skeleton-game-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.skeleton-team-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.skeleton-team-row:last-child {
+    margin-bottom: 0;
+}
+
+.skeleton-team-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.skeleton-spread {
+    width: 60px;
+    height: 24px;
+    border-radius: 4px;
+}
+
+.skeleton-chart {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 24px;
+    height: 300px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 8px;
+}
+
+.skeleton-bar {
+    width: 40px;
+    border-radius: 4px 4px 0 0;
+}
+
+/* Loading Progress Indicator */
+.loading-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.loading-progress-bar {
+    width: 200px;
+    height: 4px;
+    background: var(--bg-secondary);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.loading-progress-fill {
+    height: 100%;
+    background: var(--accent-green);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.loading-progress-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
 }
 
 /* Toast Notification */

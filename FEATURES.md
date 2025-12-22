@@ -16,25 +16,11 @@ All critical accessibility violations have been fixed.
 
 ### Onboarding & Discoverability
 
-5. **Add First-Visit Onboarding**
-   - Brief overlay explaining key features
-   - Show only once, store in localStorage
-   - Explain: How to make picks, what tabs mean, keyboard shortcuts
-   - Effort: Medium
-   - Status: Completed (December 2024)
-
 6. **Add Info Tooltips for Terminology**
    - "What is Blazin' 5?" info icon
    - "Line Picks vs Straight Up" explanation
    - Hover or click to reveal
    - Effort: Low
-   - Status: Pending
-
-7. **Improve Loading Experience**
-   - Add skeleton screens during data fetch
-   - Show loading progress indicator
-   - Reduce perceived 10-second wait time
-   - Effort: Medium
    - Status: Pending
 
 ### Mobile Experience
@@ -228,6 +214,7 @@ All critical accessibility violations have been fixed.
 - First-Visit Onboarding - Welcome overlay explaining picks, Blazin' 5, tabs, and keyboard shortcuts
 
 **Features**
+- Improved Loading Experience - Skeleton screens with shimmer animation and progress indicator
 - Collapsible Sections - Click headers to collapse/expand
 - Pull to Refresh - Mobile gesture for live scores
 - Remember Selected Picker - Persists in localStorage

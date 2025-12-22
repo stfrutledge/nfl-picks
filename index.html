@@ -47,10 +47,147 @@
                 <button class="tab" data-category="winner">Straight Up</button>
             </section>
 
-            <!-- Loading State -->
+            <!-- Loading State with Skeleton Screens -->
             <section class="loading-state" id="loading-state">
-                <div class="loading-spinner"></div>
-                <p>Loading picks data...</p>
+                <!-- Progress Indicator -->
+                <div class="loading-progress">
+                    <div class="loading-progress-bar">
+                        <div class="loading-progress-fill" id="loading-progress-fill"></div>
+                    </div>
+                    <p class="loading-progress-text" id="loading-progress-text">Loading dashboard data...</p>
+                </div>
+
+                <!-- Skeleton Leaderboard -->
+                <div class="skeleton-leaderboard">
+                    <div class="skeleton-picker-card">
+                        <div class="skeleton-picker-header">
+                            <div class="skeleton skeleton-text lg" style="width: 120px; margin: 0;"></div>
+                        </div>
+                        <div class="skeleton-picker-body">
+                            <div class="skeleton-picker-stats">
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                            </div>
+                            <div class="skeleton skeleton-picker-bar"></div>
+                        </div>
+                    </div>
+                    <div class="skeleton-picker-card">
+                        <div class="skeleton-picker-header">
+                            <div class="skeleton skeleton-text lg" style="width: 100px; margin: 0;"></div>
+                        </div>
+                        <div class="skeleton-picker-body">
+                            <div class="skeleton-picker-stats">
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                            </div>
+                            <div class="skeleton skeleton-picker-bar"></div>
+                        </div>
+                    </div>
+                    <div class="skeleton-picker-card">
+                        <div class="skeleton-picker-header">
+                            <div class="skeleton skeleton-text lg" style="width: 90px; margin: 0;"></div>
+                        </div>
+                        <div class="skeleton-picker-body">
+                            <div class="skeleton-picker-stats">
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                            </div>
+                            <div class="skeleton skeleton-picker-bar"></div>
+                        </div>
+                    </div>
+                    <div class="skeleton-picker-card">
+                        <div class="skeleton-picker-header">
+                            <div class="skeleton skeleton-text lg" style="width: 110px; margin: 0;"></div>
+                        </div>
+                        <div class="skeleton-picker-body">
+                            <div class="skeleton-picker-stats">
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                                <div class="skeleton"></div>
+                            </div>
+                            <div class="skeleton skeleton-picker-bar"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Skeleton Games (for Make Picks tab) -->
+                <div class="skeleton-games" id="skeleton-games" style="display: none;">
+                    <div class="skeleton-game-card">
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 70%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                    </div>
+                    <div class="skeleton-game-card">
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 75%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 85%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                    </div>
+                    <div class="skeleton-game-card">
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 65%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 90%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                    </div>
+                    <div class="skeleton-game-card">
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 82%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                        <div class="skeleton-team-row">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton-team-info">
+                                <div class="skeleton skeleton-text" style="width: 68%;"></div>
+                                <div class="skeleton skeleton-text sm"></div>
+                            </div>
+                            <div class="skeleton skeleton-spread"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Error State -->
