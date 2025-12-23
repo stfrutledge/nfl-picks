@@ -39,12 +39,17 @@
 
         <!-- Dashboard Content -->
         <main id="dashboard" class="dashboard">
-            <!-- Category Tabs -->
+            <!-- Main Tabs -->
             <section class="category-tabs">
                 <button class="tab tab-picks active" data-category="make-picks">Make Picks</button>
-                <button class="tab" data-category="blazin">Blazin' 5</button>
-                <button class="tab" data-category="line">Line Picks</button>
-                <button class="tab" data-category="winner">Straight Up</button>
+                <button class="tab" data-category="standings">Standings</button>
+            </section>
+
+            <!-- Standings Sub-tabs (only visible when Standings is active) -->
+            <section class="standings-subtabs hidden" id="standings-subtabs">
+                <button class="subtab active" data-subcategory="blazin">Blazin' 5</button>
+                <button class="subtab" data-subcategory="line">Line Picks</button>
+                <button class="subtab" data-subcategory="winner">Straight Up</button>
             </section>
 
             <!-- Loading State with Skeleton Screens -->
@@ -212,7 +217,10 @@
                 <div class="collapsible-content">
                     <div class="charts-grid-content">
                         <div class="chart-container">
-                            <h3>Weekly Performance Trend</h3>
+                            <div class="chart-header">
+                                <h3>Weekly Performance Trend</h3>
+                                <button class="chart-zoom-btn" id="toggle-trend-zoom" title="Toggle zoom level">Zoom In</button>
+                            </div>
                             <canvas id="trend-chart"></canvas>
                         </div>
                         <div class="chart-container">
@@ -257,6 +265,41 @@
                 </div>
             </section>
 
+            <!-- Blazin' 5 Team Pick Records Section -->
+            <section class="blazin-team-records-section hidden collapsible-section" data-section="blazin-team-records">
+                <div class="collapsible-header" onclick="toggleSection('blazin-team-records')">
+                    <h3 class="section-header-title">Blazin' 5 Record by Team</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="team-records-controls">
+                        <label for="blazin-team-records-picker">Picker:</label>
+                        <select id="blazin-team-records-picker" class="team-records-dropdown">
+                            <option value="Stephen">Stephen</option>
+                            <option value="Sean">Sean</option>
+                            <option value="Dylan">Dylan</option>
+                            <option value="Jason">Jason</option>
+                            <option value="Daniel">Daniel</option>
+                        </select>
+                    </div>
+                    <div class="team-records-table-container">
+                        <table class="team-records-table" id="blazin-team-records-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="team" data-table="blazin">Team <span class="sort-icon"></span></th>
+                                    <th class="sortable" data-sort="record" data-table="blazin">Record <span class="sort-icon"></span></th>
+                                    <th class="sortable" data-sort="picks" data-table="blazin"># Picks <span class="sort-icon"></span></th>
+                                    <th class="sortable active desc" data-sort="pct" data-table="blazin">Win % <span class="sort-icon">▼</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="blazin-team-records-body">
+                                <!-- Blazin' 5 team records will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
             <!-- Group Overall Stats Section -->
             <section class="group-stats-section hidden collapsible-section" data-section="group-stats">
                 <div class="collapsible-header" onclick="toggleSection('group-stats')">
@@ -266,6 +309,41 @@
                 <div class="collapsible-content">
                     <div class="group-stats-grid" id="group-stats-grid">
                         <!-- Group stats cards will be injected here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Team Pick Records Section (Line Picks only) -->
+            <section class="team-records-section hidden collapsible-section" data-section="team-records">
+                <div class="collapsible-header" onclick="toggleSection('team-records')">
+                    <h3 class="section-header-title">Pick Record by Team</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="team-records-controls">
+                        <label for="team-records-picker">Picker:</label>
+                        <select id="team-records-picker" class="team-records-dropdown">
+                            <option value="Stephen">Stephen</option>
+                            <option value="Sean">Sean</option>
+                            <option value="Dylan">Dylan</option>
+                            <option value="Jason">Jason</option>
+                            <option value="Daniel">Daniel</option>
+                        </select>
+                    </div>
+                    <div class="team-records-table-container">
+                        <table class="team-records-table" id="team-records-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="team" data-table="line">Team <span class="sort-icon"></span></th>
+                                    <th class="sortable" data-sort="record" data-table="line">Record <span class="sort-icon"></span></th>
+                                    <th class="sortable" data-sort="picks" data-table="line"># Picks <span class="sort-icon"></span></th>
+                                    <th class="sortable active desc" data-sort="pct" data-table="line">Win % <span class="sort-icon">▼</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="team-records-body">
+                                <!-- Team records will be injected here -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -432,41 +510,6 @@
                 <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
                 <button class="btn btn-danger" id="modal-confirm-btn">Confirm</button>
             </div>
-        </div>
-    </div>
-
-    <!-- Keyboard Shortcuts Toggle -->
-    <button class="keyboard-toggle-btn hidden" id="keyboard-toggle-btn" title="Keyboard Shortcuts" aria-label="Show keyboard shortcuts">?</button>
-
-    <!-- Keyboard Shortcuts Legend -->
-    <div class="keyboard-legend" id="keyboard-legend">
-        <div class="keyboard-legend-header">
-            <span class="keyboard-legend-title">Keyboard Shortcuts</span>
-            <button class="keyboard-legend-close" id="keyboard-legend-close" aria-label="Close keyboard shortcuts">&times;</button>
-        </div>
-        <div class="keyboard-shortcut">
-            <span class="keyboard-key">↑↓</span>
-            <span class="keyboard-desc">Navigate between games</span>
-        </div>
-        <div class="keyboard-shortcut">
-            <span class="keyboard-key">1</span>
-            <span class="keyboard-desc">Select away team (line)</span>
-        </div>
-        <div class="keyboard-shortcut">
-            <span class="keyboard-key">2</span>
-            <span class="keyboard-desc">Select home team (line)</span>
-        </div>
-        <div class="keyboard-shortcut">
-            <span class="keyboard-key">3</span>
-            <span class="keyboard-desc">Select away team (winner)</span>
-        </div>
-        <div class="keyboard-shortcut">
-            <span class="keyboard-key">4</span>
-            <span class="keyboard-desc">Select home team (winner)</span>
-        </div>
-        <div class="keyboard-shortcut">
-            <span class="keyboard-key">←→</span>
-            <span class="keyboard-desc">Previous/Next week</span>
         </div>
     </div>
 

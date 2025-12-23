@@ -5,6 +5,7 @@
 
 let trendChart = null;
 let standingsChart = null;
+let trendChartZoomed = true;
 
 /**
  * Destroy all chart instances to prevent memory leaks
@@ -162,12 +163,33 @@ function renderTrendChart(weeklyData, category) {
                             return value + '%';
                         }
                     },
-                    min: 0,
-                    max: 100
+                    min: trendChartZoomed ? 30 : 0,
+                    max: trendChartZoomed ? 70 : 100
                 }
             }
         }
     });
+
+    // Setup zoom toggle button
+    const zoomBtn = document.getElementById('toggle-trend-zoom');
+    if (zoomBtn) {
+        zoomBtn.onclick = () => {
+            trendChartZoomed = !trendChartZoomed;
+            zoomBtn.textContent = trendChartZoomed ? 'Zoom Out' : 'Zoom In';
+            zoomBtn.classList.toggle('zoomed', !trendChartZoomed);
+
+            // Update chart Y-axis
+            if (trendChart) {
+                trendChart.options.scales.y.min = trendChartZoomed ? 30 : 0;
+                trendChart.options.scales.y.max = trendChartZoomed ? 70 : 100;
+                trendChart.update();
+            }
+        };
+
+        // Set initial button state
+        zoomBtn.textContent = trendChartZoomed ? 'Zoom Out' : 'Zoom In';
+        zoomBtn.classList.toggle('zoomed', !trendChartZoomed);
+    }
 }
 
 /**

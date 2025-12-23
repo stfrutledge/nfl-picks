@@ -4,6 +4,7 @@
 
 let dashboardData = null;
 let currentCategory = 'make-picks';
+let currentSubcategory = 'blazin'; // Default standings subcategory
 let currentPicker = localStorage.getItem('selectedPicker') || 'Stephen';
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
@@ -518,7 +519,7 @@ async function loadWeekSchedule(week, forceRefresh = false) {
 const ODDS_API_KEY = 'b6bb0ad3347ecbcc6922392025d33000';
 const ODDS_API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/';
 const ODDS_CACHE_KEY = 'nfl_odds_cache';
-const ODDS_CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+const ODDS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 /**
  * Get cached odds from localStorage
@@ -554,10 +555,20 @@ function cacheOdds(data) {
             timestamp: Date.now(),
             data: data
         }));
-        console.log('[Odds API] Odds cached for 6 hours');
+        console.log('[Odds API] Odds cached for 24 hours');
     } catch (e) {
         console.warn('[Odds API] Error caching odds:', e);
     }
+}
+
+/**
+ * Check if today is an NFL game day (Thursday, Saturday, Sunday, Monday)
+ * Games typically occur on these days during the season
+ */
+function isNFLGameDay() {
+    const day = new Date().getDay();
+    // 0 = Sunday, 1 = Monday, 4 = Thursday, 6 = Saturday
+    return day === 0 || day === 1 || day === 4 || day === 6;
 }
 
 /**
@@ -627,6 +638,14 @@ async function fetchNFLOdds(forceRefresh = false) {
  * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
  */
 async function updateOddsFromAPI(forceRefresh = false) {
+    // Only fetch fresh odds on game days to conserve API calls
+    // Always use cache if available, regardless of day
+    const cached = getCachedOdds();
+    if (!forceRefresh && !isNFLGameDay() && !cached) {
+        console.log('[Odds API] Not a game day and no cache - skipping API call');
+        return false;
+    }
+
     const oddsData = await fetchNFLOdds(forceRefresh);
     if (!oddsData) {
         console.warn('[Odds API] Could not fetch odds');
@@ -745,26 +764,59 @@ async function updateSpreadsFromAPI(forceRefresh = false) {
 }
 
 /**
- * Start auto-refresh for live scores (every 2 minutes)
+ * Check if we should keep polling for live scores
+ * Returns true if any games are in progress OR scheduled (not yet final)
  */
+function shouldPollLiveScores() {
+    const scores = Object.values(liveScoresCache);
+    if (scores.length === 0) return false;
+
+    for (const scoreData of scores) {
+        // Keep polling if any game is in progress
+        if (scoreData.status === 'STATUS_IN_PROGRESS' ||
+            scoreData.status === 'STATUS_HALFTIME' ||
+            scoreData.status === 'STATUS_END_PERIOD') {
+            return true;
+        }
+        // Also keep polling if games are scheduled (to catch when they start)
+        if (scoreData.status === 'STATUS_SCHEDULED') {
+            return true;
+        }
+    }
+    // All games are final - no need to poll
+    return false;
+}
+
 function startLiveScoresRefresh() {
     // Clear any existing interval
     if (liveScoresRefreshInterval) {
         clearInterval(liveScoresRefreshInterval);
+        liveScoresRefreshInterval = null;
     }
 
-    // Fetch immediately
+    // Fetch immediately to get current game states
     fetchLiveScores().then(() => {
-        renderGames(); // Re-render games with new scores
-        renderScoringSummary(); // Update scoring summary with live results
-    });
-
-    // Then refresh every 2 minutes
-    liveScoresRefreshInterval = setInterval(async () => {
-        await fetchLiveScores();
         renderGames();
         renderScoringSummary();
-    }, 120000);
+
+        // Only start polling interval if games are scheduled or in progress
+        if (shouldPollLiveScores()) {
+            console.log('Games scheduled or in progress - starting live refresh');
+            liveScoresRefreshInterval = setInterval(async () => {
+                await fetchLiveScores();
+                renderGames();
+                renderScoringSummary();
+
+                // Stop polling when all games are final
+                if (!shouldPollLiveScores()) {
+                    console.log('All games final - stopping live refresh');
+                    stopLiveScoresRefresh();
+                }
+            }, 120000);
+        } else {
+            console.log('All games final or no games - skipping live refresh');
+        }
+    });
 }
 
 /**
@@ -811,6 +863,8 @@ const dashboard = document.getElementById('dashboard');
 const leaderboard = document.getElementById('leaderboard');
 const streaksGrid = document.getElementById('streaks-grid');
 const tabs = document.querySelectorAll('.tab');
+const subtabs = document.querySelectorAll('.subtab');
+const standingsSubtabs = document.getElementById('standings-subtabs');
 
 // Initialize picks storage for all weeks and pickers
 function initializePicksStorage() {
@@ -860,12 +914,13 @@ function init() {
     setupWeekNavigation();
     setupGameFilters();
     setupConfirmModal();
-    setupKeyboardLegend();
     setupRetryButton();
     setupBackToTop();
     initCollapsibleSections();
     setupPullToRefresh();
     setupOnboarding();
+    setupTeamRecordsDropdown();
+    setupBlazinTeamRecordsDropdown();
     loadPicksFromStorage();
 
     // Show loading state
@@ -1036,8 +1091,8 @@ async function setCurrentWeek(week) {
     // (historical weeks use data from weekly CSV or historical-data.js)
     if (week >= CURRENT_NFL_WEEK || !NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0) {
         await loadWeekSchedule(week);
-        // Also update odds for this week's games
-        await updateOddsFromAPI();
+        // Note: Odds are loaded once on page load and cached for 24 hours
+        // No need to fetch on every week change
     }
 
     // Hide loading indicator
@@ -1064,6 +1119,29 @@ function setupTabs() {
             setActiveCategory(category);
         });
     });
+
+    // Setup subtab clicks for standings
+    subtabs.forEach(subtab => {
+        subtab.addEventListener('click', () => {
+            const subcategory = subtab.dataset.subcategory;
+            setActiveSubcategory(subcategory);
+        });
+    });
+}
+
+/**
+ * Set active subcategory within standings
+ */
+function setActiveSubcategory(subcategory) {
+    currentSubcategory = subcategory;
+
+    // Update subtab styling
+    subtabs.forEach(subtab => {
+        subtab.classList.toggle('active', subtab.dataset.subcategory === subcategory);
+    });
+
+    // Re-render dashboard with new subcategory
+    renderDashboard();
 }
 
 /**
@@ -1352,8 +1430,7 @@ function loadCSVData(csvText) {
         scoringWeekNum.textContent = currentWeek;
     }
 
-    // Hide loading state and render initial view
-    hideLoadingState();
+    // Note: hideLoadingState() is now called after schedule/odds load in loadFromGoogleSheets()
     setActiveCategory(currentCategory);
 }
 
@@ -1433,18 +1510,21 @@ async function loadFromGoogleSheets() {
 
             // Also load weekly picks data from individual week tabs
             updateLoadingProgress(85, 'Loading weekly picks...');
-            loadAllWeeklyDataForBlazin().then(async () => {
-                // Load schedule from ESPN for current week
-                updateLoadingProgress(90, 'Loading game schedule...');
-                await loadWeekSchedule(currentWeek);
+            await loadAllWeeklyDataForBlazin();
 
-                // Fetch current odds from The Odds API
-                updateLoadingProgress(95, 'Loading betting odds...');
-                await updateOddsFromAPI();
+            // Load schedule from ESPN for current week
+            updateLoadingProgress(90, 'Loading game schedule...');
+            await loadWeekSchedule(currentWeek);
 
-                // Re-render games after schedule and odds are loaded
-                renderGames();
-            });
+            // Fetch current odds from The Odds API
+            updateLoadingProgress(95, 'Loading betting odds...');
+            await updateOddsFromAPI();
+
+            // Re-render games after schedule and odds are loaded
+            renderGames();
+
+            // Now hide loading state after all data is loaded
+            hideLoadingState();
             return;
         } catch (err) {
             console.warn(`Fetch attempt failed${proxy ? ' with ' + proxy : ' (direct)'}:`, err.message);
@@ -1477,11 +1557,11 @@ function setActiveCategory(category) {
     const streaksSection = document.querySelector('.streaks-section');
     const groupStatsSection = document.querySelector('.group-stats-section');
     const teamFrequencySection = document.querySelector('.team-frequency-section');
+    const teamRecordsSection = document.querySelector('.team-records-section');
+    const blazinTeamRecordsSection = document.querySelector('.blazin-team-records-section');
 
     // Get insights section reference
     const insightsSection = document.querySelector('.insights-section');
-
-    const keyboardToggle = document.getElementById('keyboard-toggle-btn');
 
     if (category === 'make-picks') {
         // Destroy chart instances to prevent memory leaks
@@ -1489,35 +1569,32 @@ function setActiveCategory(category) {
             destroyAllCharts();
         }
 
-        // Show picks section, hide others
+        // Hide subtabs and dashboard sections
+        standingsSubtabs?.classList.add('hidden');
         leaderboard.classList.add('hidden');
         chartsSection?.classList.add('hidden');
         streaksSection?.classList.add('hidden');
         insightsSection?.classList.add('hidden');
         groupStatsSection?.classList.add('hidden');
         teamFrequencySection?.classList.add('hidden');
+        teamRecordsSection?.classList.add('hidden');
+        blazinTeamRecordsSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
-
-        // Show keyboard shortcuts toggle
-        keyboardToggle?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
         startLiveScoresRefresh();
         renderScoringSummary();
-    } else {
+    } else if (category === 'standings') {
         // Stop live scores refresh when leaving picks tab
         stopLiveScoresRefresh();
 
-        // Show dashboard sections, hide picks
+        // Show subtabs and dashboard sections
+        standingsSubtabs?.classList.remove('hidden');
         leaderboard.classList.remove('hidden');
         chartsSection?.classList.remove('hidden');
         streaksSection?.classList.remove('hidden');
         groupStatsSection?.classList.remove('hidden');
         makePicksSection?.classList.add('hidden');
-
-        // Hide keyboard shortcuts toggle and legend
-        keyboardToggle?.classList.add('hidden');
-        document.getElementById('keyboard-legend')?.classList.remove('show');
 
         renderDashboard();
     }
@@ -1531,7 +1608,8 @@ function renderDashboard() {
 
     let stats, weeklyData;
 
-    switch (currentCategory) {
+    // Use subcategory to determine which stats to show
+    switch (currentSubcategory) {
         case 'line':
             stats = dashboardData.linePicks;
             weeklyData = dashboardData.weeklyLinePicks;
@@ -1550,12 +1628,12 @@ function renderDashboard() {
 
     renderLeaderboard(stats);
     renderStreaks(stats);
-    renderTrendChart(weeklyData, currentCategory);
+    renderTrendChart(weeklyData, currentSubcategory);
 
     // Only show Favorites vs Underdogs chart on Line Picks tab
     const standingsChartContainer = document.getElementById('standings-chart')?.closest('.chart-container');
     if (standingsChartContainer) {
-        if (currentCategory === 'line') {
+        if (currentSubcategory === 'line') {
             standingsChartContainer.classList.remove('hidden');
             renderFavUnderdogChart(dashboardData.favoritesVsUnderdogs);
         } else {
@@ -1566,7 +1644,7 @@ function renderDashboard() {
     // Only show insights on Blazin' 5 tab
     const insightsSection = document.querySelector('.insights-section');
     if (insightsSection) {
-        if (currentCategory === 'blazin') {
+        if (currentSubcategory === 'blazin') {
             insightsSection.classList.remove('hidden');
             renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
         } else {
@@ -1577,7 +1655,7 @@ function renderDashboard() {
     // Only show team pick frequency on Blazin' 5 tab
     const teamFrequencySection = document.querySelector('.team-frequency-section');
     if (teamFrequencySection) {
-        if (currentCategory === 'blazin') {
+        if (currentSubcategory === 'blazin') {
             teamFrequencySection.classList.remove('hidden');
             renderTeamPickFrequency();
         } else {
@@ -1585,9 +1663,465 @@ function renderDashboard() {
         }
     }
 
+    // Show/hide Blazin' 5 team records section
+    const blazinTeamRecordsSection = document.querySelector('.blazin-team-records-section');
+    if (blazinTeamRecordsSection) {
+        if (currentSubcategory === 'blazin') {
+            blazinTeamRecordsSection.classList.remove('hidden');
+            renderBlazinTeamPickRecords();
+        } else {
+            blazinTeamRecordsSection.classList.add('hidden');
+        }
+    }
+
     // Render Group Overall Stats
     if (dashboardData.groupOverall) {
         renderGroupStats(dashboardData.groupOverall);
+    }
+
+    // Show/hide team records section (Line Picks only)
+    const teamRecordsSection = document.querySelector('.team-records-section');
+    if (teamRecordsSection) {
+        if (currentSubcategory === 'line') {
+            teamRecordsSection.classList.remove('hidden');
+            renderTeamPickRecords();
+        } else {
+            teamRecordsSection.classList.add('hidden');
+        }
+    }
+}
+
+/**
+ * Calculate team pick records for a specific picker (line picks)
+ */
+function calculateTeamPickRecords(picker) {
+    const teamRecords = {};
+
+    // Loop through all weeks with results
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+        // Get picks from both allPicks AND weeklyPicksCache (Google Sheets data)
+        const pickerPicks = allPicks[week]?.[picker] || {};
+        const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            // Try both string and number keys for compatibility
+            const gameId = game.id;
+            // Check both allPicks and weeklyPicksCache for the pick
+            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const result = results[gameId] || results[String(gameId)];
+
+            if (!pick?.line || !result) return;
+
+            // Calculate if the pick was correct
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+            // Build game detail for expansion
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const gameDetail = {
+                week,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome
+            };
+
+            // Record result for BOTH teams involved in the game
+            [game.away, game.home].forEach(team => {
+                // Normalize team name (e.g., "Buccs" -> "Buccaneers")
+                const normalizedTeam = TEAM_NAME_MAP[team] || team;
+
+                // Initialize team record if needed
+                if (!teamRecords[normalizedTeam]) {
+                    teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                }
+
+                // Store game detail
+                teamRecords[normalizedTeam].games.push(gameDetail);
+
+                if (isPush) {
+                    teamRecords[normalizedTeam].pushes++;
+                } else if (isWin) {
+                    teamRecords[normalizedTeam].wins++;
+                } else {
+                    teamRecords[normalizedTeam].losses++;
+                }
+            });
+        });
+    }
+
+    return teamRecords;
+}
+
+// Sort state for team records tables
+const teamRecordsSortState = {
+    line: { column: 'pct', direction: 'desc' },
+    blazin: { column: 'pct', direction: 'desc' }
+};
+
+/**
+ * Sort team records data based on column and direction
+ */
+function sortTeamRecordsData(data, column, direction) {
+    return [...data].sort((a, b) => {
+        let comparison = 0;
+        switch (column) {
+            case 'team':
+                comparison = a.team.localeCompare(b.team);
+                break;
+            case 'record':
+                // Sort by wins first, then by losses (fewer losses is better)
+                comparison = a.wins !== b.wins ? b.wins - a.wins : a.losses - b.losses;
+                break;
+            case 'picks':
+                comparison = b.total - a.total;
+                break;
+            case 'pct':
+            default:
+                comparison = b.pct - a.pct;
+                if (comparison === 0) comparison = b.total - a.total;
+                break;
+        }
+        return direction === 'asc' ? -comparison : comparison;
+    });
+}
+
+/**
+ * Handle sorting when column header is clicked
+ */
+function handleTeamRecordsSort(tableType, column) {
+    const state = teamRecordsSortState[tableType];
+
+    // Toggle direction if same column, otherwise default to desc (except team which defaults to asc)
+    if (state.column === column) {
+        state.direction = state.direction === 'desc' ? 'asc' : 'desc';
+    } else {
+        state.column = column;
+        state.direction = column === 'team' ? 'asc' : 'desc';
+    }
+
+    // Update header icons
+    const table = document.getElementById(tableType === 'line' ? 'team-records-table' : 'blazin-team-records-table');
+    if (table) {
+        table.querySelectorAll('th.sortable').forEach(th => {
+            const sortCol = th.getAttribute('data-sort');
+            const icon = th.querySelector('.sort-icon');
+            if (sortCol === column) {
+                th.classList.add('active');
+                th.classList.toggle('desc', state.direction === 'desc');
+                th.classList.toggle('asc', state.direction === 'asc');
+                icon.textContent = state.direction === 'desc' ? '▼' : '▲';
+            } else {
+                th.classList.remove('active', 'desc', 'asc');
+                icon.textContent = '';
+            }
+        });
+    }
+
+    // Re-render the table
+    if (tableType === 'line') {
+        renderTeamPickRecords();
+    } else {
+        renderBlazinTeamPickRecords();
+    }
+}
+
+/**
+ * Render the team pick records table
+ */
+function renderTeamPickRecords(picker = null) {
+    const dropdown = document.getElementById('team-records-picker');
+    const tbody = document.getElementById('team-records-body');
+
+    if (!tbody) return;
+
+    // Use provided picker or get from dropdown
+    const selectedPicker = picker || dropdown?.value || 'Stephen';
+
+    // Calculate records for this picker
+    const teamRecords = calculateTeamPickRecords(selectedPicker);
+
+    // Convert to array
+    const teamsData = Object.entries(teamRecords)
+        .map(([team, record]) => {
+            const total = record.wins + record.losses;
+            const pct = total > 0 ? (record.wins / total) * 100 : 0;
+            return { team, ...record, total: total + record.pushes, pct };
+        })
+        .filter(t => t.total > 0);
+
+    // Sort based on current sort state
+    const { column, direction } = teamRecordsSortState.line;
+    const sortedTeams = sortTeamRecordsData(teamsData, column, direction);
+
+    // Render table rows with expandable details
+    tbody.innerHTML = sortedTeams.map(({ team, wins, losses, pushes, total, pct, games }, index) => {
+        const pushStr = pushes > 0 ? `-${pushes}` : '';
+        const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
+        const teamId = team.replace(/[^a-zA-Z0-9]/g, '');
+
+        // Sort games by week
+        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+
+        // Build game details HTML
+        const gameDetailsHtml = sortedGames.map(g => {
+            const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
+            const outcomeText = g.outcome.toUpperCase();
+            const spreadText = g.favorite === 'away'
+                ? `${g.away} -${g.spread}`
+                : `${g.home} -${g.spread}`;
+            const pickedNormalized = TEAM_NAME_MAP[g.picked] || g.picked;
+
+            return `
+                <div class="game-detail-row ${outcomeClass}">
+                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                    <span class="game-spread">${spreadText}</span>
+                    <span class="game-picked">Picked: ${pickedNormalized}</span>
+                    <span class="game-outcome">${outcomeText}</span>
+                </div>
+            `;
+        }).join('');
+
+        const logoUrl = getTeamLogo(team);
+        const abbrev = getTeamAbbreviation(team);
+        const color = getTeamColor(team);
+
+        return `
+            <tr class="team-row" data-team="${teamId}" onclick="toggleTeamDetails('${teamId}')">
+                <td class="team-name">
+                    <img src="${logoUrl}" alt="${team}" class="team-logo-small" onerror="this.outerHTML='<span class=\\'team-logo-fallback-small\\' style=\\'background-color:${color}\\'>${abbrev}</span>'">
+                    ${team}
+                </td>
+                <td class="record">${wins}-${losses}${pushStr}</td>
+                <td class="picks-count">${total}</td>
+                <td class="win-pct ${pctClass}">${pct.toFixed(1)}%</td>
+            </tr>
+            <tr class="team-details-row hidden" id="details-${teamId}">
+                <td colspan="4">
+                    <div class="team-details-container">
+                        ${gameDetailsHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (sortedTeams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No picks data available</td></tr>';
+    }
+}
+
+/**
+ * Toggle team details expansion
+ */
+function toggleTeamDetails(teamId) {
+    const detailsRow = document.getElementById(`details-${teamId}`);
+    if (detailsRow) {
+        detailsRow.classList.toggle('hidden');
+    }
+}
+
+/**
+ * Calculate Blazin' 5 team pick records for a specific picker
+ */
+function calculateBlazinTeamPickRecords(picker) {
+    const teamRecords = {};
+
+    // Loop through all weeks with results
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+        const pickerPicks = allPicks[week]?.[picker] || {};
+        const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const result = results[gameId] || results[String(gameId)];
+
+            // Only count Blazin' 5 picks
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const gameDetail = {
+                week,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome
+            };
+
+            // Record result for BOTH teams involved in the game
+            [game.away, game.home].forEach(team => {
+                const normalizedTeam = TEAM_NAME_MAP[team] || team;
+
+                if (!teamRecords[normalizedTeam]) {
+                    teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                }
+
+                teamRecords[normalizedTeam].games.push(gameDetail);
+
+                if (isPush) {
+                    teamRecords[normalizedTeam].pushes++;
+                } else if (isWin) {
+                    teamRecords[normalizedTeam].wins++;
+                } else {
+                    teamRecords[normalizedTeam].losses++;
+                }
+            });
+        });
+    }
+
+    return teamRecords;
+}
+
+/**
+ * Render the Blazin' 5 team pick records table
+ */
+function renderBlazinTeamPickRecords(picker = null) {
+    const dropdown = document.getElementById('blazin-team-records-picker');
+    const tbody = document.getElementById('blazin-team-records-body');
+
+    if (!tbody) return;
+
+    const selectedPicker = picker || dropdown?.value || 'Stephen';
+    const teamRecords = calculateBlazinTeamPickRecords(selectedPicker);
+
+    // Convert to array
+    const teamsData = Object.entries(teamRecords)
+        .map(([team, record]) => {
+            const total = record.wins + record.losses;
+            const pct = total > 0 ? (record.wins / total) * 100 : 0;
+            return { team, ...record, total: total + record.pushes, pct };
+        })
+        .filter(t => t.total > 0);
+
+    // Sort based on current sort state
+    const { column, direction } = teamRecordsSortState.blazin;
+    const sortedTeams = sortTeamRecordsData(teamsData, column, direction);
+
+    tbody.innerHTML = sortedTeams.map(({ team, wins, losses, pushes, total, pct, games }) => {
+        const pushStr = pushes > 0 ? `-${pushes}` : '';
+        const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
+        const teamId = 'blazin-' + team.replace(/[^a-zA-Z0-9]/g, '');
+
+        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+
+        const gameDetailsHtml = sortedGames.map(g => {
+            const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
+            const outcomeText = g.outcome.toUpperCase();
+            const spreadText = g.favorite === 'away'
+                ? `${g.away} -${g.spread}`
+                : `${g.home} -${g.spread}`;
+            const pickedNormalized = TEAM_NAME_MAP[g.picked] || g.picked;
+
+            return `
+                <div class="game-detail-row ${outcomeClass}">
+                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                    <span class="game-spread">${spreadText}</span>
+                    <span class="game-picked">Picked: ${pickedNormalized}</span>
+                    <span class="game-outcome">${outcomeText}</span>
+                </div>
+            `;
+        }).join('');
+
+        const logoUrl = getTeamLogo(team);
+        const abbrev = getTeamAbbreviation(team);
+        const color = getTeamColor(team);
+
+        return `
+            <tr class="team-row" data-team="${teamId}" onclick="toggleTeamDetails('${teamId}')">
+                <td class="team-name">
+                    <img src="${logoUrl}" alt="${team}" class="team-logo-small" onerror="this.outerHTML='<span class=\\'team-logo-fallback-small\\' style=\\'background-color:${color}\\'>${abbrev}</span>'">
+                    ${team}
+                </td>
+                <td class="record">${wins}-${losses}${pushStr}</td>
+                <td class="picks-count">${total}</td>
+                <td class="win-pct ${pctClass}">${pct.toFixed(1)}%</td>
+            </tr>
+            <tr class="team-details-row hidden" id="details-${teamId}">
+                <td colspan="4">
+                    <div class="team-details-container">
+                        ${gameDetailsHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (sortedTeams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
+    }
+}
+
+/**
+ * Setup Blazin' 5 team records dropdown and sorting
+ */
+function setupBlazinTeamRecordsDropdown() {
+    const dropdown = document.getElementById('blazin-team-records-picker');
+    if (dropdown) {
+        dropdown.addEventListener('change', (e) => {
+            renderBlazinTeamPickRecords(e.target.value);
+        });
+    }
+
+    // Setup sortable headers
+    const table = document.getElementById('blazin-team-records-table');
+    if (table) {
+        table.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const column = th.getAttribute('data-sort');
+                handleTeamRecordsSort('blazin', column);
+            });
+        });
+    }
+}
+
+/**
+ * Setup team records dropdown and sorting
+ */
+function setupTeamRecordsDropdown() {
+    const dropdown = document.getElementById('team-records-picker');
+    if (dropdown) {
+        dropdown.addEventListener('change', (e) => {
+            renderTeamPickRecords(e.target.value);
+        });
+    }
+
+    // Setup sortable headers
+    const table = document.getElementById('team-records-table');
+    if (table) {
+        table.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const column = th.getAttribute('data-sort');
+                handleTeamRecordsSort('line', column);
+            });
+        });
     }
 }
 
@@ -1673,8 +2207,8 @@ function renderGroupStats(groupOverall) {
         }
     };
 
-    // Get only the category relevant to the current tab
-    const cat = categoryMap[currentCategory];
+    // Get only the category relevant to the current subtab
+    const cat = categoryMap[currentSubcategory];
     if (!cat) return;
 
     const categories = [cat];
@@ -1848,6 +2382,23 @@ async function loadAllWeeklyDataForBlazin() {
                 }
             }
 
+            // Merge results into NFL_RESULTS_BY_WEEK (Google Sheets takes priority)
+            if (weekData.results && Object.keys(weekData.results).length > 0) {
+                if (!NFL_RESULTS_BY_WEEK[week]) {
+                    NFL_RESULTS_BY_WEEK[week] = weekData.results;
+                } else {
+                    // Google Sheets results OVERWRITE historical data
+                    for (const gameId in weekData.results) {
+                        NFL_RESULTS_BY_WEEK[week][gameId] = weekData.results[gameId];
+                    }
+                }
+            }
+
+            // Merge games into NFL_GAMES_BY_WEEK (Google Sheets takes priority for spreads)
+            if (weekData.games && weekData.games.length > 0) {
+                NFL_GAMES_BY_WEEK[week] = weekData.games;
+            }
+
             // Count blazin picks for debugging
             let blazinCount = 0;
             for (const picker in weekData.picks) {
@@ -1857,7 +2408,7 @@ async function loadAllWeeklyDataForBlazin() {
                     }
                 }
             }
-            console.log(`Week ${week}: ${blazinCount} Blazin' 5 picks found`);
+            console.log(`Week ${week}: ${blazinCount} Blazin' 5 picks`);
             loadedWeeks++;
         } catch (err) {
             console.warn(`Week ${week}: ${err.message}`);
@@ -3196,7 +3747,7 @@ function showLoadingState() {
         loadingState.classList.remove('hidden');
 
         // Show appropriate skeleton based on active tab
-        if (currentCategory === 'picks') {
+        if (currentCategory === 'make-picks') {
             if (skeletonGames) skeletonGames.style.display = 'grid';
             if (skeletonLeaderboard) skeletonLeaderboard.style.display = 'none';
         } else {
@@ -3509,45 +4060,6 @@ function setupExportImport() {
     });
 }
 
-/**
- * Setup keyboard shortcuts legend
- */
-function setupKeyboardLegend() {
-    const toggleBtn = document.getElementById('keyboard-toggle-btn');
-    const legend = document.getElementById('keyboard-legend');
-    const closeBtn = document.getElementById('keyboard-legend-close');
-
-    toggleBtn?.addEventListener('click', () => {
-        legend?.classList.toggle('show');
-    });
-
-    closeBtn?.addEventListener('click', () => {
-        legend?.classList.remove('show');
-    });
-
-    // Add global keyboard shortcuts for week navigation
-    document.addEventListener('keydown', (e) => {
-        // Only when on Make Picks tab and not in an input
-        if (currentCategory !== 'make-picks') return;
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-
-        if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            if (currentWeek > 1) {
-                currentWeek--;
-                updateWeekUI();
-            }
-        } else if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            if (currentWeek < CURRENT_NFL_WEEK) {
-                currentWeek++;
-                updateWeekUI();
-            }
-        } else if (e.key === '?') {
-            legend?.classList.toggle('show');
-        }
-    });
-}
 
 /**
  * Setup retry button for error state
