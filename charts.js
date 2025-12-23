@@ -6,6 +6,21 @@
 let trendChart = null;
 let standingsChart = null;
 
+/**
+ * Destroy all chart instances to prevent memory leaks
+ * Call this when navigating away from the dashboard view
+ */
+function destroyAllCharts() {
+    if (trendChart) {
+        trendChart.destroy();
+        trendChart = null;
+    }
+    if (standingsChart) {
+        standingsChart.destroy();
+        standingsChart = null;
+    }
+}
+
 const CHART_COLORS = {
     'Stephen': '#3b82f6',
     'Sean': '#00b112',

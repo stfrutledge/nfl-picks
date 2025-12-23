@@ -3,6 +3,31 @@
  * Extracts data from the Google Sheets CSV export
  */
 
+// Validation errors are collected here for reporting
+let csvValidationErrors = [];
+
+/**
+ * Get validation errors from the last parse
+ */
+function getCSVValidationErrors() {
+    return csvValidationErrors;
+}
+
+/**
+ * Clear validation errors
+ */
+function clearCSVValidationErrors() {
+    csvValidationErrors = [];
+}
+
+/**
+ * Add a validation error
+ */
+function addValidationError(section, message, severity = 'warning') {
+    csvValidationErrors.push({ section, message, severity, timestamp: new Date().toISOString() });
+    console.warn(`[CSV Validation - ${severity}] ${section}: ${message}`);
+}
+
 const PICKERS = ['Stephen', 'Sean', 'Dylan', 'Jason', 'Daniel'];
 const PICKERS_WITH_COWHERD = ['Stephen', 'Sean', 'Dylan', 'Jason', 'Daniel', 'Cowherd'];
 
@@ -19,14 +44,35 @@ const PICKER_COLORS = {
  * Parse the full CSV and extract all relevant data
  */
 function parseNFLPicksCSV(csvText) {
+    // Clear previous validation errors
+    clearCSVValidationErrors();
+
     const result = Papa.parse(csvText, {
         skipEmptyLines: false
     });
 
     const rows = result.data;
 
+    // Validate basic CSV structure
+    if (!rows || rows.length < 30) {
+        addValidationError('CSV Structure', `CSV has only ${rows?.length || 0} rows, expected at least 30`, 'error');
+    }
+
     // Extract base stats
     const blazin5 = extractBlazin5Overall(rows);
+
+    // Validate Blazin' 5 data
+    const blazin5Count = Object.keys(blazin5).length;
+    if (blazin5Count < PICKERS.length) {
+        addValidationError('Blazin\' 5', `Found ${blazin5Count} pickers, expected ${PICKERS.length}`, 'warning');
+    }
+    PICKERS.forEach(picker => {
+        if (!blazin5[picker]) {
+            addValidationError('Blazin\' 5', `Missing data for ${picker}`, 'warning');
+        } else if (blazin5[picker].percentage === null || isNaN(blazin5[picker].percentage)) {
+            addValidationError('Blazin\' 5', `Invalid percentage for ${picker}`, 'warning');
+        }
+    });
 
     // Extract and merge gambling winnings into blazin5 stats
     const winnings = extractGamblingWinnings(rows);
@@ -40,6 +86,20 @@ function parseNFLPicksCSV(csvText) {
     // Extract best/worst team data and merge into linePicks
     const teamRecords = extractBestWorstTeams(rows);
     const linePicks = extractLinePicksOverall(rows);
+
+    // Validate Line Picks data
+    const linePicksCount = Object.keys(linePicks).length;
+    if (linePicksCount < PICKERS.length) {
+        addValidationError('Line Picks', `Found ${linePicksCount} pickers, expected ${PICKERS.length}`, 'warning');
+    }
+    PICKERS.forEach(picker => {
+        if (!linePicks[picker]) {
+            addValidationError('Line Picks', `Missing data for ${picker}`, 'warning');
+        } else if (linePicks[picker].percentage === null || isNaN(linePicks[picker].percentage)) {
+            addValidationError('Line Picks', `Invalid percentage for ${picker}`, 'warning');
+        }
+    });
+
     Object.keys(teamRecords).forEach(name => {
         if (linePicks[name]) {
             linePicks[name].bestTeam = teamRecords[name].best;
@@ -47,18 +107,56 @@ function parseNFLPicksCSV(csvText) {
         }
     });
 
+    const winnerPicks = extractWinnerPicksOverall(rows);
+
+    // Validate Winner Picks data
+    const winnerPicksCount = Object.keys(winnerPicks).length;
+    if (winnerPicksCount < PICKERS.length) {
+        addValidationError('Winner Picks', `Found ${winnerPicksCount} pickers, expected ${PICKERS.length}`, 'warning');
+    }
+
+    const weeklyLinePicks = extractWeeklyPercentages(rows, 'line');
+    const weeklyBlazin5 = extractWeeklyPercentages(rows, 'blazin5');
+    const weeklyWinnerPicks = extractWeeklyPercentages(rows, 'winner');
+
+    // Validate weekly data exists
+    PICKERS.forEach(picker => {
+        if (!weeklyLinePicks[picker] || weeklyLinePicks[picker].length === 0) {
+            addValidationError('Weekly Data', `No weekly line picks data for ${picker}`, 'warning');
+        }
+    });
+
+    const favoritesVsUnderdogs = extractFavoritesVsUnderdogs(rows);
+    if (!favoritesVsUnderdogs.favorites || Object.keys(favoritesVsUnderdogs.favorites).length === 0) {
+        addValidationError('Favorites vs Underdogs', 'No favorites data found', 'warning');
+    }
+
+    const currentWeek = detectCurrentWeek(rows);
+    if (currentWeek < 1 || currentWeek > 18) {
+        addValidationError('Current Week', `Invalid week detected: ${currentWeek}`, 'warning');
+    }
+
+    // Log validation summary
+    const errors = getCSVValidationErrors();
+    if (errors.length > 0) {
+        console.warn(`[CSV Validation] ${errors.length} issue(s) found during parsing`);
+    } else {
+        console.log('[CSV Validation] All data parsed successfully');
+    }
+
     return {
         linePicks: linePicks,
         blazin5: blazin5,
-        winnerPicks: extractWinnerPicksOverall(rows),
-        weeklyLinePicks: extractWeeklyPercentages(rows, 'line'),
-        weeklyBlazin5: extractWeeklyPercentages(rows, 'blazin5'),
-        weeklyWinnerPicks: extractWeeklyPercentages(rows, 'winner'),
-        favoritesVsUnderdogs: extractFavoritesVsUnderdogs(rows),
+        winnerPicks: winnerPicks,
+        weeklyLinePicks: weeklyLinePicks,
+        weeklyBlazin5: weeklyBlazin5,
+        weeklyWinnerPicks: weeklyWinnerPicks,
+        favoritesVsUnderdogs: favoritesVsUnderdogs,
         loneWolf: extractLoneWolfPicks(rows),
         universalAgreement: extractUniversalAgreement(rows),
         groupOverall: extractGroupOverall(rows),
-        currentWeek: detectCurrentWeek(rows)
+        currentWeek: currentWeek,
+        validationErrors: errors
     };
 }
 

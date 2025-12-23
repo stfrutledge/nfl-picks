@@ -155,7 +155,7 @@ All critical accessibility violations have been fixed.
 26. **Add Undo for Destructive Actions**
     - Undo clear picks within 5 seconds
     - Effort: Medium
-    - Status: Pending
+    - Status: **COMPLETED**
 
 27. **Show Last Updated Timestamp**
     - "Scores updated at 3:45 PM"
@@ -179,18 +179,18 @@ All critical accessibility violations have been fixed.
     - ESPN CDN occasionally fails
     - Show team abbreviation or color swatch as fallback
     - Effort: Low
-    - Status: Pending
+    - Status: **COMPLETED**
 
 30. **Validate Parsed CSV Data**
     - Brittle parsing depends on exact column positions
     - Add validation and error reporting
     - Effort: Medium
-    - Status: Pending
+    - Status: **COMPLETED**
 
 31. **Fix Chart.js Memory Leaks**
     - Chart instances need explicit destroy on re-render
     - Effort: Low
-    - Status: Pending
+    - Status: **COMPLETED**
 
 32. **Consider TypeScript Migration**
     - Prevent type-related bugs
@@ -221,6 +221,14 @@ All critical accessibility violations have been fixed.
 - Live Scoring Summary - Real-time ESPN scores
 - Blazin' 5 Selector - Star button with 5-pick limit
 - Sticky Tabs and Back to Top - Fixed navigation
+
+**UX Polish**
+- Undo for Destructive Actions - "Clear Picks" shows undo toast for 5 seconds to restore picks
+
+**Technical Debt**
+- Team Logo Fallbacks - Shows team abbreviation with team color when ESPN CDN fails
+- CSV Data Validation - Validates parsed data and logs warnings for missing/invalid data
+- Chart.js Memory Leaks Fixed - Charts properly destroyed when navigating away from dashboard
 
 ---
 

@@ -70,10 +70,69 @@ const TEAM_NAME_MAP = {
     'ATL': 'Falcons'
 };
 
+// Team abbreviations for fallback display when logos fail to load
+const TEAM_ABBREVIATIONS = {
+    'Falcons': 'ATL', 'Buccaneers': 'TB', 'Jets': 'NYJ', 'Jaguars': 'JAX',
+    'Browns': 'CLE', 'Bears': 'CHI', 'Bills': 'BUF', 'Patriots': 'NE',
+    'Ravens': 'BAL', 'Bengals': 'CIN', 'Cardinals': 'ARI', 'Texans': 'HOU',
+    'Raiders': 'LV', 'Eagles': 'PHI', 'Chargers': 'LAC', 'Chiefs': 'KC',
+    'Commanders': 'WSH', 'Giants': 'NYG', 'Colts': 'IND', 'Seahawks': 'SEA',
+    'Titans': 'TEN', '49ers': 'SF', 'Packers': 'GB', 'Broncos': 'DEN',
+    'Lions': 'DET', 'Rams': 'LAR', 'Panthers': 'CAR', 'Saints': 'NO',
+    'Vikings': 'MIN', 'Cowboys': 'DAL', 'Dolphins': 'MIA', 'Steelers': 'PIT'
+};
+
+// Team colors for fallback display
+const TEAM_COLORS = {
+    'Falcons': '#A71930', 'Buccaneers': '#D50A0A', 'Jets': '#125740', 'Jaguars': '#006778',
+    'Browns': '#311D00', 'Bears': '#0B162A', 'Bills': '#00338D', 'Patriots': '#002244',
+    'Ravens': '#241773', 'Bengals': '#FB4F14', 'Cardinals': '#97233F', 'Texans': '#03202F',
+    'Raiders': '#000000', 'Eagles': '#004C54', 'Chargers': '#0080C6', 'Chiefs': '#E31837',
+    'Commanders': '#5A1414', 'Giants': '#0B2265', 'Colts': '#002C5F', 'Seahawks': '#002244',
+    'Titans': '#0C2340', '49ers': '#AA0000', 'Packers': '#203731', 'Broncos': '#FB4F14',
+    'Lions': '#0076B6', 'Rams': '#003594', 'Panthers': '#0085CA', 'Saints': '#D3BC8D',
+    'Vikings': '#4F2683', 'Cowboys': '#003594', 'Dolphins': '#008E97', 'Steelers': '#FFB612'
+};
+
 // Helper to get team logo URL (handles aliases)
 function getTeamLogo(teamName) {
     const normalized = TEAM_NAME_MAP[teamName] || teamName;
     return TEAM_LOGOS[normalized] || '';
+}
+
+// Helper to get team abbreviation for fallback
+function getTeamAbbreviation(teamName) {
+    const normalized = TEAM_NAME_MAP[teamName] || teamName;
+    return TEAM_ABBREVIATIONS[normalized] || teamName.substring(0, 3).toUpperCase();
+}
+
+// Helper to get team color for fallback
+function getTeamColor(teamName) {
+    const normalized = TEAM_NAME_MAP[teamName] || teamName;
+    return TEAM_COLORS[normalized] || '#666666';
+}
+
+// Format moneyline with + or - prefix
+function formatMoneyline(ml) {
+    if (ml === null || ml === undefined) return 'N/A';
+    return ml > 0 ? `+${ml}` : `${ml}`;
+}
+
+// Handle logo load error - show abbreviation fallback
+function handleLogoError(img, teamName) {
+    const abbrev = getTeamAbbreviation(teamName);
+    const color = getTeamColor(teamName);
+    const fallback = document.createElement('span');
+    fallback.className = 'team-logo-fallback';
+    fallback.textContent = abbrev;
+    fallback.style.backgroundColor = color;
+    fallback.setAttribute('title', teamName);
+    img.replaceWith(fallback);
+}
+
+// Toggle compact card expansion
+function toggleCompactCard(card) {
+    card.classList.toggle('expanded');
 }
 
 // NFL Team Logos (ESPN CDN)
@@ -152,6 +211,7 @@ const NFL_GAMES_BY_WEEK = {
         { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-21T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
         { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-22T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
     ]
+    // Week 17+ games are fetched dynamically from ESPN API
 };
 
 // Immediately merge historical games if available (historical-data.js loads before app.js)
@@ -262,7 +322,430 @@ function getLiveGameStatus(game) {
 }
 
 /**
- * Start auto-refresh for live scores (every 30 seconds)
+ * ESPN Schedule API
+ * Fetches game schedule for any NFL week
+ */
+const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
+const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
+/**
+ * Get cached schedule from localStorage
+ */
+function getCachedSchedule(week) {
+    try {
+        const cached = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+        if (!cached) return null;
+
+        const { timestamp, data } = JSON.parse(cached);
+        const age = Date.now() - timestamp;
+
+        if (age < SCHEDULE_CACHE_DURATION) {
+            const hoursAgo = (age / (1000 * 60 * 60)).toFixed(1);
+            console.log(`[ESPN] Using cached schedule for week ${week} (${hoursAgo} hours old)`);
+            return data;
+        }
+
+        console.log(`[ESPN] Schedule cache expired for week ${week}`);
+        return null;
+    } catch (e) {
+        console.warn('[ESPN] Error reading schedule cache:', e);
+        return null;
+    }
+}
+
+/**
+ * Save schedule to localStorage cache
+ */
+function cacheSchedule(week, data) {
+    try {
+        localStorage.setItem(`${SCHEDULE_CACHE_KEY}_week${week}`, JSON.stringify({
+            timestamp: Date.now(),
+            data: data
+        }));
+        console.log(`[ESPN] Schedule cached for week ${week}`);
+    } catch (e) {
+        console.warn('[ESPN] Error caching schedule:', e);
+    }
+}
+
+/**
+ * Format day name from date
+ */
+function getDayName(date) {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[date.getDay()];
+}
+
+/**
+ * Format time in ET
+ */
+function formatGameTime(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'America/New_York'
+    }) + ' ET';
+}
+
+/**
+ * Extract team nickname from full team name
+ * e.g., "Kansas City Chiefs" -> "Chiefs"
+ */
+function getTeamNickname(fullName) {
+    // Handle special cases
+    const specialCases = {
+        'Washington Commanders': 'Commanders',
+        'New York Giants': 'Giants',
+        'New York Jets': 'Jets',
+        'Los Angeles Rams': 'Rams',
+        'Los Angeles Chargers': 'Chargers',
+        'Las Vegas Raiders': 'Raiders',
+        'New England Patriots': 'Patriots',
+        'New Orleans Saints': 'Saints',
+        'Green Bay Packers': 'Packers',
+        'Kansas City Chiefs': 'Chiefs',
+        'San Francisco 49ers': '49ers',
+        'Tampa Bay Buccaneers': 'Buccaneers'
+    };
+
+    if (specialCases[fullName]) {
+        return specialCases[fullName];
+    }
+
+    // Default: take the last word
+    const parts = fullName.split(' ');
+    return parts[parts.length - 1];
+}
+
+/**
+ * Fetch NFL schedule from ESPN for a specific week
+ */
+async function fetchNFLSchedule(week, forceRefresh = false) {
+    // Check cache first unless force refresh
+    if (!forceRefresh) {
+        const cached = getCachedSchedule(week);
+        if (cached) return cached;
+    }
+
+    try {
+        console.log(`[ESPN] Fetching schedule for week ${week}...`);
+        const response = await fetch(`${ESPN_SCHEDULE_URL}?week=${week}`);
+
+        if (!response.ok) {
+            throw new Error(`ESPN API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const games = [];
+
+        if (data.events) {
+            data.events.forEach((event, index) => {
+                const competition = event.competitions[0];
+                const competitors = competition.competitors;
+                const homeTeam = competitors.find(c => c.homeAway === 'home');
+                const awayTeam = competitors.find(c => c.homeAway === 'away');
+                const venue = competition.venue;
+                const gameDate = new Date(event.date);
+
+                games.push({
+                    id: index + 1,
+                    espnId: event.id,
+                    away: getTeamNickname(awayTeam.team.displayName),
+                    home: getTeamNickname(homeTeam.team.displayName),
+                    awayFull: awayTeam.team.displayName,
+                    homeFull: homeTeam.team.displayName,
+                    spread: 0, // Will be updated from Odds API
+                    favorite: 'home', // Default, will be updated from Odds API
+                    day: getDayName(gameDate),
+                    time: formatGameTime(event.date),
+                    kickoff: event.date,
+                    location: venue?.address ? [venue.address.city, venue.address.state].filter(Boolean).join(', ') : '',
+                    stadium: venue?.fullName || '',
+                    broadcast: competition.broadcasts?.[0]?.names?.[0] || ''
+                });
+            });
+        }
+
+        console.log(`[ESPN] Fetched ${games.length} games for week ${week}`);
+
+        // Cache the results
+        cacheSchedule(week, games);
+
+        return games;
+    } catch (error) {
+        console.error(`[ESPN] Error fetching schedule for week ${week}:`, error);
+        // Try to return stale cache on error
+        const staleCache = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+        if (staleCache) {
+            console.log('[ESPN] Using stale cache due to fetch error');
+            return JSON.parse(staleCache).data;
+        }
+        return null;
+    }
+}
+
+/**
+ * Load schedule for a week, merging ESPN data with odds
+ */
+async function loadWeekSchedule(week, forceRefresh = false) {
+    // For historical weeks, use stored data
+    if (week < CURRENT_NFL_WEEK && HISTORICAL_GAMES && HISTORICAL_GAMES[week]) {
+        console.log(`[Schedule] Using historical data for week ${week}`);
+        NFL_GAMES_BY_WEEK[week] = HISTORICAL_GAMES[week];
+        return NFL_GAMES_BY_WEEK[week];
+    }
+
+    // Fetch fresh schedule from ESPN
+    const espnGames = await fetchNFLSchedule(week, forceRefresh);
+
+    if (espnGames && espnGames.length > 0) {
+        NFL_GAMES_BY_WEEK[week] = espnGames;
+        console.log(`[Schedule] Loaded ${espnGames.length} games for week ${week} from ESPN`);
+    } else if (!NFL_GAMES_BY_WEEK[week]) {
+        // Fallback to empty array if no data available
+        NFL_GAMES_BY_WEEK[week] = [];
+        console.warn(`[Schedule] No games found for week ${week}`);
+    }
+
+    return NFL_GAMES_BY_WEEK[week];
+}
+
+/**
+ * The Odds API configuration
+ */
+const ODDS_API_KEY = 'b6bb0ad3347ecbcc6922392025d33000';
+const ODDS_API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/';
+const ODDS_CACHE_KEY = 'nfl_odds_cache';
+const ODDS_CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+
+/**
+ * Get cached odds from localStorage
+ */
+function getCachedOdds() {
+    try {
+        const cached = localStorage.getItem(ODDS_CACHE_KEY);
+        if (!cached) return null;
+
+        const { timestamp, data } = JSON.parse(cached);
+        const age = Date.now() - timestamp;
+
+        if (age < ODDS_CACHE_DURATION) {
+            const hoursAgo = (age / (1000 * 60 * 60)).toFixed(1);
+            console.log(`[Odds API] Using cached odds (${hoursAgo} hours old)`);
+            return data;
+        }
+
+        console.log('[Odds API] Cache expired, will fetch fresh data');
+        return null;
+    } catch (e) {
+        console.warn('[Odds API] Error reading cache:', e);
+        return null;
+    }
+}
+
+/**
+ * Save odds to localStorage cache
+ */
+function cacheOdds(data) {
+    try {
+        localStorage.setItem(ODDS_CACHE_KEY, JSON.stringify({
+            timestamp: Date.now(),
+            data: data
+        }));
+        console.log('[Odds API] Odds cached for 6 hours');
+    } catch (e) {
+        console.warn('[Odds API] Error caching odds:', e);
+    }
+}
+
+/**
+ * Fetch current NFL odds from The Odds API
+ * Fetches spreads, moneyline (h2h), and totals (over/under)
+ * Uses DraftKings as the primary source
+ */
+async function fetchNFLOdds(forceRefresh = false) {
+    // Check cache first unless force refresh
+    if (!forceRefresh) {
+        const cached = getCachedOdds();
+        if (cached) return cached;
+    }
+
+    const oddsUrl = `${ODDS_API_URL}?apiKey=${ODDS_API_KEY}&regions=us&markets=spreads,h2h,totals&oddsFormat=american&bookmakers=draftkings,fanduel`;
+
+    // CORS proxies to try (same as Google Sheets)
+    const CORS_PROXIES = [
+        '', // Try direct first
+        'https://corsproxy.io/?'
+    ];
+
+    for (const proxy of CORS_PROXIES) {
+        try {
+            const url = proxy ? proxy + encodeURIComponent(oddsUrl) : oddsUrl;
+            console.log(`[Odds API] Fetching odds${proxy ? ' via proxy' : ' directly'}...`);
+
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`Odds API error: ${response.status}`);
+            }
+
+            const games = await response.json();
+
+            // Log remaining API requests from headers (only available on direct calls)
+            if (!proxy) {
+                const remaining = response.headers.get('x-requests-remaining');
+                const used = response.headers.get('x-requests-used');
+                console.log(`[Odds API] Requests used: ${used}, remaining: ${remaining}`);
+            }
+
+            console.log(`[Odds API] Fetched odds for ${games.length} games`);
+
+            // Cache the results
+            cacheOdds(games);
+
+            return games;
+        } catch (error) {
+            console.warn(`[Odds API] Fetch failed${proxy ? ' with proxy' : ' (direct)'}:`, error.message);
+        }
+    }
+
+    // All attempts failed - try stale cache
+    console.error('[Odds API] All fetch attempts failed');
+    const staleCache = localStorage.getItem(ODDS_CACHE_KEY);
+    if (staleCache) {
+        console.log('[Odds API] Using stale cache due to fetch error');
+        return JSON.parse(staleCache).data;
+    }
+    return null;
+}
+
+/**
+ * Update NFL_GAMES_BY_WEEK with odds from The Odds API
+ * Includes spreads, moneyline (h2h), and totals (over/under)
+ * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
+ */
+async function updateOddsFromAPI(forceRefresh = false) {
+    const oddsData = await fetchNFLOdds(forceRefresh);
+    if (!oddsData) {
+        console.warn('[Odds API] Could not fetch odds');
+        return false;
+    }
+
+    let updatedCount = 0;
+
+    // Process each game from the API
+    oddsData.forEach(game => {
+        const homeTeam = game.home_team;
+        const awayTeam = game.away_team;
+
+        // Find bookmaker (prefer DraftKings, fallback to FanDuel)
+        const bookmaker = game.bookmakers?.find(b => b.key === 'draftkings') ||
+                          game.bookmakers?.find(b => b.key === 'fanduel');
+
+        if (!bookmaker) return;
+
+        // Extract spread data
+        const spreadsMarket = bookmaker.markets?.find(m => m.key === 'spreads');
+        let spread = null;
+        let favorite = null;
+        if (spreadsMarket) {
+            const homeOutcome = spreadsMarket.outcomes?.find(o => o.name === homeTeam);
+            if (homeOutcome) {
+                const homeSpread = homeOutcome.point;
+                spread = Math.abs(homeSpread);
+                favorite = homeSpread < 0 ? 'home' : 'away';
+            }
+        }
+
+        // Extract moneyline data
+        const h2hMarket = bookmaker.markets?.find(m => m.key === 'h2h');
+        let homeMoneyline = null;
+        let awayMoneyline = null;
+        if (h2hMarket) {
+            const homeOutcome = h2hMarket.outcomes?.find(o => o.name === homeTeam);
+            const awayOutcome = h2hMarket.outcomes?.find(o => o.name === awayTeam);
+            if (homeOutcome) homeMoneyline = homeOutcome.price;
+            if (awayOutcome) awayMoneyline = awayOutcome.price;
+        }
+
+        // Extract totals (over/under) data
+        const totalsMarket = bookmaker.markets?.find(m => m.key === 'totals');
+        let overUnder = null;
+        if (totalsMarket) {
+            const overOutcome = totalsMarket.outcomes?.find(o => o.name === 'Over');
+            if (overOutcome) {
+                overUnder = overOutcome.point;
+            }
+        }
+
+        // Match to our games by team name
+        for (const week in NFL_GAMES_BY_WEEK) {
+            const weekGames = NFL_GAMES_BY_WEEK[week];
+            if (!weekGames || weekGames.length === 0) continue;
+
+            for (const weekGame of weekGames) {
+                // Match by full team name or nickname
+                const homeTeamLower = homeTeam.toLowerCase();
+                const awayTeamLower = awayTeam.toLowerCase();
+                const gameHomeLower = weekGame.home.toLowerCase();
+                const gameAwayLower = weekGame.away.toLowerCase();
+                const gameHomeFullLower = (weekGame.homeFull || weekGame.home).toLowerCase();
+                const gameAwayFullLower = (weekGame.awayFull || weekGame.away).toLowerCase();
+
+                // Check if home teams match
+                const homeMatch = homeTeamLower === gameHomeFullLower ||
+                                  homeTeamLower.includes(gameHomeLower) ||
+                                  gameHomeLower.includes(homeTeamLower.split(' ').pop());
+
+                // Check if away teams match
+                const awayMatch = awayTeamLower === gameAwayFullLower ||
+                                  awayTeamLower.includes(gameAwayLower) ||
+                                  gameAwayLower.includes(awayTeamLower.split(' ').pop());
+
+                if (homeMatch && awayMatch) {
+                    // Update game with all odds data
+                    if (spread !== null) {
+                        weekGame.spread = spread;
+                        weekGame.favorite = favorite;
+                    }
+                    if (homeMoneyline !== null) weekGame.homeMoneyline = homeMoneyline;
+                    if (awayMoneyline !== null) weekGame.awayMoneyline = awayMoneyline;
+                    if (overUnder !== null) weekGame.overUnder = overUnder;
+                    updatedCount++;
+                    break;
+                }
+            }
+        }
+    });
+
+    // Debug: log unmatched games from the API
+    if (updatedCount === 0) {
+        console.log('[Odds API] No games matched! First few API games:', oddsData.slice(0, 3).map(g => `${g.away_team} @ ${g.home_team}`));
+        console.log('[Odds API] First few local games:', Object.values(NFL_GAMES_BY_WEEK).flat().slice(0, 3).map(g => `${g.away} @ ${g.home} (${g.awayFull || 'no full'} @ ${g.homeFull || 'no full'})`));
+    }
+
+    console.log(`[Odds API] Applied odds to ${updatedCount} games`);
+
+    // Debug: log what weeks have games loaded
+    console.log('[Odds API] Weeks with games:', Object.keys(NFL_GAMES_BY_WEEK).filter(w => NFL_GAMES_BY_WEEK[w]?.length > 0));
+
+    // Re-render if we're on the picks tab
+    if (currentCategory === 'make-picks') {
+        renderGames();
+    }
+
+    return true;
+}
+
+// Keep old function name for backwards compatibility
+async function updateSpreadsFromAPI(forceRefresh = false) {
+    return updateOddsFromAPI(forceRefresh);
+}
+
+/**
+ * Start auto-refresh for live scores (every 2 minutes)
  */
 function startLiveScoresRefresh() {
     // Clear any existing interval
@@ -276,12 +759,12 @@ function startLiveScoresRefresh() {
         renderScoringSummary(); // Update scoring summary with live results
     });
 
-    // Then refresh every 30 seconds
+    // Then refresh every 2 minutes
     liveScoresRefreshInterval = setInterval(async () => {
         await fetchLiveScores();
         renderGames();
         renderScoringSummary();
-    }, 30000);
+    }, 120000);
 }
 
 /**
@@ -378,7 +861,6 @@ function init() {
     setupGameFilters();
     setupConfirmModal();
     setupKeyboardLegend();
-    setupProgressBarPreference();
     setupRetryButton();
     setupBackToTop();
     initCollapsibleSections();
@@ -550,6 +1032,14 @@ async function setCurrentWeek(week) {
         }
     }
 
+    // Load schedule from ESPN for current/future weeks
+    // (historical weeks use data from weekly CSV or historical-data.js)
+    if (week >= CURRENT_NFL_WEEK || !NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0) {
+        await loadWeekSchedule(week);
+        // Also update odds for this week's games
+        await updateOddsFromAPI();
+    }
+
     // Hide loading indicator
     if (loadingIndicator) {
         loadingIndicator.classList.add('hidden');
@@ -586,12 +1076,31 @@ function setupPickerButtons() {
     // Set initial value
     pickerDropdown.value = currentPicker;
 
+    // Show/hide admin-only buttons based on picker
+    updateAdminButtons();
+
     pickerDropdown.addEventListener('change', (e) => {
         currentPicker = e.target.value;
         localStorage.setItem('selectedPicker', currentPicker);
+        // Show/hide admin-only buttons based on picker
+        updateAdminButtons();
         // Re-render games with current picker's selections
         renderGames();
         renderScoringSummary();
+    });
+}
+
+/**
+ * Show/hide admin-only buttons based on current picker
+ */
+function updateAdminButtons() {
+    const adminButtons = document.querySelectorAll('.admin-only');
+    adminButtons.forEach(btn => {
+        if (currentPicker === 'Stephen') {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
     });
 }
 
@@ -616,6 +1125,18 @@ function setupPicksActions() {
     document.getElementById('pick-underdogs-btn')?.addEventListener('click', () => {
         pickAllUnderdogs();
         closeDropdown();
+    });
+
+    // Refresh spreads button (admin only - at bottom of picks section)
+    document.getElementById('refresh-spreads-btn')?.addEventListener('click', async () => {
+        showToast('Refreshing spreads from API...');
+        const success = await updateSpreadsFromAPI(true); // Force refresh
+        if (success) {
+            showToast('Spreads updated successfully!', 'success');
+            renderGames(); // Re-render to show new spreads
+        } else {
+            showToast('Failed to update spreads. Check console for details.', 'error');
+        }
     });
 
     // Close dropdown when clicking outside
@@ -730,45 +1251,6 @@ function pickAllUnderdogs() {
     renderGames();
     renderScoringSummary();
     showToast(`Picked ${pickedCount} underdogs`);
-}
-
-/**
- * Update the pick progress indicator
- */
-function updatePickProgress() {
-    const picksMade = document.getElementById('picks-made');
-    const picksTotal = document.getElementById('picks-total');
-    const progressFill = document.getElementById('progress-fill');
-
-    if (!picksMade || !picksTotal || !progressFill) return;
-
-    const weekGames = getGamesForWeek(currentWeek);
-    const weekPicks = allPicks[currentWeek]?.[currentPicker] || {};
-
-    // Count complete picks (both line and winner selected)
-    let complete = 0;
-    weekGames.forEach(game => {
-        const gameIdStr = String(game.id);
-        const gamePicks = weekPicks[gameIdStr] || weekPicks[game.id] || {};
-        if (gamePicks.line && gamePicks.winner) {
-            complete++;
-        }
-    });
-
-    const total = weekGames.length;
-    const percentage = total > 0 ? (complete / total) * 100 : 0;
-
-    picksMade.textContent = complete;
-    picksTotal.textContent = total;
-    progressFill.style.width = `${percentage}%`;
-
-    // Update color based on completion
-    progressFill.classList.remove('complete', 'partial');
-    if (percentage === 100) {
-        progressFill.classList.add('complete');
-    } else if (percentage > 0) {
-        progressFill.classList.add('partial');
-    }
 }
 
 // Countdown interval reference
@@ -951,8 +1433,16 @@ async function loadFromGoogleSheets() {
 
             // Also load weekly picks data from individual week tabs
             updateLoadingProgress(85, 'Loading weekly picks...');
-            loadAllWeeklyDataForBlazin().then(() => {
-                // Re-render games after picks are loaded from sheets
+            loadAllWeeklyDataForBlazin().then(async () => {
+                // Load schedule from ESPN for current week
+                updateLoadingProgress(90, 'Loading game schedule...');
+                await loadWeekSchedule(currentWeek);
+
+                // Fetch current odds from The Odds API
+                updateLoadingProgress(95, 'Loading betting odds...');
+                await updateOddsFromAPI();
+
+                // Re-render games after schedule and odds are loaded
                 renderGames();
             });
             return;
@@ -987,7 +1477,6 @@ function setActiveCategory(category) {
     const streaksSection = document.querySelector('.streaks-section');
     const groupStatsSection = document.querySelector('.group-stats-section');
     const teamFrequencySection = document.querySelector('.team-frequency-section');
-    const picksStatusBar = document.getElementById('picks-status-bar');
 
     // Get insights section reference
     const insightsSection = document.querySelector('.insights-section');
@@ -995,6 +1484,11 @@ function setActiveCategory(category) {
     const keyboardToggle = document.getElementById('keyboard-toggle-btn');
 
     if (category === 'make-picks') {
+        // Destroy chart instances to prevent memory leaks
+        if (typeof destroyAllCharts === 'function') {
+            destroyAllCharts();
+        }
+
         // Show picks section, hide others
         leaderboard.classList.add('hidden');
         chartsSection?.classList.add('hidden');
@@ -1003,11 +1497,6 @@ function setActiveCategory(category) {
         groupStatsSection?.classList.add('hidden');
         teamFrequencySection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
-
-        // Show progress bar only if not dismissed this session
-        if (shouldShowProgressBar()) {
-            picksStatusBar?.classList.remove('hidden');
-        }
 
         // Show keyboard shortcuts toggle
         keyboardToggle?.classList.remove('hidden');
@@ -1025,7 +1514,6 @@ function setActiveCategory(category) {
         streaksSection?.classList.remove('hidden');
         groupStatsSection?.classList.remove('hidden');
         makePicksSection?.classList.add('hidden');
-        picksStatusBar?.classList.add('hidden');
 
         // Hide keyboard shortcuts toggle and legend
         keyboardToggle?.classList.add('hidden');
@@ -1427,7 +1915,7 @@ async function renderTeamPickFrequency() {
             return `
                 <div class="team-freq-row ${idx === 0 ? 'top-team' : ''}">
                     <div class="team-freq-info">
-                        <img src="${getTeamLogo(team)}" alt="${team} logo" class="team-freq-logo">
+                        <img src="${getTeamLogo(team)}" alt="${team} logo" class="team-freq-logo" onerror="handleLogoError(this, '${team}')">
                         <span class="team-freq-name">${team}</span>
                     </div>
                     <div class="team-freq-bar-container">
@@ -1459,72 +1947,152 @@ async function renderTeamPickFrequency() {
 }
 
 /**
- * Render leaderboard cards
+ * Render a single picker card
  */
-function renderLeaderboard(stats) {
-    const sorted = getSortedPickers(stats);
+function renderPickerCard(picker, index, isCompact = false) {
+    const rankClass = index < 3 ? `rank-${index + 1}` : '';
+    const colorClass = `color-${picker.name.toLowerCase()}`;
+    const yearChangeClass = picker.yearChange?.includes('▲') ? 'up' : 'down';
+    const pctClass = picker.percentage >= 50 ? 'positive' : 'negative';
+    const compactClass = isCompact ? 'compact' : '';
 
-    leaderboard.innerHTML = sorted.map((picker, index) => {
-        const rankClass = index < 3 ? `rank-${index + 1}` : '';
-        const colorClass = `color-${picker.name.toLowerCase()}`;
-        const yearChangeClass = picker.yearChange?.includes('▲') ? 'up' : 'down';
-        const pctClass = picker.percentage >= 50 ? 'positive' : 'negative';
-
+    if (isCompact) {
+        // Expandable compact card for runners-up section
         return `
-            <div class="picker-card ${rankClass}">
-                <div class="picker-name">
-                    <span class="picker-color ${colorClass}"></span>
-                    ${picker.name}
+            <div class="picker-card ${rankClass} ${compactClass}" onclick="toggleCompactCard(this)">
+                <div class="compact-header">
+                    <div class="compact-rank">#${index + 1}</div>
+                    <div class="picker-name">
+                        <span class="picker-color ${colorClass}"></span>
+                        ${picker.name}
+                    </div>
+                    <div class="compact-stats">
+                        <div class="win-pct ${pctClass}">${picker.percentage?.toFixed(2) || 0}%</div>
+                        <div class="record">${picker.wins}-${picker.losses}-${picker.pushes || picker.draws || 0}</div>
+                    </div>
+                    <div class="expand-icon">▼</div>
                 </div>
-                <div class="win-pct ${pctClass}">${picker.percentage?.toFixed(2) || 0}%</div>
-                <div class="record">${picker.wins}-${picker.losses}-${picker.pushes || picker.draws || 0}</div>
-                <div class="picker-stats">
-                    <div class="stat-row">
-                        <span class="stat-label">Total Picks</span>
-                        <span class="stat-value">${picker.totalPicks || 0}</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Last 3 Weeks</span>
-                        <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
-                            ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
-                        </span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Best Week</span>
-                        <span class="stat-value">${picker.bestWeek || '-'}</span>
-                    </div>
-                </div>
-                ${picker.bestTeam && picker.worstTeam ? `
-                <div class="team-records">
-                    <div class="team-record best">
-                        <img src="${getTeamLogo(picker.bestTeam.team)}" alt="${picker.bestTeam.team} logo" class="team-badge-logo">
-                        <span class="team-badge-name">${picker.bestTeam.team}</span>
-                        <span class="team-badge-stats">${picker.bestTeam.record} (${picker.bestTeam.percentage?.toFixed(0)}%)</span>
-                    </div>
-                    <div class="team-record worst">
-                        <img src="${getTeamLogo(picker.worstTeam.team)}" alt="${picker.worstTeam.team} logo" class="team-badge-logo">
-                        <span class="team-badge-name">${picker.worstTeam.team}</span>
-                        <span class="team-badge-stats">${picker.worstTeam.record} (${picker.worstTeam.percentage?.toFixed(0)}%)</span>
-                    </div>
-                </div>
-                ` : ''}
-                <div class="year-comparison">
-                    ${picker.yearChange ? `
-                        <div class="year-change ${yearChangeClass}">
-                            <span class="comparison-label">vs Last Year:</span>
-                            <span class="comparison-value">${picker.yearChange}</span>
+                <div class="compact-expanded">
+                    <div class="picker-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Total Picks</span>
+                            <span class="stat-value">${picker.totalPicks || 0}</span>
                         </div>
-                    ` : ''}
+                        <div class="stat-row">
+                            <span class="stat-label">Last 3 Weeks</span>
+                            <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
+                                ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
+                            </span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Best Week</span>
+                            <span class="stat-value">${picker.bestWeek || '-'}</span>
+                        </div>
+                    </div>
                     ${picker.winnings !== undefined ? `
-                        <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
-                            <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
-                            <span class="comparison-value">${picker.winningsRaw >= 0 ? '+' : ''}${picker.winnings}</span>
+                        <div class="year-comparison">
+                            <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
+                                <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
+                                <span class="comparison-value">${picker.winningsRaw >= 0 ? '+' : ''}${picker.winnings}</span>
+                            </div>
                         </div>
                     ` : ''}
                 </div>
             </div>
         `;
-    }).join('');
+    }
+
+    // Full card for podium
+    return `
+        <div class="picker-card ${rankClass}">
+            <div class="picker-name">
+                <span class="picker-color ${colorClass}"></span>
+                ${picker.name}
+            </div>
+            <div class="win-pct ${pctClass}">${picker.percentage?.toFixed(2) || 0}%</div>
+            <div class="record">${picker.wins}-${picker.losses}-${picker.pushes || picker.draws || 0}</div>
+            <div class="picker-stats">
+                <div class="stat-row">
+                    <span class="stat-label">Total Picks</span>
+                    <span class="stat-value">${picker.totalPicks || 0}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Last 3 Weeks</span>
+                    <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
+                        ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
+                    </span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Best Week</span>
+                    <span class="stat-value">${picker.bestWeek || '-'}</span>
+                </div>
+            </div>
+            ${picker.bestTeam && picker.worstTeam ? `
+            <div class="team-records">
+                <div class="team-record best">
+                    <img src="${getTeamLogo(picker.bestTeam.team)}" alt="${picker.bestTeam.team} logo" class="team-badge-logo" onerror="handleLogoError(this, '${picker.bestTeam.team}')">
+                    <span class="team-badge-name">${picker.bestTeam.team}</span>
+                    <span class="team-badge-stats">${picker.bestTeam.record} (${picker.bestTeam.percentage?.toFixed(0)}%)</span>
+                </div>
+                <div class="team-record worst">
+                    <img src="${getTeamLogo(picker.worstTeam.team)}" alt="${picker.worstTeam.team} logo" class="team-badge-logo" onerror="handleLogoError(this, '${picker.worstTeam.team}')">
+                    <span class="team-badge-name">${picker.worstTeam.team}</span>
+                    <span class="team-badge-stats">${picker.worstTeam.record} (${picker.worstTeam.percentage?.toFixed(0)}%)</span>
+                </div>
+            </div>
+            ` : ''}
+            <div class="year-comparison">
+                ${picker.yearChange ? `
+                    <div class="year-change ${yearChangeClass}">
+                        <span class="comparison-label">vs Last Year:</span>
+                        <span class="comparison-value">${picker.yearChange}</span>
+                    </div>
+                ` : ''}
+                ${picker.winnings !== undefined ? `
+                    <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
+                        <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
+                        <span class="comparison-value">${picker.winningsRaw >= 0 ? '+' : ''}${picker.winnings}</span>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Render leaderboard cards
+ */
+function renderLeaderboard(stats) {
+    const sorted = getSortedPickers(stats);
+
+    // Use podium layout for 6 pickers (Blazin' 5 with Cowherd)
+    if (sorted.length === 6) {
+        const podium = sorted.slice(0, 3);
+        const runnersUp = sorted.slice(3);
+
+        // Podium order: 2nd, 1st, 3rd (visual podium arrangement)
+        const podiumOrder = [podium[1], podium[0], podium[2]];
+
+        leaderboard.innerHTML = `
+            <div class="podium-section">
+                <div class="podium-row">
+                    ${podiumOrder.map((picker, i) => {
+                        const originalIndex = i === 1 ? 0 : (i === 0 ? 1 : 2);
+                        return renderPickerCard(picker, originalIndex, false);
+                    }).join('')}
+                </div>
+            </div>
+            <div class="runners-up-section">
+                <div class="runners-up-row">
+                    ${runnersUp.map((picker, i) => renderPickerCard(picker, i + 3, true)).join('')}
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // Standard grid layout for 5 pickers
+    leaderboard.innerHTML = sorted.map((picker, index) => renderPickerCard(picker, index, false)).join('');
 }
 
 /**
@@ -1624,7 +2192,16 @@ function renderGames() {
         const gameCompleted = isFinal || isHistoricalWeek;
         let lineAwayResult = '', lineHomeResult = '', winnerAwayResult = '', winnerHomeResult = '';
         if (gameCompleted) {
-            const result = getResultsForWeek(currentWeek)[game.id];
+            // Use live data for final games, fall back to historical results
+            let result = getResultsForWeek(currentWeek)[game.id];
+            if (!result && liveData && isFinal) {
+                // Build result from live data for games that just finished
+                result = {
+                    winner: liveData.homeScore > liveData.awayScore ? 'home' : 'away',
+                    homeScore: liveData.homeScore,
+                    awayScore: liveData.awayScore
+                };
+            }
             if (result) {
                 const atsWinner = calculateATSWinner(game, result);
                 // Line pick results
@@ -1684,8 +2261,6 @@ function renderGames() {
                         <span class="final-team-name">${game.home}</span>
                     </span>
                 </div>`;
-        } else if (!locked && game.kickoff) {
-            gameStatusDisplay = `<div class="game-lock-countdown" data-kickoff="${game.kickoff}"></div>`;
         }
 
         // Blazin star button - disabled if locked, no line pick, or already at 5 and not already selected
@@ -1706,12 +2281,12 @@ function renderGames() {
 
                 <div class="game-matchup-line">
                     <span class="away-team">
-                        <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo">
+                        <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo" onerror="handleLogoError(this, '${game.away}')">
                         ${game.away} (${awaySpreadDisplay})
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
-                        <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo">
+                        <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo" onerror="handleLogoError(this, '${game.home}')">
                         ${game.home} (${homeSpreadDisplay})
                     </span>
                 </div>
@@ -1778,8 +2353,7 @@ function renderGames() {
     // Setup keyboard navigation
     setupKeyboardNavigation();
 
-    // Update progress indicator and countdown
-    updatePickProgress();
+    // Start countdown timer
     startCountdownTimer();
 }
 
@@ -1969,9 +2543,6 @@ function handlePickSelect(e) {
             otherWinnerBtn.classList.remove('selected');
         }
     }
-
-    // Update progress bar
-    updatePickProgress();
 
     // Update Blazin' 5 star buttons (enable/disable based on line picks)
     const pickerPicks = allPicks[currentWeek][currentPicker] || {};
@@ -2220,6 +2791,13 @@ function clearCurrentPickerPicks() {
         'Clear Picks',
         `Clear Week ${currentWeek} picks for ${currentPicker}? Picks for locked/completed games will be preserved.`,
         () => {
+            // Save current picks for undo functionality
+            const savedPicks = allPicks[currentWeek] && allPicks[currentWeek][currentPicker]
+                ? JSON.parse(JSON.stringify(allPicks[currentWeek][currentPicker]))
+                : {};
+            const savedWeek = currentWeek;
+            const savedPicker = currentPicker;
+
             if (allPicks[currentWeek] && allPicks[currentWeek][currentPicker]) {
                 const games = getGamesForWeek(currentWeek);
                 const preservedPicks = {};
@@ -2239,7 +2817,18 @@ function clearCurrentPickerPicks() {
             savePicksToStorage();
             renderGames();
             renderScoringSummary();
-            showToast('Picks cleared');
+
+            // Show undo toast with 5 second window
+            showUndoToast('Picks cleared', () => {
+                // Restore the saved picks
+                if (!allPicks[savedWeek]) {
+                    allPicks[savedWeek] = {};
+                }
+                allPicks[savedWeek][savedPicker] = savedPicks;
+                savePicksToStorage();
+                renderGames();
+                renderScoringSummary();
+            });
         }
     );
 }
@@ -2424,6 +3013,60 @@ function showToast(message) {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
     }, 2500);
+}
+
+/**
+ * Show a toast notification with an undo button
+ * @param {string} message - The message to display
+ * @param {Function} undoCallback - Function to call when undo is clicked
+ * @param {number} duration - How long to show the toast (default 5000ms)
+ */
+function showUndoToast(message, undoCallback, duration = 5000) {
+    // Remove existing toast if any
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-undo';
+
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = message;
+
+    const undoBtn = document.createElement('button');
+    undoBtn.className = 'toast-undo-btn';
+    undoBtn.textContent = 'Undo';
+    undoBtn.setAttribute('aria-label', 'Undo action');
+
+    let undoTimeoutId;
+    let hideTimeoutId;
+
+    const dismissToast = () => {
+        clearTimeout(undoTimeoutId);
+        clearTimeout(hideTimeoutId);
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    undoBtn.addEventListener('click', () => {
+        undoCallback();
+        dismissToast();
+        showToast('Action undone');
+    });
+
+    toast.appendChild(messageSpan);
+    toast.appendChild(undoBtn);
+    document.body.appendChild(toast);
+
+    // Trigger animation
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Remove after delay
+    hideTimeoutId = setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
 }
 
 /**
@@ -2904,24 +3547,6 @@ function setupKeyboardLegend() {
             legend?.classList.toggle('show');
         }
     });
-}
-
-/**
- * Progress bar dismiss preference
- */
-function setupProgressBarPreference() {
-    const closeBtn = document.getElementById('picks-status-close');
-    closeBtn?.addEventListener('click', () => {
-        const statusBar = document.getElementById('picks-status-bar');
-        if (statusBar) {
-            statusBar.classList.add('hidden');
-            sessionStorage.setItem('progressBarDismissed', 'true');
-        }
-    });
-}
-
-function shouldShowProgressBar() {
-    return sessionStorage.getItem('progressBarDismissed') !== 'true';
 }
 
 /**

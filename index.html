@@ -347,6 +347,13 @@
                     <button class="btn btn-primary" id="copy-picks-btn">Share Picks</button>
                 </div>
 
+                <!-- Admin: Refresh Spreads (Stephen only) -->
+                <div class="admin-actions admin-only hidden">
+                    <button class="btn btn-secondary btn-small" id="refresh-spreads-btn">
+                        Refresh Spreads from API
+                    </button>
+                </div>
+
                 <!-- Scoring Summary -->
                 <div class="scoring-summary collapsible-section" id="scoring-summary" data-section="scoring">
                     <div class="collapsible-header" onclick="toggleSection('scoring')">
@@ -367,19 +374,6 @@
         <footer>
             <p>Data pulled from <a href="https://docs.google.com/spreadsheets/d/1JuftzmWWIlquN1oKrFqPNaGjMu9ysdnCHqCDj9lYzfE" target="_blank" rel="noopener">published Google Sheet</a></p>
         </footer>
-    </div>
-
-    <!-- Sticky Pick Progress Bar -->
-    <div class="picks-status-bar hidden" id="picks-status-bar">
-        <div class="pick-progress">
-            <div class="progress-text">
-                <span id="picks-made">0</span>/<span id="picks-total">0</span> picks made
-            </div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-fill"></div>
-            </div>
-        </div>
-        <button class="picks-status-close" id="picks-status-close" title="Dismiss" aria-label="Dismiss progress bar">&times;</button>
     </div>
 
     <!-- Onboarding Overlay (first visit only) -->
