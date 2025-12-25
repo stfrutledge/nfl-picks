@@ -251,30 +251,16 @@
                 </div>
             </section>
 
-            <!-- Team Pick Frequency Section (Blazin' 5 only) -->
-            <section class="team-frequency-section hidden collapsible-section" data-section="team-frequency">
-                <div class="collapsible-header" onclick="toggleSection('team-frequency')">
-                    <h3 class="section-header-title">Team Pick Frequency</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
-                </div>
-                <div class="collapsible-content">
-                    <p class="section-subtitle">Top 5 teams picked with win percentage</p>
-                    <div class="team-frequency-grid" id="team-frequency-grid">
-                        <!-- Team frequency cards will be injected here -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- Blazin' 5 Team Pick Records Section -->
-            <section class="blazin-team-records-section hidden collapsible-section" data-section="blazin-team-records">
+            <!-- Blazin' 5 Records Section (Team + Spread) -->
+            <section class="blazin-records-section hidden collapsible-section" data-section="blazin-team-records">
                 <div class="collapsible-header" onclick="toggleSection('blazin-team-records')">
-                    <h3 class="section-header-title">Blazin' 5 Record by Team</h3>
+                    <h3 class="section-header-title">Blazin' 5 Records</h3>
                     <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
                 </div>
                 <div class="collapsible-content">
-                    <div class="team-records-controls">
-                        <label for="blazin-team-records-picker">Picker:</label>
-                        <select id="blazin-team-records-picker" class="team-records-dropdown">
+                    <div class="blazin-records-controls">
+                        <label for="blazin-records-picker">Picker:</label>
+                        <select id="blazin-records-picker" class="team-records-dropdown">
                             <option value="Stephen">Stephen</option>
                             <option value="Sean">Sean</option>
                             <option value="Dylan">Dylan</option>
@@ -282,20 +268,46 @@
                             <option value="Daniel">Daniel</option>
                         </select>
                     </div>
-                    <div class="team-records-table-container">
-                        <table class="team-records-table" id="blazin-team-records-table">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort="team" data-table="blazin">Team <span class="sort-icon"></span></th>
-                                    <th class="sortable" data-sort="record" data-table="blazin">Record <span class="sort-icon"></span></th>
-                                    <th class="sortable" data-sort="picks" data-table="blazin"># Picks <span class="sort-icon"></span></th>
-                                    <th class="sortable active desc" data-sort="pct" data-table="blazin">Win % <span class="sort-icon">▼</span></th>
-                                </tr>
-                            </thead>
-                            <tbody id="blazin-team-records-body">
-                                <!-- Blazin' 5 team records will be injected here -->
-                            </tbody>
-                        </table>
+                    <div class="blazin-records-grid">
+                        <!-- Record by Team Table -->
+                        <div class="blazin-records-column">
+                            <h4 class="records-column-title">By Team</h4>
+                            <div class="team-records-table-container">
+                                <table class="team-records-table" id="blazin-team-records-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="team" data-table="blazin">Team <span class="sort-icon"></span></th>
+                                            <th class="sortable active desc" data-sort="record" data-table="blazin">Record <span class="sort-icon">▼</span></th>
+                                            <th class="sortable" data-sort="picks" data-table="blazin"># Picks <span class="sort-icon"></span></th>
+                                            <th class="sortable" data-sort="pct" data-table="blazin">Win % <span class="sort-icon"></span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="blazin-team-records-body">
+                                        <!-- Blazin' 5 team records will be injected here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Record by Spread Size Table -->
+                        <div class="blazin-records-column">
+                            <h4 class="records-column-title">By Spread Size</h4>
+                            <div class="team-records-table-container">
+                                <table class="team-records-table" id="blazin-spread-records-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="spread" data-table="spread">Spread <span class="sort-icon"></span></th>
+                                            <th class="sortable active desc" data-sort="record" data-table="spread">Record <span class="sort-icon">▼</span></th>
+                                            <th class="sortable" data-sort="picks" data-table="spread"># Picks <span class="sort-icon"></span></th>
+                                            <th class="sortable" data-sort="pct" data-table="spread">Win % <span class="sort-icon"></span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="blazin-spread-records-body">
+                                        <!-- Spread records will be injected here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

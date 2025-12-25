@@ -1556,9 +1556,8 @@ function setActiveCategory(category) {
     const chartsSection = document.querySelector('.charts-grid');
     const streaksSection = document.querySelector('.streaks-section');
     const groupStatsSection = document.querySelector('.group-stats-section');
-    const teamFrequencySection = document.querySelector('.team-frequency-section');
     const teamRecordsSection = document.querySelector('.team-records-section');
-    const blazinTeamRecordsSection = document.querySelector('.blazin-team-records-section');
+    const blazinRecordsSection = document.querySelector('.blazin-records-section');
 
     // Get insights section reference
     const insightsSection = document.querySelector('.insights-section');
@@ -1576,9 +1575,8 @@ function setActiveCategory(category) {
         streaksSection?.classList.add('hidden');
         insightsSection?.classList.add('hidden');
         groupStatsSection?.classList.add('hidden');
-        teamFrequencySection?.classList.add('hidden');
         teamRecordsSection?.classList.add('hidden');
-        blazinTeamRecordsSection?.classList.add('hidden');
+        blazinRecordsSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -1652,25 +1650,15 @@ function renderDashboard() {
         }
     }
 
-    // Only show team pick frequency on Blazin' 5 tab
-    const teamFrequencySection = document.querySelector('.team-frequency-section');
-    if (teamFrequencySection) {
+    // Show/hide Blazin' 5 records section (team + spread)
+    const blazinRecordsSection = document.querySelector('.blazin-records-section');
+    if (blazinRecordsSection) {
         if (currentSubcategory === 'blazin') {
-            teamFrequencySection.classList.remove('hidden');
-            renderTeamPickFrequency();
-        } else {
-            teamFrequencySection.classList.add('hidden');
-        }
-    }
-
-    // Show/hide Blazin' 5 team records section
-    const blazinTeamRecordsSection = document.querySelector('.blazin-team-records-section');
-    if (blazinTeamRecordsSection) {
-        if (currentSubcategory === 'blazin') {
-            blazinTeamRecordsSection.classList.remove('hidden');
+            blazinRecordsSection.classList.remove('hidden');
             renderBlazinTeamPickRecords();
+            renderBlazinSpreadRecords();
         } else {
-            blazinTeamRecordsSection.classList.add('hidden');
+            blazinRecordsSection.classList.add('hidden');
         }
     }
 
@@ -1766,7 +1754,8 @@ function calculateTeamPickRecords(picker) {
 // Sort state for team records tables
 const teamRecordsSortState = {
     line: { column: 'pct', direction: 'desc' },
-    blazin: { column: 'pct', direction: 'desc' }
+    blazin: { column: 'record', direction: 'desc' },
+    spread: { column: 'record', direction: 'desc' }
 };
 
 /**
@@ -1779,9 +1768,16 @@ function sortTeamRecordsData(data, column, direction) {
             case 'team':
                 comparison = a.team.localeCompare(b.team);
                 break;
+            case 'spread':
+                // Sort by spread value numerically
+                comparison = a.spreadValue - b.spreadValue;
+                break;
             case 'record':
-                // Sort by wins first, then by losses (fewer losses is better)
-                comparison = a.wins !== b.wins ? b.wins - a.wins : a.losses - b.losses;
+                // Sort by margin (wins - losses), then by more wins as tiebreaker
+                const marginA = a.wins - a.losses;
+                const marginB = b.wins - b.losses;
+                comparison = marginB - marginA;
+                if (comparison === 0) comparison = b.wins - a.wins;
                 break;
             case 'picks':
                 comparison = b.total - a.total;
@@ -1802,16 +1798,21 @@ function sortTeamRecordsData(data, column, direction) {
 function handleTeamRecordsSort(tableType, column) {
     const state = teamRecordsSortState[tableType];
 
-    // Toggle direction if same column, otherwise default to desc (except team which defaults to asc)
+    // Toggle direction if same column, otherwise default to desc (except team/spread which defaults to asc)
     if (state.column === column) {
         state.direction = state.direction === 'desc' ? 'asc' : 'desc';
     } else {
         state.column = column;
-        state.direction = column === 'team' ? 'asc' : 'desc';
+        state.direction = (column === 'team' || column === 'spread') ? 'asc' : 'desc';
     }
 
     // Update header icons
-    const table = document.getElementById(tableType === 'line' ? 'team-records-table' : 'blazin-team-records-table');
+    const tableIds = {
+        line: 'team-records-table',
+        blazin: 'blazin-team-records-table',
+        spread: 'blazin-spread-records-table'
+    };
+    const table = document.getElementById(tableIds[tableType]);
     if (table) {
         table.querySelectorAll('th.sortable').forEach(th => {
             const sortCol = th.getAttribute('data-sort');
@@ -1831,8 +1832,10 @@ function handleTeamRecordsSort(tableType, column) {
     // Re-render the table
     if (tableType === 'line') {
         renderTeamPickRecords();
-    } else {
+    } else if (tableType === 'blazin') {
         renderBlazinTeamPickRecords();
+    } else if (tableType === 'spread') {
+        renderBlazinSpreadRecords();
     }
 }
 
@@ -2001,7 +2004,7 @@ function calculateBlazinTeamPickRecords(picker) {
  * Render the Blazin' 5 team pick records table
  */
 function renderBlazinTeamPickRecords(picker = null) {
-    const dropdown = document.getElementById('blazin-team-records-picker');
+    const dropdown = document.getElementById('blazin-records-picker');
     const tbody = document.getElementById('blazin-team-records-body');
 
     if (!tbody) return;
@@ -2078,26 +2081,196 @@ function renderBlazinTeamPickRecords(picker = null) {
 }
 
 /**
- * Setup Blazin' 5 team records dropdown and sorting
+ * Setup Blazin' 5 records dropdown and sorting (shared for both tables)
  */
 function setupBlazinTeamRecordsDropdown() {
-    const dropdown = document.getElementById('blazin-team-records-picker');
+    const dropdown = document.getElementById('blazin-records-picker');
     if (dropdown) {
         dropdown.addEventListener('change', (e) => {
-            renderBlazinTeamPickRecords(e.target.value);
+            const picker = e.target.value;
+            renderBlazinTeamPickRecords(picker);
+            renderBlazinSpreadRecords(picker);
         });
     }
 
-    // Setup sortable headers
-    const table = document.getElementById('blazin-team-records-table');
-    if (table) {
-        table.querySelectorAll('th.sortable').forEach(th => {
+    // Setup sortable headers for team table
+    const teamTable = document.getElementById('blazin-team-records-table');
+    if (teamTable) {
+        teamTable.querySelectorAll('th.sortable').forEach(th => {
             th.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const column = th.getAttribute('data-sort');
                 handleTeamRecordsSort('blazin', column);
             });
         });
+    }
+
+    // Setup sortable headers for spread table
+    const spreadTable = document.getElementById('blazin-spread-records-table');
+    if (spreadTable) {
+        spreadTable.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const column = th.getAttribute('data-sort');
+                handleTeamRecordsSort('spread', column);
+            });
+        });
+    }
+}
+
+/**
+ * Calculate Blazin' 5 spread records for a specific picker
+ * Groups picks by the spread size and tracks wins/losses/pushes
+ */
+function calculateBlazinSpreadRecords(picker) {
+    const spreadRecords = {};
+
+    // Loop through all weeks with results
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+        const pickerPicks = allPicks[week]?.[picker] || {};
+        const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const result = results[gameId] || results[String(gameId)];
+
+            // Only count Blazin' 5 picks
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+            // Determine the spread for the picked team
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const isFavorite = (game.favorite === 'away' && pick.line === 'away') ||
+                             (game.favorite === 'home' && pick.line === 'home');
+
+            // Format spread: negative for favorites, positive for underdogs
+            const spreadValue = isFavorite ? -game.spread : game.spread;
+            const spreadKey = spreadValue === 0 ? 'PK' :
+                            (spreadValue > 0 ? `+${spreadValue}` : `${spreadValue}`);
+
+            const gameDetail = {
+                week,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                pickedSpread: spreadKey,
+                outcome
+            };
+
+            if (!spreadRecords[spreadKey]) {
+                spreadRecords[spreadKey] = {
+                    wins: 0,
+                    losses: 0,
+                    pushes: 0,
+                    games: [],
+                    spreadValue: spreadValue
+                };
+            }
+
+            spreadRecords[spreadKey].games.push(gameDetail);
+
+            if (isPush) {
+                spreadRecords[spreadKey].pushes++;
+            } else if (isWin) {
+                spreadRecords[spreadKey].wins++;
+            } else {
+                spreadRecords[spreadKey].losses++;
+            }
+        });
+    }
+
+    return spreadRecords;
+}
+
+/**
+ * Render the Blazin' 5 spread records table
+ */
+function renderBlazinSpreadRecords(picker = null) {
+    const dropdown = document.getElementById('blazin-records-picker');
+    const tbody = document.getElementById('blazin-spread-records-body');
+
+    if (!tbody) return;
+
+    const selectedPicker = picker || dropdown?.value || 'Stephen';
+    const spreadRecords = calculateBlazinSpreadRecords(selectedPicker);
+
+    // Convert to array
+    const spreadsData = Object.entries(spreadRecords)
+        .map(([spread, record]) => {
+            const total = record.wins + record.losses;
+            const pct = total > 0 ? (record.wins / total) * 100 : 0;
+            return {
+                spread,
+                spreadValue: record.spreadValue,
+                ...record,
+                total: total + record.pushes,
+                pct
+            };
+        })
+        .filter(s => s.total > 0);
+
+    // Sort based on current sort state
+    const { column, direction } = teamRecordsSortState.spread;
+    const sortedSpreads = sortTeamRecordsData(spreadsData, column, direction);
+
+    tbody.innerHTML = sortedSpreads.map(({ spread, wins, losses, pushes, total, pct, games }) => {
+        const pushStr = pushes > 0 ? `-${pushes}` : '';
+        const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
+        const spreadId = 'spread-' + spread.replace(/[^a-zA-Z0-9]/g, '');
+
+        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+
+        const gameDetailsHtml = sortedGames.map(g => {
+            const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
+            const outcomeText = g.outcome.toUpperCase();
+            const spreadText = g.favorite === 'away'
+                ? `${g.away} -${g.spread}`
+                : `${g.home} -${g.spread}`;
+            const pickedNormalized = TEAM_NAME_MAP[g.picked] || g.picked;
+
+            return `
+                <div class="game-detail-row ${outcomeClass}">
+                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                    <span class="game-spread">${spreadText}</span>
+                    <span class="game-picked">Picked: ${pickedNormalized} (${g.pickedSpread})</span>
+                    <span class="game-outcome">${outcomeText}</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <tr class="team-row" data-team="${spreadId}" onclick="toggleTeamDetails('${spreadId}')">
+                <td class="spread-value">${spread}</td>
+                <td class="record">${wins}-${losses}${pushStr}</td>
+                <td class="picks-count">${total}</td>
+                <td class="win-pct ${pctClass}">${pct.toFixed(1)}%</td>
+            </tr>
+            <tr class="team-details-row hidden" id="details-${spreadId}">
+                <td colspan="4">
+                    <div class="team-details-container">
+                        ${gameDetailsHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (sortedSpreads.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
     }
 }
 
@@ -2126,6 +2299,109 @@ function setupTeamRecordsDropdown() {
 }
 
 /**
+ * Calculate Lone Wolf picks with game details
+ * A lone wolf pick is when only one picker chose a line while all others chose differently
+ */
+function calculateLoneWolfPicksWithDetails() {
+    const loneWolfData = {};
+
+    PICKERS.forEach(picker => {
+        loneWolfData[picker] = {
+            wins: 0,
+            losses: 0,
+            pushes: 0,
+            games: []
+        };
+    });
+
+    // Loop through all weeks
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const result = results[gameId] || results[String(gameId)];
+            if (!result) return;
+
+            // Collect all picks for this game
+            const picksByChoice = { away: [], home: [] };
+
+            PICKERS.forEach(picker => {
+                const pickerPicks = allPicks[week]?.[picker] || {};
+                const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
+                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+
+                if (pick?.line) {
+                    picksByChoice[pick.line].push(picker);
+                }
+            });
+
+            // Check if there's a lone wolf (exactly 1 picker on one side, 4 on the other)
+            const awayCount = picksByChoice.away.length;
+            const homeCount = picksByChoice.home.length;
+
+            let loneWolfPicker = null;
+            let loneWolfSide = null;
+
+            if (awayCount === 1 && homeCount === 4) {
+                loneWolfPicker = picksByChoice.away[0];
+                loneWolfSide = 'away';
+            } else if (homeCount === 1 && awayCount === 4) {
+                loneWolfPicker = picksByChoice.home[0];
+                loneWolfSide = 'home';
+            }
+
+            if (loneWolfPicker) {
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = loneWolfSide === atsWinner;
+                const isPush = atsWinner === 'push';
+                const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+                const pickedTeam = loneWolfSide === 'away' ? game.away : game.home;
+
+                const gameDetail = {
+                    week,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome
+                };
+
+                loneWolfData[loneWolfPicker].games.push(gameDetail);
+
+                if (isPush) {
+                    loneWolfData[loneWolfPicker].pushes++;
+                } else if (isWin) {
+                    loneWolfData[loneWolfPicker].wins++;
+                } else {
+                    loneWolfData[loneWolfPicker].losses++;
+                }
+            }
+        });
+    }
+
+    return loneWolfData;
+}
+
+/**
+ * Toggle lone wolf details visibility
+ */
+function toggleLoneWolfDetails(pickerId) {
+    const detailsRow = document.getElementById(`lone-wolf-details-${pickerId}`);
+    if (detailsRow) {
+        detailsRow.classList.toggle('hidden');
+    }
+}
+
+/**
  * Render Group Insights section (Lone Wolf + Consensus)
  */
 function renderInsights(loneWolf, consensus) {
@@ -2145,22 +2421,67 @@ function renderInsights(loneWolf, consensus) {
         `;
     }
 
+    // Calculate lone wolf with game details
+    const loneWolfDetails = calculateLoneWolfPicksWithDetails();
+
     // Render Lone Wolf card
     const loneWolfCard = document.getElementById('lone-wolf-card');
-    if (loneWolfCard && loneWolf && Object.keys(loneWolf).length > 0) {
-        // Sort by percentage
-        const sorted = Object.entries(loneWolf)
-            .map(([name, data]) => ({ name, ...data }))
-            .sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+    if (loneWolfCard && loneWolfDetails) {
+        // Convert to array and calculate percentages
+        const sorted = Object.entries(loneWolfDetails)
+            .map(([name, data]) => {
+                const total = data.wins + data.losses;
+                const percentage = total > 0 ? (data.wins / total) * 100 : 0;
+                return { name, ...data, percentage, total: total + data.pushes };
+            })
+            .filter(p => p.total > 0)
+            .sort((a, b) => {
+                // Sort by margin (wins - losses) first, then by wins
+                const marginA = a.wins - a.losses;
+                const marginB = b.wins - b.losses;
+                if (marginB !== marginA) return marginB - marginA;
+                return b.wins - a.wins;
+            });
 
-        const rows = sorted.map((picker, idx) => `
-            <div class="lone-wolf-row ${idx === 0 ? 'leader' : ''}">
-                <span class="lone-wolf-rank">${idx + 1}</span>
-                <span class="lone-wolf-name">${picker.name}</span>
-                <span class="lone-wolf-pct ${picker.percentage >= 50 ? 'positive' : 'negative'}">${picker.percentage?.toFixed(1)}%</span>
-                <span class="lone-wolf-record">${picker.wins}-${picker.losses}-${picker.pushes}</span>
-            </div>
-        `).join('');
+        const rows = sorted.map((picker, idx) => {
+            const pickerId = picker.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const pushStr = picker.pushes > 0 ? `-${picker.pushes}` : '';
+
+            // Build game details HTML
+            const sortedGames = [...picker.games].sort((a, b) => a.week - b.week);
+            const gameDetailsHtml = sortedGames.map(g => {
+                const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
+                const outcomeText = g.outcome.toUpperCase();
+                const spreadText = g.favorite === 'away'
+                    ? `${g.away} -${g.spread}`
+                    : `${g.home} -${g.spread}`;
+                const pickedNormalized = TEAM_NAME_MAP[g.picked] || g.picked;
+
+                return `
+                    <div class="game-detail-row ${outcomeClass}">
+                        <span class="game-week">Wk ${g.week}</span>
+                        <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                        <span class="game-spread">${spreadText}</span>
+                        <span class="game-picked">Picked: ${pickedNormalized}</span>
+                        <span class="game-outcome">${outcomeText}</span>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="lone-wolf-row ${idx === 0 ? 'leader' : ''}" onclick="toggleLoneWolfDetails('${pickerId}')">
+                    <span class="lone-wolf-rank">${idx + 1}</span>
+                    <span class="lone-wolf-name">${picker.name}</span>
+                    <span class="lone-wolf-pct ${picker.percentage >= 50 ? 'positive' : 'negative'}">${picker.percentage.toFixed(1)}%</span>
+                    <span class="lone-wolf-record">${picker.wins}-${picker.losses}${pushStr}</span>
+                </div>
+                <div class="lone-wolf-details hidden" id="lone-wolf-details-${pickerId}">
+                    <div class="team-details-container">
+                        ${gameDetailsHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
 
         loneWolfCard.innerHTML = `
             <div class="insight-header lone-wolf-header">
@@ -2244,74 +2565,10 @@ function renderGroupStats(groupOverall) {
 }
 
 /**
- * Calculate team pick frequency and win rate for Blazin' 5 picks
- * Aggregates how often each picker selected each team for their Blazin' 5
- * and tracks wins/losses/pushes for each team
- * Only counts picks marked with * (blazin: true) from the weekly CSV data
- */
-function calculateBlazinTeamFrequency() {
-    const frequency = {};
-
-    PICKERS.forEach(picker => {
-        frequency[picker] = {};
-    });
-
-    // Go through all weeks - only use weeklyPicksCache which has the authoritative blazin markers
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const cachedWeek = weeklyPicksCache[week];
-        if (!cachedWeek || !cachedWeek.picks) continue;
-
-        const weekGames = getGamesForWeek(week);
-        const weekResults = getResultsForWeek(week);
-
-        if (!weekGames || weekGames.length === 0) continue;
-
-        PICKERS.forEach(picker => {
-            const cachedPicks = cachedWeek.picks[picker];
-            if (!cachedPicks) return;
-
-            Object.keys(cachedPicks).forEach(gameId => {
-                const pick = cachedPicks[gameId];
-
-                if (pick.blazin && pick.line) {
-                    const game = weekGames.find(g => String(g.id) === String(gameId));
-                    if (!game) return;
-
-                    const team = pick.line === 'away' ? game.away : game.home;
-                    const normalizedTeam = TEAM_NAME_MAP[team] || team;
-
-                    if (!frequency[picker][normalizedTeam]) {
-                        frequency[picker][normalizedTeam] = { picks: 0, wins: 0, losses: 0, pushes: 0 };
-                    }
-                    frequency[picker][normalizedTeam].picks++;
-
-                    // Check result if available
-                    const result = weekResults[game.id];
-                    if (result) {
-                        const atsWinner = calculateATSWinner(game, result);
-                        if (atsWinner === 'push') {
-                            frequency[picker][normalizedTeam].pushes++;
-                        } else if (pick.line === atsWinner) {
-                            frequency[picker][normalizedTeam].wins++;
-                        } else {
-                            frequency[picker][normalizedTeam].losses++;
-                        }
-                    }
-                }
-            });
-        });
-    }
-
-    return frequency;
-}
-
-/**
  * Load all weekly data for Blazin' 5 analysis
  * Fetches each week's sheet to get the * markers
  */
 async function loadAllWeeklyDataForBlazin() {
-    const container = document.getElementById('team-frequency-grid');
-
     // Only use corsproxy.io which we know works
     const proxy = 'https://corsproxy.io/?';
 
@@ -2324,11 +2581,6 @@ async function loadAllWeeklyDataForBlazin() {
             continue; // Already cached
         }
         if (!WEEK_SHEET_GIDS[week]) continue; // No GID for this week
-
-        // Update loading message with progress
-        if (container) {
-            container.innerHTML = `<div class="loading-message">Loading week ${week} of ${CURRENT_NFL_WEEK}...</div>`;
-        }
 
         const weekUrl = `${GOOGLE_SHEETS_BASE_URL}&gid=${WEEK_SHEET_GIDS[week]}`;
 
@@ -2422,79 +2674,6 @@ async function loadAllWeeklyDataForBlazin() {
     if (loadedWeeks > 0) {
         savePicksToStorage();
     }
-}
-
-/**
- * Render Team Pick Frequency section for Blazin' 5 tab
- */
-async function renderTeamPickFrequency() {
-    const container = document.getElementById('team-frequency-grid');
-    if (!container) return;
-
-    // First, load all weekly data to get blazin markers
-    await loadAllWeeklyDataForBlazin();
-
-    const frequency = calculateBlazinTeamFrequency();
-
-    // Build a card for each picker showing their most picked teams
-    const html = PICKERS.map(picker => {
-        const teamData = frequency[picker];
-        const sortedTeams = Object.entries(teamData)
-            .sort((a, b) => b[1].picks - a[1].picks)
-            .slice(0, 5); // Top 5 teams
-
-        if (sortedTeams.length === 0) {
-            return `
-                <div class="team-frequency-card">
-                    <div class="team-frequency-header">
-                        <span class="picker-color color-${picker.toLowerCase()}"></span>
-                        <span class="picker-name">${picker}</span>
-                    </div>
-                    <div class="no-data">No pick data available</div>
-                </div>
-            `;
-        }
-
-        const totalPicks = Object.values(teamData).reduce((a, b) => a + b.picks, 0);
-        const maxCount = sortedTeams[0][1].picks;
-
-        const teamRows = sortedTeams.map(([team, data], idx) => {
-            const decided = data.wins + data.losses;
-            const winPct = decided > 0 ? ((data.wins / decided) * 100).toFixed(0) : '-';
-            const winPctClass = decided > 0 ? (data.wins / decided >= 0.5 ? 'positive' : 'negative') : '';
-            const barWidth = (data.picks / maxCount) * 100;
-            return `
-                <div class="team-freq-row ${idx === 0 ? 'top-team' : ''}">
-                    <div class="team-freq-info">
-                        <img src="${getTeamLogo(team)}" alt="${team} logo" class="team-freq-logo" onerror="handleLogoError(this, '${team}')">
-                        <span class="team-freq-name">${team}</span>
-                    </div>
-                    <div class="team-freq-bar-container">
-                        <div class="team-freq-bar" style="width: ${barWidth}%"></div>
-                    </div>
-                    <div class="team-freq-stats">
-                        <span class="team-freq-count">${data.picks}</span>
-                        <span class="team-freq-pct ${winPctClass}">${winPct}${winPct !== '-' ? '%' : ''}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        return `
-            <div class="team-frequency-card">
-                <div class="team-frequency-header">
-                    <span class="picker-color color-${picker.toLowerCase()}"></span>
-                    <span class="picker-name">${picker}</span>
-                    <span class="total-picks">${totalPicks} picks</span>
-                </div>
-                <div class="team-freq-rows">
-                    ${teamRows}
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    container.innerHTML = html;
 }
 
 /**

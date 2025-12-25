@@ -1329,6 +1329,33 @@ header h1 {
     font-weight: 600;
 }
 
+/* Lone Wolf Expandable Details */
+.lone-wolf-row {
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.lone-wolf-row:hover {
+    background: var(--bg-tertiary);
+}
+
+.lone-wolf-details {
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    margin: 4px 0 8px 0;
+    overflow: hidden;
+}
+
+.lone-wolf-details.hidden {
+    display: none;
+}
+
+.lone-wolf-details .team-details-container {
+    padding: 12px 16px;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
 /* Streaks Section */
 .streaks-section {
     padding: 0 40px 40px;
@@ -1485,13 +1512,41 @@ header h1 {
 
 /* Team Pick Records Section */
 .team-records-section,
-.blazin-team-records-section {
+.blazin-records-section {
     padding: 0 40px 30px;
     width: 100%;
 }
 
+/* Blazin' Records Grid Layout */
+.blazin-records-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+}
+
+.blazin-records-column {
+    min-width: 0;
+}
+
+.blazin-records-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.records-column-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-secondary);
+    margin: 0 0 12px 0;
+}
+
 .team-records-table-container {
-    max-width: 50%;
+    max-width: 100%;
 }
 
 .team-records-controls {
@@ -1596,7 +1651,8 @@ header h1 {
     background: var(--bg-secondary);
 }
 
-.team-records-table .team-name {
+.team-records-table .team-name,
+.team-records-table .spread-value {
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -1864,8 +1920,13 @@ footer a:hover {
     }
 
     .team-records-section,
-    .blazin-team-records-section {
+    .blazin-records-section {
         padding: 0 16px 20px;
+    }
+
+    .blazin-records-grid {
+        grid-template-columns: 1fr;
+        gap: 24px;
     }
 
     .team-records-table-container {
@@ -2738,170 +2799,6 @@ footer a:hover {
     }
 }
 
-/* Team Pick Frequency Section */
-.team-frequency-section {
-    padding: 0 40px 40px;
-    width: 100%;
-}
-
-.team-frequency-section h3 {
-    font-family: 'Libre Franklin', sans-serif;
-    font-size: 0.9rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
-}
-
-.section-subtitle {
-    color: var(--text-light);
-    font-size: 0.85rem;
-    margin-bottom: 20px;
-}
-
-.team-frequency-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
-}
-
-.team-frequency-card {
-    background: var(--bg-primary);
-    border-radius: 8px;
-    padding: 20px;
-    border: 1px solid var(--border-color);
-}
-
-.team-frequency-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.team-frequency-header .picker-name {
-    font-weight: 700;
-    font-size: 1rem;
-    flex: 1;
-}
-
-.team-frequency-header .total-picks {
-    color: var(--text-light);
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-
-.team-freq-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.team-freq-row {
-    display: grid;
-    grid-template-columns: 110px 1fr 60px;
-    align-items: center;
-    gap: 12px;
-}
-
-.team-freq-row.top-team {
-    background: rgba(0, 177, 18, 0.08);
-    margin: -8px -12px;
-    padding: 8px 12px;
-    border-radius: 6px;
-}
-
-.team-freq-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.team-freq-logo {
-    width: 24px;
-    height: 24px;
-    object-fit: contain;
-}
-
-.team-freq-name {
-    font-size: 0.85rem;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.team-freq-bar-container {
-    height: 8px;
-    background: var(--bg-secondary);
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.team-freq-bar {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent-green), #00d420);
-    border-radius: 4px;
-    transition: width 0.3s ease;
-}
-
-.team-freq-stats {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    justify-content: flex-end;
-}
-
-.team-freq-count {
-    font-weight: 700;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-}
-
-.team-freq-pct {
-    font-size: 0.75rem;
-    color: var(--text-light);
-    font-weight: 600;
-}
-
-.team-freq-pct.positive {
-    color: var(--accent-green);
-}
-
-.team-freq-pct.negative {
-    color: #dc2626;
-}
-
-.team-frequency-card .no-data {
-    color: var(--text-light);
-    font-style: italic;
-    text-align: center;
-    padding: 20px;
-}
-
-.team-frequency-grid .loading-message {
-    grid-column: 1 / -1;
-    text-align: center;
-    padding: 40px;
-    color: var(--text-light);
-    font-style: italic;
-}
-
-@media (max-width: 768px) {
-    .team-frequency-section {
-        padding: 0 20px 30px;
-    }
-
-    .team-frequency-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .team-freq-row {
-        grid-template-columns: 100px 1fr 50px;
-    }
-}
 
 /* Game Final Score Display */
 .game-final-score {
@@ -3410,7 +3307,6 @@ footer a:hover {
 /* Adjust specific section styles for collapsible headers */
 .charts-grid.collapsible-section,
 .insights-section.collapsible-section,
-.team-frequency-section.collapsible-section,
 .group-stats-section.collapsible-section,
 .streaks-section.collapsible-section,
 .scoring-summary.collapsible-section {
@@ -3419,7 +3315,6 @@ footer a:hover {
 
 .charts-grid .collapsible-header,
 .insights-section .collapsible-header,
-.team-frequency-section .collapsible-header,
 .group-stats-section .collapsible-header,
 .streaks-section .collapsible-header {
     margin-bottom: 20px;
