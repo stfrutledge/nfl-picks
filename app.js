@@ -2944,9 +2944,9 @@ function calculateAllPickersPnL(betAmount) {
         });
     }
 
-    // Calculate totals (spread picks only, since we can't accurately calculate straight up without actual moneyline odds)
+    // Calculate totals (Blazin' 5 picks only)
     PICKERS.forEach(picker => {
-        pnlData[picker].total = pnlData[picker].spread.profit;
+        pnlData[picker].total = pnlData[picker].blazin.profit;
     });
 
     return pnlData;
@@ -2980,40 +2980,17 @@ function renderPnL() {
 
     grid.innerHTML = sorted.map(picker => {
         const totalClass = picker.total > 0 ? 'positive' : picker.total < 0 ? 'negative' : 'neutral';
-        const spreadClass = picker.spread.profit > 0 ? 'positive' : picker.spread.profit < 0 ? 'negative' : 'neutral';
-        const blazinClass = picker.blazin.profit > 0 ? 'positive' : picker.blazin.profit < 0 ? 'negative' : 'neutral';
-
-        const spreadRecord = `${picker.spread.wins}-${picker.spread.losses}${picker.spread.pushes > 0 ? `-${picker.spread.pushes}` : ''}`;
         const blazinRecord = `${picker.blazin.wins}-${picker.blazin.losses}${picker.blazin.pushes > 0 ? `-${picker.blazin.pushes}` : ''}`;
-
-        const totalBets = picker.spread.wins + picker.spread.losses + picker.spread.pushes;
+        const totalBets = picker.blazin.wins + picker.blazin.losses + picker.blazin.pushes;
         const totalWagered = totalBets * betAmount;
 
         return `
             <div class="pnl-card">
-                <div class="pnl-card-header">
-                    <span class="pnl-picker-name">${picker.name}</span>
-                    <span class="pnl-total ${totalClass}">${formatCurrency(picker.total)}</span>
-                </div>
-                <div class="pnl-breakdown">
-                    <div class="pnl-row">
-                        <span class="pnl-category">
-                            <span class="pnl-category-icon">📊</span>All Spread Picks
-                            <span class="pnl-record">(${spreadRecord})</span>
-                        </span>
-                        <span class="pnl-value ${spreadClass}">${formatCurrency(picker.spread.profit)}</span>
-                    </div>
-                    <div class="pnl-row">
-                        <span class="pnl-category">
-                            <span class="pnl-category-icon">🔥</span>Blazin' 5 Only
-                            <span class="pnl-record">(${blazinRecord})</span>
-                        </span>
-                        <span class="pnl-value ${blazinClass}">${formatCurrency(picker.blazin.profit)}</span>
-                    </div>
-                </div>
-                <div class="pnl-summary">
-                    <span class="pnl-summary-label">Total Wagered</span>
-                    <span class="pnl-summary-value">$${totalWagered.toLocaleString()}</span>
+                <div class="pnl-picker-name">${picker.name}</div>
+                <div class="pnl-total ${totalClass}">${formatCurrency(picker.total)}</div>
+                <div class="pnl-details">
+                    <span>${blazinRecord}</span>
+                    <span>$${totalWagered.toLocaleString()} wagered</span>
                 </div>
             </div>
         `;
