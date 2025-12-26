@@ -1733,15 +1733,11 @@ function renderDashboard() {
         }
     }
 
-    // Only show insights on Blazin' 5 tab
+    // Show insights on all standings tabs (blazin, line, winner)
     const insightsSection = document.querySelector('.insights-section');
     if (insightsSection) {
-        if (currentSubcategory === 'blazin') {
-            insightsSection.classList.remove('hidden');
-            renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
-        } else {
-            insightsSection.classList.add('hidden');
-        }
+        insightsSection.classList.remove('hidden');
+        renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
     }
 
     // Show/hide Blazin' 5 records section (team + spread)
@@ -2486,6 +2482,193 @@ function calculateLoneWolfPicksWithDetails() {
 }
 
 /**
+ * Calculate Straight Up Lone Wolf picks with game details
+ * A straight up lone wolf is when only one picker chose a winner while all others chose differently
+ */
+function calculateStraightUpLoneWolfPicks() {
+    const loneWolfData = {};
+
+    PICKERS.forEach(picker => {
+        loneWolfData[picker] = {
+            wins: 0,
+            losses: 0,
+            pushes: 0, // No pushes in straight up, but kept for consistency
+            games: []
+        };
+    });
+
+    // Loop through all weeks
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const result = results[gameId] || results[String(gameId)];
+            if (!result || !result.winner) return;
+
+            // Collect all winner picks for this game
+            const picksByChoice = { away: [], home: [] };
+
+            PICKERS.forEach(picker => {
+                const pickerPicks = allPicks[week]?.[picker] || {};
+                const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
+                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+
+                if (pick?.winner) {
+                    picksByChoice[pick.winner].push(picker);
+                }
+            });
+
+            // Check if there's a lone wolf (exactly 1 picker on one side, 4 on the other)
+            const awayCount = picksByChoice.away.length;
+            const homeCount = picksByChoice.home.length;
+
+            let loneWolfPicker = null;
+            let loneWolfSide = null;
+
+            if (awayCount === 1 && homeCount === 4) {
+                loneWolfPicker = picksByChoice.away[0];
+                loneWolfSide = 'away';
+            } else if (homeCount === 1 && awayCount === 4) {
+                loneWolfPicker = picksByChoice.home[0];
+                loneWolfSide = 'home';
+            }
+
+            if (loneWolfPicker) {
+                const isWin = loneWolfSide === result.winner;
+                const outcome = isWin ? 'win' : 'loss';
+
+                const pickedTeam = loneWolfSide === 'away' ? game.away : game.home;
+
+                const gameDetail = {
+                    week,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome
+                };
+
+                loneWolfData[loneWolfPicker].games.push(gameDetail);
+
+                if (isWin) {
+                    loneWolfData[loneWolfPicker].wins++;
+                } else {
+                    loneWolfData[loneWolfPicker].losses++;
+                }
+            }
+        });
+    }
+
+    return loneWolfData;
+}
+
+/**
+ * Calculate Blazin' 5 Lone Wolf picks with game details
+ * A Blazin' 5 lone wolf is when:
+ * 1. There's a regular lone wolf (1 picker vs 4 on opposite sides for line picks)
+ * 2. AND the lone wolf picker also marked that pick as Blazin' 5
+ */
+function calculateBlazinLoneWolfPicks() {
+    const loneWolfData = {};
+
+    PICKERS.forEach(picker => {
+        loneWolfData[picker] = {
+            wins: 0,
+            losses: 0,
+            pushes: 0,
+            games: []
+        };
+    });
+
+    // Loop through all weeks
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const result = results[gameId] || results[String(gameId)];
+            if (!result) return;
+
+            // Collect ALL line picks for this game (to find regular lone wolves)
+            const picksByChoice = { away: [], home: [] };
+            const pickerPickData = {}; // Store full pick data to check Blazin' 5 status
+
+            PICKERS.forEach(picker => {
+                const pickerPicks = allPicks[week]?.[picker] || {};
+                const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
+                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+
+                if (pick?.line) {
+                    picksByChoice[pick.line].push(picker);
+                    pickerPickData[picker] = pick;
+                }
+            });
+
+            // Check if there's a regular lone wolf (1 vs 4)
+            const awayCount = picksByChoice.away.length;
+            const homeCount = picksByChoice.home.length;
+
+            let loneWolfPicker = null;
+            let loneWolfSide = null;
+
+            if (awayCount === 1 && homeCount === 4) {
+                loneWolfPicker = picksByChoice.away[0];
+                loneWolfSide = 'away';
+            } else if (homeCount === 1 && awayCount === 4) {
+                loneWolfPicker = picksByChoice.home[0];
+                loneWolfSide = 'home';
+            }
+
+            // Only count if the lone wolf picker ALSO made it a Blazin' 5 pick
+            if (loneWolfPicker && pickerPickData[loneWolfPicker]?.blazin) {
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = loneWolfSide === atsWinner;
+                const isPush = atsWinner === 'push';
+                const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+                const pickedTeam = loneWolfSide === 'away' ? game.away : game.home;
+
+                const gameDetail = {
+                    week,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome
+                };
+
+                loneWolfData[loneWolfPicker].games.push(gameDetail);
+
+                if (isPush) {
+                    loneWolfData[loneWolfPicker].pushes++;
+                } else if (isWin) {
+                    loneWolfData[loneWolfPicker].wins++;
+                } else {
+                    loneWolfData[loneWolfPicker].losses++;
+                }
+            }
+        });
+    }
+
+    return loneWolfData;
+}
+
+/**
  * Toggle lone wolf details visibility
  */
 function toggleLoneWolfDetails(pickerId) {
@@ -2515,8 +2698,16 @@ function renderInsights(loneWolf, consensus) {
         `;
     }
 
-    // Calculate lone wolf with game details
-    const loneWolfDetails = calculateLoneWolfPicksWithDetails();
+    // Calculate lone wolf with game details based on current tab
+    let loneWolfDetails;
+    if (currentSubcategory === 'blazin') {
+        loneWolfDetails = calculateBlazinLoneWolfPicks();
+    } else if (currentSubcategory === 'winner') {
+        loneWolfDetails = calculateStraightUpLoneWolfPicks();
+    } else {
+        // 'line' tab - spread picks
+        loneWolfDetails = calculateLoneWolfPicksWithDetails();
+    }
 
     // Render Lone Wolf card
     const loneWolfCard = document.getElementById('lone-wolf-card');
@@ -2530,11 +2721,9 @@ function renderInsights(loneWolf, consensus) {
             })
             .filter(p => p.total > 0)
             .sort((a, b) => {
-                // Sort by margin (wins - losses) first, then by wins
-                const marginA = a.wins - a.losses;
-                const marginB = b.wins - b.losses;
-                if (marginB !== marginA) return marginB - marginA;
-                return b.wins - a.wins;
+                // Sort by percentage first, then by total picks as tiebreaker
+                if (b.percentage !== a.percentage) return b.percentage - a.percentage;
+                return b.total - a.total;
             });
 
         const rows = sorted.map((picker, idx) => {
@@ -2577,12 +2766,26 @@ function renderInsights(loneWolf, consensus) {
             `;
         }).join('');
 
+        let loneWolfTitle = 'Lone Wolf Picks';
+        let subtitle = '';
+
+        if (currentSubcategory === 'blazin') {
+            loneWolfTitle = "Lone Wolf Blazin' 5 Picks";
+            subtitle = "Lone wolf picks (1 vs 4) that were also Blazin' 5'd";
+        } else if (currentSubcategory === 'winner') {
+            loneWolfTitle = 'Lone Wolf Straight Up Picks';
+            subtitle = "Success rate when only one picker takes a winner";
+        } else {
+            loneWolfTitle = 'Lone Wolf Spread Picks';
+            subtitle = "Success rate when only one picker takes a spread";
+        }
+
         loneWolfCard.innerHTML = `
             <div class="insight-header lone-wolf-header">
                 <img src="https://pbs.twimg.com/media/Crt1l8jWAAAmNyH.jpg" alt="Lone Wolf" class="lone-wolf-image">
                 <div>
-                    <span class="insight-title">Lone Wolf Picks</span>
-                    <p class="insight-subtitle">Success rate when only one picker takes a line</p>
+                    <span class="insight-title">${loneWolfTitle}</span>
+                    <p class="insight-subtitle">${subtitle}</p>
                 </div>
             </div>
             <div class="lone-wolf-leaderboard">
