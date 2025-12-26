@@ -3580,3 +3580,172 @@ footer a:hover {
     }
 }
 
+/* ==========================================
+   Profit/Loss Section
+   ========================================== */
+
+.pnl-section {
+    padding: 0 20px 20px;
+}
+
+.pnl-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.pnl-controls label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.bet-amount-input {
+    width: 100px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 1rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.bet-amount-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.pnl-description {
+    flex-basis: 100%;
+    margin: 8px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.pnl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.pnl-card {
+    background: var(--bg-primary);
+    border-radius: 8px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.pnl-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.pnl-picker-name {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.pnl-total {
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+
+.pnl-total.positive {
+    color: var(--success-color, #22c55e);
+}
+
+.pnl-total.negative {
+    color: var(--error-color, #ef4444);
+}
+
+.pnl-total.neutral {
+    color: var(--text-secondary);
+}
+
+.pnl-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pnl-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.pnl-row:last-child {
+    border-bottom: none;
+}
+
+.pnl-category {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.pnl-category-icon {
+    margin-right: 6px;
+}
+
+.pnl-value {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.pnl-value.positive {
+    color: var(--success-color, #22c55e);
+}
+
+.pnl-value.negative {
+    color: var(--error-color, #ef4444);
+}
+
+.pnl-value.neutral {
+    color: var(--text-secondary);
+}
+
+.pnl-record {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+
+.pnl-summary {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 2px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.pnl-summary-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.pnl-summary-value {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .pnl-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pnl-controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+

@@ -373,6 +373,24 @@
                 </div>
             </section>
 
+            <!-- Profit/Loss Section -->
+            <section class="pnl-section hidden collapsible-section" data-section="pnl">
+                <div class="collapsible-header" onclick="toggleSection('pnl')">
+                    <h3 class="section-header-title">Hypothetical Profit/Loss</h3>
+                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="pnl-controls">
+                        <label for="bet-amount">Bet Amount per Pick: $</label>
+                        <input type="number" id="bet-amount" class="bet-amount-input" value="20" min="1" max="10000" step="1">
+                        <p class="pnl-description">Assumes -110 odds on all spread picks. Shows what you would have won or lost betting this amount on every pick.</p>
+                    </div>
+                    <div class="pnl-grid" id="pnl-grid">
+                        <!-- P&L cards will be injected here -->
+                    </div>
+                </div>
+            </section>
+
             <!-- Make Picks Section -->
             <section id="make-picks-section" class="make-picks-section">
                 <div class="picks-header">

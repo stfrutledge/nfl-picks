@@ -1011,6 +1011,7 @@ function init() {
     setupOnboarding();
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
+    setupPnLSection();
     loadPicksFromStorage();
 
     // Show loading state
@@ -1652,6 +1653,7 @@ function setActiveCategory(category) {
     const groupStatsSection = document.querySelector('.group-stats-section');
     const teamRecordsSection = document.querySelector('.team-records-section');
     const blazinRecordsSection = document.querySelector('.blazin-records-section');
+    const pnlSection = document.querySelector('.pnl-section');
 
     // Get insights section reference
     const insightsSection = document.querySelector('.insights-section');
@@ -1671,6 +1673,7 @@ function setActiveCategory(category) {
         groupStatsSection?.classList.add('hidden');
         teamRecordsSection?.classList.add('hidden');
         blazinRecordsSection?.classList.add('hidden');
+        pnlSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -1766,6 +1769,13 @@ function renderDashboard() {
         } else {
             teamRecordsSection.classList.add('hidden');
         }
+    }
+
+    // Show and render P&L section on all standings tabs
+    const pnlSection = document.querySelector('.pnl-section');
+    if (pnlSection) {
+        pnlSection.classList.remove('hidden');
+        renderPnL();
     }
 }
 
@@ -2859,6 +2869,181 @@ function renderGroupStats(groupOverall) {
             </div>
         `;
     }).join('');
+}
+
+/**
+ * Calculate profit/loss for a bet at -110 odds
+ * @param {number} betAmount - Amount bet
+ * @param {string} outcome - 'win', 'loss', or 'push'
+ * @returns {number} Profit (positive) or loss (negative)
+ */
+function calculatePnLAt110(betAmount, outcome) {
+    if (outcome === 'push') return 0;
+    if (outcome === 'win') return betAmount * (100 / 110); // Win pays ~0.909x
+    return -betAmount; // Loss
+}
+
+/**
+ * Calculate P&L for all pickers
+ * @param {number} betAmount - Amount to bet per pick
+ * @returns {Object} P&L data for each picker
+ */
+function calculateAllPickersPnL(betAmount) {
+    const pnlData = {};
+
+    PICKERS.forEach(picker => {
+        pnlData[picker] = {
+            spread: { wins: 0, losses: 0, pushes: 0, profit: 0 },
+            blazin: { wins: 0, losses: 0, pushes: 0, profit: 0 },
+            total: 0
+        };
+    });
+
+    // Loop through all weeks
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+
+        if (!games || !results) continue;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const result = results[gameId] || results[String(gameId)];
+            if (!result) return;
+
+            PICKERS.forEach(picker => {
+                const pickerPicks = allPicks[week]?.[picker] || {};
+                const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
+                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+
+                if (!pick) return;
+
+                // Calculate spread pick P&L
+                if (pick.line) {
+                    const atsWinner = calculateATSWinner(game, result);
+                    const isPush = atsWinner === 'push';
+                    const isWin = pick.line === atsWinner;
+                    const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+                    const profit = calculatePnLAt110(betAmount, outcome);
+                    pnlData[picker].spread.profit += profit;
+                    if (isPush) pnlData[picker].spread.pushes++;
+                    else if (isWin) pnlData[picker].spread.wins++;
+                    else pnlData[picker].spread.losses++;
+
+                    // If also a Blazin' 5 pick, track separately
+                    if (pick.blazin) {
+                        pnlData[picker].blazin.profit += profit;
+                        if (isPush) pnlData[picker].blazin.pushes++;
+                        else if (isWin) pnlData[picker].blazin.wins++;
+                        else pnlData[picker].blazin.losses++;
+                    }
+                }
+            });
+        });
+    }
+
+    // Calculate totals (spread picks only, since we can't accurately calculate straight up without actual moneyline odds)
+    PICKERS.forEach(picker => {
+        pnlData[picker].total = pnlData[picker].spread.profit;
+    });
+
+    return pnlData;
+}
+
+/**
+ * Format currency for display
+ */
+function formatCurrency(amount) {
+    const absAmount = Math.abs(amount);
+    const formatted = absAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (amount > 0) return `+$${formatted}`;
+    if (amount < 0) return `-$${formatted}`;
+    return '$0.00';
+}
+
+/**
+ * Render the P&L section
+ */
+function renderPnL() {
+    const grid = document.getElementById('pnl-grid');
+    const betInput = document.getElementById('bet-amount');
+    if (!grid || !betInput) return;
+
+    const betAmount = parseFloat(betInput.value) || 20;
+    const pnlData = calculateAllPickersPnL(betAmount);
+
+    // Sort by total profit descending
+    const sorted = PICKERS.map(name => ({ name, ...pnlData[name] }))
+        .sort((a, b) => b.total - a.total);
+
+    grid.innerHTML = sorted.map(picker => {
+        const totalClass = picker.total > 0 ? 'positive' : picker.total < 0 ? 'negative' : 'neutral';
+        const spreadClass = picker.spread.profit > 0 ? 'positive' : picker.spread.profit < 0 ? 'negative' : 'neutral';
+        const blazinClass = picker.blazin.profit > 0 ? 'positive' : picker.blazin.profit < 0 ? 'negative' : 'neutral';
+
+        const spreadRecord = `${picker.spread.wins}-${picker.spread.losses}${picker.spread.pushes > 0 ? `-${picker.spread.pushes}` : ''}`;
+        const blazinRecord = `${picker.blazin.wins}-${picker.blazin.losses}${picker.blazin.pushes > 0 ? `-${picker.blazin.pushes}` : ''}`;
+
+        const totalBets = picker.spread.wins + picker.spread.losses + picker.spread.pushes;
+        const totalWagered = totalBets * betAmount;
+
+        return `
+            <div class="pnl-card">
+                <div class="pnl-card-header">
+                    <span class="pnl-picker-name">${picker.name}</span>
+                    <span class="pnl-total ${totalClass}">${formatCurrency(picker.total)}</span>
+                </div>
+                <div class="pnl-breakdown">
+                    <div class="pnl-row">
+                        <span class="pnl-category">
+                            <span class="pnl-category-icon">📊</span>All Spread Picks
+                            <span class="pnl-record">(${spreadRecord})</span>
+                        </span>
+                        <span class="pnl-value ${spreadClass}">${formatCurrency(picker.spread.profit)}</span>
+                    </div>
+                    <div class="pnl-row">
+                        <span class="pnl-category">
+                            <span class="pnl-category-icon">🔥</span>Blazin' 5 Only
+                            <span class="pnl-record">(${blazinRecord})</span>
+                        </span>
+                        <span class="pnl-value ${blazinClass}">${formatCurrency(picker.blazin.profit)}</span>
+                    </div>
+                </div>
+                <div class="pnl-summary">
+                    <span class="pnl-summary-label">Total Wagered</span>
+                    <span class="pnl-summary-value">$${totalWagered.toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Setup P&L section event listeners
+ */
+function setupPnLSection() {
+    const betInput = document.getElementById('bet-amount');
+    if (betInput) {
+        betInput.addEventListener('change', renderPnL);
+        betInput.addEventListener('input', debounce(renderPnL, 300));
+    }
+}
+
+/**
+ * Simple debounce function
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
 /**
