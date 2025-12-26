@@ -8,6 +8,7 @@ let currentSubcategory = 'blazin'; // Default standings subcategory
 let currentPicker = localStorage.getItem('selectedPicker') || 'Stephen';
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
+let initialLoadComplete = false; // Track whether initial data load is complete
 
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
@@ -211,8 +212,27 @@ const NFL_GAMES_BY_WEEK = {
         { id: 14, away: 'Raiders', home: 'Texans', spread: 14.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-21T16:25:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
         { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-21T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
         { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-22T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
+    ],
+    // Week 17 fallback spreads - updated from Odds API, will be overwritten by fresh API data on game days
+    17: [
+        { id: 1, away: 'Cowboys', home: 'Commanders', spread: 4.5, favorite: 'home', day: 'Wednesday', time: '1:00 PM ET', kickoff: '2025-12-25T13:00:00-05:00', location: 'Landover, MD', stadium: 'Northwest Stadium' },
+        { id: 2, away: 'Lions', home: 'Vikings', spread: 3, favorite: 'away', day: 'Wednesday', time: '4:30 PM ET', kickoff: '2025-12-25T16:30:00-05:00', location: 'Minneapolis, MN', stadium: 'U.S. Bank Stadium' },
+        { id: 3, away: 'Broncos', home: 'Chiefs', spread: 10.5, favorite: 'home', day: 'Thursday', time: '1:00 PM ET', kickoff: '2025-12-26T13:00:00-05:00', location: 'Kansas City, MO', stadium: 'GEHA Field at Arrowhead Stadium' },
+        { id: 4, away: 'Texans', home: 'Chargers', spread: 1.5, favorite: 'home', day: 'Friday', time: '8:15 PM ET', kickoff: '2025-12-27T20:15:00-05:00', location: 'Inglewood, CA', stadium: 'SoFi Stadium' },
+        { id: 5, away: 'Ravens', home: 'Packers', spread: 4.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Green Bay, WI', stadium: 'Lambeau Field' },
+        { id: 6, away: 'Cardinals', home: 'Bengals', spread: 7.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Cincinnati, OH', stadium: 'Paycor Stadium' },
+        { id: 7, away: 'Steelers', home: 'Browns', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Cleveland, OH', stadium: 'Huntington Bank Field' },
+        { id: 8, away: 'Jaguars', home: 'Colts', spread: 6, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' },
+        { id: 9, away: 'Buccaneers', home: 'Dolphins', spread: 6, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Miami Gardens, FL', stadium: 'Hard Rock Stadium' },
+        { id: 10, away: 'Patriots', home: 'Jets', spread: 13.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
+        { id: 11, away: 'Saints', home: 'Titans', spread: 2.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Nashville, TN', stadium: 'Nissan Stadium' },
+        { id: 12, away: 'Giants', home: 'Raiders', spread: 1.5, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-28T16:05:00-05:00', location: 'Las Vegas, NV', stadium: 'Allegiant Stadium' },
+        { id: 13, away: 'Eagles', home: 'Bills', spread: 1.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Orchard Park, NY', stadium: 'Highmark Stadium' },
+        { id: 14, away: 'Seahawks', home: 'Panthers', spread: 7, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Charlotte, NC', stadium: 'Bank of America Stadium' },
+        { id: 15, away: 'Bears', home: '49ers', spread: 3, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Santa Clara, CA', stadium: 'Levi\'s Stadium' },
+        { id: 16, away: 'Rams', home: 'Falcons', spread: 7.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-29T20:15:00-05:00', location: 'Atlanta, GA', stadium: 'Mercedes-Benz Stadium' }
     ]
-    // Week 17+ games are fetched dynamically from ESPN API
+    // Week 18 games will be fetched dynamically from ESPN API
 };
 
 // Immediately merge historical games if available (historical-data.js loads before app.js)
@@ -488,7 +508,7 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
 }
 
 /**
- * Load schedule for a week, merging ESPN data with odds
+ * Load schedule for a week, merging ESPN data with existing spreads
  */
 async function loadWeekSchedule(week, forceRefresh = false) {
     // For historical weeks, use stored data
@@ -498,10 +518,30 @@ async function loadWeekSchedule(week, forceRefresh = false) {
         return NFL_GAMES_BY_WEEK[week];
     }
 
+    // Save existing hardcoded spreads before fetching ESPN data
+    const existingGames = NFL_GAMES_BY_WEEK[week] || [];
+    const existingSpreads = {};
+    existingGames.forEach(game => {
+        // Create a key based on team matchup
+        const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+        if (game.spread && game.spread > 0) {
+            existingSpreads[key] = { spread: game.spread, favorite: game.favorite };
+        }
+    });
+
     // Fetch fresh schedule from ESPN
     const espnGames = await fetchNFLSchedule(week, forceRefresh);
 
     if (espnGames && espnGames.length > 0) {
+        // Merge existing spreads into ESPN data
+        espnGames.forEach(game => {
+            const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+            if (existingSpreads[key]) {
+                game.spread = existingSpreads[key].spread;
+                game.favorite = existingSpreads[key].favorite;
+                console.log(`[Schedule] Preserved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+            }
+        });
         NFL_GAMES_BY_WEEK[week] = espnGames;
         console.log(`[Schedule] Loaded ${espnGames.length} games for week ${week} from ESPN`);
     } else if (!NFL_GAMES_BY_WEEK[week]) {
@@ -567,8 +607,9 @@ function cacheOdds(data) {
  */
 function isNFLGameDay() {
     const day = new Date().getDay();
-    // 0 = Sunday, 1 = Monday, 4 = Thursday, 6 = Saturday
-    return day === 0 || day === 1 || day === 4 || day === 6;
+    // 0 = Sunday, 1 = Monday, 4 = Thursday, 5 = Friday (holiday weeks), 6 = Saturday
+    // Friday added for holiday week games (e.g., day after Christmas)
+    return day === 0 || day === 1 || day === 4 || day === 5 || day === 6;
 }
 
 /**
@@ -633,24 +674,63 @@ async function fetchNFLOdds(forceRefresh = false) {
 }
 
 /**
+ * Check if current week has hardcoded fallback spreads
+ */
+function hasHardcodedSpreads(week) {
+    const games = NFL_GAMES_BY_WEEK[week];
+    if (!games || games.length === 0) return false;
+    // Check if at least one game has a non-zero spread
+    return games.some(g => g.spread && g.spread > 0);
+}
+
+/**
  * Update NFL_GAMES_BY_WEEK with odds from The Odds API
  * Includes spreads, moneyline (h2h), and totals (over/under)
+ *
+ * Hybrid approach to conserve API calls:
+ * - Game days: Fetch fresh odds from API (uses cache if valid)
+ * - Non-game days with hardcoded spreads: Skip API call entirely
+ * - Non-game days without hardcoded spreads: Fetch from API
+ *
  * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
  */
 async function updateOddsFromAPI(forceRefresh = false) {
-    // Only fetch fresh odds on game days to conserve API calls
-    // Always use cache if available, regardless of day
     const cached = getCachedOdds();
-    if (!forceRefresh && !isNFLGameDay() && !cached) {
-        console.log('[Odds API] Not a game day and no cache - skipping API call');
-        return false;
+    const isGameDay = isNFLGameDay();
+    const hasFallbackSpreads = hasHardcodedSpreads(currentWeek);
+
+    // Hybrid logic: Skip API on non-game days if we have fallback spreads
+    if (!forceRefresh && !isGameDay && hasFallbackSpreads) {
+        console.log('[Odds API] Non-game day with fallback spreads - skipping API call');
+        // If we have valid cache, apply it to update any stale hardcoded values
+        if (cached) {
+            console.log('[Odds API] Applying cached odds to games');
+            return applyOddsData(cached);
+        }
+        // Otherwise use the hardcoded spreads as-is
+        console.log('[Odds API] Using hardcoded fallback spreads');
+        return true;
     }
 
+    // Fetch odds from API (will use cache if valid)
     const oddsData = await fetchNFLOdds(forceRefresh);
     if (!oddsData) {
         console.warn('[Odds API] Could not fetch odds');
+        // Fall back to hardcoded spreads if available
+        if (hasFallbackSpreads) {
+            console.log('[Odds API] API failed, using hardcoded fallback spreads');
+            return true;
+        }
         return false;
     }
+
+    return applyOddsData(oddsData);
+}
+
+/**
+ * Apply odds data to NFL_GAMES_BY_WEEK
+ */
+function applyOddsData(oddsData) {
 
     let updatedCount = 0;
 
@@ -739,6 +819,12 @@ async function updateOddsFromAPI(forceRefresh = false) {
         }
     });
 
+    // Debug: log matching details
+    console.log('[Odds API] API games:', oddsData.map(g => `${g.away_team} @ ${g.home_team}`));
+    console.log('[Odds API] Local games by week:', Object.entries(NFL_GAMES_BY_WEEK).map(([w, games]) =>
+        `Week ${w}: ${games?.length || 0} games - ${games?.slice(0, 2).map(g => `${g.away} @ ${g.home}`).join(', ') || 'none'}`
+    ));
+
     // Debug: log unmatched games from the API
     if (updatedCount === 0) {
         console.log('[Odds API] No games matched! First few API games:', oddsData.slice(0, 3).map(g => `${g.away_team} @ ${g.home_team}`));
@@ -796,8 +882,12 @@ function startLiveScoresRefresh() {
 
     // Fetch immediately to get current game states
     fetchLiveScores().then(() => {
-        renderGames();
-        renderScoringSummary();
+        // Only render if initial load is complete (odds have been fetched)
+        // During initial load, renderGames is called after updateOddsFromAPI
+        if (initialLoadComplete) {
+            renderGames();
+            renderScoringSummary();
+        }
 
         // Only start polling interval if games are scheduled or in progress
         if (shouldPollLiveScores()) {
@@ -1520,8 +1610,12 @@ async function loadFromGoogleSheets() {
             updateLoadingProgress(95, 'Loading betting odds...');
             await updateOddsFromAPI();
 
+            // Mark initial load as complete before rendering
+            initialLoadComplete = true;
+
             // Re-render games after schedule and odds are loaded
             renderGames();
+            renderScoringSummary();
 
             // Now hide loading state after all data is loaded
             hideLoadingState();
