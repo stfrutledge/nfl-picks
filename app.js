@@ -1288,10 +1288,67 @@ function setupPickerButtons() {
         localStorage.setItem('selectedPicker', currentPicker);
         // Show/hide admin-only buttons based on picker
         updateAdminButtons();
+        // Update nav button states
+        updatePickerNavButtons();
         // Re-render games with current picker's selections
         renderGames();
         renderScoringSummary();
     });
+
+    // Setup picker navigation buttons
+    setupPickerNavigation();
+}
+
+/**
+ * Setup picker navigation (prev/next buttons)
+ */
+function setupPickerNavigation() {
+    const prevBtn = document.getElementById('prev-picker-btn');
+    const nextBtn = document.getElementById('next-picker-btn');
+    const pickerDropdown = document.getElementById('picker-dropdown');
+
+    if (!prevBtn || !nextBtn || !pickerDropdown) return;
+
+    prevBtn.addEventListener('click', () => {
+        const currentIndex = PICKERS.indexOf(currentPicker);
+        if (currentIndex > 0) {
+            currentPicker = PICKERS[currentIndex - 1];
+            pickerDropdown.value = currentPicker;
+            localStorage.setItem('selectedPicker', currentPicker);
+            updateAdminButtons();
+            updatePickerNavButtons();
+            renderGames();
+            renderScoringSummary();
+        }
+    });
+
+    nextBtn.addEventListener('click', () => {
+        const currentIndex = PICKERS.indexOf(currentPicker);
+        if (currentIndex < PICKERS.length - 1) {
+            currentPicker = PICKERS[currentIndex + 1];
+            pickerDropdown.value = currentPicker;
+            localStorage.setItem('selectedPicker', currentPicker);
+            updateAdminButtons();
+            updatePickerNavButtons();
+            renderGames();
+            renderScoringSummary();
+        }
+    });
+
+    // Set initial button states
+    updatePickerNavButtons();
+}
+
+/**
+ * Update picker navigation button states
+ */
+function updatePickerNavButtons() {
+    const prevBtn = document.getElementById('prev-picker-btn');
+    const nextBtn = document.getElementById('next-picker-btn');
+    const currentIndex = PICKERS.indexOf(currentPicker);
+
+    if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+    if (nextBtn) nextBtn.disabled = currentIndex >= PICKERS.length - 1;
 }
 
 /**

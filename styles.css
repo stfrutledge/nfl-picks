@@ -2952,6 +2952,38 @@ footer a:hover {
     cursor: not-allowed;
 }
 
+/* Picker Navigation */
+.picker-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.picker-nav-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.picker-nav-btn:hover:not(:disabled) {
+    background: var(--bg-primary);
+    border-color: var(--text-light);
+    color: var(--text-primary);
+}
+
+.picker-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* Game Filters */
 .game-filters {
     display: flex;
@@ -3309,6 +3341,7 @@ footer a:hover {
 .insights-section.collapsible-section,
 .group-stats-section.collapsible-section,
 .streaks-section.collapsible-section,
+.pnl-section.collapsible-section,
 .scoring-summary.collapsible-section {
     padding-top: 0;
 }
@@ -3316,7 +3349,8 @@ footer a:hover {
 .charts-grid .collapsible-header,
 .insights-section .collapsible-header,
 .group-stats-section .collapsible-header,
-.streaks-section .collapsible-header {
+.streaks-section .collapsible-header,
+.pnl-section .collapsible-header {
     margin-bottom: 20px;
 }
 
@@ -3585,7 +3619,8 @@ footer a:hover {
    ========================================== */
 
 .pnl-section {
-    padding: 0 20px 20px;
+    padding: 0 40px 40px;
+    width: 100%;
 }
 
 .pnl-controls {
@@ -3626,24 +3661,22 @@ footer a:hover {
 
 .pnl-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 32px 24px;
-    padding: 8px 0;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
 }
 
 .pnl-card {
-    padding-bottom: 16px;
-    border-bottom: 2px solid #1a1a1a;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
 }
 
 .pnl-picker-name {
-    display: block;
-    font-weight: 700;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #666;
-    margin-bottom: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
 }
 
 .pnl-total {
@@ -3669,9 +3702,10 @@ footer a:hover {
 
 .pnl-details {
     display: flex;
-    gap: 12px;
-    font-size: 13px;
-    color: #888;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: var(--text-light);
 }
 
 .pnl-details span {
@@ -3701,7 +3735,4 @@ footer a:hover {
     color: #e5e5e5;
 }
 
-[data-theme="dark"] .pnl-details {
-    color: #888;
-}
 
