@@ -258,6 +258,16 @@ function isGameLocked(game, week = null) {
         return true;
     }
 
+    // Check kickoff time first - if game hasn't started, it can't be locked
+    // (this prevents false positives from stale live data)
+    if (game.kickoff) {
+        const kickoffTime = new Date(game.kickoff);
+        const now = new Date();
+        if (now < kickoffTime) {
+            return false; // Game hasn't started yet, definitely not locked
+        }
+    }
+
     // Check if game has a stored result (completed game)
     const weekResults = getResultsForWeek(checkWeek);
     if (weekResults && weekResults[game.id]) {
@@ -270,11 +280,12 @@ function isGameLocked(game, week = null) {
         return true;
     }
 
-    // For current/future weeks, check kickoff time
-    if (!game.kickoff) return false;
-    const kickoffTime = new Date(game.kickoff);
-    const now = new Date();
-    return now >= kickoffTime;
+    // Kickoff time has passed (checked above), so game is locked
+    if (game.kickoff) {
+        return true;
+    }
+
+    return false;
 }
 
 // Live scores cache (populated from ESPN API)
@@ -364,6 +375,18 @@ function getCachedSchedule(week) {
         if (age < SCHEDULE_CACHE_DURATION) {
             const hoursAgo = (age / (1000 * 60 * 60)).toFixed(1);
             console.log(`[ESPN] Using cached schedule for week ${week} (${hoursAgo} hours old)`);
+            // Sort cached data by kickoff time to ensure proper order
+            if (data && data.length > 0) {
+                data.sort((a, b) => {
+                    const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
+                    const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
+                    return timeA - timeB;
+                });
+                // Reassign IDs after sorting
+                data.forEach((game, index) => {
+                    game.id = index + 1;
+                });
+            }
             return data;
         }
 
@@ -542,8 +565,20 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                 console.log(`[Schedule] Preserved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
         });
+        // Sort games by kickoff time
+        espnGames.sort((a, b) => {
+            const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
+            const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
+            return timeA - timeB;
+        });
+        // Reassign IDs after sorting to maintain sequential order
+        espnGames.forEach((game, index) => {
+            game.id = index + 1;
+        });
         NFL_GAMES_BY_WEEK[week] = espnGames;
-        console.log(`[Schedule] Loaded ${espnGames.length} games for week ${week} from ESPN`);
+        // Re-cache with sorted order
+        cacheSchedule(week, espnGames);
+        console.log(`[Schedule] Loaded ${espnGames.length} games for week ${week} from ESPN (sorted by kickoff)`);
     } else if (!NFL_GAMES_BY_WEEK[week]) {
         // Fallback to empty array if no data available
         NFL_GAMES_BY_WEEK[week] = [];
