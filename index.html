@@ -203,190 +203,149 @@
                 <button class="btn btn-primary" id="retry-btn">Try Again</button>
             </section>
 
-            <!-- Leaderboard -->
+            <!-- PRIMARY: Leaderboard -->
             <section class="leaderboard hidden" id="leaderboard">
                 <!-- Cards will be injected here -->
             </section>
 
-            <!-- Charts Section -->
-            <section class="charts-grid hidden collapsible-section" data-section="charts">
-                <div class="collapsible-header" onclick="toggleSection('charts')">
-                    <h3 class="section-header-title">Charts</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+            <!-- SECONDARY: Performance & Insights -->
+            <section class="consolidated-section performance-insights-section hidden" id="performance-insights-section">
+                <div class="consolidated-header">
+                    <h2 class="consolidated-title">Performance & Insights</h2>
                 </div>
-                <div class="collapsible-content">
-                    <div class="charts-grid-content">
-                        <div class="chart-container">
-                            <div class="chart-header">
-                                <h3>Weekly Performance Trend</h3>
-                                <button class="chart-zoom-btn" id="toggle-trend-zoom" title="Toggle zoom level">Zoom In</button>
+                <div class="consolidated-tabs">
+                    <button class="consolidated-tab active" data-panel="charts-panel">Charts</button>
+                    <button class="consolidated-tab" data-panel="insights-panel">Insights</button>
+                    <button class="consolidated-tab" data-panel="streaks-panel">Streaks</button>
+                    <button class="consolidated-tab" data-panel="group-stats-panel">Group Stats</button>
+                </div>
+                <div class="consolidated-content">
+                    <!-- Charts Panel -->
+                    <div class="consolidated-panel active" id="charts-panel">
+                        <div class="charts-grid-content">
+                            <div class="chart-container">
+                                <div class="chart-header">
+                                    <h3>Weekly Performance Trend</h3>
+                                    <button class="chart-zoom-btn" id="toggle-trend-zoom" title="Toggle zoom level">Zoom In</button>
+                                </div>
+                                <canvas id="trend-chart"></canvas>
                             </div>
-                            <canvas id="trend-chart"></canvas>
-                        </div>
-                        <div class="chart-container">
-                            <h3>Favorites vs Underdogs</h3>
-                            <canvas id="standings-chart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Insights Section -->
-            <section class="insights-section hidden collapsible-section" data-section="insights">
-                <div class="collapsible-header" onclick="toggleSection('insights')">
-                    <h3 class="section-header-title">Group Insights</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
-                </div>
-                <div class="collapsible-content">
-                    <div class="insights-grid" id="insights-grid">
-                        <!-- Consensus callout -->
-                        <div class="insight-card consensus" id="consensus-card">
-                            <!-- Injected by JS -->
-                        </div>
-                        <!-- Lone Wolf leaderboard -->
-                        <div class="insight-card lone-wolf" id="lone-wolf-card">
-                            <!-- Injected by JS -->
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Blazin' 5 Records Section (Team + Spread) -->
-            <section class="blazin-records-section hidden collapsible-section" data-section="blazin-team-records">
-                <div class="collapsible-header" onclick="toggleSection('blazin-team-records')">
-                    <h3 class="section-header-title">Blazin' 5 Records</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
-                </div>
-                <div class="collapsible-content">
-                    <div class="blazin-records-controls">
-                        <label for="blazin-records-picker">Picker:</label>
-                        <select id="blazin-records-picker" class="team-records-dropdown">
-                            <option value="Stephen">Stephen</option>
-                            <option value="Sean">Sean</option>
-                            <option value="Dylan">Dylan</option>
-                            <option value="Jason">Jason</option>
-                            <option value="Daniel">Daniel</option>
-                        </select>
-                    </div>
-                    <div class="blazin-records-grid">
-                        <!-- Record by Team Table -->
-                        <div class="blazin-records-column">
-                            <h4 class="records-column-title">By Team</h4>
-                            <div class="team-records-table-container">
-                                <table class="team-records-table" id="blazin-team-records-table">
-                                    <thead>
-                                        <tr>
-                                            <th class="sortable" data-sort="team" data-table="blazin">Team <span class="sort-icon"></span></th>
-                                            <th class="sortable active desc" data-sort="record" data-table="blazin">Record <span class="sort-icon">▼</span></th>
-                                            <th class="sortable" data-sort="picks" data-table="blazin"># Picks <span class="sort-icon"></span></th>
-                                            <th class="sortable" data-sort="pct" data-table="blazin">Win % <span class="sort-icon"></span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="blazin-team-records-body">
-                                        <!-- Blazin' 5 team records will be injected here -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- Record by Spread Size Table -->
-                        <div class="blazin-records-column">
-                            <h4 class="records-column-title">By Spread Size</h4>
-                            <div class="team-records-table-container">
-                                <table class="team-records-table" id="blazin-spread-records-table">
-                                    <thead>
-                                        <tr>
-                                            <th class="sortable" data-sort="spread" data-table="spread">Spread <span class="sort-icon"></span></th>
-                                            <th class="sortable active desc" data-sort="record" data-table="spread">Record <span class="sort-icon">▼</span></th>
-                                            <th class="sortable" data-sort="picks" data-table="spread"># Picks <span class="sort-icon"></span></th>
-                                            <th class="sortable" data-sort="pct" data-table="spread">Win % <span class="sort-icon"></span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="blazin-spread-records-body">
-                                        <!-- Spread records will be injected here -->
-                                    </tbody>
-                                </table>
+                            <div class="chart-container" id="standings-chart-container">
+                                <h3>Favorites vs Underdogs</h3>
+                                <canvas id="standings-chart"></canvas>
                             </div>
                         </div>
                     </div>
-                </div>
-            </section>
-
-            <!-- Group Overall Stats Section -->
-            <section class="group-stats-section hidden collapsible-section" data-section="group-stats">
-                <div class="collapsible-header" onclick="toggleSection('group-stats')">
-                    <h3 class="section-header-title">Group Performance</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
-                </div>
-                <div class="collapsible-content">
-                    <div class="group-stats-grid" id="group-stats-grid">
-                        <!-- Group stats cards will be injected here -->
+                    <!-- Insights Panel -->
+                    <div class="consolidated-panel" id="insights-panel">
+                        <div class="insights-grid" id="insights-grid">
+                            <div class="insight-card consensus" id="consensus-card"></div>
+                            <div class="insight-card lone-wolf" id="lone-wolf-card"></div>
+                        </div>
+                    </div>
+                    <!-- Streaks Panel -->
+                    <div class="consolidated-panel" id="streaks-panel">
+                        <div class="streaks-grid" id="streaks-grid"></div>
+                    </div>
+                    <!-- Group Stats Panel -->
+                    <div class="consolidated-panel" id="group-stats-panel">
+                        <div class="group-stats-grid" id="group-stats-grid"></div>
                     </div>
                 </div>
             </section>
 
-            <!-- Team Pick Records Section (Line Picks only) -->
-            <section class="team-records-section hidden collapsible-section" data-section="team-records">
-                <div class="collapsible-header" onclick="toggleSection('team-records')">
-                    <h3 class="section-header-title">Pick Record by Team</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+            <!-- TERTIARY: Records & Analysis -->
+            <section class="consolidated-section records-analysis-section hidden" id="records-analysis-section">
+                <div class="consolidated-header">
+                    <h2 class="consolidated-title">Records & Analysis</h2>
                 </div>
-                <div class="collapsible-content">
-                    <div class="team-records-controls">
-                        <label for="team-records-picker">Picker:</label>
-                        <select id="team-records-picker" class="team-records-dropdown">
-                            <option value="Stephen">Stephen</option>
-                            <option value="Sean">Sean</option>
-                            <option value="Dylan">Dylan</option>
-                            <option value="Jason">Jason</option>
-                            <option value="Daniel">Daniel</option>
-                        </select>
+                <div class="consolidated-tabs">
+                    <button class="consolidated-tab active" data-panel="blazin-records-panel">Blazin' 5 Records</button>
+                    <button class="consolidated-tab" data-panel="team-records-panel">Team Records</button>
+                    <button class="consolidated-tab" data-panel="pnl-panel">Profit/Loss</button>
+                </div>
+                <div class="consolidated-content">
+                    <!-- Blazin' 5 Records Panel -->
+                    <div class="consolidated-panel active" id="blazin-records-panel">
+                        <div class="blazin-records-controls">
+                            <label for="blazin-records-picker">Picker:</label>
+                            <select id="blazin-records-picker" class="team-records-dropdown">
+                                <option value="Stephen">Stephen</option>
+                                <option value="Sean">Sean</option>
+                                <option value="Dylan">Dylan</option>
+                                <option value="Jason">Jason</option>
+                                <option value="Daniel">Daniel</option>
+                            </select>
+                        </div>
+                        <div class="blazin-records-grid">
+                            <div class="blazin-records-column">
+                                <h4 class="records-column-title">By Team</h4>
+                                <div class="team-records-table-container">
+                                    <table class="team-records-table" id="blazin-team-records-table">
+                                        <thead>
+                                            <tr>
+                                                <th class="sortable" data-sort="team" data-table="blazin">Team <span class="sort-icon"></span></th>
+                                                <th class="sortable active desc" data-sort="record" data-table="blazin">Record <span class="sort-icon">▼</span></th>
+                                                <th class="sortable" data-sort="picks" data-table="blazin"># Picks <span class="sort-icon"></span></th>
+                                                <th class="sortable" data-sort="pct" data-table="blazin">Win % <span class="sort-icon"></span></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="blazin-team-records-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="blazin-records-column">
+                                <h4 class="records-column-title">By Spread Size</h4>
+                                <div class="team-records-table-container">
+                                    <table class="team-records-table" id="blazin-spread-records-table">
+                                        <thead>
+                                            <tr>
+                                                <th class="sortable" data-sort="spread" data-table="spread">Spread <span class="sort-icon"></span></th>
+                                                <th class="sortable active desc" data-sort="record" data-table="spread">Record <span class="sort-icon">▼</span></th>
+                                                <th class="sortable" data-sort="picks" data-table="spread"># Picks <span class="sort-icon"></span></th>
+                                                <th class="sortable" data-sort="pct" data-table="spread">Win % <span class="sort-icon"></span></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="blazin-spread-records-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="team-records-table-container">
-                        <table class="team-records-table" id="team-records-table">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort="team" data-table="line">Team <span class="sort-icon"></span></th>
-                                    <th class="sortable" data-sort="record" data-table="line">Record <span class="sort-icon"></span></th>
-                                    <th class="sortable" data-sort="picks" data-table="line"># Picks <span class="sort-icon"></span></th>
-                                    <th class="sortable active desc" data-sort="pct" data-table="line">Win % <span class="sort-icon">▼</span></th>
-                                </tr>
-                            </thead>
-                            <tbody id="team-records-body">
-                                <!-- Team records will be injected here -->
-                            </tbody>
-                        </table>
+                    <!-- Team Records Panel (Line Picks) -->
+                    <div class="consolidated-panel" id="team-records-panel">
+                        <div class="team-records-controls">
+                            <label for="team-records-picker">Picker:</label>
+                            <select id="team-records-picker" class="team-records-dropdown">
+                                <option value="Stephen">Stephen</option>
+                                <option value="Sean">Sean</option>
+                                <option value="Dylan">Dylan</option>
+                                <option value="Jason">Jason</option>
+                                <option value="Daniel">Daniel</option>
+                            </select>
+                        </div>
+                        <div class="team-records-table-container">
+                            <table class="team-records-table" id="team-records-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" data-sort="team" data-table="line">Team <span class="sort-icon"></span></th>
+                                        <th class="sortable" data-sort="record" data-table="line">Record <span class="sort-icon"></span></th>
+                                        <th class="sortable" data-sort="picks" data-table="line"># Picks <span class="sort-icon"></span></th>
+                                        <th class="sortable active desc" data-sort="pct" data-table="line">Win % <span class="sort-icon">▼</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="team-records-body"></tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
-            </section>
-
-            <!-- Streaks Section -->
-            <section class="streaks-section hidden collapsible-section" data-section="streaks">
-                <div class="collapsible-header" onclick="toggleSection('streaks')">
-                    <h3 class="section-header-title">Recent Performance</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
-                </div>
-                <div class="collapsible-content">
-                    <div class="streaks-grid" id="streaks-grid">
-                        <!-- Streak cards will be injected here -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- Profit/Loss Section -->
-            <section class="pnl-section hidden collapsible-section" data-section="pnl">
-                <div class="collapsible-header" onclick="toggleSection('pnl')">
-                    <h3 class="section-header-title">Hypothetical Profit/Loss</h3>
-                    <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
-                </div>
-                <div class="collapsible-content">
-                    <div class="pnl-controls">
-                        <label for="bet-amount">Bet Amount per Pick: $</label>
-                        <input type="number" id="bet-amount" class="bet-amount-input" value="20" min="1" max="10000" step="1">
-                        <p class="pnl-description">Assumes -110 odds on all spread picks. Shows what you would have won or lost betting this amount on every pick.</p>
-                    </div>
-                    <div class="pnl-grid" id="pnl-grid">
-                        <!-- P&L cards will be injected here -->
+                    <!-- P&L Panel -->
+                    <div class="consolidated-panel" id="pnl-panel">
+                        <div class="pnl-controls">
+                            <label for="bet-amount">Bet Amount per Pick: $</label>
+                            <input type="number" id="bet-amount" class="bet-amount-input" value="20" min="1" max="10000" step="1">
+                            <p class="pnl-description">Assumes -110 odds on all spread picks. Shows what you would have won or lost betting this amount on every pick.</p>
+                        </div>
+                        <div class="pnl-grid" id="pnl-grid"></div>
                     </div>
                 </div>
             </section>

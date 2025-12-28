@@ -1042,6 +1042,7 @@ function init() {
     setupRetryButton();
     setupBackToTop();
     initCollapsibleSections();
+    setupConsolidatedTabs();
     setupPullToRefresh();
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
@@ -1739,15 +1740,8 @@ function setActiveCategory(category) {
 
     // Show/hide sections based on category
     const makePicksSection = document.getElementById('make-picks-section');
-    const chartsSection = document.querySelector('.charts-grid');
-    const streaksSection = document.querySelector('.streaks-section');
-    const groupStatsSection = document.querySelector('.group-stats-section');
-    const teamRecordsSection = document.querySelector('.team-records-section');
-    const blazinRecordsSection = document.querySelector('.blazin-records-section');
-    const pnlSection = document.querySelector('.pnl-section');
-
-    // Get insights section reference
-    const insightsSection = document.querySelector('.insights-section');
+    const performanceInsightsSection = document.getElementById('performance-insights-section');
+    const recordsAnalysisSection = document.getElementById('records-analysis-section');
 
     if (category === 'make-picks') {
         // Destroy chart instances to prevent memory leaks
@@ -1758,13 +1752,8 @@ function setActiveCategory(category) {
         // Hide subtabs and dashboard sections
         standingsSubtabs?.classList.add('hidden');
         leaderboard.classList.add('hidden');
-        chartsSection?.classList.add('hidden');
-        streaksSection?.classList.add('hidden');
-        insightsSection?.classList.add('hidden');
-        groupStatsSection?.classList.add('hidden');
-        teamRecordsSection?.classList.add('hidden');
-        blazinRecordsSection?.classList.add('hidden');
-        pnlSection?.classList.add('hidden');
+        performanceInsightsSection?.classList.add('hidden');
+        recordsAnalysisSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -1777,13 +1766,35 @@ function setActiveCategory(category) {
         // Show subtabs and dashboard sections
         standingsSubtabs?.classList.remove('hidden');
         leaderboard.classList.remove('hidden');
-        chartsSection?.classList.remove('hidden');
-        streaksSection?.classList.remove('hidden');
-        groupStatsSection?.classList.remove('hidden');
+        performanceInsightsSection?.classList.remove('hidden');
+        recordsAnalysisSection?.classList.remove('hidden');
         makePicksSection?.classList.add('hidden');
 
         renderDashboard();
     }
+}
+
+/**
+ * Setup consolidated section tabs
+ */
+function setupConsolidatedTabs() {
+    document.querySelectorAll('.consolidated-tabs').forEach(tabContainer => {
+        tabContainer.querySelectorAll('.consolidated-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const panelId = tab.dataset.panel;
+                const section = tab.closest('.consolidated-section');
+
+                // Update active tab
+                tabContainer.querySelectorAll('.consolidated-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // Update active panel
+                section.querySelectorAll('.consolidated-panel').forEach(panel => {
+                    panel.classList.toggle('active', panel.id === panelId);
+                });
+            });
+        });
+    });
 }
 
 /**
@@ -1812,12 +1823,19 @@ function renderDashboard() {
             return;
     }
 
+    // PRIMARY: Render leaderboard
     renderLeaderboard(stats);
+
+    // SECONDARY: Performance & Insights - render all panels
     renderStreaks(stats);
     renderTrendChart(weeklyData, currentSubcategory);
+    renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
+    if (dashboardData.groupOverall) {
+        renderGroupStats(dashboardData.groupOverall);
+    }
 
     // Only show Favorites vs Underdogs chart on Line Picks tab
-    const standingsChartContainer = document.getElementById('standings-chart')?.closest('.chart-container');
+    const standingsChartContainer = document.getElementById('standings-chart-container');
     if (standingsChartContainer) {
         if (currentSubcategory === 'line') {
             standingsChartContainer.classList.remove('hidden');
@@ -1827,47 +1845,42 @@ function renderDashboard() {
         }
     }
 
-    // Show insights on all standings tabs (blazin, line, winner)
-    const insightsSection = document.querySelector('.insights-section');
-    if (insightsSection) {
-        insightsSection.classList.remove('hidden');
-        renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
-    }
+    // TERTIARY: Records & Analysis - configure tabs based on subcategory
+    const blazinRecordsTab = document.querySelector('[data-panel="blazin-records-panel"]');
+    const teamRecordsTab = document.querySelector('[data-panel="team-records-panel"]');
 
-    // Show/hide Blazin' 5 records section (team + spread)
-    const blazinRecordsSection = document.querySelector('.blazin-records-section');
-    if (blazinRecordsSection) {
-        if (currentSubcategory === 'blazin') {
-            blazinRecordsSection.classList.remove('hidden');
-            renderBlazinTeamPickRecords();
-            renderBlazinSpreadRecords();
-        } else {
-            blazinRecordsSection.classList.add('hidden');
+    if (currentSubcategory === 'blazin') {
+        // Show Blazin' 5 Records tab, hide Team Records tab
+        blazinRecordsTab?.classList.remove('hidden');
+        teamRecordsTab?.classList.add('hidden');
+        renderBlazinTeamPickRecords();
+        renderBlazinSpreadRecords();
+        // Make sure Blazin records panel is active
+        if (blazinRecordsTab && !blazinRecordsTab.classList.contains('active')) {
+            blazinRecordsTab.click();
+        }
+    } else if (currentSubcategory === 'line') {
+        // Show Team Records tab, hide Blazin' 5 Records tab
+        blazinRecordsTab?.classList.add('hidden');
+        teamRecordsTab?.classList.remove('hidden');
+        renderTeamPickRecords();
+        // Make sure Team records panel is active
+        if (teamRecordsTab && !teamRecordsTab.classList.contains('active')) {
+            teamRecordsTab.click();
+        }
+    } else {
+        // Winner tab - hide both record tabs, show only P&L
+        blazinRecordsTab?.classList.add('hidden');
+        teamRecordsTab?.classList.add('hidden');
+        // Activate P&L tab
+        const pnlTab = document.querySelector('[data-panel="pnl-panel"]');
+        if (pnlTab && !pnlTab.classList.contains('active')) {
+            pnlTab.click();
         }
     }
 
-    // Render Group Overall Stats
-    if (dashboardData.groupOverall) {
-        renderGroupStats(dashboardData.groupOverall);
-    }
-
-    // Show/hide team records section (Line Picks only)
-    const teamRecordsSection = document.querySelector('.team-records-section');
-    if (teamRecordsSection) {
-        if (currentSubcategory === 'line') {
-            teamRecordsSection.classList.remove('hidden');
-            renderTeamPickRecords();
-        } else {
-            teamRecordsSection.classList.add('hidden');
-        }
-    }
-
-    // Show and render P&L section on all standings tabs
-    const pnlSection = document.querySelector('.pnl-section');
-    if (pnlSection) {
-        pnlSection.classList.remove('hidden');
-        renderPnL();
-    }
+    // Always render P&L
+    renderPnL();
 }
 
 /**
