@@ -3473,7 +3473,8 @@ function renderGames() {
 
         // Get live score data if available
         const liveData = getLiveGameStatus(game);
-        const isInProgress = liveData && liveData.status === 'STATUS_IN_PROGRESS';
+        const inProgressStatuses = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+        const isInProgress = liveData && inProgressStatuses.includes(liveData.status);
         const isFinal = liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
 
         // Game is locked if: isGameLocked returns true OR game is final from live data
@@ -3531,7 +3532,14 @@ function renderGames() {
         if (isFinal || isHistoricalWeek) {
             statusBadge = `<span class="status-badge final">FINAL</span>`;
         } else if (isInProgress) {
-            const clockDisplay = liveData.clock ? `${liveData.clock} Q${liveData.period}` : 'Live';
+            let clockDisplay;
+            if (liveData.status === 'STATUS_HALFTIME') {
+                clockDisplay = 'Half';
+            } else if (liveData.status === 'STATUS_END_PERIOD') {
+                clockDisplay = `End Q${liveData.period}`;
+            } else {
+                clockDisplay = liveData.clock ? `${liveData.clock} Q${liveData.period}` : 'Live';
+            }
             statusBadge = `<span class="status-badge in-progress">${liveData.awayScore} - ${liveData.homeScore} (${clockDisplay})</span>`;
         } else if (locked) {
             statusBadge = '<span class="locked-badge">LOCKED</span>';
