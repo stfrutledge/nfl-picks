@@ -1043,7 +1043,6 @@ function init() {
     setupBackToTop();
     initCollapsibleSections();
     setupPullToRefresh();
-    setupOnboarding();
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
     setupPnLSection();
@@ -3126,15 +3125,20 @@ async function loadAllWeeklyDataForBlazin() {
     let loadedWeeks = 0;
     let failedWeeks = 0;
 
+    // Build array of weeks that need fetching
+    const weeksToFetch = [];
     for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
         if (weeklyPicksCache[week]) {
             loadedWeeks++;
             continue; // Already cached
         }
         if (!WEEK_SHEET_GIDS[week]) continue; // No GID for this week
+        weeksToFetch.push(week);
+    }
 
+    // Fetch all weeks in parallel
+    const fetchPromises = weeksToFetch.map(async (week) => {
         const weekUrl = `${GOOGLE_SHEETS_BASE_URL}&gid=${WEEK_SHEET_GIDS[week]}`;
-
         try {
             const url = proxy + encodeURIComponent(weekUrl);
             const controller = new AbortController();
@@ -3145,78 +3149,90 @@ async function loadAllWeeklyDataForBlazin() {
 
             if (!response.ok) {
                 console.warn(`Week ${week}: HTTP ${response.status}`);
-                failedWeeks++;
-                continue;
+                return { week, success: false };
             }
 
             const csvText = await response.text();
             if (csvText.includes('<!DOCTYPE') || csvText.length < 50) {
                 console.warn(`Week ${week}: Invalid response`);
-                failedWeeks++;
-                continue;
+                return { week, success: false };
             }
 
             const weekData = parseWeeklyPicksCSV(csvText, week);
-            weeklyPicksCache[week] = weekData;
-
-            // Merge blazin picks into allPicks
-            if (weekData.picks) {
-                if (!allPicks[week]) allPicks[week] = {};
-                for (const picker in weekData.picks) {
-                    if (!allPicks[week][picker]) allPicks[week][picker] = {};
-                    for (const gameId in weekData.picks[picker]) {
-                        const pick = weekData.picks[picker][gameId];
-                        if (!allPicks[week][picker][gameId]) {
-                            allPicks[week][picker][gameId] = {};
-                        }
-                        // Merge blazin marker
-                        if (pick.blazin) {
-                            allPicks[week][picker][gameId].blazin = true;
-                            allPicks[week][picker][gameId].blazinTeam = pick.blazinTeam;
-                        }
-                        // Also merge line/winner if not present
-                        if (pick.line && !allPicks[week][picker][gameId].line) {
-                            allPicks[week][picker][gameId].line = pick.line;
-                        }
-                        if (pick.winner && !allPicks[week][picker][gameId].winner) {
-                            allPicks[week][picker][gameId].winner = pick.winner;
-                        }
-                    }
-                }
-            }
-
-            // Merge results into NFL_RESULTS_BY_WEEK (Google Sheets takes priority)
-            if (weekData.results && Object.keys(weekData.results).length > 0) {
-                if (!NFL_RESULTS_BY_WEEK[week]) {
-                    NFL_RESULTS_BY_WEEK[week] = weekData.results;
-                } else {
-                    // Google Sheets results OVERWRITE historical data
-                    for (const gameId in weekData.results) {
-                        NFL_RESULTS_BY_WEEK[week][gameId] = weekData.results[gameId];
-                    }
-                }
-            }
-
-            // Merge games into NFL_GAMES_BY_WEEK (Google Sheets takes priority for spreads)
-            if (weekData.games && weekData.games.length > 0) {
-                NFL_GAMES_BY_WEEK[week] = weekData.games;
-            }
-
-            // Count blazin picks for debugging
-            let blazinCount = 0;
-            for (const picker in weekData.picks) {
-                for (const gameId in weekData.picks[picker]) {
-                    if (weekData.picks[picker][gameId].blazin) {
-                        blazinCount++;
-                    }
-                }
-            }
-            console.log(`Week ${week}: ${blazinCount} Blazin' 5 picks`);
-            loadedWeeks++;
+            return { week, success: true, data: weekData };
         } catch (err) {
             console.warn(`Week ${week}: ${err.message}`);
-            failedWeeks++;
+            return { week, success: false };
         }
+    });
+
+    // Wait for all fetches to complete
+    const results = await Promise.all(fetchPromises);
+
+    // Process results and merge data
+    for (const result of results) {
+        if (!result.success) {
+            failedWeeks++;
+            continue;
+        }
+
+        const { week, data: weekData } = result;
+        weeklyPicksCache[week] = weekData;
+
+        // Merge blazin picks into allPicks
+        if (weekData.picks) {
+            if (!allPicks[week]) allPicks[week] = {};
+            for (const picker in weekData.picks) {
+                if (!allPicks[week][picker]) allPicks[week][picker] = {};
+                for (const gameId in weekData.picks[picker]) {
+                    const pick = weekData.picks[picker][gameId];
+                    if (!allPicks[week][picker][gameId]) {
+                        allPicks[week][picker][gameId] = {};
+                    }
+                    // Merge blazin marker
+                    if (pick.blazin) {
+                        allPicks[week][picker][gameId].blazin = true;
+                        allPicks[week][picker][gameId].blazinTeam = pick.blazinTeam;
+                    }
+                    // Also merge line/winner if not present
+                    if (pick.line && !allPicks[week][picker][gameId].line) {
+                        allPicks[week][picker][gameId].line = pick.line;
+                    }
+                    if (pick.winner && !allPicks[week][picker][gameId].winner) {
+                        allPicks[week][picker][gameId].winner = pick.winner;
+                    }
+                }
+            }
+        }
+
+        // Merge results into NFL_RESULTS_BY_WEEK (Google Sheets takes priority)
+        if (weekData.results && Object.keys(weekData.results).length > 0) {
+            if (!NFL_RESULTS_BY_WEEK[week]) {
+                NFL_RESULTS_BY_WEEK[week] = weekData.results;
+            } else {
+                // Google Sheets results OVERWRITE historical data
+                for (const gameId in weekData.results) {
+                    NFL_RESULTS_BY_WEEK[week][gameId] = weekData.results[gameId];
+                }
+            }
+        }
+
+        // Merge games into NFL_GAMES_BY_WEEK (Google Sheets takes priority for spreads)
+        if (weekData.games && weekData.games.length > 0) {
+            NFL_GAMES_BY_WEEK[week] = weekData.games;
+        }
+
+        // Count blazin picks for debugging
+        let blazinCount = 0;
+        for (const picker in weekData.picks) {
+            for (const gameId in weekData.picks[picker]) {
+                if (weekData.picks[picker][gameId].blazin) {
+                    blazinCount++;
+                }
+            }
+        }
+        console.log(`Week ${week}: ${blazinCount} Blazin' 5 picks`);
+        loadedWeeks++;
     }
 
     console.log(`Blazin' 5 data: ${loadedWeeks} weeks loaded, ${failedWeeks} failed`);
