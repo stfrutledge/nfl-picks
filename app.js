@@ -839,7 +839,22 @@ function applyOddsData(oddsData) {
                                   gameAwayLower.includes(awayTeamLower.split(' ').pop());
 
                 if (homeMatch && awayMatch) {
-                    // Update game with all odds data
+                    // NEVER update spreads for games that have already started
+                    // Once a game begins, the line is locked for pick evaluation
+                    const weekNum = parseInt(week);
+                    const gameHasStarted = weekNum < CURRENT_NFL_WEEK ||
+                        (weekGame.kickoff && new Date(weekGame.kickoff) <= new Date());
+
+                    if (gameHasStarted) {
+                        // Game has started - only update moneylines/totals for display, NOT spreads
+                        if (homeMoneyline !== null) weekGame.homeMoneyline = homeMoneyline;
+                        if (awayMoneyline !== null) weekGame.awayMoneyline = awayMoneyline;
+                        if (overUnder !== null) weekGame.overUnder = overUnder;
+                        // Skip spread update - line is locked
+                        break;
+                    }
+
+                    // Game hasn't started - safe to update all odds data
                     if (spread !== null) {
                         weekGame.spread = spread;
                         weekGame.favorite = favorite;
