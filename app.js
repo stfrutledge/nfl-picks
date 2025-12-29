@@ -2,6 +2,14 @@
  * NFL Picks Dashboard - Main Application
  */
 
+// Google Apps Script URL for syncing picks to Google Sheets
+// Set this to your deployed Apps Script Web App URL (leave empty to disable sync)
+const APPS_SCRIPT_URL = '';
+
+// Track pending syncs to avoid duplicate requests
+let pendingSyncTimeout = null;
+const SYNC_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before syncing
+
 let dashboardData = null;
 let currentCategory = 'make-picks';
 let currentSubcategory = 'blazin'; // Default standings subcategory
@@ -1755,6 +1763,7 @@ function setActiveCategory(category) {
 
     // Show/hide sections based on category
     const makePicksSection = document.getElementById('make-picks-section');
+    const makePicksBetaSection = document.getElementById('make-picks-beta-section');
     const performanceInsightsSection = document.getElementById('performance-insights-section');
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
 
@@ -1769,11 +1778,29 @@ function setActiveCategory(category) {
         leaderboard.classList.add('hidden');
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
+        makePicksBetaSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
         startLiveScoresRefresh();
         renderScoringSummary();
+    } else if (category === 'make-picks-beta') {
+        // Destroy chart instances to prevent memory leaks
+        if (typeof destroyAllCharts === 'function') {
+            destroyAllCharts();
+        }
+
+        // Hide other sections, show beta
+        standingsSubtabs?.classList.add('hidden');
+        leaderboard.classList.add('hidden');
+        performanceInsightsSection?.classList.add('hidden');
+        recordsAnalysisSection?.classList.add('hidden');
+        makePicksSection?.classList.add('hidden');
+        makePicksBetaSection?.classList.remove('hidden');
+
+        // Initialize beta tab if not done
+        initBetaTab();
+        renderBetaGames();
     } else if (category === 'standings') {
         // Stop live scores refresh when leaving picks tab
         stopLiveScoresRefresh();
@@ -1784,6 +1811,7 @@ function setActiveCategory(category) {
         performanceInsightsSection?.classList.remove('hidden');
         recordsAnalysisSection?.classList.remove('hidden');
         makePicksSection?.classList.add('hidden');
+        makePicksBetaSection?.classList.add('hidden');
 
         renderDashboard();
     }
@@ -4457,10 +4485,66 @@ function randomizePicks() {
 }
 
 /**
- * Save picks to localStorage
+ * Save picks to localStorage and optionally sync to Google Sheets
  */
-function savePicksToStorage() {
+function savePicksToStorage(showSyncToast = true) {
     localStorage.setItem('nflPicks', JSON.stringify(allPicks));
+
+    // Debounce sync to Google Sheets
+    if (APPS_SCRIPT_URL) {
+        if (pendingSyncTimeout) {
+            clearTimeout(pendingSyncTimeout);
+        }
+        pendingSyncTimeout = setTimeout(() => {
+            syncPicksToGoogleSheets(showSyncToast);
+        }, SYNC_DEBOUNCE_MS);
+    }
+}
+
+/**
+ * Sync current picker's picks for current week to Google Sheets
+ */
+async function syncPicksToGoogleSheets(displayToast = true) {
+    if (!APPS_SCRIPT_URL) {
+        console.log('[Sync] Google Sheets sync disabled (no APPS_SCRIPT_URL configured)');
+        return;
+    }
+
+    const weekPicks = allPicks[currentWeek]?.[currentPicker];
+    if (!weekPicks || Object.keys(weekPicks).length === 0) {
+        console.log('[Sync] No picks to sync');
+        return;
+    }
+
+    const payload = {
+        week: currentWeek,
+        picker: currentPicker,
+        picks: weekPicks
+    };
+
+    console.log('[Sync] Syncing picks to Google Sheets:', payload);
+
+    try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors', // Apps Script requires no-cors for POST
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+        });
+
+        // With no-cors, we can't read the response, but if no error was thrown, it likely succeeded
+        console.log('[Sync] Picks synced to Google Sheets');
+        if (displayToast) {
+            showToast('Picks saved to Google Sheets');
+        }
+    } catch (error) {
+        console.error('[Sync] Failed to sync picks to Google Sheets:', error);
+        if (displayToast) {
+            showToast('Failed to sync to Google Sheets', 'error');
+        }
+    }
 }
 
 /**
@@ -5054,6 +5138,650 @@ function setupPullToRefresh() {
     document.addEventListener('touchstart', handleTouchStart, { passive: true });
     document.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.addEventListener('touchend', handleTouchEnd, { passive: true });
+}
+
+// ==========================================
+// BETA TAB - Google Sheets Sync Testing
+// ==========================================
+
+// Beta tab configuration - DUMMY SHEET FOR TESTING
+const BETA_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxACY42l_nrp8PNRtDfxHGhD0BzYR7ubInIY-OTpw2M53QvSrDPL0wiDhA1qF35BfOlhw/exec';
+
+// Beta tab state
+let betaInitialized = false;
+let betaCurrentWeek = null;
+let betaCurrentPicker = 'Stephen';
+let betaPicks = {}; // { week: { picker: { gameId: { line, winner, blazin } } } }
+let betaPendingSyncTimeout = null;
+
+/**
+ * Initialize the beta tab
+ */
+function initBetaTab() {
+    if (betaInitialized) return;
+    betaInitialized = true;
+
+    betaCurrentWeek = CURRENT_NFL_WEEK;
+    betaCurrentPicker = localStorage.getItem('betaSelectedPicker') || 'Stephen';
+
+    // Setup week dropdown
+    const weekDropdown = document.getElementById('beta-week-dropdown');
+    if (weekDropdown) {
+        weekDropdown.innerHTML = '';
+        for (let i = 1; i <= TOTAL_WEEKS; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = `Week ${i}`;
+            if (i === betaCurrentWeek) option.selected = true;
+            weekDropdown.appendChild(option);
+        }
+        weekDropdown.addEventListener('change', (e) => {
+            betaCurrentWeek = parseInt(e.target.value);
+            document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
+            renderBetaGames();
+        });
+    }
+
+    // Setup picker dropdown
+    const pickerDropdown = document.getElementById('beta-picker-dropdown');
+    if (pickerDropdown) {
+        pickerDropdown.value = betaCurrentPicker;
+        pickerDropdown.addEventListener('change', (e) => {
+            betaCurrentPicker = e.target.value;
+            localStorage.setItem('betaSelectedPicker', betaCurrentPicker);
+            renderBetaGames();
+        });
+    }
+
+    // Setup week navigation
+    document.getElementById('beta-prev-week-btn')?.addEventListener('click', () => {
+        if (betaCurrentWeek > 1) {
+            betaCurrentWeek--;
+            document.getElementById('beta-week-dropdown').value = betaCurrentWeek;
+            document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
+            renderBetaGames();
+        }
+    });
+
+    document.getElementById('beta-next-week-btn')?.addEventListener('click', () => {
+        if (betaCurrentWeek < TOTAL_WEEKS) {
+            betaCurrentWeek++;
+            document.getElementById('beta-week-dropdown').value = betaCurrentWeek;
+            document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
+            renderBetaGames();
+        }
+    });
+
+    // Setup picker navigation
+    document.getElementById('beta-prev-picker-btn')?.addEventListener('click', () => {
+        const currentIndex = PICKERS.indexOf(betaCurrentPicker);
+        if (currentIndex > 0) {
+            betaCurrentPicker = PICKERS[currentIndex - 1];
+            document.getElementById('beta-picker-dropdown').value = betaCurrentPicker;
+            localStorage.setItem('betaSelectedPicker', betaCurrentPicker);
+            renderBetaGames();
+        }
+    });
+
+    document.getElementById('beta-next-picker-btn')?.addEventListener('click', () => {
+        const currentIndex = PICKERS.indexOf(betaCurrentPicker);
+        if (currentIndex < PICKERS.length - 1) {
+            betaCurrentPicker = PICKERS[currentIndex + 1];
+            document.getElementById('beta-picker-dropdown').value = betaCurrentPicker;
+            localStorage.setItem('betaSelectedPicker', betaCurrentPicker);
+            renderBetaGames();
+        }
+    });
+
+    // Setup clear picks button
+    document.getElementById('beta-clear-picks-btn')?.addEventListener('click', () => {
+        if (confirm(`Clear all picks for ${betaCurrentPicker} in Week ${betaCurrentWeek}?`)) {
+            if (!betaPicks[betaCurrentWeek]) betaPicks[betaCurrentWeek] = {};
+            betaPicks[betaCurrentWeek][betaCurrentPicker] = {};
+            saveBetaPicks();
+            renderBetaGames();
+            betaLogEntry('Cleared all picks');
+        }
+    });
+
+    // Setup sync now button
+    document.getElementById('beta-sync-now-btn')?.addEventListener('click', () => {
+        syncBetaPicksToGoogleSheets(true);
+    });
+
+    // Setup refresh spreads button
+    document.getElementById('beta-refresh-spreads-btn')?.addEventListener('click', async () => {
+        showToast('Refreshing spreads from API...');
+        betaLogEntry('Refreshing spreads from API...');
+        const success = await updateSpreadsFromAPI(true); // Force refresh
+        if (success) {
+            showToast('Spreads updated successfully');
+            betaLogEntry('Spreads updated successfully', 'success');
+            renderBetaGames();
+        } else {
+            showToast('Failed to update spreads', 'error');
+            betaLogEntry('Failed to update spreads', 'error');
+        }
+    });
+
+    // Update week number display
+    document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
+
+    // Load saved beta picks from localStorage
+    loadBetaPicks();
+
+    betaLogEntry('Beta tab initialized');
+}
+
+/**
+ * Render games in the beta tab (matches main tab structure exactly)
+ */
+function renderBetaGames() {
+    const container = document.getElementById('beta-games-list');
+    if (!container) return;
+
+    const weekGames = getGamesForWeek(betaCurrentWeek);
+    const pickerPicks = betaPicks[betaCurrentWeek]?.[betaCurrentPicker] || {};
+    const isHistoricalWeek = betaCurrentWeek < CURRENT_NFL_WEEK;
+
+    if (weekGames.length === 0) {
+        container.innerHTML = `
+            <div class="no-games-message">
+                <p>No games for Week ${betaCurrentWeek}.</p>
+                <p class="no-games-subtitle">Game data will load from the schedule.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Count current blazin picks for the week
+    const blazinCount = weekGames.reduce((count, g) => {
+        const gPicks = pickerPicks[String(g.id)] || pickerPicks[g.id] || {};
+        return count + (gPicks.blazin ? 1 : 0);
+    }, 0);
+
+    container.innerHTML = weekGames.map(game => {
+        const gameIdStr = String(game.id);
+        const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+        const linePick = gamePicks.line;
+        const winnerPick = gamePicks.winner;
+        const isBlazin = gamePicks.blazin || false;
+        const hasLinePick = linePick !== undefined;
+        const hasWinnerPick = winnerPick !== undefined;
+        const hasBothPicks = hasLinePick && hasWinnerPick;
+
+        // Get live score data if available
+        const liveData = getLiveGameStatus(game);
+        const inProgressStatuses = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+        const isInProgress = liveData && inProgressStatuses.includes(liveData.status);
+        const isFinal = liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
+
+        // Game is locked if: isGameLocked returns true OR game is final from live data
+        // BETA: Unlock all games for testing
+        const locked = false; // isGameLocked(game, betaCurrentWeek) || isFinal;
+
+        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+        const awaySpreadDisplay = awaySpread > 0 ? `+${awaySpread}` : awaySpread;
+        const homeSpreadDisplay = homeSpread > 0 ? `+${homeSpread}` : homeSpread;
+
+        const cardClasses = [
+            'game-card',
+            hasBothPicks ? 'has-pick' : (hasLinePick || hasWinnerPick ? 'has-partial-pick' : ''),
+            locked ? 'game-locked' : '',
+            isFinal ? 'game-final' : '',
+            isInProgress ? 'game-in-progress' : ''
+        ].filter(Boolean).join(' ');
+
+        // Build status badge
+        let statusBadge = '';
+        if (isFinal || isHistoricalWeek) {
+            statusBadge = `<span class="status-badge final">FINAL</span>`;
+        } else if (isInProgress) {
+            let clockDisplay;
+            if (liveData.status === 'STATUS_HALFTIME') {
+                clockDisplay = 'Half';
+            } else if (liveData.status === 'STATUS_END_PERIOD') {
+                clockDisplay = `End Q${liveData.period}`;
+            } else {
+                clockDisplay = liveData.clock ? `${liveData.clock} Q${liveData.period}` : 'Live';
+            }
+            statusBadge = `<span class="status-badge in-progress">${liveData.awayScore} - ${liveData.homeScore} (${clockDisplay})</span>`;
+        } else if (locked) {
+            statusBadge = '<span class="locked-badge">LOCKED</span>';
+        }
+
+        // Build final score display for completed games
+        let gameStatusDisplay = '';
+        const gameCompleted = isFinal || isHistoricalWeek;
+        const historicalResult = getResultsForWeek(betaCurrentWeek)[game.id];
+        const scoreData = liveData || historicalResult;
+        if (gameCompleted && scoreData) {
+            const awayScore = scoreData.awayScore ?? '';
+            const homeScore = scoreData.homeScore ?? '';
+            const awayWon = awayScore > homeScore;
+            const homeWon = homeScore > awayScore;
+            gameStatusDisplay = `
+                <div class="game-final-score">
+                    <span class="final-score-team ${awayWon ? 'winner' : ''}">
+                        <span class="final-team-name">${game.away}</span>
+                        <span class="final-team-score">${awayScore}</span>
+                    </span>
+                    <span class="final-score-divider">-</span>
+                    <span class="final-score-team ${homeWon ? 'winner' : ''}">
+                        <span class="final-team-score">${homeScore}</span>
+                        <span class="final-team-name">${game.home}</span>
+                    </span>
+                </div>`;
+        }
+
+        // Blazin star button - disabled if locked, no line pick, or already at 5 and not already selected
+        const blazinDisabled = locked || !hasLinePick || (!isBlazin && blazinCount >= 5);
+        const blazinTitle = blazinDisabled
+            ? (locked ? 'Game is locked' : (!hasLinePick ? 'Make a line pick first' : 'Maximum 5 Blazin picks reached'))
+            : (isBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5');
+
+        return `
+            <div class="${cardClasses}" data-game-id="${game.id}" data-kickoff="${game.kickoff || ''}">
+                <div class="game-header">
+                    <span class="game-time">${game.time || ''}</span>
+                    ${statusBadge}
+                    <span class="game-day">${game.day || ''}</span>
+                </div>
+                ${gameStatusDisplay}
+
+                <div class="game-matchup-line">
+                    <span class="away-team">
+                        <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo" onerror="handleLogoError(this, '${game.away}')">
+                        ${game.away} (${awaySpreadDisplay})
+                    </span>
+                    <span class="at-symbol">@</span>
+                    <span class="home-team">
+                        <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo" onerror="handleLogoError(this, '${game.home}')">
+                        ${game.home} (${homeSpreadDisplay})
+                    </span>
+                </div>
+
+                <div class="picks-row">
+                    <div class="pick-type">
+                        <span class="pick-label">Line Pick (ATS)</span>
+                        <div class="pick-options">
+                            <button class="pick-btn ${linePick === 'away' ? 'selected' : ''}"
+                                    data-game-id="${game.id}" data-pick-type="line" data-team="away"
+                                    ${locked ? 'disabled' : ''}>
+                                ${game.away} ${awaySpreadDisplay}
+                            </button>
+                            <button class="pick-btn ${linePick === 'home' ? 'selected' : ''}"
+                                    data-game-id="${game.id}" data-pick-type="line" data-team="home"
+                                    ${locked ? 'disabled' : ''}>
+                                ${game.home} ${homeSpreadDisplay}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pick-type">
+                        <span class="pick-label">Straight Up (Winner)</span>
+                        <div class="pick-options">
+                            <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''}"
+                                    data-game-id="${game.id}" data-pick-type="winner" data-team="away"
+                                    ${locked ? 'disabled' : ''}>
+                                ${game.away}
+                            </button>
+                            <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''}"
+                                    data-game-id="${game.id}" data-pick-type="winner" data-team="home"
+                                    ${locked ? 'disabled' : ''}>
+                                ${game.home}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="game-footer">
+                    <div class="game-location">
+                        <span class="location-city">${game.location || ''}</span>
+                        <span class="location-stadium">${game.stadium || ''}</span>
+                    </div>
+                    <button class="blazin-star ${isBlazin ? 'active' : ''}"
+                            data-game-id="${game.id}"
+                            ${blazinDisabled ? 'disabled' : ''}
+                            title="${blazinTitle}">
+                        <span class="blazin-label">B5</span>${isBlazin ? '★' : '☆'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Add event listeners for pick buttons (scoped to beta container)
+    container.querySelectorAll('.pick-btn').forEach(btn => {
+        btn.addEventListener('click', handleBetaPickClick);
+    });
+
+    // Add event listeners for blazin star buttons (scoped to beta container)
+    container.querySelectorAll('.blazin-star').forEach(btn => {
+        btn.addEventListener('click', handleBetaBlazinClick);
+    });
+}
+
+/**
+ * Handle pick button click in beta tab
+ */
+function handleBetaPickClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const btn = e.currentTarget;
+    const gameId = btn.dataset.gameId; // Keep as string for consistency
+    const pickType = btn.dataset.pickType; // 'line' or 'winner'
+    const team = btn.dataset.team; // 'away' or 'home'
+    const otherTeam = team === 'home' ? 'away' : 'home';
+
+    // Initialize nested structure
+    if (!betaPicks[betaCurrentWeek]) betaPicks[betaCurrentWeek] = {};
+    if (!betaPicks[betaCurrentWeek][betaCurrentPicker]) betaPicks[betaCurrentWeek][betaCurrentPicker] = {};
+    if (!betaPicks[betaCurrentWeek][betaCurrentPicker][gameId]) betaPicks[betaCurrentWeek][betaCurrentPicker][gameId] = {};
+
+    const currentPick = betaPicks[betaCurrentWeek][betaCurrentPicker][gameId][pickType];
+    const isDeselecting = currentPick === team;
+
+    // Toggle: if same team clicked, remove pick; otherwise set new pick
+    if (isDeselecting) {
+        delete betaPicks[betaCurrentWeek][betaCurrentPicker][gameId][pickType];
+    } else {
+        betaPicks[betaCurrentWeek][betaCurrentPicker][gameId][pickType] = team;
+    }
+
+    // Clean up empty objects
+    if (Object.keys(betaPicks[betaCurrentWeek][betaCurrentPicker][gameId]).length === 0) {
+        delete betaPicks[betaCurrentWeek][betaCurrentPicker][gameId];
+    }
+
+    saveBetaPicks();
+
+    // Update only the relevant buttons instead of re-rendering all games
+    const container = document.getElementById('beta-games-list');
+    const otherBtn = container.querySelector(`.pick-btn[data-game-id="${gameId}"][data-pick-type="${pickType}"][data-team="${otherTeam}"]`);
+    if (otherBtn) {
+        otherBtn.classList.remove('selected');
+    }
+
+    if (isDeselecting) {
+        btn.classList.remove('selected');
+    } else {
+        btn.classList.add('selected');
+        btn.classList.add('just-selected');
+        setTimeout(() => btn.classList.remove('just-selected'), 400);
+    }
+
+    // Update Blazin' 5 star buttons (enable/disable based on line picks)
+    const pickerPicks = betaPicks[betaCurrentWeek][betaCurrentPicker] || {};
+    const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
+    container.querySelectorAll('.blazin-star').forEach(starBtn => {
+        const isActive = starBtn.classList.contains('active');
+        const starGameId = starBtn.dataset.gameId;
+        const starGamePicks = pickerPicks[starGameId] || {};
+        const hasStarLinePick = starGamePicks.line !== undefined;
+
+        if (!hasStarLinePick && !isActive) {
+            starBtn.disabled = true;
+            starBtn.title = 'Make a line pick first';
+        } else if (isActive) {
+            starBtn.disabled = false;
+        } else {
+            starBtn.disabled = blazinCount >= 5;
+        }
+    });
+
+    const games = getGamesForWeek(betaCurrentWeek);
+    const game = games.find(g => String(g.id) === String(gameId));
+    const teamName = team === 'away' ? game?.away : game?.home;
+    betaLogEntry(`${pickType === 'line' ? 'Line' : 'Winner'} pick: ${teamName || team}`);
+}
+
+/**
+ * Handle Blazin' 5 button click in beta tab
+ */
+function handleBetaBlazinClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const btn = e.currentTarget;
+    const gameId = btn.dataset.gameId;
+
+    if (!gameId || btn.disabled) return;
+
+    // Initialize nested structure
+    if (!betaPicks[betaCurrentWeek]) betaPicks[betaCurrentWeek] = {};
+    if (!betaPicks[betaCurrentWeek][betaCurrentPicker]) betaPicks[betaCurrentWeek][betaCurrentPicker] = {};
+    if (!betaPicks[betaCurrentWeek][betaCurrentPicker][gameId]) betaPicks[betaCurrentWeek][betaCurrentPicker][gameId] = {};
+
+    // Toggle blazin
+    const currentBlazin = betaPicks[betaCurrentWeek][betaCurrentPicker][gameId].blazin;
+    const newBlazin = !currentBlazin;
+
+    if (newBlazin) {
+        // Count current Blazin' 5 picks
+        const blazinCount = Object.values(betaPicks[betaCurrentWeek][betaCurrentPicker] || {})
+            .filter(p => p.blazin).length;
+
+        if (blazinCount >= 5) {
+            showToast('Maximum 5 Blazin\' picks allowed', 'warning');
+            return;
+        }
+        betaPicks[betaCurrentWeek][betaCurrentPicker][gameId].blazin = true;
+    } else {
+        delete betaPicks[betaCurrentWeek][betaCurrentPicker][gameId].blazin;
+    }
+
+    // Clean up empty objects
+    if (Object.keys(betaPicks[betaCurrentWeek][betaCurrentPicker][gameId]).length === 0) {
+        delete betaPicks[betaCurrentWeek][betaCurrentPicker][gameId];
+    }
+
+    saveBetaPicks();
+
+    // Update just this button instead of re-rendering
+    btn.classList.toggle('active', newBlazin);
+    btn.innerHTML = `<span class="blazin-label">B5</span>${newBlazin ? '★' : '☆'}`;
+    btn.title = newBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5';
+
+    // Update other star buttons based on count and line picks
+    const container = document.getElementById('beta-games-list');
+    const pickerPicks = betaPicks[betaCurrentWeek][betaCurrentPicker] || {};
+    const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
+
+    container.querySelectorAll('.blazin-star').forEach(starBtn => {
+        const isActive = starBtn.classList.contains('active');
+        const starGameId = starBtn.dataset.gameId;
+        const starGamePicks = pickerPicks[starGameId] || {};
+        const hasStarLinePick = starGamePicks.line !== undefined;
+
+        if (!hasStarLinePick && !isActive) {
+            starBtn.disabled = true;
+            starBtn.title = 'Make a line pick first';
+        } else if (isActive) {
+            starBtn.disabled = false;
+        } else {
+            starBtn.disabled = blazinCount >= 5;
+            starBtn.title = blazinCount >= 5 ? 'Maximum 5 Blazin\' picks reached' : 'Add to Blazin 5';
+        }
+    });
+
+    const games = getGamesForWeek(betaCurrentWeek);
+    const game = games.find(g => String(g.id) === String(gameId));
+    betaLogEntry(`Blazin' 5 ${currentBlazin ? 'removed' : 'added'}: ${game?.away || ''} @ ${game?.home || ''}`);
+}
+
+/**
+ * Save beta picks to localStorage and trigger sync
+ */
+function saveBetaPicks() {
+    localStorage.setItem('betaNflPicks', JSON.stringify(betaPicks));
+
+    // Debounce sync to Google Sheets
+    if (BETA_APPS_SCRIPT_URL) {
+        if (betaPendingSyncTimeout) {
+            clearTimeout(betaPendingSyncTimeout);
+        }
+        updateBetaSyncStatus('syncing', 'Syncing...');
+        betaPendingSyncTimeout = setTimeout(() => {
+            syncBetaPicksToGoogleSheets(false);
+        }, SYNC_DEBOUNCE_MS);
+    }
+}
+
+/**
+ * Load beta picks from localStorage
+ */
+function loadBetaPicks() {
+    const saved = localStorage.getItem('betaNflPicks');
+    if (saved) {
+        try {
+            betaPicks = JSON.parse(saved);
+        } catch (e) {
+            console.error('Failed to load beta picks:', e);
+            betaPicks = {};
+        }
+    }
+}
+
+/**
+ * Sync beta picks to Google Sheets
+ */
+async function syncBetaPicksToGoogleSheets(manual = false) {
+    console.log('[Beta Sync] Starting sync, manual:', manual);
+    console.log('[Beta Sync] URL:', BETA_APPS_SCRIPT_URL);
+    console.log('[Beta Sync] Week:', betaCurrentWeek, 'Picker:', betaCurrentPicker);
+
+    if (!BETA_APPS_SCRIPT_URL) {
+        betaLogEntry('Sync disabled - no Apps Script URL configured', 'error');
+        updateBetaSyncStatus('error', 'No sync URL configured');
+        return;
+    }
+
+    const weekPicks = betaPicks[betaCurrentWeek]?.[betaCurrentPicker];
+
+    // Build scores and game details from live games
+    const weekGames = getGamesForWeek(betaCurrentWeek);
+    const scores = {};
+    const games = {};
+
+    weekGames.forEach(game => {
+        const liveData = getLiveGameStatus(game);
+        if (liveData && (liveData.awayScore !== undefined || liveData.homeScore !== undefined)) {
+            scores[game.id] = {
+                awayScore: liveData.awayScore,
+                homeScore: liveData.homeScore
+            };
+        }
+
+        // Always include game details (teams and spreads)
+        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+        games[game.id] = {
+            awayTeam: game.away,
+            awaySpread: awaySpread,
+            homeTeam: game.home,
+            homeSpread: homeSpread
+        };
+    });
+
+    // Allow sync if we have picks, scores, or games to update
+    if ((!weekPicks || Object.keys(weekPicks).length === 0) && Object.keys(scores).length === 0 && Object.keys(games).length === 0) {
+        betaLogEntry('No picks, scores, or games to sync');
+        updateBetaSyncStatus('ready', 'No data to sync');
+        return;
+    }
+
+    const payload = {
+        week: betaCurrentWeek,
+        picker: betaCurrentPicker,
+        picks: weekPicks || {},
+        scores: scores,
+        games: games
+    };
+
+    console.log('[Beta Sync] Payload:', JSON.stringify(payload, null, 2));
+
+    updateBetaSyncStatus('syncing', 'Syncing to Google Sheets...');
+    betaLogEntry(`Syncing ${Object.keys(weekPicks || {}).length} picks, ${Object.keys(scores).length} scores, and ${Object.keys(games).length} games for Week ${betaCurrentWeek}...`);
+
+    try {
+        console.log('[Beta Sync] Sending fetch request...');
+        const response = await fetch(BETA_APPS_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+        });
+
+        // With no-cors, we can't read the response body
+        // But if we get here without error, the request was sent
+        console.log('[Beta Sync] Fetch completed successfully');
+        updateBetaSyncStatus('success', 'Synced!');
+        betaLogEntry('Sync request sent successfully', 'success');
+
+        if (manual) {
+            showToast('Data synced to Google Sheets');
+        }
+
+        // Reset status after delay
+        setTimeout(() => {
+            updateBetaSyncStatus('ready', 'Ready');
+        }, 3000);
+
+    } catch (error) {
+        console.error('[Beta Sync] Failed:', error);
+        updateBetaSyncStatus('error', 'Sync failed');
+        betaLogEntry(`Sync failed: ${error.message}`, 'error');
+
+        if (manual) {
+            showToast('Failed to sync to Google Sheets', 'error');
+        }
+    }
+}
+
+/**
+ * Update the sync status indicator
+ */
+function updateBetaSyncStatus(status, text) {
+    const statusEl = document.getElementById('beta-sync-status');
+    const textEl = document.getElementById('beta-sync-text');
+
+    if (statusEl) {
+        statusEl.className = `sync-status ${status}`;
+    }
+    if (textEl) {
+        textEl.textContent = text;
+    }
+}
+
+/**
+ * Add entry to the sync log
+ */
+function betaLogEntry(message, type = '') {
+    const log = document.getElementById('beta-sync-log');
+    if (!log) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = document.createElement('p');
+    entry.className = `sync-log-entry ${type}`;
+    entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+
+    // Remove "no activity" message if present
+    const noActivity = log.querySelector('.sync-log-entry:only-child');
+    if (noActivity && noActivity.textContent.includes('No sync activity')) {
+        noActivity.remove();
+    }
+
+    // Add new entry at top
+    log.insertBefore(entry, log.firstChild);
+
+    // Limit log entries
+    while (log.children.length > 50) {
+        log.removeChild(log.lastChild);
+    }
 }
 
 // Initialize when DOM is ready

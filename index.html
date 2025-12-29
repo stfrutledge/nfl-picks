@@ -43,6 +43,7 @@
             <section class="category-tabs">
                 <button class="tab tab-picks active" data-category="make-picks">Make Picks</button>
                 <button class="tab" data-category="standings">Standings</button>
+                <button class="tab tab-beta" data-category="make-picks-beta">Make Picks (Beta)</button>
             </section>
 
             <!-- Standings Sub-tabs (only visible when Standings is active) -->
@@ -218,6 +219,7 @@
                     <button class="consolidated-tab" data-panel="insights-panel">Insights</button>
                     <button class="consolidated-tab" data-panel="streaks-panel">Streaks</button>
                     <button class="consolidated-tab" data-panel="group-stats-panel">Group Stats</button>
+                    <button class="consolidated-tab" data-panel="pnl-panel">Profit/Loss</button>
                 </div>
                 <div class="consolidated-content">
                     <!-- Charts Panel -->
@@ -251,6 +253,15 @@
                     <div class="consolidated-panel" id="group-stats-panel">
                         <div class="group-stats-grid" id="group-stats-grid"></div>
                     </div>
+                    <!-- P&L Panel -->
+                    <div class="consolidated-panel" id="pnl-panel">
+                        <div class="pnl-controls">
+                            <label for="bet-amount">Bet Amount per Pick: $</label>
+                            <input type="number" id="bet-amount" class="bet-amount-input" value="20" min="1" max="10000" step="1">
+                            <p class="pnl-description">Assumes -110 odds on all spread picks. Shows what you would have won or lost betting this amount on every pick.</p>
+                        </div>
+                        <div class="pnl-grid" id="pnl-grid"></div>
+                    </div>
                 </div>
             </section>
 
@@ -262,7 +273,6 @@
                 <div class="consolidated-tabs">
                     <button class="consolidated-tab active" data-panel="blazin-records-panel">Blazin' 5 Records</button>
                     <button class="consolidated-tab" data-panel="team-records-panel">Team Records</button>
-                    <button class="consolidated-tab" data-panel="pnl-panel">Profit/Loss</button>
                 </div>
                 <div class="consolidated-content">
                     <!-- Blazin' 5 Records Panel -->
@@ -337,15 +347,6 @@
                                 <tbody id="team-records-body"></tbody>
                             </table>
                         </div>
-                    </div>
-                    <!-- P&L Panel -->
-                    <div class="consolidated-panel" id="pnl-panel">
-                        <div class="pnl-controls">
-                            <label for="bet-amount">Bet Amount per Pick: $</label>
-                            <input type="number" id="bet-amount" class="bet-amount-input" value="20" min="1" max="10000" step="1">
-                            <p class="pnl-description">Assumes -110 odds on all spread picks. Shows what you would have won or lost betting this amount on every pick.</p>
-                        </div>
-                        <div class="pnl-grid" id="pnl-grid"></div>
                     </div>
                 </div>
             </section>
@@ -436,6 +437,74 @@
                             <table class="scoring-table" id="scoring-table">
                                 <!-- Scoring will be injected here -->
                             </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Make Picks (Beta) Section - For testing Google Sheets sync -->
+            <section id="make-picks-beta-section" class="make-picks-section hidden">
+                <div class="picks-header">
+                    <h2>Week <span id="beta-picks-week-num">--</span> Picks <span class="beta-badge">BETA</span></h2>
+                    <p class="beta-notice">Testing Google Sheets sync with dummy sheet</p>
+                </div>
+
+                <!-- Sync Status Indicator -->
+                <div class="sync-status" id="beta-sync-status">
+                    <span class="sync-icon" id="beta-sync-icon">●</span>
+                    <span class="sync-text" id="beta-sync-text">Ready</span>
+                </div>
+
+                <!-- Week and Picker Selection -->
+                <div class="selection-row">
+                    <div class="week-selector">
+                        <label for="beta-week-dropdown">Select Week:</label>
+                        <div class="week-nav-row">
+                            <button class="week-nav-btn" id="beta-prev-week-btn" title="Previous Week">&#8592;</button>
+                            <select id="beta-week-dropdown" class="week-dropdown">
+                                <!-- Week options will be injected here -->
+                            </select>
+                            <button class="week-nav-btn" id="beta-next-week-btn" title="Next Week">&#8594;</button>
+                        </div>
+                    </div>
+
+                    <div class="picker-selector">
+                        <label for="beta-picker-dropdown">Picks for:</label>
+                        <div class="picker-nav-row">
+                            <button class="picker-nav-btn" id="beta-prev-picker-btn" title="Previous Picker">&#8592;</button>
+                            <select id="beta-picker-dropdown" class="picker-dropdown">
+                                <option value="Stephen">Stephen</option>
+                                <option value="Sean">Sean</option>
+                                <option value="Dylan">Dylan</option>
+                                <option value="Jason">Jason</option>
+                                <option value="Daniel">Daniel</option>
+                            </select>
+                            <button class="picker-nav-btn" id="beta-next-picker-btn" title="Next Picker">&#8594;</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="picks-actions">
+                    <button class="btn btn-secondary" id="beta-clear-picks-btn">Clear My Picks</button>
+                    <button class="btn btn-primary" id="beta-sync-now-btn">Sync to Sheet Now</button>
+                    <button class="btn btn-secondary btn-small" id="beta-refresh-spreads-btn">Refresh Spreads from API</button>
+                </div>
+
+                <!-- Games List -->
+                <div class="games-list" id="beta-games-list">
+                    <!-- Games will be injected here -->
+                </div>
+
+                <!-- Sync Log (for debugging) -->
+                <div class="sync-log-container collapsible-section" data-section="sync-log">
+                    <div class="collapsible-header" onclick="toggleSection('sync-log')">
+                        <h3 class="section-header-title">Sync Log</h3>
+                        <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="sync-log" id="beta-sync-log">
+                            <p class="sync-log-entry">No sync activity yet</p>
                         </div>
                     </div>
                 </div>
