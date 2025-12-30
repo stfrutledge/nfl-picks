@@ -118,11 +118,15 @@ function doPost(e) {
     let scoresUpdated = 0;
 
     // Process picks if provided
+    Logger.log('Processing picks: ' + JSON.stringify(picks));
     for (const [gameIdStr, pickData] of Object.entries(picks || {})) {
+      Logger.log('Pick entry - gameIdStr: ' + gameIdStr + ', pickData: ' + JSON.stringify(pickData));
       const gameId = parseInt(gameIdStr);
+      Logger.log('Parsed gameId: ' + gameId);
 
       // gameId is 1-indexed, so gameId 1 = gameRows[0]
       if (gameId < 1 || gameId > gameRows.length) {
+        Logger.log('SKIPPING - gameId out of range: ' + gameId);
         continue; // Skip invalid game IDs
       }
 

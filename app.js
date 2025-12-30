@@ -1753,7 +1753,7 @@ async function loadFromGoogleSheets() {
 /**
  * Set active category and re-render
  */
-function setActiveCategory(category) {
+async function setActiveCategory(category) {
     currentCategory = category;
 
     // Update tabs
@@ -1798,9 +1798,8 @@ function setActiveCategory(category) {
         makePicksSection?.classList.add('hidden');
         makePicksBetaSection?.classList.remove('hidden');
 
-        // Initialize beta tab if not done
-        initBetaTab();
-        renderBetaGames();
+        // Initialize beta tab if not done (loads schedule data internally)
+        await initBetaTab();
     } else if (category === 'standings') {
         // Stop live scores refresh when leaving picks tab
         stopLiveScoresRefresh();
@@ -5144,8 +5143,8 @@ function setupPullToRefresh() {
 // BETA TAB - Google Sheets Sync Testing
 // ==========================================
 
-// Beta tab configuration - DUMMY SHEET FOR TESTING
-const BETA_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxACY42l_nrp8PNRtDfxHGhD0BzYR7ubInIY-OTpw2M53QvSrDPL0wiDhA1qF35BfOlhw/exec';
+// Beta tab configuration - Simple backup to Google Sheets
+const BETA_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8YB5AwLyiF3_kPi6fZ8Ol9RDpbnNJcuAxI65b1j7Ca9A1bOyxqwzyI3XAJ8_PLuay/exec';
 
 // Beta tab state
 let betaInitialized = false;
@@ -5153,11 +5152,23 @@ let betaCurrentWeek = null;
 let betaCurrentPicker = 'Stephen';
 let betaPicks = {}; // { week: { picker: { gameId: { line, winner, blazin } } } }
 let betaPendingSyncTimeout = null;
+let lastBackupHash = null; // Track last backup to prevent duplicates
+
+/**
+ * Load schedule data for the current beta week and render games
+ */
+async function loadBetaWeekData() {
+    // Load schedule from ESPN for current/future weeks
+    if (betaCurrentWeek >= CURRENT_NFL_WEEK || !NFL_GAMES_BY_WEEK[betaCurrentWeek] || NFL_GAMES_BY_WEEK[betaCurrentWeek].length === 0) {
+        await loadWeekSchedule(betaCurrentWeek);
+    }
+    renderBetaGames();
+}
 
 /**
  * Initialize the beta tab
  */
-function initBetaTab() {
+async function initBetaTab() {
     if (betaInitialized) return;
     betaInitialized = true;
 
@@ -5175,10 +5186,10 @@ function initBetaTab() {
             if (i === betaCurrentWeek) option.selected = true;
             weekDropdown.appendChild(option);
         }
-        weekDropdown.addEventListener('change', (e) => {
+        weekDropdown.addEventListener('change', async (e) => {
             betaCurrentWeek = parseInt(e.target.value);
             document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
-            renderBetaGames();
+            await loadBetaWeekData();
         });
     }
 
@@ -5194,21 +5205,21 @@ function initBetaTab() {
     }
 
     // Setup week navigation
-    document.getElementById('beta-prev-week-btn')?.addEventListener('click', () => {
+    document.getElementById('beta-prev-week-btn')?.addEventListener('click', async () => {
         if (betaCurrentWeek > 1) {
             betaCurrentWeek--;
             document.getElementById('beta-week-dropdown').value = betaCurrentWeek;
             document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
-            renderBetaGames();
+            await loadBetaWeekData();
         }
     });
 
-    document.getElementById('beta-next-week-btn')?.addEventListener('click', () => {
+    document.getElementById('beta-next-week-btn')?.addEventListener('click', async () => {
         if (betaCurrentWeek < TOTAL_WEEKS) {
             betaCurrentWeek++;
             document.getElementById('beta-week-dropdown').value = betaCurrentWeek;
             document.getElementById('beta-picks-week-num').textContent = betaCurrentWeek;
-            renderBetaGames();
+            await loadBetaWeekData();
         }
     });
 
@@ -5269,6 +5280,9 @@ function initBetaTab() {
 
     // Load saved beta picks from localStorage
     loadBetaPicks();
+
+    // Load schedule data for current week
+    await loadBetaWeekData();
 
     betaLogEntry('Beta tab initialized');
 }
@@ -5495,7 +5509,7 @@ function handleBetaPickClick(e) {
         delete betaPicks[betaCurrentWeek][betaCurrentPicker][gameId];
     }
 
-    saveBetaPicks();
+    saveBetaPicks(gameId);
 
     // Update only the relevant buttons instead of re-rendering all games
     const container = document.getElementById('beta-games-list');
@@ -5577,7 +5591,7 @@ function handleBetaBlazinClick(e) {
         delete betaPicks[betaCurrentWeek][betaCurrentPicker][gameId];
     }
 
-    saveBetaPicks();
+    saveBetaPicks(gameId);
 
     // Update just this button instead of re-rendering
     btn.classList.toggle('active', newBlazin);
@@ -5612,20 +5626,22 @@ function handleBetaBlazinClick(e) {
 }
 
 /**
- * Save beta picks to localStorage and trigger sync
+ * Save beta picks to localStorage and backup the changed pick
  */
-function saveBetaPicks() {
+function saveBetaPicks(changedGameId = null) {
     localStorage.setItem('betaNflPicks', JSON.stringify(betaPicks));
+    console.log('[Beta] Saved picks to localStorage:', JSON.stringify(betaPicks));
 
-    // Debounce sync to Google Sheets
-    if (BETA_APPS_SCRIPT_URL) {
-        if (betaPendingSyncTimeout) {
-            clearTimeout(betaPendingSyncTimeout);
+    // Backup the single changed pick to Google Sheets (only when both line AND winner are selected)
+    if (BETA_APPS_SCRIPT_URL && changedGameId) {
+        const pickData = betaPicks[betaCurrentWeek]?.[betaCurrentPicker]?.[changedGameId];
+        console.log('[Beta] Pick data for game', changedGameId, ':', pickData);
+        // Only backup when BOTH line and winner picks are made
+        if (pickData && pickData.line && pickData.winner) {
+            backupSinglePick(changedGameId, pickData);
+        } else {
+            console.log('[Beta] Skipping backup - need both line and winner picks');
         }
-        updateBetaSyncStatus('syncing', 'Syncing...');
-        betaPendingSyncTimeout = setTimeout(() => {
-            syncBetaPicksToGoogleSheets(false);
-        }, SYNC_DEBOUNCE_MS);
     }
 }
 
@@ -5645,101 +5661,126 @@ function loadBetaPicks() {
 }
 
 /**
- * Sync beta picks to Google Sheets
+ * Backup a single pick to Google Sheets
+ */
+async function backupSinglePick(gameId, pickData) {
+    if (!BETA_APPS_SCRIPT_URL) return;
+
+    const weekGames = getGamesForWeek(betaCurrentWeek);
+    const game = weekGames.find(g => String(g.id) === String(gameId));
+
+    if (!game) {
+        betaLogEntry(`Game ${gameId} not found`, 'error');
+        return;
+    }
+
+    const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+    const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+
+    // Convert 'away'/'home' to actual team names
+    const lineTeam = pickData?.line ? (pickData.line === 'away' ? game.away : game.home) : '';
+    const winnerTeam = pickData?.winner ? (pickData.winner === 'away' ? game.away : game.home) : '';
+
+    const payload = {
+        week: betaCurrentWeek,
+        picker: betaCurrentPicker,
+        picks: [{
+            gameId: gameId,
+            away: game.away,
+            home: game.home,
+            awaySpread: awaySpread,
+            homeSpread: homeSpread,
+            linePick: lineTeam,
+            winnerPick: winnerTeam,
+            blazin: pickData?.blazin || false
+        }]
+    };
+
+    updateBetaSyncStatus('syncing', 'Backing up...');
+    console.log('[Beta] Sending to API:', JSON.stringify(payload, null, 2));
+
+    try {
+        const response = await fetch(BETA_APPS_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload),
+            redirect: 'follow'
+        });
+
+        console.log('[Beta] Response status:', response.status);
+        const responseText = await response.text();
+        console.log('[Beta] Response text:', responseText);
+
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            console.error('[Beta] Failed to parse response as JSON:', e);
+            betaLogEntry(`Backup failed: Invalid response`, 'error');
+            updateBetaSyncStatus('error', 'Backup failed');
+            return;
+        }
+
+        if (result.success) {
+            updateBetaSyncStatus('success', 'Backed up!');
+            betaLogEntry(`Backed up: ${game.away} @ ${game.home}`, 'success');
+        } else {
+            updateBetaSyncStatus('error', 'Backup failed');
+            betaLogEntry(`Backup failed: ${result.error || 'Unknown error'}`, 'error');
+        }
+
+        setTimeout(() => updateBetaSyncStatus('ready', 'Ready'), 2000);
+
+    } catch (error) {
+        console.error('[Beta] Fetch error:', error);
+        updateBetaSyncStatus('error', 'Backup failed');
+        betaLogEntry(`Backup failed: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Sync all beta picks to Google Sheets (manual backup)
  */
 async function syncBetaPicksToGoogleSheets(manual = false) {
-    console.log('[Beta Sync] Starting sync, manual:', manual);
-    console.log('[Beta Sync] URL:', BETA_APPS_SCRIPT_URL);
-    console.log('[Beta Sync] Week:', betaCurrentWeek, 'Picker:', betaCurrentPicker);
-
     if (!BETA_APPS_SCRIPT_URL) {
-        betaLogEntry('Sync disabled - no Apps Script URL configured', 'error');
-        updateBetaSyncStatus('error', 'No sync URL configured');
+        betaLogEntry('Backup disabled - no URL configured', 'error');
+        updateBetaSyncStatus('error', 'No backup URL');
         return;
     }
 
     const weekPicks = betaPicks[betaCurrentWeek]?.[betaCurrentPicker];
 
-    // Build scores and game details from live games
-    const weekGames = getGamesForWeek(betaCurrentWeek);
-    const scores = {};
-    const games = {};
-
-    weekGames.forEach(game => {
-        const liveData = getLiveGameStatus(game);
-        if (liveData && (liveData.awayScore !== undefined || liveData.homeScore !== undefined)) {
-            scores[game.id] = {
-                awayScore: liveData.awayScore,
-                homeScore: liveData.homeScore
-            };
-        }
-
-        // Always include game details (teams and spreads)
-        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
-        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
-        games[game.id] = {
-            awayTeam: game.away,
-            awaySpread: awaySpread,
-            homeTeam: game.home,
-            homeSpread: homeSpread
-        };
-    });
-
-    // Allow sync if we have picks, scores, or games to update
-    if ((!weekPicks || Object.keys(weekPicks).length === 0) && Object.keys(scores).length === 0 && Object.keys(games).length === 0) {
-        betaLogEntry('No picks, scores, or games to sync');
-        updateBetaSyncStatus('ready', 'No data to sync');
+    if (!weekPicks || Object.keys(weekPicks).length === 0) {
+        betaLogEntry('No picks to backup');
+        updateBetaSyncStatus('ready', 'No picks');
         return;
     }
 
-    const payload = {
-        week: betaCurrentWeek,
-        picker: betaCurrentPicker,
-        picks: weekPicks || {},
-        scores: scores,
-        games: games
-    };
+    updateBetaSyncStatus('syncing', 'Backing up all picks...');
+    betaLogEntry(`Backing up ${Object.keys(weekPicks).length} picks for Week ${betaCurrentWeek}...`);
 
-    console.log('[Beta Sync] Payload:', JSON.stringify(payload, null, 2));
+    let success = 0;
+    let failed = 0;
 
-    updateBetaSyncStatus('syncing', 'Syncing to Google Sheets...');
-    betaLogEntry(`Syncing ${Object.keys(weekPicks || {}).length} picks, ${Object.keys(scores).length} scores, and ${Object.keys(games).length} games for Week ${betaCurrentWeek}...`);
-
-    try {
-        console.log('[Beta Sync] Sending fetch request...');
-        const response = await fetch(BETA_APPS_SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
-        });
-
-        // With no-cors, we can't read the response body
-        // But if we get here without error, the request was sent
-        console.log('[Beta Sync] Fetch completed successfully');
-        updateBetaSyncStatus('success', 'Synced!');
-        betaLogEntry('Sync request sent successfully', 'success');
-
-        if (manual) {
-            showToast('Data synced to Google Sheets');
-        }
-
-        // Reset status after delay
-        setTimeout(() => {
-            updateBetaSyncStatus('ready', 'Ready');
-        }, 3000);
-
-    } catch (error) {
-        console.error('[Beta Sync] Failed:', error);
-        updateBetaSyncStatus('error', 'Sync failed');
-        betaLogEntry(`Sync failed: ${error.message}`, 'error');
-
-        if (manual) {
-            showToast('Failed to sync to Google Sheets', 'error');
+    for (const [gameId, pickData] of Object.entries(weekPicks)) {
+        try {
+            await backupSinglePick(gameId, pickData);
+            success++;
+        } catch (e) {
+            failed++;
         }
     }
+
+    if (failed === 0) {
+        updateBetaSyncStatus('success', 'All backed up!');
+        betaLogEntry(`Backed up ${success} picks`, 'success');
+        if (manual) showToast('All picks backed up');
+    } else {
+        updateBetaSyncStatus('error', `${failed} failed`);
+        betaLogEntry(`${success} backed up, ${failed} failed`, 'error');
+    }
+
+    setTimeout(() => updateBetaSyncStatus('ready', 'Ready'), 3000);
 }
 
 /**
