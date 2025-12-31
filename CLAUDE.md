@@ -6,4 +6,4 @@
 
 ## Google Apps Script
 
-The deployed Apps Script URL for the Beta tab backup is configured in `app.js` as `BETA_APPS_SCRIPT_URL`. The script source code is in `google-apps-script-simple.js`.
+The deployed Apps Script URL for syncing picks to Google Sheets is configured in `app.js` as `APPS_SCRIPT_URL`. The script source code is in `google-apps-script-simple.js`.

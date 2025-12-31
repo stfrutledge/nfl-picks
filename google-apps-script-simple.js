@@ -6,7 +6,7 @@
  * 2. Go to Extensions > Apps Script
  * 3. Paste this code and click Deploy > New deployment
  * 4. Type: Web app, Execute as: Me, Access: Anyone
- * 5. Copy the URL and update BETA_APPS_SCRIPT_URL in app.js
+ * 5. Copy the URL and update APPS_SCRIPT_URL in app.js
  */
 
 function doGet(e) {
