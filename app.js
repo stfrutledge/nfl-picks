@@ -3,8 +3,7 @@
  */
 
 // Google Apps Script URL for syncing picks to Google Sheets
-// Set this to your deployed Apps Script Web App URL (leave empty to disable sync)
-const APPS_SCRIPT_URL = '';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8YB5AwLyiF3_kPi6fZ8Ol9RDpbnNJcuAxI65b1j7Ca9A1bOyxqwzyI3XAJ8_PLuay/exec';
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
@@ -4505,20 +4504,49 @@ function savePicksToStorage(showSyncToast = true) {
  */
 async function syncPicksToGoogleSheets(displayToast = true) {
     if (!APPS_SCRIPT_URL) {
-        console.log('[Sync] Google Sheets sync disabled (no APPS_SCRIPT_URL configured)');
         return;
     }
 
     const weekPicks = allPicks[currentWeek]?.[currentPicker];
     if (!weekPicks || Object.keys(weekPicks).length === 0) {
-        console.log('[Sync] No picks to sync');
+        return;
+    }
+
+    // Convert picks to the format expected by Google Apps Script
+    const weekGames = getGamesForWeek(currentWeek);
+    const formattedPicks = [];
+
+    for (const [gameId, pickData] of Object.entries(weekPicks)) {
+        const game = weekGames.find(g => String(g.id) === String(gameId));
+        if (!game) continue;
+
+        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+
+        // Convert 'away'/'home' to actual team names
+        const lineTeam = pickData?.line ? (pickData.line === 'away' ? game.away : game.home) : '';
+        const winnerTeam = pickData?.winner ? (pickData.winner === 'away' ? game.away : game.home) : '';
+
+        formattedPicks.push({
+            gameId: gameId,
+            away: game.away,
+            home: game.home,
+            awaySpread: awaySpread,
+            homeSpread: homeSpread,
+            linePick: lineTeam,
+            winnerPick: winnerTeam,
+            blazin: pickData?.blazin || false
+        });
+    }
+
+    if (formattedPicks.length === 0) {
         return;
     }
 
     const payload = {
         week: currentWeek,
         picker: currentPicker,
-        picks: weekPicks
+        picks: formattedPicks
     };
 
     console.log('[Sync] Syncing picks to Google Sheets:', payload);
@@ -4526,17 +4554,35 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     try {
         const response = await fetch(APPS_SCRIPT_URL, {
             method: 'POST',
-            mode: 'no-cors', // Apps Script requires no-cors for POST
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload),
+            redirect: 'follow'
         });
 
-        // With no-cors, we can't read the response, but if no error was thrown, it likely succeeded
-        console.log('[Sync] Picks synced to Google Sheets');
-        if (displayToast) {
-            showToast('Picks saved to Google Sheets');
+        const responseText = await response.text();
+        console.log('[Sync] Response:', responseText);
+
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (e) {
+            console.error('[Sync] Failed to parse response:', e);
+            if (displayToast) {
+                showToast('Sync failed: Invalid response', 'error');
+            }
+            return;
+        }
+
+        if (result.success) {
+            console.log('[Sync] Picks synced to Google Sheets');
+            if (displayToast) {
+                showToast('Picks saved to Google Sheets');
+            }
+        } else {
+            console.error('[Sync] Sync failed:', result.error);
+            if (displayToast) {
+                showToast('Sync failed: ' + (result.error || 'Unknown error'), 'error');
+            }
         }
     } catch (error) {
         console.error('[Sync] Failed to sync picks to Google Sheets:', error);
@@ -5253,11 +5299,6 @@ async function initBetaTab() {
             renderBetaGames();
             betaLogEntry('Cleared all picks');
         }
-    });
-
-    // Setup sync now button
-    document.getElementById('beta-sync-now-btn')?.addEventListener('click', () => {
-        syncBetaPicksToGoogleSheets(true);
     });
 
     // Setup refresh spreads button
