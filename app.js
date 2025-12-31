@@ -389,9 +389,13 @@ function getCachedSchedule(week) {
                     const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
                     return timeA - timeB;
                 });
-                // Reassign IDs after sorting
+                // Reassign IDs and recalculate day in ET timezone after sorting
                 data.forEach((game, index) => {
                     game.id = index + 1;
+                    // Recalculate day in ET timezone from kickoff
+                    if (game.kickoff) {
+                        game.day = getDayName(new Date(game.kickoff));
+                    }
                 });
             }
             return data;
@@ -421,11 +425,13 @@ function cacheSchedule(week, data) {
 }
 
 /**
- * Format day name from date
+ * Format day name from date in ET timezone
  */
 function getDayName(date) {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return days[date.getDay()];
+    return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        timeZone: 'America/New_York'
+    });
 }
 
 /**
