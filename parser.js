@@ -543,7 +543,8 @@ function extractLinePicksOverall(rows) {
                 bestWeek: row[7] || '',
                 highestPct: parsePercentage(row[8]),
                 lowestPct: parsePercentage(row[9]),
-                yearChange: row[10] || ''
+                yearChange: row[10] || '',
+                worstWeek: row[11] || ''
             };
         }
     }
@@ -575,7 +576,8 @@ function extractBlazin5Overall(rows) {
                 bestWeek: row[7] || '',
                 highestPct: parsePercentage(row[8]),
                 lowestPct: parsePercentage(row[9]),
-                yearChange: row[10] || ''
+                yearChange: row[10] || '',
+                worstWeek: row[11] || ''
             };
         }
     }
@@ -607,7 +609,8 @@ function extractWinnerPicksOverall(rows) {
                 bestWeek: row[7] || '',
                 highestPct: parsePercentage(row[8]),
                 lowestPct: parsePercentage(row[9]),
-                yearChange: row[10] || ''
+                yearChange: row[10] || '',
+                worstWeek: row[11] || ''
             };
         }
     }

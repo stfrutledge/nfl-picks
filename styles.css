@@ -685,9 +685,21 @@ header h1 {
     overflow: hidden;
 }
 
+.picker-card {
+    cursor: pointer;
+}
+
 .picker-card:hover {
     box-shadow: var(--shadow-md);
     transform: translateY(-2px);
+}
+
+.picker-card .expanded-stat {
+    transition: opacity 0.2s ease;
+}
+
+.picker-card .expanded-stat.hidden {
+    display: none;
 }
 
 .picker-card.rank-1 {

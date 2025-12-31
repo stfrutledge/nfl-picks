@@ -144,6 +144,13 @@ function toggleCompactCard(card) {
     card.classList.toggle('expanded');
 }
 
+// Toggle full card expansion (shows hidden stats like Worst Week)
+function toggleFullCard(card) {
+    card.classList.toggle('expanded');
+    const expandedStats = card.querySelectorAll('.expanded-stat');
+    expandedStats.forEach(stat => stat.classList.toggle('hidden'));
+}
+
 // NFL Team Logos (ESPN CDN)
 const TEAM_LOGOS = {
     'Falcons': 'https://a.espncdn.com/i/teamlogos/nfl/500/atl.png',
@@ -1850,6 +1857,16 @@ function renderDashboard() {
             return;
     }
 
+    // Calculate worst week from actual picks data (for Blazin' 5)
+    if (currentSubcategory === 'blazin' && stats) {
+        const worstWeeks = calculateWorstBlazinWeeks();
+        Object.keys(stats).forEach(picker => {
+            if (worstWeeks[picker]) {
+                stats[picker].worstWeek = worstWeeks[picker];
+            }
+        });
+    }
+
     // PRIMARY: Render leaderboard
     renderLeaderboard(stats);
 
@@ -2163,6 +2180,73 @@ function toggleTeamDetails(teamId) {
     if (detailsRow) {
         detailsRow.classList.toggle('hidden');
     }
+}
+
+/**
+ * Calculate worst Blazin' 5 week for each picker (by record like "0-5")
+ */
+function calculateWorstBlazinWeeks() {
+    const worstWeeks = {};
+    const pickers = PICKERS_WITH_COWHERD;
+
+    pickers.forEach(picker => {
+        const weeklyRecords = {};
+
+        // Calculate record for each week
+        for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+            const games = NFL_GAMES_BY_WEEK[week];
+            const results = NFL_RESULTS_BY_WEEK[week];
+            const pickerPicks = allPicks[week]?.[picker] || {};
+            const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+
+            if (!games || !results) continue;
+
+            let wins = 0, losses = 0, pushes = 0;
+
+            games.forEach(game => {
+                const gameId = game.id;
+                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+                const result = results[gameId] || results[String(gameId)];
+
+                // Only count Blazin' 5 picks
+                if (!pick?.line || !pick?.blazin || !result) return;
+
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
+
+                if (isPush) pushes++;
+                else if (isWin) wins++;
+                else losses++;
+            });
+
+            const total = wins + losses + pushes;
+            if (total > 0) {
+                weeklyRecords[week] = { wins, losses, pushes, total };
+            }
+        }
+
+        // Find the worst week (lowest win percentage, then most losses as tiebreaker)
+        let worstWeek = null;
+        let worstPct = 101;
+        let worstRecord = '';
+
+        Object.entries(weeklyRecords).forEach(([week, record]) => {
+            const pct = record.total > 0 ? (record.wins / (record.wins + record.losses)) * 100 : 0;
+            if (pct < worstPct || (pct === worstPct && record.losses > (worstWeek ? weeklyRecords[worstWeek].losses : 0))) {
+                worstPct = pct;
+                worstWeek = week;
+                const pushStr = record.pushes > 0 ? `-${record.pushes}` : '';
+                worstRecord = `Wk ${week}: ${record.wins}-${record.losses}${pushStr}`;
+            }
+        });
+
+        if (worstRecord) {
+            worstWeeks[picker] = worstRecord;
+        }
+    });
+
+    return worstWeeks;
 }
 
 /**
@@ -3319,6 +3403,12 @@ function renderPickerCard(picker, index, isCompact = false) {
                             <span class="stat-label">Best Week</span>
                             <span class="stat-value">${picker.bestWeek || '-'}</span>
                         </div>
+                        ${picker.worstWeek ? `
+                        <div class="stat-row">
+                            <span class="stat-label">Worst Week</span>
+                            <span class="stat-value">${picker.worstWeek}</span>
+                        </div>
+                        ` : ''}
                     </div>
                     ${picker.winnings !== undefined ? `
                         <div class="year-comparison">
@@ -3335,7 +3425,7 @@ function renderPickerCard(picker, index, isCompact = false) {
 
     // Full card for podium
     return `
-        <div class="picker-card ${rankClass}">
+        <div class="picker-card ${rankClass}" onclick="toggleFullCard(this)">
             <div class="picker-name">
                 <span class="picker-color ${colorClass}"></span>
                 ${picker.name}
@@ -3357,6 +3447,12 @@ function renderPickerCard(picker, index, isCompact = false) {
                     <span class="stat-label">Best Week</span>
                     <span class="stat-value">${picker.bestWeek || '-'}</span>
                 </div>
+                ${picker.worstWeek ? `
+                <div class="stat-row expanded-stat hidden">
+                    <span class="stat-label">Worst Week</span>
+                    <span class="stat-value">${picker.worstWeek}</span>
+                </div>
+                ` : ''}
             </div>
             ${picker.bestTeam && picker.worstTeam ? `
             <div class="team-records">
