@@ -3464,7 +3464,24 @@ footer a:hover {
 
 /* Adjust nested grids within consolidated sections */
 .consolidated-section .insights-grid {
-    margin: 0;
+    margin: 0 0 24px 0;
+}
+
+/* Group stats within insights panel */
+.insights-section-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 24px 0 16px 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+}
+
+#insights-panel .group-stats-grid {
+    margin-top: 0;
 }
 
 .consolidated-section .streaks-grid {

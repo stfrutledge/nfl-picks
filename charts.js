@@ -129,6 +129,10 @@ function renderTrendChart(weeklyData, category) {
                     bodyFont: {
                         family: "'Inter', sans-serif"
                     },
+                    itemSort: function(a, b) {
+                        // Sort by value descending (highest percentage first)
+                        return (b.parsed.y || 0) - (a.parsed.y || 0);
+                    },
                     callbacks: {
                         label: function(context) {
                             return `${context.dataset.label}: ${context.parsed.y?.toFixed(2)}%`;

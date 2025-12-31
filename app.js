@@ -1014,7 +1014,6 @@ function getResultsForWeek(week) {
 // DOM Elements
 const dashboard = document.getElementById('dashboard');
 const leaderboard = document.getElementById('leaderboard');
-const streaksGrid = document.getElementById('streaks-grid');
 const tabs = document.querySelectorAll('.tab');
 const subtabs = document.querySelectorAll('.subtab');
 const standingsSubtabs = document.getElementById('standings-subtabs');
@@ -1855,7 +1854,6 @@ function renderDashboard() {
     renderLeaderboard(stats);
 
     // SECONDARY: Performance & Insights - render all panels
-    renderStreaks(stats);
     renderTrendChart(weeklyData, currentSubcategory);
     renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
     if (dashboardData.groupOverall) {
@@ -2829,7 +2827,6 @@ function renderInsights(loneWolf, consensus) {
     if (consensusCard && consensus) {
         consensusCard.innerHTML = `
             <div class="insight-header">
-                <span class="insight-icon">🤝</span>
                 <span class="insight-title">When We All Agree</span>
             </div>
             <div class="insight-stat">
@@ -2950,19 +2947,16 @@ function renderGroupStats(groupOverall) {
         'line': {
             key: 'linePicks',
             label: 'Line Picks',
-            icon: '📊',
             description: 'Combined against-the-spread picks'
         },
         'blazin': {
             key: 'blazin5',
             label: "Blazin' 5",
-            icon: '🔥',
             description: 'Combined Blazin\' 5 picks performance'
         },
         'winner': {
             key: 'winnerPicks',
             label: 'Straight Up',
-            icon: '🏆',
             description: 'Combined winner predictions'
         }
     };
@@ -2985,7 +2979,6 @@ function renderGroupStats(groupOverall) {
         return `
             <div class="group-stat-card">
                 <div class="group-stat-header">
-                    <span class="group-stat-icon">${cat.icon}</span>
                     <span class="group-stat-label">${cat.label}</span>
                 </div>
                 <div class="group-stat-percentage ${isWinning ? 'positive' : 'negative'}">
@@ -3431,35 +3424,6 @@ function renderLeaderboard(stats) {
 
     // Standard grid layout for 5 pickers
     leaderboard.innerHTML = sorted.map((picker, index) => renderPickerCard(picker, index, false)).join('');
-}
-
-/**
- * Render streaks section
- */
-function renderStreaks(stats) {
-    const sorted = getSortedPickers(stats);
-
-    streaksGrid.innerHTML = sorted.map(picker => {
-        const last3 = picker.last3WeekPct || 0;
-        let streakClass = 'neutral';
-        if (last3 >= 55) streakClass = 'hot';
-        else if (last3 < 45) streakClass = 'cold';
-
-        return `
-            <div class="streak-card">
-                <div class="picker-name">
-                    <span class="picker-color color-${picker.name.toLowerCase()}"></span>
-                    ${picker.name}
-                </div>
-                <div class="streak-info">
-                    <div>
-                        <span class="streak-label">Last 3 Weeks</span>
-                        <div class="streak-value ${streakClass}">${last3?.toFixed ? last3.toFixed(2) : last3}%</div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
 }
 
 /**
