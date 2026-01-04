@@ -1111,6 +1111,7 @@ function init() {
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
     setupPnLSection();
+    setupPatternFilters();
     loadPicksFromStorage();
 
     // Show loading state
@@ -1903,6 +1904,7 @@ function renderDashboard() {
     // SECONDARY: Performance & Insights - render all panels
     renderTrendChart(weeklyData, currentSubcategory);
     renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
+    renderPatternsPanel();
     if (dashboardData.groupOverall) {
         renderGroupStats(dashboardData.groupOverall);
     }
@@ -3049,6 +3051,92 @@ function renderInsights(loneWolf, consensus) {
 }
 
 /**
+ * Render Pattern Insights panel
+ */
+function renderPatternsPanel() {
+    const grid = document.getElementById('patterns-grid');
+    const pickerFilter = document.getElementById('patterns-picker-filter');
+    if (!grid) return;
+
+    // Populate picker filter options if not already done
+    if (pickerFilter && pickerFilter.options.length <= 1) {
+        PICKERS.forEach(picker => {
+            const option = document.createElement('option');
+            option.value = picker;
+            option.textContent = picker;
+            pickerFilter.appendChild(option);
+        });
+    }
+
+    // Get current filter values
+    const selectedPicker = pickerFilter ? pickerFilter.value : 'all';
+    const activeTypeBtn = document.querySelector('.pattern-type-btn.active');
+    const selectedType = activeTypeBtn ? activeTypeBtn.dataset.type : 'all';
+
+    // Get insights
+    let insights = InsightsManager.getAllInterestingInsights();
+
+    // Apply filters
+    if (selectedPicker !== 'all') {
+        insights = insights.filter(i => i.picker === selectedPicker);
+    }
+    if (selectedType !== 'all') {
+        insights = insights.filter(i => i.type === selectedType);
+    }
+
+    if (insights.length === 0) {
+        grid.innerHTML = `
+            <div class="no-patterns-message">
+                <p>No notable patterns found with current filters.</p>
+                <p class="no-patterns-hint">Patterns are detected when there's a significant deviation from 50% win rate with enough sample size.</p>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = insights.map(pattern => {
+        const sentimentClass = pattern.sentiment === 'negative' ? 'pattern-negative' :
+                               pattern.sentiment === 'positive' ? 'pattern-positive' : 'pattern-neutral';
+        const typeIcon = pattern.type === 'primetime' ? '🌙' : '🏈';
+        const typeBadge = pattern.type === 'primetime' ? 'Primetime' : 'Team';
+        const pushText = pattern.pushes > 0 ? `-${pattern.pushes}` : '';
+
+        return `
+            <div class="pattern-card ${sentimentClass}">
+                <div class="pattern-header">
+                    <span class="pattern-picker">${pattern.picker}</span>
+                    <span class="pattern-type-badge">${typeIcon} ${typeBadge}</span>
+                </div>
+                <div class="pattern-stat">${pattern.wins}-${pattern.losses}${pushText}</div>
+                <div class="pattern-percentage ${sentimentClass}">${pattern.percentage}%</div>
+                <div class="pattern-headline">${pattern.headline}</div>
+                <div class="pattern-sample">${pattern.total} games</div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Set up pattern panel filter event handlers
+ */
+function setupPatternFilters() {
+    const pickerFilter = document.getElementById('patterns-picker-filter');
+    const typeButtons = document.querySelectorAll('.pattern-type-btn');
+
+    if (pickerFilter) {
+        pickerFilter.addEventListener('change', renderPatternsPanel);
+    }
+
+    typeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            typeButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderPatternsPanel();
+        });
+    });
+}
+
+/**
  * Render Group Overall Stats section
  * Shows only the relevant category based on current tab
  */
@@ -3760,6 +3848,8 @@ function renderGames() {
                     </div>
                 </div>
 
+                ${renderLivePickStatus(game, liveData, gamePicks)}
+
                 <div class="game-footer">
                     <div class="game-location">
                         <span class="location-city">${game.location}</span>
@@ -4072,6 +4162,366 @@ function handleBlazinToggle(e) {
     savePicksToStorage();
 }
 
+// ============================================
+// PATTERN INSIGHTS ENGINE
+// ============================================
+
+/**
+ * Check if a game is a primetime game (Thursday, Monday, or Sunday Night)
+ */
+function isPrimetimeGame(game) {
+    if (!game.day || !game.time) return false;
+    // Thursday Night Football
+    if (game.day === 'Thursday') return true;
+    // Monday Night Football
+    if (game.day === 'Monday') return true;
+    // Sunday Night Football (8:15 PM or 8:20 PM ET)
+    if (game.day === 'Sunday' && game.time && game.time.includes('8:')) return true;
+    // Saturday primetime (late games)
+    if (game.day === 'Saturday' && game.time && game.time.includes('8:')) return true;
+    return false;
+}
+
+/**
+ * Pattern Detection Engine
+ * Detects interesting picking patterns for analysis
+ */
+const PatternEngine = {
+    /**
+     * Detect all patterns for all pickers
+     */
+    detectAllPatterns: function() {
+        const patterns = {};
+        PICKERS.forEach(picker => {
+            patterns[picker] = this.detectPatternsForPicker(picker);
+        });
+        return patterns;
+    },
+
+    /**
+     * Detect patterns for a single picker
+     */
+    detectPatternsForPicker: function(picker) {
+        return {
+            teamPatterns: this.detectTeamPatterns(picker),
+            primetimePattern: this.detectPrimetimePattern(picker)
+        };
+    },
+
+    /**
+     * Detect team-specific patterns
+     * Returns patterns for each team the picker has picked
+     */
+    detectTeamPatterns: function(picker) {
+        const teamStats = {}; // { teamName: { wins, losses, pushes, games: [] } }
+
+        // Iterate through all weeks
+        for (let week = 1; week <= TOTAL_WEEKS; week++) {
+            const games = getGamesForWeek(week);
+            const results = getResultsForWeek(week);
+            const weekPicks = allPicks[week] && allPicks[week][picker];
+
+            if (!games || !results || !weekPicks) continue;
+
+            games.forEach(game => {
+                const pick = weekPicks[game.id];
+                if (!pick || !pick.line) return;
+
+                const result = results[game.id];
+                if (!result) return;
+
+                const atsResult = calculateATSWinner(game, result);
+                if (!atsResult) return;
+
+                // Determine which team was picked
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const normalizedTeam = TEAM_NAME_MAP[pickedTeam] || pickedTeam;
+
+                if (!teamStats[normalizedTeam]) {
+                    teamStats[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                }
+
+                const outcome = pick.line === atsResult ? 'win' : (atsResult === 'push' ? 'push' : 'loss');
+                if (outcome === 'win') teamStats[normalizedTeam].wins++;
+                else if (outcome === 'loss') teamStats[normalizedTeam].losses++;
+                else teamStats[normalizedTeam].pushes++;
+
+                teamStats[normalizedTeam].games.push({
+                    week,
+                    gameId: game.id,
+                    away: game.away,
+                    home: game.home,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    pick: pick.line,
+                    outcome
+                });
+            });
+        }
+
+        // Convert to pattern objects
+        const patterns = [];
+        Object.keys(teamStats).forEach(team => {
+            const stats = teamStats[team];
+            const total = stats.wins + stats.losses + stats.pushes;
+            const percentage = total > 0 ? (stats.wins / (stats.wins + stats.losses || 1)) * 100 : 0;
+
+            // Determine if interesting (min 3 games, notable deviation from 50%)
+            const isInteresting = total >= 3 && (
+                percentage <= 35 ||
+                percentage >= 65 ||
+                stats.wins === 0 ||
+                stats.losses === 0
+            );
+
+            let sentiment = 'neutral';
+            if (percentage < 40) sentiment = 'negative';
+            else if (percentage > 60) sentiment = 'positive';
+
+            // Generate headline
+            let headline = `${picker} is ${stats.wins}-${stats.losses}`;
+            if (stats.pushes > 0) headline += `-${stats.pushes}`;
+            headline += ` picking ${team}`;
+
+            patterns.push({
+                id: `${picker.toLowerCase()}_team_${team.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+                type: 'team',
+                picker,
+                team,
+                wins: stats.wins,
+                losses: stats.losses,
+                pushes: stats.pushes,
+                total,
+                percentage: Math.round(percentage),
+                headline,
+                sentiment,
+                isInteresting,
+                context: { team },
+                relevantTeams: [team]
+            });
+        });
+
+        return patterns.sort((a, b) => b.total - a.total);
+    },
+
+    /**
+     * Detect primetime performance pattern
+     */
+    detectPrimetimePattern: function(picker) {
+        let wins = 0, losses = 0, pushes = 0;
+        const games = [];
+
+        // Iterate through all weeks
+        for (let week = 1; week <= TOTAL_WEEKS; week++) {
+            const weekGames = getGamesForWeek(week);
+            const results = getResultsForWeek(week);
+            const weekPicks = allPicks[week] && allPicks[week][picker];
+
+            if (!weekGames || !results || !weekPicks) continue;
+
+            weekGames.forEach(game => {
+                if (!isPrimetimeGame(game)) return;
+
+                const pick = weekPicks[game.id];
+                if (!pick || !pick.line) return;
+
+                const result = results[game.id];
+                if (!result) return;
+
+                const atsResult = calculateATSWinner(game, result);
+                if (!atsResult) return;
+
+                const outcome = pick.line === atsResult ? 'win' : (atsResult === 'push' ? 'push' : 'loss');
+                if (outcome === 'win') wins++;
+                else if (outcome === 'loss') losses++;
+                else pushes++;
+
+                games.push({
+                    week,
+                    gameId: game.id,
+                    away: game.away,
+                    home: game.home,
+                    day: game.day,
+                    time: game.time,
+                    pick: pick.line,
+                    outcome
+                });
+            });
+        }
+
+        const total = wins + losses + pushes;
+        const percentage = total > 0 ? (wins / (wins + losses || 1)) * 100 : 0;
+
+        // Interesting if 5+ games and deviation > 15% from 50%
+        const isInteresting = total >= 5 && Math.abs(50 - percentage) > 15;
+
+        let sentiment = 'neutral';
+        if (percentage < 40) sentiment = 'negative';
+        else if (percentage > 60) sentiment = 'positive';
+
+        let headline = `${picker} is ${wins}-${losses}`;
+        if (pushes > 0) headline += `-${pushes}`;
+        headline += ` in primetime games`;
+
+        return {
+            id: `${picker.toLowerCase()}_primetime`,
+            type: 'primetime',
+            picker,
+            wins,
+            losses,
+            pushes,
+            total,
+            percentage: Math.round(percentage),
+            headline,
+            sentiment,
+            isInteresting,
+            context: { gameType: 'primetime' },
+            relevantTeams: [],
+            games
+        };
+    }
+};
+
+/**
+ * Insights Manager - Caching and retrieval
+ */
+const InsightsManager = {
+    cache: null,
+    cacheTimestamp: null,
+    byTeam: {},
+    byType: {},
+    CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
+
+    /**
+     * Get all insights, regenerate if stale
+     */
+    getInsights: function(forceRefresh = false) {
+        const now = Date.now();
+        if (!forceRefresh && this.cache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
+            return this.cache;
+        }
+
+        console.log('Regenerating pattern insights...');
+        this.cache = PatternEngine.detectAllPatterns();
+        this.cacheTimestamp = now;
+        this.buildIndexes();
+        return this.cache;
+    },
+
+    /**
+     * Build lookup indexes for quick access
+     */
+    buildIndexes: function() {
+        this.byTeam = {};
+        this.byType = {};
+
+        Object.keys(this.cache).forEach(picker => {
+            const pickerPatterns = this.cache[picker];
+
+            // Index team patterns
+            if (pickerPatterns.teamPatterns) {
+                pickerPatterns.teamPatterns.forEach(pattern => {
+                    // By type
+                    if (!this.byType['team']) this.byType['team'] = [];
+                    this.byType['team'].push(pattern);
+
+                    // By team
+                    (pattern.relevantTeams || []).forEach(team => {
+                        const normalizedTeam = TEAM_NAME_MAP[team] || team;
+                        if (!this.byTeam[normalizedTeam]) this.byTeam[normalizedTeam] = [];
+                        this.byTeam[normalizedTeam].push(pattern);
+                    });
+                });
+            }
+
+            // Index primetime pattern
+            if (pickerPatterns.primetimePattern) {
+                if (!this.byType['primetime']) this.byType['primetime'] = [];
+                this.byType['primetime'].push(pickerPatterns.primetimePattern);
+            }
+        });
+    },
+
+    /**
+     * Get insights relevant to a specific game
+     */
+    getInsightsForGame: function(game) {
+        this.getInsights(); // Ensure cache is fresh
+        const insights = [];
+
+        // Team insights for both teams
+        [game.away, game.home].forEach(team => {
+            const normalizedTeam = TEAM_NAME_MAP[team] || team;
+            const teamInsights = (this.byTeam[normalizedTeam] || [])
+                .filter(i => i.isInteresting);
+            insights.push(...teamInsights);
+        });
+
+        // Primetime insights if applicable
+        if (isPrimetimeGame(game)) {
+            const primetimeInsights = (this.byType['primetime'] || [])
+                .filter(i => i.isInteresting);
+            insights.push(...primetimeInsights);
+        }
+
+        // Sort by most notable (negative first, then by deviation from 50%)
+        return insights.sort((a, b) => {
+            if (a.sentiment === 'negative' && b.sentiment !== 'negative') return -1;
+            if (b.sentiment === 'negative' && a.sentiment !== 'negative') return 1;
+            const marginA = Math.abs(50 - a.percentage);
+            const marginB = Math.abs(50 - b.percentage);
+            return marginB - marginA;
+        });
+    },
+
+    /**
+     * Get top insights for a picker
+     */
+    getTopInsightsForPicker: function(picker, limit = 5) {
+        this.getInsights(); // Ensure cache is fresh
+        const pickerPatterns = this.cache[picker];
+        if (!pickerPatterns) return [];
+
+        const allInsights = [
+            ...(pickerPatterns.teamPatterns || []),
+            pickerPatterns.primetimePattern
+        ].filter(Boolean);
+
+        return allInsights
+            .filter(i => i.isInteresting)
+            .sort((a, b) => {
+                const marginA = Math.abs(50 - a.percentage);
+                const marginB = Math.abs(50 - b.percentage);
+                return marginB - marginA;
+            })
+            .slice(0, limit);
+    },
+
+    /**
+     * Get all interesting insights
+     */
+    getAllInterestingInsights: function() {
+        this.getInsights(); // Ensure cache is fresh
+        const allInsights = [];
+
+        Object.keys(this.cache).forEach(picker => {
+            const pickerPatterns = this.cache[picker];
+            if (pickerPatterns.teamPatterns) {
+                allInsights.push(...pickerPatterns.teamPatterns.filter(p => p.isInteresting));
+            }
+            if (pickerPatterns.primetimePattern && pickerPatterns.primetimePattern.isInteresting) {
+                allInsights.push(pickerPatterns.primetimePattern);
+            }
+        });
+
+        return allInsights.sort((a, b) => {
+            const marginA = Math.abs(50 - a.percentage);
+            const marginB = Math.abs(50 - b.percentage);
+            return marginB - marginA;
+        });
+    }
+};
+
 /**
  * Calculate ATS winner based on score and spread
  */
@@ -4088,6 +4538,80 @@ function calculateATSWinner(game, result) {
     if (awayWithSpread > homeWithSpread) return 'away';
     if (homeWithSpread > awayWithSpread) return 'home';
     return 'push';
+}
+
+/**
+ * Calculate live pick margin for in-progress games
+ * Returns the current spread margin for the picker's selection
+ */
+function calculateLivePickMargin(game, liveData, pick) {
+    if (!liveData || !pick || !pick.line) return null;
+
+    const { awayScore, homeScore } = liveData;
+    const { spread, favorite } = game;
+
+    // Calculate the picked team's spread
+    let pickedTeam, pickedSpread, currentMargin;
+
+    if (pick.line === 'away') {
+        pickedTeam = game.away;
+        // Away team gets points if home is favorite, loses points if away is favorite
+        pickedSpread = favorite === 'away' ? -spread : spread;
+        // Current margin from away team's perspective (positive = away winning)
+        currentMargin = (awayScore - homeScore) + pickedSpread;
+    } else {
+        pickedTeam = game.home;
+        // Home team gets points if away is favorite, loses points if home is favorite
+        pickedSpread = favorite === 'home' ? -spread : spread;
+        // Current margin from home team's perspective (positive = home winning)
+        currentMargin = (homeScore - awayScore) + pickedSpread;
+    }
+
+    // Format the spread display
+    const spreadDisplay = pickedSpread > 0 ? `+${pickedSpread}` : pickedSpread === 0 ? 'PK' : pickedSpread;
+
+    // Determine status and message
+    let status, message;
+    if (currentMargin > 0) {
+        status = 'covering';
+        message = `Covering by ${currentMargin}`;
+    } else if (currentMargin < 0) {
+        status = 'losing';
+        message = `Not covering by ${Math.abs(currentMargin)}`;
+    } else {
+        status = 'push';
+        message = 'Currently a push';
+    }
+
+    return {
+        status,
+        margin: currentMargin,
+        message,
+        pickedTeam,
+        spreadDisplay
+    };
+}
+
+/**
+ * Render live pick status HTML for in-progress games
+ */
+function renderLivePickStatus(game, liveData, pick) {
+    // Only show for in-progress games with a line pick
+    if (!liveData || !pick || !pick.line) return '';
+
+    const inProgressStatuses = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+    if (!inProgressStatuses.includes(liveData.status)) return '';
+
+    const marginData = calculateLivePickMargin(game, liveData, pick);
+    if (!marginData) return '';
+
+    const { status, message, pickedTeam, spreadDisplay } = marginData;
+
+    return `
+        <div class="live-pick-status ${status}">
+            <span class="live-pick-margin">${message}</span>
+        </div>
+    `;
 }
 
 /**

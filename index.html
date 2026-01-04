@@ -216,6 +216,7 @@
                 <div class="consolidated-tabs">
                     <button class="consolidated-tab active" data-panel="charts-panel">Charts</button>
                     <button class="consolidated-tab" data-panel="insights-panel">Insights</button>
+                    <button class="consolidated-tab" data-panel="patterns-panel">Patterns</button>
                     <button class="consolidated-tab" data-panel="pnl-panel">Profit/Loss</button>
                 </div>
                 <div class="consolidated-content">
@@ -243,6 +244,22 @@
                         </div>
                         <h4 class="insights-section-title">Group Performance</h4>
                         <div class="group-stats-grid" id="group-stats-grid"></div>
+                    </div>
+                    <!-- Patterns Panel -->
+                    <div class="consolidated-panel" id="patterns-panel">
+                        <div class="patterns-controls">
+                            <div class="patterns-filters">
+                                <select id="patterns-picker-filter" class="patterns-filter-select">
+                                    <option value="all">All Pickers</option>
+                                </select>
+                                <div class="patterns-type-filters">
+                                    <button class="pattern-type-btn active" data-type="all">All</button>
+                                    <button class="pattern-type-btn" data-type="team">Teams</button>
+                                    <button class="pattern-type-btn" data-type="primetime">Primetime</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="patterns-grid" id="patterns-grid"></div>
                     </div>
                     <!-- P&L Panel -->
                     <div class="consolidated-panel" id="pnl-panel">

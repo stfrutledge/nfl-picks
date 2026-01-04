@@ -1,5 +1,5 @@
-/* The Ringer-Inspired NFL Picks Dashboard */
-/* Clean, modern sports media aesthetic */
+/* NFL Picks Dashboard */
+/* Bold, modern NFL app aesthetic */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Libre+Franklin:wght@400;500;600;700;800;900&display=swap');
 
@@ -10,39 +10,57 @@
 }
 
 :root {
-    /* Ringer-inspired color palette - Light Mode */
+    /* NFL-inspired color palette - Light Mode */
     --bg-primary: #ffffff;
-    --bg-secondary: #f5f5f5;
+    --bg-secondary: #f8f9fa;
     --bg-card: #ffffff;
-    --bg-dark: #1a1a1a;
-    --text-primary: #1a1a1a;
-    --text-secondary: #666666;
-    --text-light: #767676;
-    --accent-green: #00b112;
-    --accent-teal: #23554a;
-    --accent-dark-green: #52c170;
-    --border-color: #e5e5e5;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
-    --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
+    --bg-dark: #0a0a0a;
+    --bg-hover: #f0f1f3;
+    --text-primary: #0a0a0a;
+    --text-secondary: #4a4a4a;
+    --text-light: #6b7280;
+
+    /* NFL Brand Colors */
+    --nfl-blue: #013369;
+    --nfl-red: #d50a0a;
+
+    /* Accent Colors */
+    --accent-green: #059669;
+    --accent-red: #dc2626;
+    --accent-teal: #0d9488;
+    --accent-amber: #d97706;
+
+    /* Borders & Shadows */
+    --border-color: #e5e7eb;
+    --border-light: #f3f4f6;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
+    --shadow-xl: 0 20px 40px rgba(0,0,0,0.15);
 }
 
 /* Dark Mode */
 [data-theme="dark"] {
-    --bg-primary: #1a1a1a;
-    --bg-secondary: #121212;
-    --bg-card: #242424;
+    --bg-primary: #111111;
+    --bg-secondary: #0a0a0a;
+    --bg-card: #1a1a1a;
     --bg-dark: #000000;
-    --text-primary: #f0f0f0;
-    --text-secondary: #a0a0a0;
-    --text-light: #8a8a8a;
-    --accent-green: #00d416;
-    --accent-teal: #3d8b7a;
-    --accent-dark-green: #52c170;
-    --border-color: #333333;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-    --shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
+    --bg-hover: #252525;
+    --text-primary: #f5f5f5;
+    --text-secondary: #a3a3a3;
+    --text-light: #737373;
+
+    --accent-green: #10b981;
+    --accent-red: #ef4444;
+    --accent-teal: #14b8a6;
+    --accent-amber: #f59e0b;
+
+    --border-color: #2a2a2a;
+    --border-light: #1f1f1f;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.6);
+    --shadow-xl: 0 20px 40px rgba(0,0,0,0.7);
 }
 
 [data-theme="dark"] header {
@@ -69,8 +87,8 @@
 }
 
 [data-theme="dark"] .pick-btn.selected {
-    background: #3b82f6;
-    border-color: #3b82f6;
+    background: #1e4a8c;
+    border-color: #1e4a8c;
 }
 
 [data-theme="dark"] footer {
@@ -80,6 +98,37 @@
 [data-theme="dark"] .toast {
     background: #f0f0f0;
     color: #1a1a1a;
+}
+
+[data-theme="dark"] .game-card {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .picker-card {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .chart-container {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .insight-card {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .win-pct {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .chart-zoom-btn:hover {
+    border-color: #4a8fe8;
+    color: #4a8fe8;
+    background: rgba(74, 143, 232, 0.1);
+}
+
+[data-theme="dark"] .chart-zoom-btn.zoomed {
+    background: #1e4a8c;
+    border-color: #1e4a8c;
 }
 
 body {
@@ -97,26 +146,26 @@ body {
     padding: 0;
 }
 
-/* Header - Ringer Style */
+/* Header - NFL Style */
 header {
     background: var(--bg-dark);
     color: white;
     padding: 0;
     margin-bottom: 0;
-    border-bottom: none;
+    border-bottom: 3px solid var(--nfl-blue);
 }
 
 .header-content {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 16px;
-    padding: 20px 40px;
+    gap: 20px;
+    padding: 16px 40px;
     width: 100%;
 }
 
 .nfl-logo {
-    width: 56px;
+    width: 52px;
     height: auto;
 }
 
@@ -126,22 +175,22 @@ header {
 
 header h1 {
     font-family: 'Libre Franklin', sans-serif;
-    font-size: 1.75rem;
+    font-size: 1.5rem;
     font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: -0.02em;
+    letter-spacing: 0.02em;
     color: white;
     background: none;
     -webkit-text-fill-color: unset;
 }
 
 .subtitle {
-    color: var(--accent-dark-green);
-    font-size: 0.85rem;
-    font-weight: 600;
+    color: var(--accent-green);
+    font-size: 0.75rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-top: 2px;
+    letter-spacing: 0.12em;
+    margin-top: 4px;
 }
 
 /* Dark Mode Toggle */
@@ -677,12 +726,13 @@ header h1 {
 
 .picker-card {
     background: var(--bg-primary);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 0;
     border: 1px solid var(--border-color);
     transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
 }
 
 .picker-card {
@@ -690,8 +740,8 @@ header h1 {
 }
 
 .picker-card:hover {
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-3px);
 }
 
 .picker-card .expanded-stat {
@@ -703,7 +753,7 @@ header h1 {
 }
 
 .picker-card.rank-1 {
-    border-top: 4px solid var(--accent-green);
+    border-top: 5px solid var(--accent-green);
 }
 
 .picker-card.rank-1::before {
@@ -713,15 +763,15 @@ header h1 {
     right: 16px;
     background: var(--accent-green);
     color: white;
-    padding: 4px 10px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.05em;
 }
 
 .picker-card.rank-2 {
-    border-top: 4px solid var(--text-secondary);
+    border-top: 5px solid #71717a;
 }
 
 .picker-card.rank-2::before {
@@ -729,17 +779,17 @@ header h1 {
     position: absolute;
     top: 16px;
     right: 16px;
-    background: var(--text-secondary);
+    background: #71717a;
     color: white;
-    padding: 4px 10px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.05em;
 }
 
 .picker-card.rank-3 {
-    border-top: 4px solid #cd7f32;
+    border-top: 5px solid #b45309;
 }
 
 .picker-card.rank-3::before {
@@ -747,10 +797,10 @@ header h1 {
     position: absolute;
     top: 16px;
     right: 16px;
-    background: #cd7f32;
+    background: #b45309;
     color: white;
-    padding: 4px 10px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.05em;
@@ -812,20 +862,21 @@ header h1 {
 
 .win-pct {
     font-family: 'Libre Franklin', sans-serif;
-    font-size: 2.5rem;
+    font-size: 3rem;
     font-weight: 900;
     text-align: center;
-    padding: 20px;
+    padding: 24px;
     background: var(--bg-secondary);
     margin: 16px 20px;
-    border-radius: 6px;
+    border-radius: 8px;
+    letter-spacing: -0.02em;
 }
 
 .record {
     text-align: center;
     color: var(--text-secondary);
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 1.1rem;
+    font-weight: 700;
     margin-bottom: 16px;
 }
 
@@ -841,25 +892,25 @@ header h1 {
 .team-record {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-radius: 6px;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
     font-size: 0.8rem;
 }
 
 .team-record.best {
-    background: rgba(0, 177, 18, 0.08);
-    border: 1px solid rgba(0, 177, 18, 0.2);
+    background: rgba(5, 150, 105, 0.08);
+    border: 1px solid rgba(5, 150, 105, 0.25);
 }
 
 .team-record.worst {
     background: rgba(220, 38, 38, 0.08);
-    border: 1px solid rgba(220, 38, 38, 0.2);
+    border: 1px solid rgba(220, 38, 38, 0.25);
 }
 
 .team-badge-logo {
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     object-fit: contain;
 }
 
@@ -1132,9 +1183,15 @@ header h1 {
 
 .chart-container {
     background: var(--bg-primary);
-    border-radius: 8px;
-    padding: 24px;
+    border-radius: 12px;
+    padding: 28px;
     border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.chart-container:hover {
+    box-shadow: var(--shadow-md);
 }
 
 .chart-container h3 {
@@ -1163,25 +1220,28 @@ header h1 {
 }
 
 .chart-zoom-btn {
-    padding: 6px 12px;
-    border-radius: 16px;
+    padding: 8px 14px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
     color: var(--text-secondary);
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 .chart-zoom-btn:hover {
-    border-color: var(--accent-green);
-    color: var(--accent-green);
+    border-color: var(--nfl-blue);
+    color: var(--nfl-blue);
+    background: rgba(1, 51, 105, 0.05);
 }
 
 .chart-zoom-btn.zoomed {
-    background: var(--accent-green);
-    border-color: var(--accent-green);
+    background: var(--nfl-blue);
+    border-color: var(--nfl-blue);
     color: white;
 }
 
@@ -1208,9 +1268,16 @@ header h1 {
 
 .insight-card {
     background: var(--bg-primary);
-    border-radius: 8px;
-    padding: 20px;
+    border-radius: 12px;
+    padding: 24px;
     border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.insight-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
 }
 
 .insight-header {
@@ -1868,8 +1935,9 @@ footer a:hover {
     }
 
     .subtab {
-        padding: 6px 12px;
+        padding: 8px 14px;
         font-size: 0.75rem;
+        min-height: 40px;
     }
 
     .group-stats-grid {
@@ -1903,8 +1971,9 @@ footer a:hover {
     }
 
     .chart-zoom-btn {
-        padding: 5px 10px;
+        padding: 8px 12px;
         font-size: 0.7rem;
+        min-height: 40px;
     }
 
     .category-tabs {
@@ -1949,6 +2018,72 @@ footer a:hover {
     .team-records-table td {
         padding: 10px 12px;
         font-size: 0.8rem;
+    }
+
+    /* Touch target improvements */
+    .filter-btn {
+        padding: 10px 16px;
+        min-height: 44px;
+    }
+
+    .pattern-type-btn {
+        padding: 8px 14px;
+        min-height: 40px;
+    }
+
+    .collapsible-header {
+        padding: 12px 8px;
+        margin-left: -8px;
+        margin-right: -8px;
+    }
+
+    /* Tighter spacing for mobile */
+    .games-list {
+        gap: 12px;
+    }
+
+    .leaderboard {
+        gap: 16px;
+    }
+
+    .insights-grid {
+        gap: 14px;
+    }
+
+    .patterns-grid {
+        gap: 12px;
+    }
+
+    /* Card padding reductions */
+    .game-card {
+        padding: 16px;
+    }
+
+    .picker-stats {
+        padding: 0 16px 16px;
+    }
+
+    .chart-container {
+        padding: 20px;
+    }
+
+    .pattern-card {
+        padding: 14px;
+    }
+
+    .insight-card {
+        padding: 18px;
+    }
+
+    /* Win percentage sizing for mobile */
+    .win-pct {
+        font-size: 2.25rem;
+        padding: 16px;
+        margin: 12px 16px;
+    }
+
+    .record {
+        font-size: 1rem;
     }
 }
 
@@ -2165,31 +2300,34 @@ footer a:hover {
 
 .game-card {
     background: var(--bg-primary);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 20px;
     border: 1px solid var(--border-color);
-    transition: all 0.15s ease;
+    transition: all 0.2s ease;
+    box-shadow: var(--shadow-sm);
 }
 
 .game-card:hover {
-    border-color: var(--text-light);
+    border-color: var(--border-color);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
 }
 
 .game-card:focus {
     outline: none;
-    border-color: var(--accent-green);
-    box-shadow: 0 0 0 3px rgba(0, 177, 18, 0.2);
+    border-color: var(--nfl-blue);
+    box-shadow: 0 0 0 3px rgba(1, 51, 105, 0.15);
 }
 
 .game-card:focus .game-header {
-    background: rgba(0, 177, 18, 0.05);
+    background: rgba(1, 51, 105, 0.03);
     margin: -20px -20px 16px -20px;
     padding: 12px 20px;
-    border-radius: 7px 7px 0 0;
+    border-radius: 11px 11px 0 0;
 }
 
 .game-card.game-locked {
-    opacity: 0.7;
+    opacity: 0.75;
     background: var(--bg-secondary);
 }
 
@@ -2198,10 +2336,10 @@ footer a:hover {
 }
 
 .locked-badge {
-    background: #dc2626;
+    background: var(--accent-red);
     color: white;
-    padding: 4px 8px;
-    border-radius: 3px;
+    padding: 4px 10px;
+    border-radius: 4px;
     font-size: 0.65rem;
     font-weight: 800;
     letter-spacing: 0.05em;
@@ -2209,8 +2347,8 @@ footer a:hover {
 }
 
 .status-badge {
-    padding: 4px 10px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -2229,11 +2367,11 @@ footer a:hover {
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+    50% { opacity: 0.8; }
 }
 
 .game-card.game-final {
-    border-left: 4px solid var(--bg-dark);
+    border-left: 4px solid var(--nfl-blue);
 }
 
 .game-card.game-in-progress {
@@ -2278,8 +2416,9 @@ footer a:hover {
 }
 
 .blazin-star:hover:not(:disabled) {
-    border-color: #f59e0b;
-    color: #f59e0b;
+    border-color: #ea580c;
+    color: #ea580c;
+    background: rgba(234, 88, 12, 0.08);
 }
 
 .blazin-star.active {
@@ -2399,8 +2538,8 @@ footer a:hover {
 }
 
 .team-logo {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     object-fit: contain;
 }
 
@@ -2409,11 +2548,11 @@ footer a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     color: white;
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: -0.5px;
@@ -2450,30 +2589,30 @@ footer a:hover {
 .pick-options {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
 }
 
 .pick-btn {
-    padding: 10px 14px;
-    border-radius: 4px;
+    padding: 12px 16px;
+    border-radius: 8px;
     border: 2px solid var(--border-color);
     background: var(--bg-primary);
     color: var(--text-primary);
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.15s ease;
     text-align: center;
 }
 
 .pick-btn:hover {
-    border-color: var(--text-light);
-    background: var(--bg-secondary);
+    border-color: var(--nfl-blue);
+    background: var(--bg-hover);
 }
 
 .pick-btn.selected {
-    border-color: #3b82f6;
-    background: #3b82f6;
+    border-color: var(--nfl-blue);
+    background: var(--nfl-blue);
     color: white;
 }
 
@@ -2485,14 +2624,14 @@ footer a:hover {
 }
 
 .pick-btn.selected.incorrect {
-    border-color: #dc2626;
-    background: #dc2626;
+    border-color: var(--accent-red);
+    background: var(--accent-red);
     color: white;
 }
 
 .pick-btn.selected.push {
-    border-color: #f59e0b;
-    background: #f59e0b;
+    border-color: var(--accent-amber);
+    background: var(--accent-amber);
     color: white;
 }
 
@@ -2808,6 +2947,8 @@ footer a:hover {
 
     .pick-btn {
         flex: 1;
+        padding: 14px 18px;
+        min-height: 48px;
     }
 }
 
@@ -3922,5 +4063,226 @@ footer a:hover {
     color: #e5e5e5;
 }
 
+/* ============================================
+   PATTERN INSIGHTS PANEL
+   ============================================ */
+
+.patterns-controls {
+    margin-bottom: 20px;
+}
+
+.patterns-filters {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.patterns-filter-select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.patterns-type-filters {
+    display: flex;
+    gap: 8px;
+}
+
+.pattern-type-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pattern-type-btn:hover {
+    background: var(--bg-hover);
+}
+
+.pattern-type-btn.active {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+    border-color: var(--text-primary);
+}
+
+.patterns-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.pattern-card {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 18px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.pattern-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.pattern-card.pattern-negative {
+    border-left: 4px solid #dc2626;
+}
+
+.pattern-card.pattern-positive {
+    border-left: 4px solid #16a34a;
+}
+
+.pattern-card.pattern-neutral {
+    border-left: 4px solid #6b7280;
+}
+
+.pattern-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.pattern-picker {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.pattern-type-badge {
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-light);
+}
+
+.pattern-stat {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.pattern-percentage {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.pattern-percentage.pattern-negative {
+    color: #dc2626;
+}
+
+.pattern-percentage.pattern-positive {
+    color: #16a34a;
+}
+
+.pattern-percentage.pattern-neutral {
+    color: #6b7280;
+}
+
+.pattern-headline {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-bottom: 6px;
+}
+
+.pattern-sample {
+    font-size: 0.75rem;
+    color: var(--text-light);
+}
+
+.no-patterns-message {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-light);
+}
+
+.no-patterns-message p {
+    margin: 0;
+}
+
+.no-patterns-hint {
+    font-size: 0.85rem;
+    margin-top: 8px !important;
+    opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+    .patterns-filters {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .patterns-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+
+    .pattern-stat {
+        font-size: 1.5rem;
+    }
+}
+
+[data-theme="dark"] .pattern-card {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .pattern-type-btn.active {
+    background: #e5e5e5;
+    color: #1a1a1a;
+}
+
+[data-theme="dark"] .team-record.best {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="dark"] .team-record.worst {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ============================================
+   LIVE PICK TRACKING
+   ============================================ */
+
+.live-pick-status {
+    display: inline-block;
+    padding: 4px 10px;
+    margin: 8px 0 0 0;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.live-pick-status.covering {
+    background: #059669;
+    color: white;
+}
+
+.live-pick-status.losing {
+    background: #b91c1c;
+    color: white;
+}
+
+.live-pick-status.push {
+    background: #525252;
+    color: white;
+}
 
 
