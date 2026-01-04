@@ -187,6 +187,15 @@ const TEAM_LOGOS = {
     'Steelers': 'https://a.espncdn.com/i/teamlogos/nfl/500/pit.png'
 };
 
+// Fallback spreads for games - used when Odds API doesn't return data (e.g., completed games)
+// This is a separate constant that never gets overwritten
+const FALLBACK_SPREADS = {
+    15: { 'falcons_buccaneers': { spread: 4.5, favorite: 'home' }, 'jets_jaguars': { spread: 13.5, favorite: 'home' }, 'browns_bears': { spread: 7.5, favorite: 'home' }, 'bills_patriots': { spread: 1.5, favorite: 'away' }, 'ravens_bengals': { spread: 2.5, favorite: 'away' }, 'cardinals_texans': { spread: 9.5, favorite: 'home' }, 'raiders_eagles': { spread: 11.5, favorite: 'home' }, 'chargers_chiefs': { spread: 5.5, favorite: 'home' }, 'commanders_giants': { spread: 2.5, favorite: 'home' }, 'colts_seahawks': { spread: 13.5, favorite: 'home' }, 'titans_49ers': { spread: 12.5, favorite: 'home' }, 'packers_broncos': { spread: 2.5, favorite: 'away' }, 'lions_rams': { spread: 6, favorite: 'home' }, 'panthers_saints': { spread: 2.5, favorite: 'away' }, 'vikings_cowboys': { spread: 5.5, favorite: 'home' }, 'dolphins_steelers': { spread: 3, favorite: 'home' } },
+    16: { 'rams_seahawks': { spread: 1.5, favorite: 'home' }, 'eagles_commanders': { spread: 6.5, favorite: 'away' }, 'packers_bears': { spread: 1.5, favorite: 'away' }, 'bills_browns': { spread: 10, favorite: 'away' }, 'chargers_cowboys': { spread: 1.5, favorite: 'home' }, 'chiefs_titans': { spread: 3.5, favorite: 'away' }, 'bengals_dolphins': { spread: 1.5, favorite: 'away' }, 'jets_saints': { spread: 4.5, favorite: 'home' }, 'vikings_giants': { spread: 3, favorite: 'away' }, 'buccaneers_panthers': { spread: 3, favorite: 'away' }, 'jaguars_broncos': { spread: 3, favorite: 'home' }, 'falcons_cardinals': { spread: 2.5, favorite: 'away' }, 'steelers_lions': { spread: 7, favorite: 'home' }, 'raiders_texans': { spread: 14.5, favorite: 'home' }, 'patriots_ravens': { spread: 3, favorite: 'home' }, '49ers_colts': { spread: 5.5, favorite: 'away' } },
+    17: { 'cowboys_commanders': { spread: 4.5, favorite: 'home' }, 'lions_vikings': { spread: 3, favorite: 'away' }, 'broncos_chiefs': { spread: 10.5, favorite: 'home' }, 'texans_chargers': { spread: 1.5, favorite: 'home' }, 'ravens_packers': { spread: 4.5, favorite: 'home' }, 'cardinals_bengals': { spread: 7.5, favorite: 'home' }, 'steelers_browns': { spread: 3, favorite: 'away' }, 'jaguars_colts': { spread: 6, favorite: 'home' }, 'buccaneers_dolphins': { spread: 6, favorite: 'home' }, 'patriots_jets': { spread: 13.5, favorite: 'home' }, 'saints_titans': { spread: 2.5, favorite: 'home' }, 'giants_raiders': { spread: 1.5, favorite: 'home' }, 'eagles_bills': { spread: 1.5, favorite: 'home' }, 'seahawks_panthers': { spread: 7, favorite: 'away' }, 'bears_49ers': { spread: 3, favorite: 'home' }, 'rams_falcons': { spread: 7.5, favorite: 'away' } },
+    18: { 'panthers_buccaneers': { spread: 2.5, favorite: 'home' } }
+};
+
 // NFL Games by Week - Full structure for all weeks
 // Week 15 has full data, other weeks are placeholders that can be populated
 // NFL Week 15 2025: Thu Dec 11, Sun Dec 14, Mon Dec 15
@@ -246,7 +255,7 @@ const NFL_GAMES_BY_WEEK = {
         { id: 15, away: 'Bears', home: '49ers', spread: 3, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Santa Clara, CA', stadium: 'Levi\'s Stadium' },
         { id: 16, away: 'Rams', home: 'Falcons', spread: 7.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-29T20:15:00-05:00', location: 'Atlanta, GA', stadium: 'Mercedes-Benz Stadium' }
     ]
-    // Week 18 games will be fetched dynamically from ESPN API
+    // Week 18 games fetched dynamically from ESPN API, spreads from FALLBACK_SPREADS
 };
 
 // Immediately merge historical games if available (historical-data.js loads before app.js)
@@ -584,6 +593,12 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                 game.favorite = existingSpreads[key].favorite;
                 console.log(`[Schedule] Preserved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
+            // Apply fallback spreads for completed games that still have spread: 0
+            if ((!game.spread || game.spread === 0) && FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key]) {
+                game.spread = FALLBACK_SPREADS[week][key].spread;
+                game.favorite = FALLBACK_SPREADS[week][key].favorite;
+                console.log(`[Schedule] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
+            }
         });
         // Sort games by kickoff time
         espnGames.sort((a, b) => {
@@ -902,6 +917,21 @@ function applyOddsData(oddsData) {
     }
 
     console.log(`[Odds API] Applied odds to ${updatedCount} games`);
+
+    // Apply fallback spreads for any games still at 0 (e.g., completed games not in API)
+    Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
+        if (!games || !FALLBACK_SPREADS[week]) return;
+        games.forEach(game => {
+            if (!game.spread || game.spread === 0) {
+                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+                if (FALLBACK_SPREADS[week][key]) {
+                    game.spread = FALLBACK_SPREADS[week][key].spread;
+                    game.favorite = FALLBACK_SPREADS[week][key].favorite;
+                    console.log(`[Odds API] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
+                }
+            }
+        });
+    });
 
     // Debug: log what weeks have games loaded
     console.log('[Odds API] Weeks with games:', Object.keys(NFL_GAMES_BY_WEEK).filter(w => NFL_GAMES_BY_WEEK[w]?.length > 0));
