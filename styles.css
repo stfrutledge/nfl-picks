@@ -4285,4 +4285,250 @@ footer a:hover {
     color: white;
 }
 
+/* ============================================
+   VS MARKET SECTION
+   ============================================ */
+
+.vs-market-section {
+    padding: 30px 40px;
+    animation: fadeIn 0.3s ease;
+}
+
+.vs-market-header {
+    margin-bottom: 30px;
+}
+
+.vs-market-header h2 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+}
+
+.vs-market-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.vs-market-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 40px;
+}
+
+.market-card {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.market-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.market-card.best-picker {
+    border-color: var(--accent-green);
+    background: rgba(5, 150, 105, 0.05);
+}
+
+.market-card-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+}
+
+.market-card-name {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.market-card-return {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 2rem;
+    font-weight: 900;
+    margin-bottom: 4px;
+}
+
+.market-card-return.positive {
+    color: var(--accent-green);
+}
+
+.market-card-return.negative {
+    color: var(--accent-red);
+}
+
+.market-card-value {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.vs-market-chart-container {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 28px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 40px;
+}
+
+.vs-market-chart-container h3 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 20px;
+}
+
+#vs-market-chart {
+    height: 400px !important;
+}
+
+.vs-market-leaderboard {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 28px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.vs-market-leaderboard h3 {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 20px;
+}
+
+.vs-market-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.vs-market-table th {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+.vs-market-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.vs-market-table tr:last-child td {
+    border-bottom: none;
+}
+
+.vs-market-table tr.market td {
+    background: rgba(59, 130, 246, 0.03);
+}
+
+.vs-market-table .rank {
+    font-weight: 800;
+    color: var(--text-secondary);
+    width: 60px;
+}
+
+.vs-market-table .name {
+    font-weight: 700;
+}
+
+.vs-market-table .return {
+    font-weight: 800;
+    font-family: 'Libre Franklin', sans-serif;
+}
+
+.vs-market-table .return.positive {
+    color: var(--accent-green);
+}
+
+.vs-market-table .return.negative {
+    color: var(--accent-red);
+}
+
+.vs-market-table .value {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.vs-market-loading,
+.vs-market-error {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .market-card {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .market-card.best-picker {
+    background: rgba(16, 185, 129, 0.1);
+}
+
+[data-theme="dark"] .vs-market-chart-container,
+[data-theme="dark"] .vs-market-leaderboard {
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .vs-market-table tr.market td {
+    background: rgba(59, 130, 246, 0.08);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .vs-market-section {
+        padding: 20px 16px;
+    }
+
+    .vs-market-summary {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .market-card {
+        padding: 16px;
+    }
+
+    .market-card-return {
+        font-size: 1.5rem;
+    }
+
+    .vs-market-chart-container,
+    .vs-market-leaderboard {
+        padding: 20px;
+    }
+
+    #vs-market-chart {
+        height: 300px !important;
+    }
+
+    .vs-market-table th,
+    .vs-market-table td {
+        padding: 10px 12px;
+        font-size: 0.85rem;
+    }
+}
+
 

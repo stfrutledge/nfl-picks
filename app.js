@@ -1807,6 +1807,7 @@ async function setActiveCategory(category) {
     const makePicksSection = document.getElementById('make-picks-section');
     const performanceInsightsSection = document.getElementById('performance-insights-section');
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
+    const vsMarketSection = document.getElementById('vs-market-section');
 
     if (category === 'make-picks') {
         // Destroy chart instances to prevent memory leaks
@@ -1819,6 +1820,7 @@ async function setActiveCategory(category) {
         leaderboard.classList.add('hidden');
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
+        vsMarketSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -1833,9 +1835,29 @@ async function setActiveCategory(category) {
         leaderboard.classList.remove('hidden');
         performanceInsightsSection?.classList.remove('hidden');
         recordsAnalysisSection?.classList.remove('hidden');
+        vsMarketSection?.classList.add('hidden');
         makePicksSection?.classList.add('hidden');
 
         renderDashboard();
+    } else if (category === 'vs-market') {
+        // Stop live scores refresh when leaving picks tab
+        stopLiveScoresRefresh();
+
+        // Destroy chart instances to prevent memory leaks
+        if (typeof destroyAllCharts === 'function') {
+            destroyAllCharts();
+        }
+
+        // Hide other sections
+        standingsSubtabs?.classList.add('hidden');
+        leaderboard.classList.add('hidden');
+        performanceInsightsSection?.classList.add('hidden');
+        recordsAnalysisSection?.classList.add('hidden');
+        makePicksSection?.classList.add('hidden');
+        vsMarketSection?.classList.remove('hidden');
+
+        // Render the vs market section
+        renderVsMarketSection();
     }
 }
 
@@ -5784,6 +5806,552 @@ function setupPullToRefresh() {
     document.addEventListener('touchstart', handleTouchStart, { passive: true });
     document.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.addEventListener('touchend', handleTouchEnd, { passive: true });
+}
+
+// ============================================
+// VS MARKET - COMPARE PICKS TO INVESTMENT RETURNS
+// ============================================
+
+const MARKET_CACHE_KEY = 'marketPricesCache';
+const MARKET_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Get the start date for an NFL week
+ * @param {number} week - NFL week number (1-18)
+ * @returns {Date} Start date of that week (Thursday)
+ */
+function getNFLWeekStartDate(week) {
+    const SEASON_START = new Date('2025-09-04'); // Thursday of Week 1
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    return new Date(SEASON_START.getTime() + (week - 1) * msPerWeek);
+}
+
+/**
+ * Calculate weekly bankroll for a picker with $100/week DCA and compounding
+ * @param {string} picker - Picker name
+ * @returns {Array} Array of { week, bankroll, invested, returnPct } objects
+ */
+function calculatePickerWeeklyBankroll(picker) {
+    const weeklyData = [];
+    let totalInvested = 0;
+    let bankroll = 0;
+
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        const results = NFL_RESULTS_BY_WEEK[week];
+
+        // Add $100 investment for this week
+        totalInvested += 100;
+        bankroll += 100;
+
+        if (!games || !results) {
+            weeklyData.push({
+                week,
+                bankroll,
+                invested: totalInvested,
+                returnPct: ((bankroll - totalInvested) / totalInvested) * 100
+            });
+            continue;
+        }
+
+        // Count wins/losses for this week's spread picks
+        let weekWins = 0;
+        let weekLosses = 0;
+        let weekPushes = 0;
+
+        games.forEach(game => {
+            const gameId = game.id;
+            const result = results[gameId] || results[String(gameId)];
+            if (!result) return;
+
+            const pickerPicks = allPicks[week]?.[picker] || {};
+            const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
+                       cachedPicks[gameId] || cachedPicks[String(gameId)];
+
+            if (!pick || !pick.line) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            if (atsWinner === 'push') {
+                weekPushes++;
+            } else if (pick.line === atsWinner) {
+                weekWins++;
+            } else {
+                weekLosses++;
+            }
+        });
+
+        // Calculate this week's betting P&L
+        // Bet proportionally on all picks
+        const totalPicks = weekWins + weekLosses + weekPushes;
+        if (totalPicks > 0) {
+            const betPerPick = bankroll / totalPicks;
+            const winnings = weekWins * betPerPick * (100 / 110); // Win pays ~0.909x
+            const losses = weekLosses * betPerPick;
+            bankroll = bankroll + winnings - losses;
+        }
+
+        weeklyData.push({
+            week,
+            bankroll,
+            invested: totalInvested,
+            returnPct: ((bankroll - totalInvested) / totalInvested) * 100
+        });
+    }
+
+    return weeklyData;
+}
+
+/**
+ * Fetch market prices from APIs
+ * @returns {Promise<Object>} Market data for S&P, Gold, Bitcoin
+ */
+async function fetchMarketPrices() {
+    // Check cache first
+    const cached = localStorage.getItem(MARKET_CACHE_KEY);
+    if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < MARKET_CACHE_EXPIRY) {
+            console.log('[Market] Using cached market data');
+            return data;
+        }
+    }
+
+    console.log('[Market] Fetching fresh market data...');
+
+    const marketData = {
+        sp500: [],
+        gold: [],
+        bitcoin: []
+    };
+
+    try {
+        // Fetch Bitcoin from CoinGecko (most reliable free API)
+        const btcResponse = await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=180&interval=daily');
+        if (btcResponse.ok) {
+            const btcData = await btcResponse.json();
+            marketData.bitcoin = btcData.prices.map(([timestamp, price]) => ({
+                date: new Date(timestamp),
+                price
+            }));
+        }
+    } catch (e) {
+        console.warn('[Market] Failed to fetch Bitcoin prices:', e);
+    }
+
+    try {
+        // Fetch S&P 500 and Gold from Yahoo Finance via CORS proxy
+        const symbols = ['^GSPC', 'GC=F'];
+        for (const symbol of symbols) {
+            const url = `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=6mo`)}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                const quotes = data.chart?.result?.[0];
+                if (quotes) {
+                    const timestamps = quotes.timestamp || [];
+                    const prices = quotes.indicators?.quote?.[0]?.close || [];
+                    const priceData = timestamps.map((ts, i) => ({
+                        date: new Date(ts * 1000),
+                        price: prices[i]
+                    })).filter(p => p.price != null);
+
+                    if (symbol === '^GSPC') marketData.sp500 = priceData;
+                    else if (symbol === 'GC=F') marketData.gold = priceData;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[Market] Failed to fetch Yahoo Finance data:', e);
+    }
+
+    // Cache the data
+    localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify({
+        data: marketData,
+        timestamp: Date.now()
+    }));
+
+    return marketData;
+}
+
+/**
+ * Get price for a specific date from price array
+ * @param {Array} prices - Array of { date, price } objects
+ * @param {Date} targetDate - Date to find price for
+ * @returns {number|null} Price or null if not found
+ */
+function getPriceForDate(prices, targetDate) {
+    if (!prices || prices.length === 0) return null;
+
+    const targetTime = targetDate.getTime();
+    let closest = null;
+    let closestDiff = Infinity;
+
+    for (const p of prices) {
+        const diff = Math.abs(new Date(p.date).getTime() - targetTime);
+        if (diff < closestDiff) {
+            closestDiff = diff;
+            closest = p;
+        }
+    }
+
+    // Only return if within 3 days
+    if (closestDiff < 3 * 24 * 60 * 60 * 1000) {
+        return closest.price;
+    }
+    return null;
+}
+
+/**
+ * Calculate DCA returns for a market
+ * @param {Array} prices - Array of { date, price } objects
+ * @param {number} weeklyInvestment - Amount to invest per week
+ * @returns {Array} Array of { week, value, invested, returnPct } objects
+ */
+function calculateMarketDCA(prices, weeklyInvestment = 100) {
+    const weeklyData = [];
+    let totalShares = 0;
+    let totalInvested = 0;
+
+    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+        const weekDate = getNFLWeekStartDate(week);
+        const priceAtWeek = getPriceForDate(prices, weekDate);
+
+        totalInvested += weeklyInvestment;
+
+        if (priceAtWeek) {
+            // Buy shares at this week's price
+            totalShares += weeklyInvestment / priceAtWeek;
+        }
+
+        // Value portfolio at THIS week's price (not final price)
+        const currentValue = totalShares * (priceAtWeek || 0);
+
+        weeklyData.push({
+            week,
+            value: currentValue,
+            invested: totalInvested,
+            returnPct: totalInvested > 0 ? ((currentValue - totalInvested) / totalInvested) * 100 : 0
+        });
+    }
+
+    return weeklyData;
+}
+
+/**
+ * Calculate final portfolio value at current/latest price
+ * @param {Array} weeklyData - Weekly DCA data
+ * @param {Array} prices - Price history
+ * @returns {Object} Final value and return %
+ */
+function calculateFinalMarketValue(weeklyData, prices) {
+    if (!weeklyData || weeklyData.length === 0 || !prices || prices.length === 0) {
+        return { value: 0, returnPct: 0, invested: 0 };
+    }
+
+    const lastWeek = weeklyData[weeklyData.length - 1];
+    const latestPrice = prices[prices.length - 1].price;
+
+    // Calculate total shares from invested amount and weekly prices
+    let totalShares = 0;
+    for (let i = 0; i < weeklyData.length; i++) {
+        const weekDate = getNFLWeekStartDate(i + 1);
+        const priceAtWeek = getPriceForDate(prices, weekDate);
+        if (priceAtWeek) {
+            totalShares += 100 / priceAtWeek;
+        }
+    }
+
+    const currentValue = totalShares * latestPrice;
+    const invested = lastWeek.invested;
+
+    return {
+        value: currentValue,
+        invested: invested,
+        returnPct: invested > 0 ? ((currentValue - invested) / invested) * 100 : 0
+    };
+}
+
+/**
+ * Get all comparison data (pickers + markets)
+ * @returns {Promise<Object>} Comparison data
+ */
+async function getVsMarketData() {
+    const marketPrices = await fetchMarketPrices();
+
+    // Calculate picker returns
+    const pickerData = {};
+    PICKERS.forEach(picker => {
+        pickerData[picker] = calculatePickerWeeklyBankroll(picker);
+    });
+
+    // Calculate market returns (weekly values for chart)
+    const marketReturns = {
+        sp500: calculateMarketDCA(marketPrices.sp500),
+        gold: calculateMarketDCA(marketPrices.gold),
+        bitcoin: calculateMarketDCA(marketPrices.bitcoin)
+    };
+
+    // Calculate final values at current prices (for summary cards)
+    const finalValues = {
+        sp500: calculateFinalMarketValue(marketReturns.sp500, marketPrices.sp500),
+        gold: calculateFinalMarketValue(marketReturns.gold, marketPrices.gold),
+        bitcoin: calculateFinalMarketValue(marketReturns.bitcoin, marketPrices.bitcoin)
+    };
+
+    return { pickerData, marketReturns, marketPrices, finalValues };
+}
+
+/**
+ * Render the vs Market section
+ */
+async function renderVsMarketSection() {
+    const section = document.getElementById('vs-market-section');
+    if (!section) return;
+
+    // Show loading state
+    section.innerHTML = `
+        <div class="vs-market-loading">
+            <p>Loading market data...</p>
+        </div>
+    `;
+
+    try {
+        const { pickerData, marketReturns, finalValues } = await getVsMarketData();
+
+        // Get final values for summary cards
+        const getPickerFinalReturn = (data) => {
+            if (!data || data.length === 0) return { value: 0, returnPct: 0, invested: 0 };
+            const last = data[data.length - 1];
+            return {
+                value: last.bankroll || last.value || 0,
+                returnPct: last.returnPct || 0,
+                invested: last.invested || 0
+            };
+        };
+
+        // Use finalValues for markets (current price valuation)
+        const sp500Final = finalValues.sp500;
+        const goldFinal = finalValues.gold;
+        const btcFinal = finalValues.bitcoin;
+
+        // Find best picker
+        let bestPicker = { name: '', returnPct: -Infinity, value: 0 };
+        PICKERS.forEach(picker => {
+            const final = getPickerFinalReturn(pickerData[picker]);
+            if (final.returnPct > bestPicker.returnPct) {
+                bestPicker = { name: picker, ...final };
+            }
+        });
+
+        // Build leaderboard data
+        const leaderboard = [
+            { name: 'S&P 500', type: 'market', icon: '📈', ...sp500Final },
+            { name: 'Gold', type: 'market', icon: '🥇', ...goldFinal },
+            { name: 'Bitcoin', type: 'market', icon: '₿', ...btcFinal },
+            ...PICKERS.map(picker => ({
+                name: picker,
+                type: 'picker',
+                icon: '🏈',
+                ...getPickerFinalReturn(pickerData[picker])
+            }))
+        ].sort((a, b) => b.returnPct - a.returnPct);
+
+        // Render HTML
+        section.innerHTML = `
+            <div class="vs-market-header">
+                <h2>vs Market</h2>
+                <p class="vs-market-subtitle">Compare your picks against investment alternatives ($100/week)</p>
+            </div>
+
+            <div class="vs-market-summary">
+                <div class="market-card">
+                    <div class="market-card-icon">📈</div>
+                    <div class="market-card-name">S&P 500</div>
+                    <div class="market-card-return ${sp500Final.returnPct >= 0 ? 'positive' : 'negative'}">
+                        ${sp500Final.returnPct >= 0 ? '+' : ''}${sp500Final.returnPct.toFixed(1)}%
+                    </div>
+                    <div class="market-card-value">$${sp500Final.value.toFixed(2)}</div>
+                </div>
+                <div class="market-card">
+                    <div class="market-card-icon">🥇</div>
+                    <div class="market-card-name">Gold</div>
+                    <div class="market-card-return ${goldFinal.returnPct >= 0 ? 'positive' : 'negative'}">
+                        ${goldFinal.returnPct >= 0 ? '+' : ''}${goldFinal.returnPct.toFixed(1)}%
+                    </div>
+                    <div class="market-card-value">$${goldFinal.value.toFixed(2)}</div>
+                </div>
+                <div class="market-card">
+                    <div class="market-card-icon">₿</div>
+                    <div class="market-card-name">Bitcoin</div>
+                    <div class="market-card-return ${btcFinal.returnPct >= 0 ? 'positive' : 'negative'}">
+                        ${btcFinal.returnPct >= 0 ? '+' : ''}${btcFinal.returnPct.toFixed(1)}%
+                    </div>
+                    <div class="market-card-value">$${btcFinal.value.toFixed(2)}</div>
+                </div>
+                <div class="market-card best-picker">
+                    <div class="market-card-icon">🏆</div>
+                    <div class="market-card-name">Best Picker</div>
+                    <div class="market-card-return ${bestPicker.returnPct >= 0 ? 'positive' : 'negative'}">
+                        ${bestPicker.returnPct >= 0 ? '+' : ''}${bestPicker.returnPct.toFixed(1)}%
+                    </div>
+                    <div class="market-card-value">${bestPicker.name}</div>
+                </div>
+            </div>
+
+            <div class="vs-market-chart-container">
+                <h3>Performance Over Time</h3>
+                <canvas id="vs-market-chart"></canvas>
+            </div>
+
+            <div class="vs-market-leaderboard">
+                <h3>Leaderboard</h3>
+                <table class="vs-market-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Name</th>
+                            <th>Return</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${leaderboard.map((item, i) => `
+                            <tr class="${item.type}">
+                                <td class="rank">${i + 1}</td>
+                                <td class="name">${item.icon} ${item.name}</td>
+                                <td class="return ${item.returnPct >= 0 ? 'positive' : 'negative'}">
+                                    ${item.returnPct >= 0 ? '+' : ''}${item.returnPct.toFixed(1)}%
+                                </td>
+                                <td class="value">$${item.value.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        // Render chart
+        renderVsMarketChart(pickerData, marketReturns);
+
+    } catch (error) {
+        console.error('[Market] Error rendering vs market section:', error);
+        section.innerHTML = `
+            <div class="vs-market-error">
+                <p>Failed to load market data. Please try again later.</p>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Render the comparison chart
+ */
+function renderVsMarketChart(pickerData, marketReturns) {
+    const canvas = document.getElementById('vs-market-chart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+
+    // Prepare datasets
+    const weeks = Array.from({ length: CURRENT_NFL_WEEK }, (_, i) => `Week ${i + 1}`);
+
+    const datasets = [
+        {
+            label: 'S&P 500',
+            data: marketReturns.sp500.map(d => d.value),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 3,
+            tension: 0.3,
+            pointRadius: 0
+        },
+        {
+            label: 'Gold',
+            data: marketReturns.gold.map(d => d.value),
+            borderColor: '#eab308',
+            backgroundColor: 'rgba(234, 179, 8, 0.1)',
+            borderWidth: 3,
+            tension: 0.3,
+            pointRadius: 0
+        },
+        {
+            label: 'Bitcoin',
+            data: marketReturns.bitcoin.map(d => d.value),
+            borderColor: '#f97316',
+            backgroundColor: 'rgba(249, 115, 22, 0.1)',
+            borderWidth: 3,
+            tension: 0.3,
+            pointRadius: 0
+        }
+    ];
+
+    // Add picker datasets
+    const pickerColors = {
+        'Stephen': '#3b82f6',
+        'Sean': '#059669',
+        'Dylan': '#8b5cf6',
+        'Jason': '#f97316',
+        'Daniel': '#06b6d4'
+    };
+
+    PICKERS.forEach(picker => {
+        datasets.push({
+            label: picker,
+            data: pickerData[picker].map(d => d.bankroll),
+            borderColor: pickerColors[picker] || '#6b7280',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            tension: 0.3,
+            pointRadius: 0
+        });
+    });
+
+    // Destroy existing chart if any
+    if (window.vsMarketChart) {
+        window.vsMarketChart.destroy();
+    }
+
+    window.vsMarketChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: weeks,
+            datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 20
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: $${context.raw?.toFixed(2) || '0.00'}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    ticks: {
+                        callback: value => `$${value}`
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Initialize when DOM is ready
