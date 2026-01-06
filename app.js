@@ -5827,7 +5827,9 @@ function getNFLWeekStartDate(week) {
 }
 
 /**
- * Calculate weekly bankroll for a picker with $100/week DCA and compounding
+ * Calculate weekly bankroll for a picker based on Blazin' 5 picks
+ * Uses the same P&L calculation as the Standings section for consistency
+ * $20 flat bet per pick, $100/week added to bankroll
  * @param {string} picker - Picker name
  * @returns {Array} Array of { week, bankroll, invested, returnPct } objects
  */
@@ -5835,6 +5837,7 @@ function calculatePickerWeeklyBankroll(picker) {
     const weeklyData = [];
     let totalInvested = 0;
     let bankroll = 0;
+    let totalWins = 0, totalLosses = 0, totalPushes = 0;
 
     for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
         const games = NFL_GAMES_BY_WEEK[week];
@@ -5854,7 +5857,8 @@ function calculatePickerWeeklyBankroll(picker) {
             continue;
         }
 
-        // Count wins/losses for this week's spread picks
+        // Count wins/losses for this week's Blazin' 5 picks
+        // Uses same logic as calculateAllPickersPnL for consistency
         let weekWins = 0;
         let weekLosses = 0;
         let weekPushes = 0;
@@ -5871,25 +5875,32 @@ function calculatePickerWeeklyBankroll(picker) {
 
             if (!pick || !pick.line) return;
 
+            // Only count Blazin' 5 picks
+            if (!pick.blazin) return;
+
             const atsWinner = calculateATSWinner(game, result);
-            if (atsWinner === 'push') {
+            const isPush = atsWinner === 'push';
+            const isWin = pick.line === atsWinner;
+
+            if (isPush) {
                 weekPushes++;
-            } else if (pick.line === atsWinner) {
+            } else if (isWin) {
                 weekWins++;
             } else {
                 weekLosses++;
             }
         });
 
+        totalWins += weekWins;
+        totalLosses += weekLosses;
+        totalPushes += weekPushes;
+
         // Calculate this week's betting P&L
-        // Bet proportionally on all picks
-        const totalPicks = weekWins + weekLosses + weekPushes;
-        if (totalPicks > 0) {
-            const betPerPick = bankroll / totalPicks;
-            const winnings = weekWins * betPerPick * (100 / 110); // Win pays ~0.909x
-            const losses = weekLosses * betPerPick;
-            bankroll = bankroll + winnings - losses;
-        }
+        // Flat $20 bet per Blazin' 5 pick
+        const betPerPick = 20;
+        const winnings = weekWins * betPerPick * (100 / 110); // Win pays ~0.909x
+        const losses = weekLosses * betPerPick;
+        bankroll = bankroll + winnings - losses;
 
         weeklyData.push({
             week,
@@ -5897,6 +5908,16 @@ function calculatePickerWeeklyBankroll(picker) {
             invested: totalInvested,
             returnPct: ((bankroll - totalInvested) / totalInvested) * 100
         });
+    }
+
+    // Compare with P&L calculation
+    const pnlData = calculateAllPickersPnL(20);
+    const pnlRecord = pnlData[picker]?.blazin;
+    if (pnlRecord) {
+        const pnlMatch = totalWins === pnlRecord.wins && totalLosses === pnlRecord.losses;
+        console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes} (P&L: ${pnlRecord.wins}-${pnlRecord.losses}-${pnlRecord.pushes}) ${pnlMatch ? '✓' : '⚠️ MISMATCH'}`);
+    } else {
+        console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes}`);
     }
 
     return weeklyData;
@@ -6161,7 +6182,7 @@ async function renderVsMarketSection() {
         section.innerHTML = `
             <div class="vs-market-header">
                 <h2>vs Market</h2>
-                <p class="vs-market-subtitle">Compare your picks against investment alternatives ($100/week)</p>
+                <p class="vs-market-subtitle">Blazin' 5 picks ($20/pick) vs. investing $100/week</p>
             </div>
 
             <div class="vs-market-summary">
