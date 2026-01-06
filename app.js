@@ -563,6 +563,12 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
  * Load schedule for a week, merging ESPN data with existing spreads
  */
 async function loadWeekSchedule(week, forceRefresh = false) {
+    // If Google Sheets already provided games for this week, use those (picks are keyed to Google Sheets game IDs)
+    if (!forceRefresh && NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
+        console.log(`[Schedule] Using existing games for week ${week} (${NFL_GAMES_BY_WEEK[week].length} games)`);
+        return NFL_GAMES_BY_WEEK[week];
+    }
+
     // For historical weeks, use stored data
     if (week < CURRENT_NFL_WEEK && HISTORICAL_GAMES && HISTORICAL_GAMES[week]) {
         console.log(`[Schedule] Using historical data for week ${week}`);
@@ -1070,7 +1076,7 @@ function initializePicksStorage() {
 }
 initializePicksStorage();
 
-// Merge historical picks if available
+// Merge historical picks if available (from historical-data.js)
 if (typeof HISTORICAL_PICKS !== 'undefined') {
     for (const week in HISTORICAL_PICKS) {
         if (!allPicks[week]) {
@@ -1259,10 +1265,10 @@ async function setCurrentWeek(week) {
                 const weekData = parseWeeklyPicksCSV(csvText, week);
                 weeklyPicksCache[week] = weekData;
 
-                // Merge into allPicks
-                if (weekData.picks) {
-                    allPicks[week] = weekData.picks;
-                }
+                // DISABLED: Pick data now comes from historical-data.js
+                // if (weekData.picks) {
+                //     allPicks[week] = weekData.picks;
+                // }
                 if (weekData.games && weekData.games.length > 0) {
                     NFL_GAMES_BY_WEEK[week] = weekData.games;
                 }
@@ -3437,31 +3443,9 @@ async function loadAllWeeklyDataForBlazin() {
         const { week, data: weekData } = result;
         weeklyPicksCache[week] = weekData;
 
-        // Merge blazin picks into allPicks
-        if (weekData.picks) {
-            if (!allPicks[week]) allPicks[week] = {};
-            for (const picker in weekData.picks) {
-                if (!allPicks[week][picker]) allPicks[week][picker] = {};
-                for (const gameId in weekData.picks[picker]) {
-                    const pick = weekData.picks[picker][gameId];
-                    if (!allPicks[week][picker][gameId]) {
-                        allPicks[week][picker][gameId] = {};
-                    }
-                    // Merge blazin marker
-                    if (pick.blazin) {
-                        allPicks[week][picker][gameId].blazin = true;
-                        allPicks[week][picker][gameId].blazinTeam = pick.blazinTeam;
-                    }
-                    // Also merge line/winner if not present
-                    if (pick.line && !allPicks[week][picker][gameId].line) {
-                        allPicks[week][picker][gameId].line = pick.line;
-                    }
-                    if (pick.winner && !allPicks[week][picker][gameId].winner) {
-                        allPicks[week][picker][gameId].winner = pick.winner;
-                    }
-                }
-            }
-        }
+        // DISABLED: Pick data now comes from historical-data.js, not Google Sheets
+        // Google Sheets picks merge is disabled to prevent overwriting historical data
+        // The weeklyPicksCache is still populated for game/result data only
 
         // Merge results into NFL_RESULTS_BY_WEEK (Google Sheets takes priority)
         if (weekData.results && Object.keys(weekData.results).length > 0) {
@@ -6377,3 +6361,119 @@ function renderVsMarketChart(pickerData, marketReturns) {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
+
+/**
+ * Export current data to historical-data.js format
+ * Call this from the browser console after data loads: exportHistoricalData()
+ */
+window.exportHistoricalData = function() {
+    const output = {
+        games: {},
+        results: {},
+        picks: {}
+    };
+
+    // Export games
+    for (let week = 1; week <= 18; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        if (games && games.length > 0) {
+            output.games[week] = games.map(g => ({
+                id: g.id,
+                away: g.away,
+                home: g.home,
+                spread: g.spread || 0,
+                favorite: g.favorite || 'home'
+            }));
+        }
+    }
+
+    // Export results
+    for (let week = 1; week <= 18; week++) {
+        const results = NFL_RESULTS_BY_WEEK[week];
+        if (results && Object.keys(results).length > 0) {
+            output.results[week] = {};
+            for (const gameId in results) {
+                const r = results[gameId];
+                output.results[week][gameId] = {
+                    awayScore: r.awayScore,
+                    homeScore: r.homeScore,
+                    winner: r.winner
+                };
+            }
+        }
+    }
+
+    // Export picks (merge allPicks and weeklyPicksCache)
+    for (let week = 1; week <= 18; week++) {
+        output.picks[week] = {};
+
+        PICKERS.forEach(picker => {
+            const pickerPicks = allPicks[week]?.[picker] || {};
+            const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
+
+            // Merge both sources
+            const mergedPicks = {};
+
+            // First add from allPicks
+            for (const gameId in pickerPicks) {
+                const pick = pickerPicks[gameId];
+                mergedPicks[gameId] = {
+                    line: pick.line,
+                    winner: pick.winner
+                };
+                if (pick.blazin) {
+                    mergedPicks[gameId].blazin = true;
+                    if (pick.blazinTeam) mergedPicks[gameId].blazinTeam = pick.blazinTeam;
+                }
+            }
+
+            // Then merge from cache (may have blazin info)
+            for (const gameId in cachedPicks) {
+                const pick = cachedPicks[gameId];
+                if (!mergedPicks[gameId]) {
+                    mergedPicks[gameId] = {
+                        line: pick.line,
+                        winner: pick.winner
+                    };
+                }
+                if (pick.blazin) {
+                    mergedPicks[gameId].blazin = true;
+                    if (pick.blazinTeam) mergedPicks[gameId].blazinTeam = pick.blazinTeam;
+                }
+            }
+
+            if (Object.keys(mergedPicks).length > 0) {
+                output.picks[week][picker] = mergedPicks;
+            }
+        });
+    }
+
+    // Generate JavaScript code
+    let jsCode = `// Historical NFL Picks Data - Weeks 1-18 (2024 Season)
+// Auto-generated from Google Sheets data on ${new Date().toISOString().split('T')[0]}
+
+const HISTORICAL_GAMES = ${JSON.stringify(output.games, null, 4)};
+
+const HISTORICAL_RESULTS = ${JSON.stringify(output.results, null, 4)};
+
+const HISTORICAL_PICKS = ${JSON.stringify(output.picks, null, 4)};
+
+// Note: The merge logic is now handled directly in app.js
+// Historical data is merged when app.js loads (before init())
+`;
+
+    console.log('=== COPY EVERYTHING BELOW THIS LINE ===');
+    console.log(jsCode);
+    console.log('=== COPY EVERYTHING ABOVE THIS LINE ===');
+
+    // Also copy to clipboard if possible
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(jsCode).then(() => {
+            console.log('✓ Code copied to clipboard!');
+        }).catch(err => {
+            console.log('Could not copy to clipboard:', err);
+        });
+    }
+
+    return output;
+};
