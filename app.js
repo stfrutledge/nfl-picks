@@ -954,9 +954,12 @@ function hasHardcodedSpreads(week) {
  * Includes spreads, moneyline (h2h), and totals (over/under)
  *
  * Hybrid approach to conserve API calls:
- * - Game days: Fetch fresh odds from API (uses cache if valid)
- * - Non-game days with hardcoded spreads: Skip API call entirely
- * - Non-game days without hardcoded spreads: Fetch from API
+ * - Game days: Fetch fresh odds from API
+ * - Non-game days with cached odds: Use cached data (no API call)
+ * - Non-game days with fallback spreads: Use fallbacks (no API call)
+ * - Non-game days without cache or fallbacks: Fetch from API (first playoff load)
+ *
+ * This ensures playoff weeks also conserve API calls after the first fetch.
  *
  * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
  */
@@ -964,25 +967,36 @@ async function updateOddsFromAPI(forceRefresh = false) {
     const cached = getCachedOdds();
     const isGameDay = isNFLGameDay();
     const hasFallbackSpreads = hasHardcodedSpreads(currentWeek);
+    const isPlayoff = isPlayoffWeek(currentWeek);
 
-    // Hybrid logic: Skip API on non-game days if we have fallback spreads
-    if (!forceRefresh && !isGameDay && hasFallbackSpreads) {
-        console.log('[Odds API] Non-game day with fallback spreads - skipping API call');
-        // If we have valid cache, apply it to update any stale hardcoded values
+    // Hybrid logic to conserve API calls on non-game days:
+    // 1. If we have valid cached odds → use them (works for both regular season and playoffs)
+    // 2. If we have fallback spreads → use them (regular season only)
+    // 3. Otherwise → need to fetch from API
+    if (!forceRefresh && !isGameDay) {
+        // Priority 1: Use cached odds if available (applies to playoffs too)
         if (cached) {
-            console.log('[Odds API] Applying cached odds to games');
+            console.log(`[Odds API] Non-game day - using cached odds${isPlayoff ? ' (playoff week)' : ''}`);
             return applyOddsData(cached);
         }
-        // Otherwise use the hardcoded spreads as-is
-        console.log('[Odds API] Using hardcoded fallback spreads');
-        return true;
+        // Priority 2: Use fallback spreads for regular season
+        if (hasFallbackSpreads) {
+            console.log('[Odds API] Non-game day with fallback spreads - skipping API call');
+            return true;
+        }
+        // No cache and no fallbacks - need to fetch (first load of playoff week)
+        console.log(`[Odds API] Non-game day but no cached odds${isPlayoff ? ' for playoff week' : ''} - fetching from API`);
     }
 
     // Fetch odds from API (will use cache if valid)
     const oddsData = await fetchNFLOdds(forceRefresh);
     if (!oddsData) {
         console.warn('[Odds API] Could not fetch odds');
-        // Fall back to hardcoded spreads if available
+        // Fall back to cached data or hardcoded spreads
+        if (cached) {
+            console.log('[Odds API] API failed, using stale cached odds');
+            return applyOddsData(cached);
+        }
         if (hasFallbackSpreads) {
             console.log('[Odds API] API failed, using hardcoded fallback spreads');
             return true;
