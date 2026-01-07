@@ -563,17 +563,61 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
  * Load schedule for a week, merging ESPN data with existing spreads
  */
 async function loadWeekSchedule(week, forceRefresh = false) {
-    // If Google Sheets already provided games for this week, use those (picks are keyed to Google Sheets game IDs)
-    if (!forceRefresh && NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
+    // For current/future weeks, use cached Google Sheets games if available
+    // For historical weeks, always merge with ESPN to get full game info (status, location, etc.)
+    if (!forceRefresh && week >= CURRENT_NFL_WEEK && NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
         console.log(`[Schedule] Using existing games for week ${week} (${NFL_GAMES_BY_WEEK[week].length} games)`);
         return NFL_GAMES_BY_WEEK[week];
     }
 
-    // For historical weeks, use stored data
+    // For historical weeks, merge ESPN data with historical IDs
+    // ESPN provides full game info (status, location, scores) but historical data has correct IDs for picks
     if (week < CURRENT_NFL_WEEK && HISTORICAL_GAMES && HISTORICAL_GAMES[week]) {
-        console.log(`[Schedule] Using historical data for week ${week}`);
-        NFL_GAMES_BY_WEEK[week] = HISTORICAL_GAMES[week];
-        return NFL_GAMES_BY_WEEK[week];
+        const historicalGames = HISTORICAL_GAMES[week];
+        const espnGames = await fetchNFLSchedule(week, forceRefresh);
+
+        if (espnGames && espnGames.length > 0) {
+            // Match ESPN games to historical games by team names and merge
+            const mergedGames = historicalGames.map(histGame => {
+                // Find matching ESPN game by team names
+                const espnMatch = espnGames.find(eg =>
+                    eg.away.toLowerCase().includes(histGame.away.toLowerCase()) ||
+                    histGame.away.toLowerCase().includes(eg.away.toLowerCase())
+                );
+
+                if (espnMatch) {
+                    // Merge: use historical ID and spread, ESPN for everything else
+                    return {
+                        ...espnMatch,
+                        id: histGame.id,
+                        spread: histGame.spread || espnMatch.spread,
+                        favorite: histGame.favorite || espnMatch.favorite
+                    };
+                }
+                // If no ESPN match, use historical data with defaults
+                return {
+                    ...histGame,
+                    status: 'final',
+                    awayScore: HISTORICAL_RESULTS[week]?.[histGame.id]?.awayScore || 0,
+                    homeScore: HISTORICAL_RESULTS[week]?.[histGame.id]?.homeScore || 0
+                };
+            });
+
+            NFL_GAMES_BY_WEEK[week] = mergedGames;
+            console.log(`[Schedule] Merged ESPN data with historical IDs for week ${week}`);
+            return mergedGames;
+        }
+
+        // Fallback: use historical data with status/scores added
+        const gamesWithStatus = historicalGames.map(game => ({
+            ...game,
+            status: 'final',
+            awayScore: HISTORICAL_RESULTS[week]?.[game.id]?.awayScore || 0,
+            homeScore: HISTORICAL_RESULTS[week]?.[game.id]?.homeScore || 0
+        }));
+        NFL_GAMES_BY_WEEK[week] = gamesWithStatus;
+        console.log(`[Schedule] Using historical data for week ${week} (ESPN unavailable)`);
+        return gamesWithStatus;
     }
 
     // Save existing hardcoded spreads before fetching ESPN data
