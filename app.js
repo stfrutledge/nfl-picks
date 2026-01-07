@@ -1124,12 +1124,45 @@ function startLiveScoresRefresh() {
                 if (!shouldPollLiveScores()) {
                     console.log('All games final - stopping live refresh');
                     stopLiveScoresRefresh();
+
+                    // Check if next week's games are available and preload them
+                    await preloadNextWeekIfAvailable();
                 }
             }, 120000);
         } else {
             console.log('All games final or no games - skipping live refresh');
         }
     });
+}
+
+/**
+ * Preload next week's games when current week is complete
+ * This helps ensure playoff weeks transition smoothly
+ */
+async function preloadNextWeekIfAvailable() {
+    const nextWeek = currentWeek + 1;
+    const maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+
+    // Don't preload beyond current or max week
+    if (nextWeek > maxWeek) return;
+
+    // Check if we already have games for next week
+    if (NFL_GAMES_BY_WEEK[nextWeek] && NFL_GAMES_BY_WEEK[nextWeek].length > 0) {
+        console.log(`[Preload] Next week ${nextWeek} already has ${NFL_GAMES_BY_WEEK[nextWeek].length} games`);
+        return;
+    }
+
+    console.log(`[Preload] Loading games for ${getWeekDisplayName(nextWeek)}...`);
+    await loadWeekSchedule(nextWeek);
+
+    // Also fetch odds for playoff weeks
+    if (isPlayoffWeek(nextWeek)) {
+        await updateOddsFromAPI(false);
+    }
+
+    // Update the week dropdown to show the new week if not already there
+    setupWeekButtons();
+    console.log(`[Preload] ${getWeekDisplayName(nextWeek)} is now available`);
 }
 
 /**
@@ -1418,12 +1451,20 @@ async function setCurrentWeek(week) {
         }
     }
 
-    // Load schedule from ESPN for current/future weeks
-    // (historical weeks use data from weekly CSV or historical-data.js)
-    if (week >= CURRENT_NFL_WEEK || !NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0) {
+    // Load schedule from ESPN for current/future weeks and playoffs
+    // (historical regular season weeks use data from weekly CSV or historical-data.js)
+    const needsScheduleFetch = week >= CURRENT_NFL_WEEK ||
+                               isPlayoffWeek(week) ||
+                               !NFL_GAMES_BY_WEEK[week] ||
+                               NFL_GAMES_BY_WEEK[week].length === 0;
+
+    if (needsScheduleFetch) {
         await loadWeekSchedule(week);
-        // Note: Odds are loaded once on page load and cached for 24 hours
-        // No need to fetch on every week change
+
+        // For playoff weeks, also refresh odds to get O/U lines
+        if (isPlayoffWeek(week)) {
+            await updateOddsFromAPI(false); // Use cache if fresh, otherwise fetch
+        }
     }
 
     // Hide loading indicator
