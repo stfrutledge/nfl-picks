@@ -20,20 +20,60 @@ let initialLoadComplete = false; // Track whether initial data load is complete
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
 
+// Playoff week configuration
+const PLAYOFF_WEEKS = {
+    19: { name: 'Wild Card', shortName: 'WC', espnWeek: 1 },
+    20: { name: 'Divisional', shortName: 'DIV', espnWeek: 2 },
+    21: { name: 'Conference Championships', shortName: 'CONF', espnWeek: 3 },
+    22: { name: 'Super Bowl', shortName: 'SB', espnWeek: 4 }
+};
+const FIRST_PLAYOFF_WEEK = 19;
+const LAST_PLAYOFF_WEEK = 22;
+
+/**
+ * Check if a week is a playoff week
+ */
+function isPlayoffWeek(week) {
+    return week >= FIRST_PLAYOFF_WEEK && week <= LAST_PLAYOFF_WEEK;
+}
+
+/**
+ * Get display name for a week (e.g., "Week 5" or "Wild Card")
+ */
+function getWeekDisplayName(week) {
+    if (isPlayoffWeek(week)) {
+        return PLAYOFF_WEEKS[week].name;
+    }
+    return `Week ${week}`;
+}
+
 /**
  * Calculate current NFL week based on date
  * 2025 NFL Season: Week 1 started September 4, 2025
+ * Playoffs: Wild Card (Jan 10), Divisional (Jan 17), Conference (Jan 25), Super Bowl (Feb 8)
  */
 function calculateCurrentNFLWeek() {
     const SEASON_START = new Date('2025-09-02T00:00:00'); // Tuesday before Week 1
-    const SEASON_END = new Date('2026-01-06T00:00:00'); // Day after Week 18 games
+    const REGULAR_SEASON_END = new Date('2026-01-06T00:00:00'); // Day after Week 18 games
+    const WILD_CARD_START = new Date('2026-01-10T00:00:00');
+    const DIVISIONAL_START = new Date('2026-01-17T00:00:00');
+    const CONFERENCE_START = new Date('2026-01-25T00:00:00');
+    const SUPER_BOWL_START = new Date('2026-02-08T00:00:00');
+    const SUPER_BOWL_END = new Date('2026-02-09T00:00:00');
     const now = new Date();
 
     // If before season start, return week 1
     if (now < SEASON_START) return 1;
 
-    // If after season end, return 19 (so all weeks 1-18 are treated as historical)
-    if (now >= SEASON_END) return 19;
+    // Playoff weeks
+    if (now >= SUPER_BOWL_END) return 23; // Season completely over
+    if (now >= SUPER_BOWL_START) return 22; // Super Bowl
+    if (now >= CONFERENCE_START) return 21; // Conference Championships
+    if (now >= DIVISIONAL_START) return 20; // Divisional
+    if (now >= WILD_CARD_START) return 19; // Wild Card
+
+    // If after regular season but before Wild Card
+    if (now >= REGULAR_SEASON_END) return 19;
 
     // Calculate weeks elapsed (each NFL week starts on Tuesday)
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
@@ -507,8 +547,16 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
     }
 
     try {
-        console.log(`[ESPN] Fetching schedule for week ${week}...`);
-        const response = await fetch(`${ESPN_SCHEDULE_URL}?week=${week}`);
+        let url;
+        if (isPlayoffWeek(week)) {
+            const playoffInfo = PLAYOFF_WEEKS[week];
+            url = `${ESPN_SCHEDULE_URL}?seasontype=3&week=${playoffInfo.espnWeek}`;
+            console.log(`[ESPN] Fetching playoff schedule for ${playoffInfo.name}...`);
+        } else {
+            url = `${ESPN_SCHEDULE_URL}?week=${week}`;
+            console.log(`[ESPN] Fetching schedule for week ${week}...`);
+        }
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error(`ESPN API error: ${response.status}`);
@@ -567,7 +615,28 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
  * Load schedule for a week, merging ESPN data with existing spreads
  */
 async function loadWeekSchedule(week, forceRefresh = false) {
-    // For current/future weeks, use cached Google Sheets games if available
+    // For playoff weeks, always fetch from ESPN (no historical data)
+    if (isPlayoffWeek(week)) {
+        // Check if we already have games cached for this playoff week
+        if (!forceRefresh && NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
+            console.log(`[Schedule] Using existing ${getWeekDisplayName(week)} games (${NFL_GAMES_BY_WEEK[week].length} games)`);
+            return NFL_GAMES_BY_WEEK[week];
+        }
+
+        // Fetch playoff games from ESPN
+        const espnGames = await fetchNFLSchedule(week, forceRefresh);
+        if (espnGames && espnGames.length > 0) {
+            NFL_GAMES_BY_WEEK[week] = espnGames;
+            cacheSchedule(week, espnGames);
+            console.log(`[Schedule] Loaded ${espnGames.length} games for ${getWeekDisplayName(week)} from ESPN`);
+        } else {
+            NFL_GAMES_BY_WEEK[week] = [];
+            console.warn(`[Schedule] No games found for ${getWeekDisplayName(week)}`);
+        }
+        return NFL_GAMES_BY_WEEK[week];
+    }
+
+    // For current/future regular season weeks, use cached Google Sheets games if available
     // For historical weeks, always merge with ESPN to get full game info (status, location, etc.)
     if (!forceRefresh && week >= CURRENT_NFL_WEEK && NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
         console.log(`[Schedule] Using existing games for week ${week} (${NFL_GAMES_BY_WEEK[week].length} games)`);
@@ -1242,12 +1311,28 @@ function setupWeekButtons() {
     const weekDropdown = document.getElementById('week-dropdown');
     if (!weekDropdown) return;
 
-    // Create options for weeks 1 through current NFL week
     let optionsHtml = '';
-    for (let week = CURRENT_NFL_WEEK; week >= 1; week--) {
+    const effectiveWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+
+    // Playoffs section (if we're in or past playoffs)
+    if (effectiveWeek >= FIRST_PLAYOFF_WEEK) {
+        optionsHtml += '<optgroup label="Playoffs">';
+        for (let week = effectiveWeek; week >= FIRST_PLAYOFF_WEEK; week--) {
+            const selected = week === currentWeek ? 'selected' : '';
+            optionsHtml += `<option value="${week}" ${selected}>${PLAYOFF_WEEKS[week].name}</option>`;
+        }
+        optionsHtml += '</optgroup>';
+    }
+
+    // Regular Season section
+    optionsHtml += '<optgroup label="Regular Season">';
+    const maxRegularWeek = Math.min(effectiveWeek, TOTAL_WEEKS);
+    for (let week = maxRegularWeek; week >= 1; week--) {
         const selected = week === currentWeek ? 'selected' : '';
         optionsHtml += `<option value="${week}" ${selected}>Week ${week}</option>`;
     }
+    optionsHtml += '</optgroup>';
+
     weekDropdown.innerHTML = optionsHtml;
 
     // Add change handler
@@ -1269,14 +1354,15 @@ async function setCurrentWeek(week) {
         weekDropdown.value = week;
     }
 
-    // Update header
+    // Update header with correct week name (e.g., "Wild Card" for playoff weeks)
+    const weekDisplayName = getWeekDisplayName(week);
     const picksWeekNum = document.getElementById('picks-week-num');
     if (picksWeekNum) {
-        picksWeekNum.textContent = week;
+        picksWeekNum.textContent = weekDisplayName;
     }
     const scoringWeekNum = document.getElementById('scoring-week-num');
     if (scoringWeekNum) {
-        scoringWeekNum.textContent = week;
+        scoringWeekNum.textContent = weekDisplayName;
     }
 
     // Show loading indicator
@@ -3728,8 +3814,9 @@ function renderGames() {
         return;
     }
 
-    // Count current blazin picks for the week
-    const blazinCount = weekGames.reduce((count, g) => {
+    // Count current blazin picks for the week (only for regular season)
+    const isPlayoff = isPlayoffWeek(currentWeek);
+    const blazinCount = isPlayoff ? 0 : weekGames.reduce((count, g) => {
         const gPicks = pickerPicks[String(g.id)] || pickerPicks[g.id] || {};
         return count + (gPicks.blazin ? 1 : 0);
     }, 0);
@@ -3788,6 +3875,27 @@ function renderGames() {
                 }
                 if (winnerPick === 'home') {
                     winnerHomeResult = result.winner === 'home' ? 'correct' : 'incorrect';
+                }
+            }
+        }
+
+        // Over/Under pick data (for playoffs)
+        const ouPick = gamePicks.overUnder;
+        const ouLine = game.overUnder || gamePicks.totalLine || 0;
+        let ouOverResult = '', ouUnderResult = '';
+        if (isPlayoff && gameCompleted && ouPick && ouLine > 0) {
+            const result = getResultsForWeek(currentWeek)[game.id] || (liveData && isFinal ? {
+                awayScore: liveData.awayScore,
+                homeScore: liveData.homeScore
+            } : null);
+            if (result) {
+                const totalScore = (result.awayScore || 0) + (result.homeScore || 0);
+                const ouResult = totalScore > ouLine ? 'over' : (totalScore < ouLine ? 'under' : 'push');
+                if (ouPick === 'over') {
+                    ouOverResult = ouResult === 'push' ? 'push' : (ouResult === 'over' ? 'correct' : 'incorrect');
+                }
+                if (ouPick === 'under') {
+                    ouUnderResult = ouResult === 'push' ? 'push' : (ouResult === 'under' ? 'correct' : 'incorrect');
                 }
             }
         }
@@ -3909,12 +4017,30 @@ function renderGames() {
                         <span class="location-city">${game.location}</span>
                         <span class="location-stadium">${game.stadium}</span>
                     </div>
-                    <button class="blazin-star ${isBlazin ? 'active' : ''}"
-                            data-game-id="${game.id}"
-                            ${blazinDisabled ? 'disabled' : ''}
-                            title="${blazinTitle}">
-                        <span class="blazin-label">B5</span>${isBlazin ? '★' : '☆'}
-                    </button>
+                    ${isPlayoff ? `
+                        <div class="ou-picker" data-game-id="${game.id}">
+                            <span class="ou-label">O/U ${ouLine > 0 ? ouLine : 'TBD'}</span>
+                            ${ouLine > 0 ? `
+                                <button class="ou-btn ${ouPick === 'over' ? 'selected' : ''} ${ouOverResult}"
+                                        data-game-id="${game.id}" data-pick-type="overUnder" data-value="over"
+                                        ${locked ? 'disabled' : ''}>
+                                    Over
+                                </button>
+                                <button class="ou-btn ${ouPick === 'under' ? 'selected' : ''} ${ouUnderResult}"
+                                        data-game-id="${game.id}" data-pick-type="overUnder" data-value="under"
+                                        ${locked ? 'disabled' : ''}>
+                                    Under
+                                </button>
+                            ` : '<span class="ou-unavailable">Line TBD</span>'}
+                        </div>
+                    ` : `
+                        <button class="blazin-star ${isBlazin ? 'active' : ''}"
+                                data-game-id="${game.id}"
+                                ${blazinDisabled ? 'disabled' : ''}
+                                title="${blazinTitle}">
+                            <span class="blazin-label">B5</span>${isBlazin ? '★' : '☆'}
+                        </button>
+                    `}
                 </div>
             </div>
         `;
@@ -3928,6 +4054,11 @@ function renderGames() {
     // Add click handlers for blazin star buttons
     document.querySelectorAll('.blazin-star').forEach(btn => {
         btn.addEventListener('click', handleBlazinToggle);
+    });
+
+    // Add click handlers for O/U buttons (playoffs)
+    document.querySelectorAll('.ou-btn').forEach(btn => {
+        btn.addEventListener('click', handleOUSelect);
     });
 
     // Setup keyboard navigation
@@ -4146,6 +4277,70 @@ function handlePickSelect(e) {
             starBtn.disabled = blazinCount >= 5;
         }
     });
+
+    // Update scoring summary
+    renderScoringSummary();
+}
+
+/**
+ * Handle Over/Under pick selection (playoffs)
+ */
+function handleOUSelect(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const btn = e.currentTarget;
+    const gameId = btn.dataset.gameId;
+    const value = btn.dataset.value; // 'over' or 'under'
+
+    if (!gameId || btn.disabled) return;
+
+    // Initialize picks structure
+    if (!allPicks[currentWeek]) {
+        allPicks[currentWeek] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker]) {
+        allPicks[currentWeek][currentPicker] = {};
+    }
+    if (!allPicks[currentWeek][currentPicker][gameId]) {
+        allPicks[currentWeek][currentPicker][gameId] = {};
+    }
+
+    // Get current selection
+    const currentSelection = allPicks[currentWeek][currentPicker][gameId].overUnder;
+    const isDeselecting = currentSelection === value;
+
+    // Toggle selection
+    if (isDeselecting) {
+        delete allPicks[currentWeek][currentPicker][gameId].overUnder;
+        delete allPicks[currentWeek][currentPicker][gameId].totalLine;
+    } else {
+        allPicks[currentWeek][currentPicker][gameId].overUnder = value;
+        // Store the line at time of pick
+        const weekGames = getGamesForWeek(currentWeek);
+        const game = weekGames.find(g => String(g.id) === gameId);
+        if (game && game.overUnder) {
+            allPicks[currentWeek][currentPicker][gameId].totalLine = game.overUnder;
+        }
+    }
+
+    // Save to localStorage
+    savePicksToStorage();
+
+    // Update button states
+    const otherValue = value === 'over' ? 'under' : 'over';
+    const otherBtn = document.querySelector(`.ou-btn[data-game-id="${gameId}"][data-value="${otherValue}"]`);
+    if (otherBtn) {
+        otherBtn.classList.remove('selected');
+    }
+
+    if (isDeselecting) {
+        btn.classList.remove('selected');
+    } else {
+        btn.classList.add('selected');
+        btn.classList.add('just-selected');
+        setTimeout(() => btn.classList.remove('just-selected'), 400);
+    }
 
     // Update scoring summary
     renderScoringSummary();
@@ -4683,8 +4878,10 @@ function renderScoringSummary() {
     // Update the summary header
     const summaryHeader = document.querySelector('.scoring-summary h3');
     if (summaryHeader) {
-        summaryHeader.textContent = `Week ${currentWeek} Scoring Summary`;
+        summaryHeader.textContent = `${getWeekDisplayName(currentWeek)} Scoring Summary`;
     }
+
+    const isPlayoff = isPlayoffWeek(currentWeek);
 
     if (weekGames.length === 0) {
         scoringTable.innerHTML = '<tbody><tr><td colspan="4" class="no-games-message">No games data available for this week.</td></tr></tbody>';
@@ -4697,7 +4894,8 @@ function renderScoringSummary() {
         stats[picker] = {
             lineWins: 0, lineLosses: 0, linePushes: 0,
             suWins: 0, suLosses: 0,
-            blazinWins: 0, blazinLosses: 0, blazinPushes: 0
+            blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
+            ouWins: 0, ouLosses: 0, ouPushes: 0
         };
 
         const pickerPicks = weekPicks[picker] || {};
@@ -4751,6 +4949,23 @@ function renderScoringSummary() {
                     stats[picker].suLosses++;
                 }
             }
+
+            // Over/Under result (playoffs only)
+            if (isPlayoff) {
+                const ouPick = gamePicks.overUnder || cachedGamePicks.overUnder;
+                const ouLine = game.overUnder || gamePicks.totalLine || cachedGamePicks.totalLine;
+                if (ouPick && ouLine > 0) {
+                    const totalScore = (result.awayScore || 0) + (result.homeScore || 0);
+                    const ouResult = totalScore > ouLine ? 'over' : (totalScore < ouLine ? 'under' : 'push');
+                    if (ouResult === 'push') {
+                        stats[picker].ouPushes++;
+                    } else if (ouPick === ouResult) {
+                        stats[picker].ouWins++;
+                    } else {
+                        stats[picker].ouLosses++;
+                    }
+                }
+            }
         });
     });
 
@@ -4768,7 +4983,7 @@ function renderScoringSummary() {
                 <th>Picker</th>
                 <th>Line (ATS)</th>
                 <th>Straight Up</th>
-                <th>Blazin' 5</th>
+                <th>${isPlayoff ? 'Over/Under' : "Blazin' 5"}</th>
             </tr>
         </thead>
     `;
@@ -4779,6 +4994,13 @@ function renderScoringSummary() {
         const linePush = s.linePushes > 0 ? `-${s.linePushes}` : '';
         const blazinPush = s.blazinPushes > 0 ? `-${s.blazinPushes}` : '';
         const blazinTotal = s.blazinWins + s.blazinLosses + s.blazinPushes;
+        const ouPush = s.ouPushes > 0 ? `-${s.ouPushes}` : '';
+        const ouTotal = s.ouWins + s.ouLosses + s.ouPushes;
+
+        // Fourth column: O/U for playoffs, Blazin' 5 for regular season
+        const fourthCol = isPlayoff
+            ? (hasResults && ouTotal > 0 ? `${s.ouWins}-${s.ouLosses}${ouPush}` : '-')
+            : (hasResults && blazinTotal > 0 ? `${s.blazinWins}-${s.blazinLosses}${blazinPush}` : '-');
 
         bodyHtml += `
             <tr>
@@ -4788,7 +5010,7 @@ function renderScoringSummary() {
                 </td>
                 <td class="stat-cell">${hasResults ? `${s.lineWins}-${s.lineLosses}${linePush}` : '-'}</td>
                 <td class="stat-cell">${hasResults ? `${s.suWins}-${s.suLosses}` : '-'}</td>
-                <td class="stat-cell">${hasResults && blazinTotal > 0 ? `${s.blazinWins}-${s.blazinLosses}${blazinPush}` : '-'}</td>
+                <td class="stat-cell">${fourthCol}</td>
             </tr>
         `;
     });
@@ -5420,7 +5642,8 @@ function setupWeekNavigation() {
     });
 
     nextBtn?.addEventListener('click', () => {
-        if (currentWeek < CURRENT_NFL_WEEK) {
+        const maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+        if (currentWeek < maxWeek) {
             setCurrentWeek(currentWeek + 1);
         }
     });
@@ -5434,9 +5657,10 @@ function setupWeekNavigation() {
 function updateWeekNavButtons() {
     const prevBtn = document.getElementById('prev-week-btn');
     const nextBtn = document.getElementById('next-week-btn');
+    const maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
 
     if (prevBtn) prevBtn.disabled = currentWeek <= 1;
-    if (nextBtn) nextBtn.disabled = currentWeek >= CURRENT_NFL_WEEK;
+    if (nextBtn) nextBtn.disabled = currentWeek >= maxWeek;
 }
 
 /**
@@ -5446,8 +5670,9 @@ function updateWeekUI() {
     const weekDropdown = document.getElementById('week-dropdown');
     if (weekDropdown) weekDropdown.value = currentWeek;
 
-    document.getElementById('picks-week-num').textContent = currentWeek;
-    document.getElementById('scoring-week-num').textContent = currentWeek;
+    const weekDisplayName = getWeekDisplayName(currentWeek);
+    document.getElementById('picks-week-num').textContent = weekDisplayName;
+    document.getElementById('scoring-week-num').textContent = weekDisplayName;
 
     updateWeekNavButtons();
     renderGames();
