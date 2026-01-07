@@ -426,7 +426,19 @@ function getLiveGameStatus(game) {
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
+const SCHEDULE_CACHE_VERSION = 2; // Increment to invalidate all caches
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
+
+/**
+ * Validate that cached game data has the expected structure
+ */
+function isValidGameData(data) {
+    if (!Array.isArray(data) || data.length === 0) return false;
+    // Check that at least the first game has required fields
+    const game = data[0];
+    return game && typeof game.id !== 'undefined' && game.away && game.home;
+}
 
 /**
  * Get cached schedule from localStorage
@@ -436,32 +448,48 @@ function getCachedSchedule(week) {
         const cached = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
         if (!cached) return null;
 
-        const { timestamp, data } = JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        const { timestamp, data, version } = parsed;
+
+        // Invalidate old cache versions
+        if (version !== SCHEDULE_CACHE_VERSION) {
+            console.log(`[ESPN] Cache version mismatch for week ${week}, invalidating`);
+            localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+            return null;
+        }
         const age = Date.now() - timestamp;
 
-        if (age < SCHEDULE_CACHE_DURATION) {
-            const hoursAgo = (age / (1000 * 60 * 60)).toFixed(1);
-            console.log(`[ESPN] Using cached schedule for week ${week} (${hoursAgo} hours old)`);
-            // Sort cached data by kickoff time to ensure proper order
-            if (data && data.length > 0) {
-                data.sort((a, b) => {
-                    const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
-                    const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
-                    return timeA - timeB;
-                });
-                // Reassign IDs and recalculate day in ET timezone after sorting
-                data.forEach((game, index) => {
-                    game.id = index + 1;
-                    // Recalculate day in ET timezone from kickoff
-                    if (game.kickoff) {
-                        game.day = getDayName(new Date(game.kickoff));
-                    }
-                });
+        // Use shorter cache duration for playoff weeks
+        const maxAge = isPlayoffWeek(week) ? PLAYOFF_CACHE_DURATION : SCHEDULE_CACHE_DURATION;
+
+        if (age < maxAge) {
+            // Validate data structure - treat invalid data as cache miss
+            if (!isValidGameData(data)) {
+                console.log(`[ESPN] Invalid/empty cache data for week ${week}, treating as cache miss`);
+                localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+                return null;
             }
+            const minsAgo = (age / (1000 * 60)).toFixed(0);
+            console.log(`[ESPN] Using cached schedule for week ${week} (${minsAgo} mins old, ${data.length} games)`);
+            // Sort cached data by kickoff time to ensure proper order
+            data.sort((a, b) => {
+                const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
+                const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
+                return timeA - timeB;
+            });
+            // Reassign IDs and recalculate day in ET timezone after sorting
+            data.forEach((game, index) => {
+                game.id = index + 1;
+                // Recalculate day in ET timezone from kickoff
+                if (game.kickoff) {
+                    game.day = getDayName(new Date(game.kickoff));
+                }
+            });
             return data;
         }
 
         console.log(`[ESPN] Schedule cache expired for week ${week}`);
+        localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
         return null;
     } catch (e) {
         console.warn('[ESPN] Error reading schedule cache:', e);
@@ -473,16 +501,55 @@ function getCachedSchedule(week) {
  * Save schedule to localStorage cache
  */
 function cacheSchedule(week, data) {
+    // Validate data before caching
+    if (!isValidGameData(data)) {
+        console.log(`[ESPN] Not caching invalid/empty schedule for week ${week}`);
+        return;
+    }
     try {
         localStorage.setItem(`${SCHEDULE_CACHE_KEY}_week${week}`, JSON.stringify({
+            version: SCHEDULE_CACHE_VERSION,
             timestamp: Date.now(),
             data: data
         }));
-        console.log(`[ESPN] Schedule cached for week ${week}`);
+        console.log(`[ESPN] Schedule cached for week ${week} (${data.length} games, v${SCHEDULE_CACHE_VERSION})`);
     } catch (e) {
         console.warn('[ESPN] Error caching schedule:', e);
     }
 }
+
+/**
+ * Clean up old/corrupt schedule caches on startup
+ * Removes caches with wrong version or invalid data
+ */
+function cleanupScheduleCaches() {
+    try {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(SCHEDULE_CACHE_KEY)) {
+                try {
+                    const cached = JSON.parse(localStorage.getItem(key));
+                    // Remove if wrong version or invalid data
+                    if (!cached.version || cached.version !== SCHEDULE_CACHE_VERSION || !isValidGameData(cached.data)) {
+                        keysToRemove.push(key);
+                    }
+                } catch (e) {
+                    keysToRemove.push(key); // Remove corrupt entries
+                }
+            }
+        }
+        if (keysToRemove.length > 0) {
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            console.log(`[ESPN] Cleaned up ${keysToRemove.length} old/corrupt cache entries`);
+        }
+    } catch (e) {
+        console.warn('[ESPN] Error during cache cleanup:', e);
+    }
+}
+
+// Run cache cleanup on load
+cleanupScheduleCaches();
 
 /**
  * Format day name from date in ET timezone
@@ -541,9 +608,15 @@ function getTeamNickname(fullName) {
  */
 async function fetchNFLSchedule(week, forceRefresh = false) {
     // Check cache first unless force refresh
+    // Empty arrays are treated as cache misses - always try fresh fetch
     if (!forceRefresh) {
         const cached = getCachedSchedule(week);
-        if (cached) return cached;
+        if (cached && cached.length > 0) {
+            return cached;
+        }
+        if (cached && cached.length === 0) {
+            console.log(`[ESPN] Empty cache for week ${week}, attempting fresh fetch`);
+        }
     }
 
     try {
@@ -3846,10 +3919,15 @@ function renderGames() {
 
     if (weekGames.length === 0) {
         const filterMessage = currentGameFilter === 'all' ? '' : ` (${currentGameFilter})`;
+        const weekName = getWeekDisplayName(currentWeek);
+        const isPlayoff = isPlayoffWeek(currentWeek);
+        const subtitle = currentGameFilter !== 'all'
+            ? 'Try changing the filter above.'
+            : (isPlayoff ? 'Playoff games will appear once the schedule is available.' : 'Game data can be added to NFL_GAMES_BY_WEEK in app.js');
         gamesList.innerHTML = `
             <div class="no-games-message">
-                <p>No games${filterMessage} for Week ${currentWeek}.</p>
-                <p class="no-games-subtitle">${currentGameFilter !== 'all' ? 'Try changing the filter above.' : 'Game data can be added to NFL_GAMES_BY_WEEK in app.js'}</p>
+                <p>No games${filterMessage} for ${weekName}.</p>
+                <p class="no-games-subtitle">${subtitle}</p>
             </div>
         `;
         return;
