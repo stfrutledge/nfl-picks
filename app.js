@@ -26,10 +26,14 @@ const TOTAL_WEEKS = 18;
  */
 function calculateCurrentNFLWeek() {
     const SEASON_START = new Date('2025-09-02T00:00:00'); // Tuesday before Week 1
+    const SEASON_END = new Date('2026-01-06T00:00:00'); // Day after Week 18 games
     const now = new Date();
 
     // If before season start, return week 1
     if (now < SEASON_START) return 1;
+
+    // If after season end, return 19 (so all weeks 1-18 are treated as historical)
+    if (now >= SEASON_END) return 19;
 
     // Calculate weeks elapsed (each NFL week starts on Tuesday)
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
