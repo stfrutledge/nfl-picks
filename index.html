@@ -28,7 +28,7 @@
                 <a href="/" title="Home"><img src="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg" alt="NFL Logo" class="nfl-logo"></a>
                 <div class="header-text">
                     <h1>NFL Picks Dashboard</h1>
-                    <p class="subtitle">2025 Regular Season Tracker</p>
+                    <p class="subtitle">2025 Season Tracker</p>
                 </div>
                 <button class="dark-mode-toggle" id="dark-mode-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
                     <span class="icon-sun" aria-hidden="true">&#9728;</span>
@@ -198,7 +198,7 @@
 
             <!-- Error State -->
             <section class="error-state hidden" id="error-state">
-                <div class="error-icon">⚠️</div>
+                <div class="error-icon">!</div>
                 <h3>Failed to Load Data</h3>
                 <p id="error-message">Unable to connect to the data source. Please check your internet connection.</p>
                 <button class="btn btn-primary" id="retry-btn">Try Again</button>
@@ -363,7 +363,7 @@
             <!-- Make Picks Section -->
             <section id="make-picks-section" class="make-picks-section">
                 <div class="picks-header">
-                    <h2>Week <span id="picks-week-num">--</span> Picks</h2>
+                    <h2><span id="picks-week-num">--</span></h2>
                 </div>
 
                 <!-- Week and Picker Selection -->
@@ -438,7 +438,7 @@
                 <!-- Scoring Summary -->
                 <div class="scoring-summary collapsible-section" id="scoring-summary" data-section="scoring">
                     <div class="collapsible-header" onclick="toggleSection('scoring')">
-                        <h3 class="section-header-title">Week <span id="scoring-week-num">--</span> Scoring Summary</h3>
+                        <h3 class="section-header-title"><span id="scoring-week-num">--</span></h3>
                         <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
                     </div>
                     <div class="collapsible-content">
@@ -472,28 +472,28 @@
             </div>
             <div class="onboarding-steps">
                 <div class="onboarding-step">
-                    <div class="step-icon">🏈</div>
+                    <div class="step-icon">1</div>
                     <div class="step-content">
                         <h3>Make Your Picks</h3>
                         <p>Select a week and picker, then click team buttons to make your picks. Choose both <strong>Line Picks</strong> (against the spread) and <strong>Straight Up</strong> (winner) picks.</p>
                     </div>
                 </div>
                 <div class="onboarding-step">
-                    <div class="step-icon">⭐</div>
+                    <div class="step-icon">2</div>
                     <div class="step-content">
                         <h3>Blazin' 5</h3>
                         <p>Mark your 5 most confident picks each week using the star button. These are tracked separately for bragging rights!</p>
                     </div>
                 </div>
                 <div class="onboarding-step">
-                    <div class="step-icon">📊</div>
+                    <div class="step-icon">3</div>
                     <div class="step-content">
                         <h3>View the Tabs</h3>
                         <p>Switch tabs to see leaderboards for <strong>Blazin' 5</strong>, <strong>Line Picks</strong>, and <strong>Straight Up</strong> categories with charts and insights.</p>
                     </div>
                 </div>
                 <div class="onboarding-step">
-                    <div class="step-icon">⌨️</div>
+                    <div class="step-icon">4</div>
                     <div class="step-content">
                         <h3>Keyboard Shortcuts</h3>
                         <p>Use arrow keys to navigate games, number keys (1-4) to make picks quickly. Press <strong>?</strong> to see all shortcuts.</p>

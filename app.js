@@ -38,13 +38,23 @@ function isPlayoffWeek(week) {
 }
 
 /**
- * Get display name for a week (e.g., "Week 5" or "Wild Card")
+ * Get display name for a week (e.g., "5" or "Wild Card")
  */
 function getWeekDisplayName(week) {
     if (isPlayoffWeek(week)) {
         return PLAYOFF_WEEKS[week].name;
     }
-    return `Week ${week}`;
+    return week;
+}
+
+/**
+ * Get full title for a week (e.g., "Week 5 Picks" or "Wild Card Week Picks")
+ */
+function getWeekTitle(week, suffix = 'Picks') {
+    if (isPlayoffWeek(week)) {
+        return `${PLAYOFF_WEEKS[week].name} Week ${suffix}`;
+    }
+    return `Week ${week} ${suffix}`;
 }
 
 /**
@@ -1474,15 +1484,14 @@ async function setCurrentWeek(week) {
         weekDropdown.value = week;
     }
 
-    // Update header with correct week name (e.g., "Wild Card" for playoff weeks)
-    const weekDisplayName = getWeekDisplayName(week);
+    // Update header with correct week name (e.g., "Wild Card Week Picks" for playoff weeks)
     const picksWeekNum = document.getElementById('picks-week-num');
     if (picksWeekNum) {
-        picksWeekNum.textContent = weekDisplayName;
+        picksWeekNum.textContent = getWeekTitle(week, 'Picks');
     }
     const scoringWeekNum = document.getElementById('scoring-week-num');
     if (scoringWeekNum) {
-        scoringWeekNum.textContent = weekDisplayName;
+        scoringWeekNum.textContent = getWeekTitle(week, 'Scoring Summary');
     }
 
     // Show loading indicator
@@ -1939,11 +1948,11 @@ function loadCSVData(csvText) {
     // Update picks week number
     const picksWeekNum = document.getElementById('picks-week-num');
     if (picksWeekNum) {
-        picksWeekNum.textContent = currentWeek;
+        picksWeekNum.textContent = getWeekTitle(currentWeek, 'Picks');
     }
     const scoringWeekNum = document.getElementById('scoring-week-num');
     if (scoringWeekNum) {
-        scoringWeekNum.textContent = currentWeek;
+        scoringWeekNum.textContent = getWeekTitle(currentWeek, 'Scoring Summary');
     }
 
     // Note: hideLoadingState() is now called after schedule/odds load in loadFromGoogleSheets()
@@ -3387,7 +3396,6 @@ function renderPatternsPanel() {
     grid.innerHTML = insights.map(pattern => {
         const sentimentClass = pattern.sentiment === 'negative' ? 'pattern-negative' :
                                pattern.sentiment === 'positive' ? 'pattern-positive' : 'pattern-neutral';
-        const typeIcon = pattern.type === 'primetime' ? '🌙' : '🏈';
         const typeBadge = pattern.type === 'primetime' ? 'Primetime' : 'Team';
         const pushText = pattern.pushes > 0 ? `-${pattern.pushes}` : '';
 
@@ -3395,7 +3403,7 @@ function renderPatternsPanel() {
             <div class="pattern-card ${sentimentClass}">
                 <div class="pattern-header">
                     <span class="pattern-picker">${pattern.picker}</span>
-                    <span class="pattern-type-badge">${typeIcon} ${typeBadge}</span>
+                    <span class="pattern-type-badge">${typeBadge}</span>
                 </div>
                 <div class="pattern-stat">${pattern.wins}-${pattern.losses}${pushText}</div>
                 <div class="pattern-percentage ${sentimentClass}">${pattern.percentage}%</div>
@@ -3933,8 +3941,8 @@ function renderGames() {
 
     if (weekGames.length === 0) {
         const filterMessage = currentGameFilter === 'all' ? '' : ` (${currentGameFilter})`;
-        const weekName = getWeekDisplayName(currentWeek);
         const isPlayoff = isPlayoffWeek(currentWeek);
+        const weekName = isPlayoff ? getWeekDisplayName(currentWeek) : `Week ${getWeekDisplayName(currentWeek)}`;
         const subtitle = currentGameFilter !== 'all'
             ? 'Try changing the filter above.'
             : (isPlayoff ? 'Playoff games will appear once the schedule is available.' : 'Game data can be added to NFL_GAMES_BY_WEEK in app.js');
@@ -5011,7 +5019,8 @@ function renderScoringSummary() {
     // Update the summary header
     const summaryHeader = document.querySelector('.scoring-summary h3');
     if (summaryHeader) {
-        summaryHeader.textContent = `${getWeekDisplayName(currentWeek)} Scoring Summary`;
+        const weekLabel = isPlayoffWeek(currentWeek) ? getWeekDisplayName(currentWeek) : `Week ${getWeekDisplayName(currentWeek)}`;
+        summaryHeader.textContent = `${weekLabel} Scoring Summary`;
     }
 
     const isPlayoff = isPlayoffWeek(currentWeek);
@@ -5803,9 +5812,8 @@ function updateWeekUI() {
     const weekDropdown = document.getElementById('week-dropdown');
     if (weekDropdown) weekDropdown.value = currentWeek;
 
-    const weekDisplayName = getWeekDisplayName(currentWeek);
-    document.getElementById('picks-week-num').textContent = weekDisplayName;
-    document.getElementById('scoring-week-num').textContent = weekDisplayName;
+    document.getElementById('picks-week-num').textContent = getWeekTitle(currentWeek, 'Picks');
+    document.getElementById('scoring-week-num').textContent = getWeekTitle(currentWeek, 'Scoring Summary');
 
     updateWeekNavButtons();
     renderGames();
@@ -6305,7 +6313,7 @@ function calculatePickerWeeklyBankroll(picker) {
     const pnlRecord = pnlData[picker]?.blazin;
     if (pnlRecord) {
         const pnlMatch = totalWins === pnlRecord.wins && totalLosses === pnlRecord.losses;
-        console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes} (P&L: ${pnlRecord.wins}-${pnlRecord.losses}-${pnlRecord.pushes}) ${pnlMatch ? '✓' : '⚠️ MISMATCH'}`);
+        console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes} (P&L: ${pnlRecord.wins}-${pnlRecord.losses}-${pnlRecord.pushes}) ${pnlMatch ? 'OK' : 'MISMATCH'}`);
     } else {
         console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes}`);
     }
@@ -6557,13 +6565,12 @@ async function renderVsMarketSection() {
 
         // Build leaderboard data
         const leaderboard = [
-            { name: 'S&P 500', type: 'market', icon: '📈', ...sp500Final },
-            { name: 'Gold', type: 'market', icon: '🥇', ...goldFinal },
-            { name: 'Bitcoin', type: 'market', icon: '₿', ...btcFinal },
+            { name: 'S&P 500', type: 'market', ...sp500Final },
+            { name: 'Gold', type: 'market', ...goldFinal },
+            { name: 'Bitcoin', type: 'market', ...btcFinal },
             ...PICKERS.map(picker => ({
                 name: picker,
                 type: 'picker',
-                icon: '🏈',
                 ...getPickerFinalReturn(pickerData[picker])
             }))
         ].sort((a, b) => b.returnPct - a.returnPct);
@@ -6577,7 +6584,6 @@ async function renderVsMarketSection() {
 
             <div class="vs-market-summary">
                 <div class="market-card">
-                    <div class="market-card-icon">📈</div>
                     <div class="market-card-name">S&P 500</div>
                     <div class="market-card-return ${sp500Final.returnPct >= 0 ? 'positive' : 'negative'}">
                         ${sp500Final.returnPct >= 0 ? '+' : ''}${sp500Final.returnPct.toFixed(1)}%
@@ -6585,7 +6591,6 @@ async function renderVsMarketSection() {
                     <div class="market-card-value">$${sp500Final.value.toFixed(2)}</div>
                 </div>
                 <div class="market-card">
-                    <div class="market-card-icon">🥇</div>
                     <div class="market-card-name">Gold</div>
                     <div class="market-card-return ${goldFinal.returnPct >= 0 ? 'positive' : 'negative'}">
                         ${goldFinal.returnPct >= 0 ? '+' : ''}${goldFinal.returnPct.toFixed(1)}%
@@ -6593,7 +6598,6 @@ async function renderVsMarketSection() {
                     <div class="market-card-value">$${goldFinal.value.toFixed(2)}</div>
                 </div>
                 <div class="market-card">
-                    <div class="market-card-icon">₿</div>
                     <div class="market-card-name">Bitcoin</div>
                     <div class="market-card-return ${btcFinal.returnPct >= 0 ? 'positive' : 'negative'}">
                         ${btcFinal.returnPct >= 0 ? '+' : ''}${btcFinal.returnPct.toFixed(1)}%
@@ -6601,7 +6605,6 @@ async function renderVsMarketSection() {
                     <div class="market-card-value">$${btcFinal.value.toFixed(2)}</div>
                 </div>
                 <div class="market-card best-picker">
-                    <div class="market-card-icon">🏆</div>
                     <div class="market-card-name">Best Picker</div>
                     <div class="market-card-return ${bestPicker.returnPct >= 0 ? 'positive' : 'negative'}">
                         ${bestPicker.returnPct >= 0 ? '+' : ''}${bestPicker.returnPct.toFixed(1)}%
@@ -6630,7 +6633,7 @@ async function renderVsMarketSection() {
                         ${leaderboard.map((item, i) => `
                             <tr class="${item.type}">
                                 <td class="rank">${i + 1}</td>
-                                <td class="name">${item.icon} ${item.name}</td>
+                                <td class="name">${item.name}</td>
                                 <td class="return ${item.returnPct >= 0 ? 'positive' : 'negative'}">
                                     ${item.returnPct >= 0 ? '+' : ''}${item.returnPct.toFixed(1)}%
                                 </td>
@@ -6875,7 +6878,7 @@ const HISTORICAL_PICKS = ${JSON.stringify(output.picks, null, 4)};
     // Also copy to clipboard if possible
     if (navigator.clipboard) {
         navigator.clipboard.writeText(jsCode).then(() => {
-            console.log('✓ Code copied to clipboard!');
+            console.log('Code copied to clipboard!');
         }).catch(err => {
             console.log('Could not copy to clipboard:', err);
         });
