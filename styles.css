@@ -1017,7 +1017,7 @@ header h1 {
 }
 
 .podium-row .picker-card:nth-child(1)::before {
-    content: '🥈 2ND';
+    content: '2ND';
     background: linear-gradient(135deg, #C0C0C0 0%, #E8E8E8 50%, #A8A8A8 100%);
     color: #444;
 }
@@ -1030,7 +1030,7 @@ header h1 {
 }
 
 .podium-row .picker-card:nth-child(2)::before {
-    content: '🥇 1ST';
+    content: '1ST';
     background: linear-gradient(135deg, #FFD700 0%, #FFF3A0 50%, #D4AF37 100%);
     color: #5D4E17;
 }
@@ -1042,7 +1042,7 @@ header h1 {
 }
 
 .podium-row .picker-card:nth-child(3)::before {
-    content: '🥉 3RD';
+    content: '3RD';
     background: linear-gradient(135deg, #CD7F32 0%, #E8B87D 50%, #A05A2C 100%);
     color: #4A2C17;
 }
@@ -3615,6 +3615,134 @@ footer a:hover {
     display: block;
 }
 
+/* Standings Table */
+.standings-table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.standings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background: var(--card-bg);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.standings-table thead {
+    background: var(--primary-color);
+    color: white;
+}
+
+.standings-table th {
+    padding: 12px 10px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.standings-table th:first-child {
+    text-align: left;
+    padding-left: 16px;
+}
+
+.standings-table td {
+    padding: 12px 10px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.standings-table td:first-child {
+    text-align: left;
+    padding-left: 16px;
+}
+
+.standings-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.standings-table tbody tr:hover {
+    background: var(--hover-bg);
+}
+
+.standings-table tbody tr.leader {
+    background: rgba(0, 53, 148, 0.08);
+}
+
+.standings-table tbody tr.leader:hover {
+    background: rgba(0, 53, 148, 0.12);
+}
+
+.standings-table .picker-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.standings-table .pct {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.standings-table .best-week {
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.standings-table .year-change {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.standings-table .year-change.positive {
+    color: var(--success-color);
+}
+
+.standings-table .year-change.negative {
+    color: var(--danger-color);
+}
+
+/* Dark mode standings table */
+[data-theme="dark"] .standings-table {
+    background: var(--card-bg);
+}
+
+[data-theme="dark"] .standings-table thead {
+    background: var(--primary-color);
+}
+
+[data-theme="dark"] .standings-table tbody tr.leader {
+    background: rgba(0, 53, 148, 0.15);
+}
+
+[data-theme="dark"] .standings-table tbody tr.leader:hover {
+    background: rgba(0, 53, 148, 0.2);
+}
+
+/* Mobile responsiveness for standings table */
+@media (max-width: 768px) {
+    .standings-table {
+        font-size: 0.8rem;
+    }
+
+    .standings-table th,
+    .standings-table td {
+        padding: 8px 6px;
+    }
+
+    .standings-table th:first-child,
+    .standings-table td:first-child {
+        padding-left: 10px;
+    }
+
+    .standings-table th {
+        font-size: 0.7rem;
+    }
+}
+
 /* Adjust nested grids within consolidated sections */
 .consolidated-section .insights-grid {
     margin: 0 0 24px 0;
@@ -4322,7 +4450,7 @@ footer a:hover {
 .market-card {
     background: var(--bg-primary);
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     text-align: center;
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
@@ -4330,18 +4458,14 @@ footer a:hover {
 }
 
 .market-card:hover {
+    border-color: var(--border-color);
     box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
+    transform: translateY(-1px);
 }
 
 .market-card.best-picker {
     border-color: var(--accent-green);
     background: rgba(5, 150, 105, 0.05);
-}
-
-.market-card-icon {
-    font-size: 2rem;
-    margin-bottom: 8px;
 }
 
 .market-card-name {
@@ -4378,10 +4502,17 @@ footer a:hover {
 .vs-market-chart-container {
     background: var(--bg-primary);
     border-radius: 12px;
-    padding: 28px;
+    padding: 20px;
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
     margin-bottom: 40px;
+}
+
+.vs-market-chart-container:hover {
+    border-color: var(--border-color);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
 }
 
 .vs-market-chart-container h3 {
@@ -4400,9 +4531,16 @@ footer a:hover {
 .vs-market-leaderboard {
     background: var(--bg-primary);
     border-radius: 12px;
-    padding: 28px;
+    padding: 20px;
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.vs-market-leaderboard:hover {
+    border-color: var(--border-color);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
 }
 
 .vs-market-leaderboard h3 {
@@ -4517,7 +4655,7 @@ footer a:hover {
 
     .vs-market-chart-container,
     .vs-market-leaderboard {
-        padding: 20px;
+        padding: 16px;
     }
 
     #vs-market-chart {

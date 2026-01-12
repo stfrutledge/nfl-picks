@@ -215,14 +215,39 @@
                     <h2 class="consolidated-title">Performance & Insights</h2>
                 </div>
                 <div class="consolidated-tabs">
-                    <button class="consolidated-tab active" data-panel="charts-panel">Charts</button>
+                    <button class="consolidated-tab active" data-panel="standings-panel">Standings</button>
+                    <button class="consolidated-tab" data-panel="charts-panel">Charts</button>
                     <button class="consolidated-tab" data-panel="insights-panel">Insights</button>
                     <button class="consolidated-tab" data-panel="patterns-panel">Patterns</button>
-                    <button class="consolidated-tab" data-panel="pnl-panel">Profit/Loss</button>
                 </div>
                 <div class="consolidated-content">
+                    <!-- Standings Panel -->
+                    <div class="consolidated-panel active" id="standings-panel">
+                        <div class="standings-table-container">
+                            <table class="standings-table" id="standings-table">
+                                <thead>
+                                    <tr>
+                                        <th>Picker</th>
+                                        <th>Win</th>
+                                        <th>Loss</th>
+                                        <th>Push</th>
+                                        <th>%</th>
+                                        <th>Total</th>
+                                        <th>Last 3-Wk</th>
+                                        <th>Best Week</th>
+                                        <th>High %</th>
+                                        <th>Low %</th>
+                                        <th>Year Chg</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="standings-table-body">
+                                    <!-- Rows will be injected here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                     <!-- Charts Panel -->
-                    <div class="consolidated-panel active" id="charts-panel">
+                    <div class="consolidated-panel" id="charts-panel">
                         <div class="charts-grid-content">
                             <div class="chart-container">
                                 <div class="chart-header">
@@ -261,15 +286,6 @@
                             </div>
                         </div>
                         <div class="patterns-grid" id="patterns-grid"></div>
-                    </div>
-                    <!-- P&L Panel -->
-                    <div class="consolidated-panel" id="pnl-panel">
-                        <div class="pnl-controls">
-                            <label for="bet-amount">Bet Amount per Pick: $</label>
-                            <input type="number" id="bet-amount" class="bet-amount-input" value="20" min="1" max="10000" step="1">
-                            <p class="pnl-description">Assumes -110 odds on all spread picks. Shows what you would have won or lost betting this amount on every pick.</p>
-                        </div>
-                        <div class="pnl-grid" id="pnl-grid"></div>
                     </div>
                 </div>
             </section>
