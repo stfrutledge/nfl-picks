@@ -709,6 +709,19 @@ async function loadWeekSchedule(week, forceRefresh = false) {
         // Fetch playoff games from ESPN
         const espnGames = await fetchNFLSchedule(week, forceRefresh);
         if (espnGames && espnGames.length > 0) {
+            // Apply saved spreads to playoff games
+            const savedSpreads = getSavedSpreads();
+            espnGames.forEach(game => {
+                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+                if (savedSpreads[week] && savedSpreads[week][key]) {
+                    game.spread = savedSpreads[week][key].spread;
+                    game.favorite = savedSpreads[week][key].favorite;
+                    if (savedSpreads[week][key].overUnder) {
+                        game.overUnder = savedSpreads[week][key].overUnder;
+                    }
+                    console.log(`[Schedule] Applied saved spread for playoff ${game.away} @ ${game.home}: ${game.spread}`);
+                }
+            });
             NFL_GAMES_BY_WEEK[week] = espnGames;
             cacheSchedule(week, espnGames);
             console.log(`[Schedule] Loaded ${espnGames.length} games for ${getWeekDisplayName(week)} from ESPN`);
@@ -733,6 +746,8 @@ async function loadWeekSchedule(week, forceRefresh = false) {
         const espnGames = await fetchNFLSchedule(week, forceRefresh);
 
         if (espnGames && espnGames.length > 0) {
+            // Get saved spreads for fallback
+            const savedSpreads = getSavedSpreads();
             // Match ESPN games to historical games by team names and merge
             const mergedGames = historicalGames.map(histGame => {
                 // Find matching ESPN game by team names
@@ -742,12 +757,20 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                 );
 
                 if (espnMatch) {
-                    // Merge: use historical ID and spread, ESPN for everything else
+                    const key = `${histGame.away.toLowerCase()}_${histGame.home.toLowerCase()}`;
+                    // Use saved spread if historical spread is missing
+                    let spread = histGame.spread || espnMatch.spread;
+                    let favorite = histGame.favorite || espnMatch.favorite;
+                    if ((!spread || spread === 0) && savedSpreads[week] && savedSpreads[week][key]) {
+                        spread = savedSpreads[week][key].spread;
+                        favorite = savedSpreads[week][key].favorite;
+                    }
+                    // Merge: use historical ID, best available spread, ESPN for everything else
                     return {
                         ...espnMatch,
                         id: histGame.id,
-                        spread: histGame.spread || espnMatch.spread,
-                        favorite: histGame.favorite || espnMatch.favorite
+                        spread: spread,
+                        favorite: favorite
                     };
                 }
                 // If no ESPN match, use historical data with defaults
@@ -792,6 +815,8 @@ async function loadWeekSchedule(week, forceRefresh = false) {
 
     if (espnGames && espnGames.length > 0) {
         // Merge existing spreads into ESPN data
+        // Get saved spreads once for efficiency
+        const savedSpreads = getSavedSpreads();
         espnGames.forEach(game => {
             const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
             if (existingSpreads[key]) {
@@ -799,7 +824,16 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                 game.favorite = existingSpreads[key].favorite;
                 console.log(`[Schedule] Preserved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
-            // Apply fallback spreads for completed games that still have spread: 0
+            // Apply saved spreads for games that still have spread: 0 (from previous API fetches)
+            if ((!game.spread || game.spread === 0) && savedSpreads[week] && savedSpreads[week][key]) {
+                game.spread = savedSpreads[week][key].spread;
+                game.favorite = savedSpreads[week][key].favorite;
+                if (savedSpreads[week][key].overUnder) {
+                    game.overUnder = savedSpreads[week][key].overUnder;
+                }
+                console.log(`[Schedule] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+            }
+            // Apply hardcoded fallback spreads for games still at 0
             if ((!game.spread || game.spread === 0) && FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key]) {
                 game.spread = FALLBACK_SPREADS[week][key].spread;
                 game.favorite = FALLBACK_SPREADS[week][key].favorite;
@@ -836,6 +870,7 @@ const ODDS_API_KEY = 'b6bb0ad3347ecbcc6922392025d33000';
 const ODDS_API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/';
 const ODDS_CACHE_KEY = 'nfl_odds_cache';
 const ODDS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const SAVED_SPREADS_KEY = 'nfl_saved_spreads'; // Permanent storage for spreads (used for completed games)
 
 /**
  * Get cached odds from localStorage
@@ -874,6 +909,73 @@ function cacheOdds(data) {
         console.log('[Odds API] Odds cached for 24 hours');
     } catch (e) {
         console.warn('[Odds API] Error caching odds:', e);
+    }
+}
+
+/**
+ * Get saved spreads from localStorage (permanent storage for completed games)
+ * Returns object: { week: { 'away_home': { spread, favorite, overUnder } } }
+ */
+function getSavedSpreads() {
+    try {
+        const saved = localStorage.getItem(SAVED_SPREADS_KEY);
+        return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+        console.warn('[Spreads] Error reading saved spreads:', e);
+        return {};
+    }
+}
+
+/**
+ * Save a spread to localStorage (permanent storage)
+ * This is called when we get spreads from the API, so they're preserved after games complete
+ */
+function saveSpread(week, awayTeam, homeTeam, spread, favorite, overUnder = null) {
+    try {
+        const saved = getSavedSpreads();
+        if (!saved[week]) saved[week] = {};
+
+        const key = `${awayTeam.toLowerCase()}_${homeTeam.toLowerCase()}`;
+        saved[week][key] = { spread, favorite };
+        if (overUnder !== null) {
+            saved[week][key].overUnder = overUnder;
+        }
+
+        localStorage.setItem(SAVED_SPREADS_KEY, JSON.stringify(saved));
+    } catch (e) {
+        console.warn('[Spreads] Error saving spread:', e);
+    }
+}
+
+/**
+ * Apply saved spreads to games that have spread: 0
+ * This ensures completed games show their original spreads
+ */
+function applySavedSpreads() {
+    const saved = getSavedSpreads();
+    let appliedCount = 0;
+
+    Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
+        if (!games || !saved[week]) return;
+
+        games.forEach(game => {
+            if (!game.spread || game.spread === 0) {
+                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+                if (saved[week][key]) {
+                    game.spread = saved[week][key].spread;
+                    game.favorite = saved[week][key].favorite;
+                    if (saved[week][key].overUnder && (!game.overUnder || game.overUnder === 0)) {
+                        game.overUnder = saved[week][key].overUnder;
+                    }
+                    appliedCount++;
+                    console.log(`[Spreads] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+                }
+            }
+        });
+    });
+
+    if (appliedCount > 0) {
+        console.log(`[Spreads] Applied ${appliedCount} saved spreads`);
     }
 }
 
@@ -1101,11 +1203,11 @@ function applyOddsData(oddsData) {
                         (weekGame.kickoff && new Date(weekGame.kickoff) <= new Date());
 
                     if (gameHasStarted) {
-                        // Game has started - only update moneylines/totals for display, NOT spreads
+                        // Game has started - only update moneylines for display
+                        // Spreads and over/under are locked for pick evaluation
                         if (homeMoneyline !== null) weekGame.homeMoneyline = homeMoneyline;
                         if (awayMoneyline !== null) weekGame.awayMoneyline = awayMoneyline;
-                        if (overUnder !== null) weekGame.overUnder = overUnder;
-                        // Skip spread update - line is locked
+                        // Skip spread and over/under updates - lines are locked
                         break;
                     }
 
@@ -1113,6 +1215,8 @@ function applyOddsData(oddsData) {
                     if (spread !== null) {
                         weekGame.spread = spread;
                         weekGame.favorite = favorite;
+                        // Save spread permanently so it's preserved after the game completes
+                        saveSpread(week, weekGame.away, weekGame.home, spread, favorite, overUnder);
                     }
                     if (homeMoneyline !== null) weekGame.homeMoneyline = homeMoneyline;
                     if (awayMoneyline !== null) weekGame.awayMoneyline = awayMoneyline;
@@ -1138,7 +1242,10 @@ function applyOddsData(oddsData) {
 
     console.log(`[Odds API] Applied odds to ${updatedCount} games`);
 
-    // Apply fallback spreads for any games still at 0 (e.g., completed games not in API)
+    // First, apply saved spreads (from previous API fetches) for completed games
+    applySavedSpreads();
+
+    // Then apply fallback spreads for any games still at 0 (e.g., games never fetched from API)
     Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
         if (!games || !FALLBACK_SPREADS[week]) return;
         games.forEach(game => {
@@ -1363,7 +1470,6 @@ function init() {
     setupPullToRefresh();
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
-    setupPnLSection();
     setupPatternFilters();
     loadPicksFromStorage();
 
@@ -2201,6 +2307,7 @@ function renderDashboard() {
     renderLeaderboard(stats);
 
     // SECONDARY: Performance & Insights - render all panels
+    renderStandingsTable(stats);
     renderTrendChart(weeklyData, currentSubcategory);
     renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
     renderPatternsPanel();
@@ -2243,18 +2350,10 @@ function renderDashboard() {
             teamRecordsTab.click();
         }
     } else {
-        // Winner tab - hide both record tabs, show only P&L
+        // Winner tab - hide both record tabs
         blazinRecordsTab?.classList.add('hidden');
         teamRecordsTab?.classList.add('hidden');
-        // Activate P&L tab
-        const pnlTab = document.querySelector('[data-panel="pnl-panel"]');
-        if (pnlTab && !pnlTab.classList.contains('active')) {
-            pnlTab.click();
-        }
     }
-
-    // Always render P&L
-    renderPnL();
 }
 
 /**
@@ -3589,66 +3688,6 @@ function formatCurrency(amount) {
 }
 
 /**
- * Render the P&L section
- */
-function renderPnL() {
-    const grid = document.getElementById('pnl-grid');
-    const betInput = document.getElementById('bet-amount');
-    if (!grid || !betInput) return;
-
-    const betAmount = parseFloat(betInput.value) || 20;
-    const pnlData = calculateAllPickersPnL(betAmount);
-
-    // Sort by total profit descending
-    const sorted = PICKERS.map(name => ({ name, ...pnlData[name] }))
-        .sort((a, b) => b.total - a.total);
-
-    grid.innerHTML = sorted.map(picker => {
-        const totalClass = picker.total > 0 ? 'positive' : picker.total < 0 ? 'negative' : 'neutral';
-        const blazinRecord = `${picker.blazin.wins}-${picker.blazin.losses}${picker.blazin.pushes > 0 ? `-${picker.blazin.pushes}` : ''}`;
-        const totalBets = picker.blazin.wins + picker.blazin.losses + picker.blazin.pushes;
-        const totalWagered = totalBets * betAmount;
-
-        return `
-            <div class="pnl-card">
-                <div class="pnl-picker-name">${picker.name}</div>
-                <div class="pnl-total ${totalClass}">${formatCurrency(picker.total)}</div>
-                <div class="pnl-details">
-                    <span>${blazinRecord}</span>
-                    <span>$${totalWagered.toLocaleString()} wagered</span>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-/**
- * Setup P&L section event listeners
- */
-function setupPnLSection() {
-    const betInput = document.getElementById('bet-amount');
-    if (betInput) {
-        betInput.addEventListener('change', renderPnL);
-        betInput.addEventListener('input', debounce(renderPnL, 300));
-    }
-}
-
-/**
- * Simple debounce function
- */
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-/**
  * Load all weekly data for Blazin' 5 analysis
  * Fetches each week's sheet to get the * markers
  */
@@ -3878,6 +3917,53 @@ function renderPickerCard(picker, index, isCompact = false) {
             </div>
         </div>
     `;
+}
+
+/**
+ * Render standings table
+ */
+function renderStandingsTable(stats) {
+    const tbody = document.getElementById('standings-table-body');
+    if (!tbody) return;
+
+    const sorted = getSortedPickers(stats);
+
+    tbody.innerHTML = sorted.map((picker, index) => {
+        const yearChange = picker.yearChange || '';
+        let yearChangeClass = '';
+        let yearChangeDisplay = yearChange;
+
+        if (yearChange.includes('\u25b2') || yearChange.includes('+')) {
+            yearChangeClass = 'positive';
+        } else if (yearChange.includes('\u25bc') || yearChange.includes('-')) {
+            yearChangeClass = 'negative';
+        }
+
+        // Format percentages
+        const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(2) + '%' : picker.percentage || '-';
+        const last3Wk = typeof picker.last3WeekPct === 'number' ? picker.last3WeekPct.toFixed(2) + '%' : picker.last3WeekPct || '-';
+        const highPct = typeof picker.highestPct === 'number' ? picker.highestPct.toFixed(2) + '%' : picker.highestPct || '-';
+        const lowPct = typeof picker.lowestPct === 'number' ? picker.lowestPct.toFixed(2) + '%' : picker.lowestPct || '-';
+
+        // Determine push/draw label based on category
+        const pushOrDraw = currentSubcategory === 'winner' ? picker.draws || 0 : picker.pushes || 0;
+
+        return `
+            <tr class="${index === 0 ? 'leader' : ''}">
+                <td class="picker-name">${picker.name}</td>
+                <td>${picker.wins || 0}</td>
+                <td>${picker.losses || 0}</td>
+                <td>${pushOrDraw}</td>
+                <td class="pct">${pct}</td>
+                <td>${picker.totalPicks || 0}</td>
+                <td>${last3Wk}</td>
+                <td class="best-week">${picker.bestWeek || '-'}</td>
+                <td>${highPct}</td>
+                <td>${lowPct}</td>
+                <td class="year-change ${yearChangeClass}">${yearChangeDisplay || '-'}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 /**
