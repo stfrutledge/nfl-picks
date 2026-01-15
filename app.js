@@ -2,7 +2,11 @@
  * NFL Picks Dashboard - Main Application
  */
 
-// Google Apps Script URL for syncing picks to Google Sheets
+// Cloudflare Worker Proxy URL - handles all external API calls (Odds API, Google Sheets, sync)
+// Deploy nfl-picks-proxy.js to Cloudflare Workers and set this URL
+const WORKER_PROXY_URL = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
+
+// Google Apps Script URL (legacy - now proxied through worker)
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8YB5AwLyiF3_kPi6fZ8Ol9RDpbnNJcuAxI65b1j7Ca9A1bOyxqwzyI3XAJ8_PLuay/exec';
 
 // Track pending syncs to avoid duplicate requests
@@ -247,7 +251,16 @@ const FALLBACK_SPREADS = {
     15: { 'falcons_buccaneers': { spread: 4.5, favorite: 'home' }, 'jets_jaguars': { spread: 13.5, favorite: 'home' }, 'browns_bears': { spread: 7.5, favorite: 'home' }, 'bills_patriots': { spread: 1.5, favorite: 'away' }, 'ravens_bengals': { spread: 2.5, favorite: 'away' }, 'cardinals_texans': { spread: 9.5, favorite: 'home' }, 'raiders_eagles': { spread: 11.5, favorite: 'home' }, 'chargers_chiefs': { spread: 5.5, favorite: 'home' }, 'commanders_giants': { spread: 2.5, favorite: 'home' }, 'colts_seahawks': { spread: 13.5, favorite: 'home' }, 'titans_49ers': { spread: 12.5, favorite: 'home' }, 'packers_broncos': { spread: 2.5, favorite: 'away' }, 'lions_rams': { spread: 6, favorite: 'home' }, 'panthers_saints': { spread: 2.5, favorite: 'away' }, 'vikings_cowboys': { spread: 5.5, favorite: 'home' }, 'dolphins_steelers': { spread: 3, favorite: 'home' } },
     16: { 'rams_seahawks': { spread: 1.5, favorite: 'home' }, 'eagles_commanders': { spread: 6.5, favorite: 'away' }, 'packers_bears': { spread: 1.5, favorite: 'away' }, 'bills_browns': { spread: 10, favorite: 'away' }, 'chargers_cowboys': { spread: 1.5, favorite: 'home' }, 'chiefs_titans': { spread: 3.5, favorite: 'away' }, 'bengals_dolphins': { spread: 1.5, favorite: 'away' }, 'jets_saints': { spread: 4.5, favorite: 'home' }, 'vikings_giants': { spread: 3, favorite: 'away' }, 'buccaneers_panthers': { spread: 3, favorite: 'away' }, 'jaguars_broncos': { spread: 3, favorite: 'home' }, 'falcons_cardinals': { spread: 2.5, favorite: 'away' }, 'steelers_lions': { spread: 7, favorite: 'home' }, 'raiders_texans': { spread: 14.5, favorite: 'home' }, 'patriots_ravens': { spread: 3, favorite: 'home' }, '49ers_colts': { spread: 5.5, favorite: 'away' } },
     17: { 'cowboys_commanders': { spread: 4.5, favorite: 'home' }, 'lions_vikings': { spread: 3, favorite: 'away' }, 'broncos_chiefs': { spread: 10.5, favorite: 'home' }, 'texans_chargers': { spread: 1.5, favorite: 'home' }, 'ravens_packers': { spread: 4.5, favorite: 'home' }, 'cardinals_bengals': { spread: 7.5, favorite: 'home' }, 'steelers_browns': { spread: 3, favorite: 'away' }, 'jaguars_colts': { spread: 6, favorite: 'home' }, 'buccaneers_dolphins': { spread: 6, favorite: 'home' }, 'patriots_jets': { spread: 13.5, favorite: 'home' }, 'saints_titans': { spread: 2.5, favorite: 'home' }, 'giants_raiders': { spread: 1.5, favorite: 'home' }, 'eagles_bills': { spread: 1.5, favorite: 'home' }, 'seahawks_panthers': { spread: 7, favorite: 'away' }, 'bears_49ers': { spread: 3, favorite: 'home' }, 'rams_falcons': { spread: 7.5, favorite: 'away' } },
-    18: { 'panthers_buccaneers': { spread: 2.5, favorite: 'home' } }
+    18: { 'panthers_buccaneers': { spread: 2.5, favorite: 'home' } },
+    // Wild Card Round (Week 19)
+    19: {
+        'rams_panthers': { spread: 10.5, favorite: 'away', overUnder: 46.5 },
+        'packers_bears': { spread: 1, favorite: 'home', overUnder: 46.5 },
+        'bills_jaguars': { spread: 1.5, favorite: 'away', overUnder: 51.5 },
+        '49ers_eagles': { spread: 5, favorite: 'home', overUnder: 44.5 },
+        'chargers_patriots': { spread: 3.5, favorite: 'home', overUnder: 43.5 },
+        'texans_steelers': { spread: 3, favorite: 'away', overUnder: 39.5 }
+    }
 };
 
 // NFL Games by Week - Full structure for all weeks
@@ -413,9 +426,23 @@ async function fetchLiveScores() {
 
 /**
  * Get live score info for a specific game
+ * First checks if game object has embedded status/scores (from ESPN schedule fetch),
+ * then falls back to live scores cache
  */
 function getLiveGameStatus(game) {
-    // Try to match by team names
+    // If game already has status from ESPN schedule data, use it
+    if (game.status && game.status !== 'STATUS_SCHEDULED') {
+        return {
+            homeTeam: game.homeFull || game.home,
+            awayTeam: game.awayFull || game.away,
+            homeScore: game.homeScore || 0,
+            awayScore: game.awayScore || 0,
+            status: game.status,
+            completed: game.completed || game.status === 'STATUS_FINAL'
+        };
+    }
+
+    // Try to match by team names in live cache
     const awayName = game.away;
     const homeName = game.home;
 
@@ -436,7 +463,7 @@ function getLiveGameStatus(game) {
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 2; // Increment to invalidate all caches
+const SCHEDULE_CACHE_VERSION = 3; // Increment to invalidate all caches (v3 adds status/scores)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -657,6 +684,12 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                 const venue = competition.venue;
                 const gameDate = new Date(event.date);
 
+                // Extract game status and scores
+                const status = event.status?.type?.name || 'STATUS_SCHEDULED';
+                const completed = event.status?.type?.completed || false;
+                const homeScore = parseInt(homeTeam.score) || 0;
+                const awayScore = parseInt(awayTeam.score) || 0;
+
                 games.push({
                     id: index + 1,
                     espnId: event.id,
@@ -671,7 +704,12 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     kickoff: event.date,
                     location: venue?.address ? [venue.address.city, venue.address.state].filter(Boolean).join(', ') : '',
                     stadium: venue?.fullName || '',
-                    broadcast: competition.broadcasts?.[0]?.names?.[0] || ''
+                    broadcast: competition.broadcasts?.[0]?.names?.[0] || '',
+                    // Game status and scores from ESPN
+                    status: status,
+                    completed: completed,
+                    homeScore: homeScore,
+                    awayScore: awayScore
                 });
             });
         }
@@ -701,27 +739,59 @@ async function loadWeekSchedule(week, forceRefresh = false) {
     // For playoff weeks, always fetch from ESPN (no historical data)
     if (isPlayoffWeek(week)) {
         // Check if we already have games cached for this playoff week
-        if (!forceRefresh && NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
-            console.log(`[Schedule] Using existing ${getWeekDisplayName(week)} games (${NFL_GAMES_BY_WEEK[week].length} games)`);
-            return NFL_GAMES_BY_WEEK[week];
+        let games = NFL_GAMES_BY_WEEK[week];
+        const savedSpreads = getSavedSpreads();
+
+        // Helper to apply saved spreads and fallback spreads to playoff games
+        const applySpreadsToGames = (gameList) => {
+            if (!gameList) return;
+            gameList.forEach(game => {
+                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+
+                // Only apply if game spread is 0 or missing
+                if (!game.spread || game.spread === 0) {
+                    // Try saved spreads first (from localStorage)
+                    if (savedSpreads[week] && savedSpreads[week][key]) {
+                        game.spread = savedSpreads[week][key].spread;
+                        game.favorite = savedSpreads[week][key].favorite;
+                        if (savedSpreads[week][key].overUnder) {
+                            game.overUnder = savedSpreads[week][key].overUnder;
+                        }
+                        console.log(`[Schedule] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+                    }
+                    // Fall back to hardcoded fallback spreads
+                    else if (FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key]) {
+                        game.spread = FALLBACK_SPREADS[week][key].spread;
+                        game.favorite = FALLBACK_SPREADS[week][key].favorite;
+                        if (FALLBACK_SPREADS[week][key].overUnder) {
+                            game.overUnder = FALLBACK_SPREADS[week][key].overUnder;
+                        }
+                        console.log(`[Schedule] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
+                    }
+                }
+                // Apply O/U if missing
+                if (!game.overUnder || game.overUnder === 0) {
+                    if (savedSpreads[week] && savedSpreads[week][key] && savedSpreads[week][key].overUnder) {
+                        game.overUnder = savedSpreads[week][key].overUnder;
+                    } else if (FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key] && FALLBACK_SPREADS[week][key].overUnder) {
+                        game.overUnder = FALLBACK_SPREADS[week][key].overUnder;
+                    }
+                }
+            });
+        };
+
+        if (!forceRefresh && games && games.length > 0) {
+            // Apply saved spreads to existing cached games (in case they were cached with spread: 0)
+            applySpreadsToGames(games);
+            console.log(`[Schedule] Using existing ${getWeekDisplayName(week)} games (${games.length} games)`);
+            return games;
         }
 
         // Fetch playoff games from ESPN
         const espnGames = await fetchNFLSchedule(week, forceRefresh);
         if (espnGames && espnGames.length > 0) {
             // Apply saved spreads to playoff games
-            const savedSpreads = getSavedSpreads();
-            espnGames.forEach(game => {
-                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-                if (savedSpreads[week] && savedSpreads[week][key]) {
-                    game.spread = savedSpreads[week][key].spread;
-                    game.favorite = savedSpreads[week][key].favorite;
-                    if (savedSpreads[week][key].overUnder) {
-                        game.overUnder = savedSpreads[week][key].overUnder;
-                    }
-                    console.log(`[Schedule] Applied saved spread for playoff ${game.away} @ ${game.home}: ${game.spread}`);
-                }
-            });
+            applySpreadsToGames(espnGames);
             NFL_GAMES_BY_WEEK[week] = espnGames;
             cacheSchedule(week, espnGames);
             console.log(`[Schedule] Loaded ${espnGames.length} games for ${getWeekDisplayName(week)} from ESPN`);
@@ -864,10 +934,9 @@ async function loadWeekSchedule(week, forceRefresh = false) {
 }
 
 /**
- * The Odds API configuration
+ * Odds API cache configuration
+ * Note: API key is stored in Cloudflare Worker environment variables
  */
-const ODDS_API_KEY = 'b6bb0ad3347ecbcc6922392025d33000';
-const ODDS_API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/';
 const ODDS_CACHE_KEY = 'nfl_odds_cache';
 const ODDS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 const SAVED_SPREADS_KEY = 'nfl_saved_spreads'; // Permanent storage for spreads (used for completed games)
@@ -956,20 +1025,26 @@ function applySavedSpreads() {
     let appliedCount = 0;
 
     Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
-        if (!games || !saved[week]) return;
+        if (!games) return;
 
         games.forEach(game => {
-            if (!game.spread || game.spread === 0) {
-                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-                if (saved[week][key]) {
-                    game.spread = saved[week][key].spread;
-                    game.favorite = saved[week][key].favorite;
-                    if (saved[week][key].overUnder && (!game.overUnder || game.overUnder === 0)) {
-                        game.overUnder = saved[week][key].overUnder;
-                    }
-                    appliedCount++;
-                    console.log(`[Spreads] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+            const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+
+            // If game has a spread but we don't have it saved, save it now (preserves spreads before games complete)
+            if (game.spread && game.spread > 0 && (!saved[week] || !saved[week][key])) {
+                saveSpread(week, game.away, game.home, game.spread, game.favorite, game.overUnder);
+                console.log(`[Spreads] Auto-saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+            }
+
+            // Apply saved spread if game spread is 0
+            if ((!game.spread || game.spread === 0) && saved[week] && saved[week][key]) {
+                game.spread = saved[week][key].spread;
+                game.favorite = saved[week][key].favorite;
+                if (saved[week][key].overUnder && (!game.overUnder || game.overUnder === 0)) {
+                    game.overUnder = saved[week][key].overUnder;
                 }
+                appliedCount++;
+                console.log(`[Spreads] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
         });
     });
@@ -991,7 +1066,7 @@ function isNFLGameDay() {
 }
 
 /**
- * Fetch current NFL odds from The Odds API
+ * Fetch current NFL odds from The Odds API via worker proxy
  * Fetches spreads, moneyline (h2h), and totals (over/under)
  * Uses DraftKings as the primary source
  */
@@ -1002,53 +1077,40 @@ async function fetchNFLOdds(forceRefresh = false) {
         if (cached) return cached;
     }
 
-    const oddsUrl = `${ODDS_API_URL}?apiKey=${ODDS_API_KEY}&regions=us&markets=spreads,h2h,totals&oddsFormat=american&bookmakers=draftkings,fanduel`;
+    try {
+        console.log('[Odds API] Fetching odds via worker proxy...');
+        const response = await fetch(`${WORKER_PROXY_URL}/odds`);
 
-    // CORS proxies to try (same as Google Sheets)
-    const CORS_PROXIES = [
-        '', // Try direct first
-        'https://corsproxy.io/?'
-    ];
-
-    for (const proxy of CORS_PROXIES) {
-        try {
-            const url = proxy ? proxy + encodeURIComponent(oddsUrl) : oddsUrl;
-            console.log(`[Odds API] Fetching odds${proxy ? ' via proxy' : ' directly'}...`);
-
-            const response = await fetch(url);
-
-            if (!response.ok) {
-                throw new Error(`Odds API error: ${response.status}`);
-            }
-
-            const games = await response.json();
-
-            // Log remaining API requests from headers (only available on direct calls)
-            if (!proxy) {
-                const remaining = response.headers.get('x-requests-remaining');
-                const used = response.headers.get('x-requests-used');
-                console.log(`[Odds API] Requests used: ${used}, remaining: ${remaining}`);
-            }
-
-            console.log(`[Odds API] Fetched odds for ${games.length} games`);
-
-            // Cache the results
-            cacheOdds(games);
-
-            return games;
-        } catch (error) {
-            console.warn(`[Odds API] Fetch failed${proxy ? ' with proxy' : ' (direct)'}:`, error.message);
+        if (!response.ok) {
+            throw new Error(`Odds API error: ${response.status}`);
         }
-    }
 
-    // All attempts failed - try stale cache
-    console.error('[Odds API] All fetch attempts failed');
-    const staleCache = localStorage.getItem(ODDS_CACHE_KEY);
-    if (staleCache) {
-        console.log('[Odds API] Using stale cache due to fetch error');
-        return JSON.parse(staleCache).data;
+        const games = await response.json();
+
+        // Log remaining API requests from headers
+        const remaining = response.headers.get('x-requests-remaining');
+        const used = response.headers.get('x-requests-used');
+        if (remaining) {
+            console.log(`[Odds API] Requests used: ${used}, remaining: ${remaining}`);
+        }
+
+        console.log(`[Odds API] Fetched odds for ${games.length} games`);
+
+        // Cache the results
+        cacheOdds(games);
+
+        return games;
+    } catch (error) {
+        console.warn('[Odds API] Fetch failed:', error.message);
+
+        // Try stale cache on error
+        const staleCache = localStorage.getItem(ODDS_CACHE_KEY);
+        if (staleCache) {
+            console.log('[Odds API] Using stale cache due to fetch error');
+            return JSON.parse(staleCache).data;
+        }
+        return null;
     }
-    return null;
 }
 
 /**
@@ -1263,6 +1325,17 @@ function applyOddsData(oddsData) {
     // Debug: log what weeks have games loaded
     console.log('[Odds API] Weeks with games:', Object.keys(NFL_GAMES_BY_WEEK).filter(w => NFL_GAMES_BY_WEEK[w]?.length > 0));
 
+    // Re-cache schedules with updated spreads so they persist
+    Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
+        if (games && games.length > 0) {
+            // Only re-cache if any game has a spread (to preserve the data)
+            const hasSpread = games.some(g => g.spread && g.spread > 0);
+            if (hasSpread) {
+                cacheSchedule(parseInt(week), games);
+            }
+        }
+    });
+
     // Re-render if we're on the picks tab
     if (currentCategory === 'make-picks') {
         renderGames();
@@ -1340,29 +1413,144 @@ function startLiveScoresRefresh() {
 }
 
 /**
+ * Check if all games in a week are completed
+ */
+function areAllGamesCompleted(week) {
+    const games = NFL_GAMES_BY_WEEK[week];
+    if (!games || games.length === 0) return false;
+
+    return games.every(game => {
+        // Check embedded status from ESPN schedule data
+        if (game.status === 'STATUS_FINAL' || game.completed) {
+            return true;
+        }
+        // Check live scores cache
+        const liveData = getLiveGameStatus(game);
+        return liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
+    });
+}
+
+/**
+ * Check if current week's games are all complete and advance to next week if so
+ * Returns true if we advanced to the next week
+ */
+async function checkAndAdvanceWeekIfNeeded() {
+    const games = NFL_GAMES_BY_WEEK[currentWeek];
+    if (!games || games.length === 0) return false;
+
+    const allComplete = areAllGamesCompleted(currentWeek);
+    if (!allComplete) return false;
+
+    // All games are complete - check if next week is available
+    const nextWeek = currentWeek + 1;
+    if (nextWeek > LAST_PLAYOFF_WEEK) return false; // Season is over
+
+    console.log(`[Auto-advance] All ${getWeekDisplayName(currentWeek)} games are complete, advancing to ${getWeekDisplayName(nextWeek)}`);
+
+    // Load next week's schedule
+    await loadWeekSchedule(nextWeek, true); // Force refresh to get latest data
+
+    // Only advance if next week actually has games
+    if (NFL_GAMES_BY_WEEK[nextWeek] && NFL_GAMES_BY_WEEK[nextWeek].length > 0) {
+        currentWeek = nextWeek;
+        setupWeekButtons();
+        updateWeekUI();
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Proactively fetch and save spreads for upcoming weeks
+ * This ensures spreads are captured before games start
+ * Falls back to Google Sheets backup if spreads are missing locally
+ */
+async function prefetchAndSaveSpreads() {
+    let saved = getSavedSpreads();
+    const weeksToCheck = [currentWeek];
+
+    // Also check next week if it exists
+    if (currentWeek < LAST_PLAYOFF_WEEK) {
+        weeksToCheck.push(currentWeek + 1);
+    }
+
+    for (const week of weeksToCheck) {
+        // Load schedule if not already loaded
+        if (!NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0) {
+            console.log(`[Prefetch] Loading schedule for week ${week}...`);
+            await loadWeekSchedule(week);
+        }
+
+        const games = NFL_GAMES_BY_WEEK[week];
+        if (!games || games.length === 0) continue;
+
+        // Check if we have spreads saved for all games in this week
+        let missingSpreadGames = games.filter(game => {
+            const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+            const hasSaved = saved[week] && saved[week][key] && saved[week][key].spread > 0;
+            const hasGame = game.spread && game.spread > 0;
+            return !hasSaved && !hasGame;
+        });
+
+        // If spreads are missing, first try loading from Google Sheets backup
+        if (missingSpreadGames.length > 0) {
+            console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads, trying Google Sheets backup...`);
+            await loadSpreadsFromGoogleSheets(week);
+            saved = getSavedSpreads(); // Refresh after loading from backup
+
+            // Re-check after loading from backup
+            missingSpreadGames = games.filter(game => {
+                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+                const hasSaved = saved[week] && saved[week][key] && saved[week][key].spread > 0;
+                const hasGame = game.spread && game.spread > 0;
+                return !hasSaved && !hasGame;
+            });
+        }
+
+        // If still missing, try fetching from Odds API
+        if (missingSpreadGames.length > 0) {
+            console.log(`[Prefetch] Week ${week} still has ${missingSpreadGames.length} games missing spreads, fetching from Odds API...`);
+            await updateOddsFromAPI(true); // Force refresh to get latest
+            break; // Only need one API call since it returns all upcoming games
+        } else {
+            console.log(`[Prefetch] Week ${week} spreads are complete`);
+        }
+    }
+
+    // Re-cache schedules with updated spreads
+    for (const week of weeksToCheck) {
+        if (NFL_GAMES_BY_WEEK[week] && NFL_GAMES_BY_WEEK[week].length > 0) {
+            cacheSchedule(week, NFL_GAMES_BY_WEEK[week]);
+        }
+    }
+}
+
+/**
  * Preload next week's games when current week is complete
  * This helps ensure playoff weeks transition smoothly
  */
 async function preloadNextWeekIfAvailable() {
     const nextWeek = currentWeek + 1;
-    const maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+    // Allow preloading up to LAST_PLAYOFF_WEEK (don't limit to CURRENT_NFL_WEEK)
+    const maxWeek = LAST_PLAYOFF_WEEK;
 
-    // Don't preload beyond current or max week
+    // Don't preload beyond max week
     if (nextWeek > maxWeek) return;
 
     // Check if we already have games for next week
     if (NFL_GAMES_BY_WEEK[nextWeek] && NFL_GAMES_BY_WEEK[nextWeek].length > 0) {
         console.log(`[Preload] Next week ${nextWeek} already has ${NFL_GAMES_BY_WEEK[nextWeek].length} games`);
+        // Still fetch odds to ensure spreads are saved
+        await updateOddsFromAPI(false);
         return;
     }
 
     console.log(`[Preload] Loading games for ${getWeekDisplayName(nextWeek)}...`);
     await loadWeekSchedule(nextWeek);
 
-    // Also fetch odds for playoff weeks
-    if (isPlayoffWeek(nextWeek)) {
-        await updateOddsFromAPI(false);
-    }
+    // Fetch odds for all weeks (ensures spreads are saved)
+    await updateOddsFromAPI(false);
 
     // Update the week dropdown to show the new week if not already there
     setupWeekButtons();
@@ -1548,7 +1736,10 @@ function setupWeekButtons() {
     if (!weekDropdown) return;
 
     let optionsHtml = '';
-    const effectiveWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+    // Use getMaxNavigableWeek if available (it accounts for completed weeks)
+    const effectiveWeek = typeof getMaxNavigableWeek === 'function'
+        ? getMaxNavigableWeek()
+        : Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
 
     // Playoffs section (if we're in or past playoffs)
     if (effectiveWeek >= FIRST_PLAYOFF_WEEK) {
@@ -1844,7 +2035,9 @@ function setupPicksActions() {
             showToast('Spreads updated successfully!', 'success');
             renderGames(); // Re-render to show new spreads
         } else {
-            showToast('Failed to update spreads. Check console for details.', 'error');
+            showToast('Could not fetch odds. Using saved/fallback spreads.', 'warning');
+            // Still render - saved spreads should be applied
+            renderGames();
         }
     });
 
@@ -2096,83 +2289,79 @@ const WEEK_SHEET_GIDS = {
 const weeklyPicksCache = {};
 
 /**
- * Load data from published Google Sheet
- * Tries direct fetch first, falls back to CORS proxies if needed
+ * Load data from published Google Sheet via worker proxy
  */
 async function loadFromGoogleSheets() {
-    const CORS_PROXIES = [
-        '', // Try direct first
-        'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url='
-    ];
-
     console.log('Fetching from Google Sheets...');
     updateLoadingProgress(15, 'Connecting to data source...');
 
-    for (let i = 0; i < CORS_PROXIES.length; i++) {
-        const proxy = CORS_PROXIES[i];
-        try {
-            const url = proxy ? proxy + encodeURIComponent(GOOGLE_SHEETS_CSV_URL) : GOOGLE_SHEETS_CSV_URL;
+    try {
+        updateLoadingProgress(25, 'Fetching dashboard data...');
 
-            updateLoadingProgress(25, 'Fetching dashboard data...');
+        // Use worker proxy to avoid CORS issues
+        const proxyUrl = `${WORKER_PROXY_URL}/sheets?url=${encodeURIComponent(GOOGLE_SHEETS_CSV_URL)}`;
 
-            // Add 10 second timeout to prevent hanging on slow proxies
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
+        // Add 15 second timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            const response = await fetch(url, { method: 'GET', signal: controller.signal });
-            clearTimeout(timeoutId);
+        const response = await fetch(proxyUrl, { method: 'GET', signal: controller.signal });
+        clearTimeout(timeoutId);
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            updateLoadingProgress(50, 'Processing data...');
-            const csvText = await response.text();
-
-            // Validate we got actual CSV data (not an error page)
-            if (csvText.includes('<!DOCTYPE') || csvText.length < 100) {
-                throw new Error('Invalid response');
-            }
-
-            updateLoadingProgress(70, 'Preparing charts...');
-            console.log('Loaded data from Google Sheets' + (proxy ? ' via proxy' : ' directly'));
-            loadCSVData(csvText);
-
-            // Also load weekly picks data from individual week tabs
-            updateLoadingProgress(85, 'Loading weekly picks...');
-            await loadAllWeeklyDataForBlazin();
-
-            // Load schedule from ESPN for current week
-            updateLoadingProgress(90, 'Loading game schedule...');
-            await loadWeekSchedule(currentWeek);
-
-            // Fetch current odds from The Odds API
-            updateLoadingProgress(95, 'Loading betting odds...');
-            await updateOddsFromAPI();
-
-            // Mark initial load as complete before rendering
-            initialLoadComplete = true;
-
-            // Re-render games after schedule and odds are loaded
-            renderGames();
-            renderScoringSummary();
-
-            // Now hide loading state after all data is loaded
-            hideLoadingState();
-            return;
-        } catch (err) {
-            console.warn(`Fetch attempt failed${proxy ? ' with ' + proxy : ' (direct)'}:`, err.message);
-            // Update progress message on retry
-            if (i < CORS_PROXIES.length - 1) {
-                updateLoadingProgress(20, 'Retrying connection...');
-            }
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
-    }
 
-    // All attempts failed
-    console.error('Failed to load data from Google Sheets after all attempts');
-    showErrorState('Unable to load picks data. Please check your internet connection and try again.');
+        updateLoadingProgress(50, 'Processing data...');
+        const csvText = await response.text();
+
+        // Validate we got actual CSV data (not an error page)
+        if (csvText.includes('<!DOCTYPE') || csvText.length < 100) {
+            throw new Error('Invalid response');
+        }
+
+        updateLoadingProgress(70, 'Preparing charts...');
+        console.log('Loaded data from Google Sheets via worker proxy');
+        loadCSVData(csvText);
+
+        // Also load weekly picks data from individual week tabs
+        updateLoadingProgress(85, 'Loading weekly picks...');
+        await loadAllWeeklyDataForBlazin();
+
+        // Load schedule from ESPN for current week
+        updateLoadingProgress(90, 'Loading game schedule...');
+        await loadWeekSchedule(currentWeek, true); // Force refresh to get latest status/scores
+
+        // Check if all games in current week are complete and advance if needed
+        const advanced = await checkAndAdvanceWeekIfNeeded();
+        if (advanced) {
+            console.log(`[Init] Advanced to ${getWeekDisplayName(currentWeek)}`);
+        }
+
+        // Fetch current odds from The Odds API
+        updateLoadingProgress(95, 'Loading betting odds...');
+        await updateOddsFromAPI();
+
+        // Proactively fetch and save spreads for current and upcoming weeks
+        await prefetchAndSaveSpreads();
+
+        // Sync spreads to Google Sheets for backup
+        await syncSpreadsToGoogleSheets();
+
+        // Mark initial load as complete before rendering
+        initialLoadComplete = true;
+
+        // Re-render games after schedule and odds are loaded
+        renderGames();
+        renderScoringSummary();
+
+        // Now hide loading state after all data is loaded
+        hideLoadingState();
+
+    } catch (err) {
+        console.error('Failed to load data from Google Sheets:', err.message);
+        showErrorState('Unable to load picks data. Please check your internet connection and try again.');
+    }
 }
 
 /**
@@ -5657,11 +5846,11 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     console.log('[Sync] Syncing picks to Google Sheets:', payload);
 
     try {
-        const response = await fetch(APPS_SCRIPT_URL, {
+        // Use worker proxy to avoid CORS issues
+        const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payload),
-            redirect: 'follow'
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
 
         const responseText = await response.text();
@@ -5695,6 +5884,80 @@ async function syncPicksToGoogleSheets(displayToast = true) {
             showToast('Failed to sync to Google Sheets', 'error');
         }
     }
+}
+
+/**
+ * Sync spreads to Google Sheets for backup
+ * This ensures spreads are preserved even if localStorage is cleared
+ */
+async function syncSpreadsToGoogleSheets() {
+    const savedSpreads = getSavedSpreads();
+
+    // Sync spreads for current week and next week
+    const weeksToSync = [currentWeek];
+    if (currentWeek < LAST_PLAYOFF_WEEK) {
+        weeksToSync.push(currentWeek + 1);
+    }
+
+    for (const week of weeksToSync) {
+        const weekSpreads = savedSpreads[week];
+        if (!weekSpreads || Object.keys(weekSpreads).length === 0) {
+            continue;
+        }
+
+        const payload = {
+            week: week,
+            spreads: weekSpreads
+        };
+
+        try {
+            const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (result.success && result.results?.spreads) {
+                console.log(`[Spreads Sync] Week ${week}: ${result.results.spreads.message}`);
+            }
+        } catch (error) {
+            console.warn(`[Spreads Sync] Failed to sync week ${week} spreads:`, error.message);
+        }
+    }
+}
+
+/**
+ * Load spreads from Google Sheets backup
+ * Called during initialization to restore spreads if localStorage is empty
+ */
+async function loadSpreadsFromGoogleSheets(week) {
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=spreads&week=${week}`);
+        const result = await response.json();
+
+        if (result.spreads && Object.keys(result.spreads).length > 0) {
+            console.log(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets`);
+
+            // Merge with localStorage (localStorage takes priority)
+            const saved = getSavedSpreads();
+            if (!saved[week]) {
+                saved[week] = {};
+            }
+
+            for (const [key, data] of Object.entries(result.spreads)) {
+                if (!saved[week][key]) {
+                    saved[week][key] = data;
+                }
+            }
+
+            localStorage.setItem(SAVED_SPREADS_KEY, JSON.stringify(saved));
+            return result.spreads;
+        }
+    } catch (error) {
+        console.warn(`[Spreads Load] Failed to load week ${week} spreads from Google Sheets:`, error.message);
+    }
+    return null;
 }
 
 /**
@@ -5870,7 +6133,7 @@ function setupWeekNavigation() {
     });
 
     nextBtn?.addEventListener('click', () => {
-        const maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+        const maxWeek = getMaxNavigableWeek();
         if (currentWeek < maxWeek) {
             setCurrentWeek(currentWeek + 1);
         }
@@ -5880,12 +6143,27 @@ function setupWeekNavigation() {
 }
 
 /**
+ * Get the maximum week that can be navigated to
+ * This is either CURRENT_NFL_WEEK or the next week if all current games are complete
+ */
+function getMaxNavigableWeek() {
+    let maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+
+    // If all games in the date-based current week are complete, allow navigation to next week
+    if (areAllGamesCompleted(CURRENT_NFL_WEEK) && CURRENT_NFL_WEEK < LAST_PLAYOFF_WEEK) {
+        maxWeek = Math.min(CURRENT_NFL_WEEK + 1, LAST_PLAYOFF_WEEK);
+    }
+
+    return maxWeek;
+}
+
+/**
  * Update week navigation button states
  */
 function updateWeekNavButtons() {
     const prevBtn = document.getElementById('prev-week-btn');
     const nextBtn = document.getElementById('next-week-btn');
-    const maxWeek = Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+    const maxWeek = getMaxNavigableWeek();
 
     if (prevBtn) prevBtn.disabled = currentWeek <= 1;
     if (nextBtn) nextBtn.disabled = currentWeek >= maxWeek;
@@ -5898,8 +6176,10 @@ function updateWeekUI() {
     const weekDropdown = document.getElementById('week-dropdown');
     if (weekDropdown) weekDropdown.value = currentWeek;
 
-    document.getElementById('picks-week-num').textContent = getWeekTitle(currentWeek, 'Picks');
-    document.getElementById('scoring-week-num').textContent = getWeekTitle(currentWeek, 'Scoring Summary');
+    const picksWeekNum = document.getElementById('picks-week-num');
+    const scoringWeekNum = document.getElementById('scoring-week-num');
+    if (picksWeekNum) picksWeekNum.textContent = getWeekTitle(currentWeek, 'Picks');
+    if (scoringWeekNum) scoringWeekNum.textContent = getWeekTitle(currentWeek, 'Scoring Summary');
 
     updateWeekNavButtons();
     renderGames();
