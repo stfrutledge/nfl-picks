@@ -463,18 +463,18 @@ function getLiveGameStatus(game) {
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 4; // Increment to invalidate all caches (v4 fixes regular season fetch)
+const SCHEDULE_CACHE_VERSION = 5; // Increment to invalidate all caches (v5 validates full game data)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
 /**
- * Validate that cached game data has the expected structure
+ * Validate that cached game data has the expected structure including full ESPN data
  */
 function isValidGameData(data) {
     if (!Array.isArray(data) || data.length === 0) return false;
-    // Check that at least the first game has required fields
+    // Check that at least the first game has required fields including ESPN metadata
     const game = data[0];
-    return game && typeof game.id !== 'undefined' && game.away && game.home;
+    return game && typeof game.id !== 'undefined' && game.away && game.home && game.day && game.kickoff;
 }
 
 /**
@@ -818,12 +818,16 @@ async function loadWeekSchedule(week, forceRefresh = false) {
         if (espnGames && espnGames.length > 0) {
             // Get saved spreads for fallback
             const savedSpreads = getSavedSpreads();
+            // Helper to normalize team names using TEAM_NAME_MAP
+            const normalizeTeam = (name) => TEAM_NAME_MAP[name] || name;
             // Match ESPN games to historical games by team names and merge
             const mergedGames = historicalGames.map(histGame => {
-                // Find matching ESPN game by team names
+                // Normalize historical team names for comparison
+                const histAway = normalizeTeam(histGame.away).toLowerCase();
+                const histHome = normalizeTeam(histGame.home).toLowerCase();
+                // Find matching ESPN game by normalized team names
                 const espnMatch = espnGames.find(eg =>
-                    eg.away.toLowerCase().includes(histGame.away.toLowerCase()) ||
-                    histGame.away.toLowerCase().includes(eg.away.toLowerCase())
+                    eg.away.toLowerCase() === histAway && eg.home.toLowerCase() === histHome
                 );
 
                 if (espnMatch) {
