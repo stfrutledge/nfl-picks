@@ -1844,12 +1844,14 @@ async function setCurrentWeek(week) {
         }
     }
 
-    // Load schedule from ESPN for current/future weeks and playoffs
-    // (historical regular season weeks use data from weekly CSV or historical-data.js)
+    // Load schedule from ESPN for current/future weeks, playoffs, and historical weeks missing full game info
+    const existingGames = NFL_GAMES_BY_WEEK[week];
+    const hasIncompleteData = existingGames && existingGames.length > 0 && !existingGames[0].day;
     const needsScheduleFetch = week >= CURRENT_NFL_WEEK ||
                                isPlayoffWeek(week) ||
-                               !NFL_GAMES_BY_WEEK[week] ||
-                               NFL_GAMES_BY_WEEK[week].length === 0;
+                               !existingGames ||
+                               existingGames.length === 0 ||
+                               hasIncompleteData;
 
     if (needsScheduleFetch) {
         await loadWeekSchedule(week);
