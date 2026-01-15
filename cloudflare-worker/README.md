@@ -26,7 +26,7 @@ Go to https://dash.cloudflare.com and sign up (free tier is sufficient).
 3. Under **Environment Variables**, click **Add Variable**
 4. Set:
    - **Variable name**: `ODDS_API_KEY`
-   - **Value**: `b6bb0ad3347ecbcc6922392025d33000` (your actual key)
+   - **Value**: your API key from https://the-odds-api.com
 5. Check **Encrypt** to keep it secret
 6. Click **Save and Deploy**
 
