@@ -3340,6 +3340,38 @@
             "homeScore": 26,
             "winner": "home"
         }
+    },
+    "19": {
+        "1": {
+            "awayScore": 34,
+            "homeScore": 31,
+            "winner": "away"
+        },
+        "2": {
+            "awayScore": 27,
+            "homeScore": 31,
+            "winner": "home"
+        },
+        "3": {
+            "awayScore": 27,
+            "homeScore": 24,
+            "winner": "away"
+        },
+        "4": {
+            "awayScore": 23,
+            "homeScore": 19,
+            "winner": "away"
+        },
+        "5": {
+            "awayScore": 3,
+            "homeScore": 16,
+            "winner": "home"
+        },
+        "6": {
+            "awayScore": 30,
+            "homeScore": 6,
+            "winner": "away"
+        }
     }
 };
 
@@ -9588,6 +9620,168 @@
             "16": {
                 "line": "away",
                 "winner": "away"
+            }
+        }
+    },
+    "19": {
+        "Stephen": {
+            "1": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "2": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "3": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "4": {
+                "line": "away",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "5": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "6": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            }
+        },
+        "Sean": {
+            "1": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "3": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "4": {
+                "line": "away",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "5": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "6": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            }
+        },
+        "Dylan": {
+            "1": {
+                "line": "home",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "3": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "4": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "5": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "6": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            }
+        },
+        "Jason": {
+            "1": {
+                "line": "home",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "3": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "4": {
+                "line": "away",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "5": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "6": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            }
+        },
+        "Daniel": {
+            "1": {
+                "line": "home",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "3": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "4": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "5": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "6": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
             }
         }
     }

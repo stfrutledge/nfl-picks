@@ -736,7 +736,7 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
  * Load schedule for a week, merging ESPN data with existing spreads
  */
 async function loadWeekSchedule(week, forceRefresh = false) {
-    // For playoff weeks, always fetch from ESPN (no historical data)
+    // For playoff weeks, fetch from ESPN
     if (isPlayoffWeek(week)) {
         // Check if we already have games cached for this playoff week
         let games = NFL_GAMES_BY_WEEK[week];
@@ -1629,7 +1629,10 @@ if (typeof HISTORICAL_PICKS !== 'undefined') {
             allPicks[week] = {};
         }
         for (const picker in HISTORICAL_PICKS[week]) {
-            if (!allPicks[week][picker] || Object.keys(allPicks[week][picker]).length === 0) {
+            // For playoff weeks (19+), always use historical data (overrides localStorage)
+            // For regular season, only merge if picker has no picks
+            const weekNum = parseInt(week);
+            if (weekNum >= 19 || !allPicks[week][picker] || Object.keys(allPicks[week][picker]).length === 0) {
                 allPicks[week][picker] = HISTORICAL_PICKS[week][picker];
             }
         }
