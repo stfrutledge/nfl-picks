@@ -1,8 +1,8 @@
 /**
- * Cloudflare Worker - NFL Picks Dashboard Proxy
+ * Cloudflare Worker - NFL Picks Dashboard Proxy with Server-Side Caching
  *
  * Handles all external API calls to avoid CORS issues:
- * - /odds - Proxy The Odds API (hides API key)
+ * - /odds - Proxy The Odds API (hides API key) with caching
  * - /sheets - Proxy Google Sheets CSV exports
  * - /sync - Proxy Google Apps Script for picks backup
  *
@@ -15,6 +15,11 @@
  *    - ODDS_API_KEY: your Odds API key (encrypt)
  *    - APPS_SCRIPT_URL: your Google Apps Script deployment URL
  * 6. Deploy and note the URL (e.g., nfl-picks-proxy.yourname.workers.dev)
+ *
+ * Cache behavior for /odds:
+ * - Game days (Thu/Fri/Sat/Sun/Mon): 4 hour cache
+ * - Non-game days (Tue/Wed): 12 hour cache
+ * - All users share the same cache, minimizing API calls
  */
 
 const CORS_HEADERS = {
@@ -23,6 +28,20 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age': '86400',
 };
+
+const GAME_DAY_CACHE_HOURS = 4;      // Fresher odds on game days
+const NON_GAME_DAY_CACHE_HOURS = 12; // Longer cache when no games
+
+function isGameDay() {
+  const day = new Date().getUTCDay();
+  // 0=Sun, 1=Mon, 4=Thu, 5=Fri, 6=Sat
+  return day === 0 || day === 1 || day === 4 || day === 5 || day === 6;
+}
+
+function getCacheDurationMs() {
+  const hours = isGameDay() ? GAME_DAY_CACHE_HOURS : NON_GAME_DAY_CACHE_HOURS;
+  return hours * 60 * 60 * 1000;
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -37,7 +56,7 @@ export default {
     try {
       // Route based on path
       if (path === '/odds' || path === '/') {
-        return await handleOdds(request, env);
+        return await handleOdds(request, env, ctx);
       } else if (path === '/sheets') {
         return await handleSheets(request, url);
       } else if (path === '/sync') {
@@ -52,9 +71,9 @@ export default {
 };
 
 /**
- * Proxy The Odds API - keeps API key secret
+ * Proxy The Odds API - keeps API key secret, with server-side caching
  */
-async function handleOdds(request, env) {
+async function handleOdds(request, env, ctx) {
   if (request.method !== 'GET') {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
@@ -62,6 +81,30 @@ async function handleOdds(request, env) {
   const apiKey = env.ODDS_API_KEY;
   if (!apiKey) {
     return jsonResponse({ error: 'ODDS_API_KEY not configured' }, 500);
+  }
+
+  // Check URL for force refresh parameter
+  const url = new URL(request.url);
+  const forceRefresh = url.searchParams.get('refresh') === 'true';
+
+  // Try to get cached response from Cloudflare Cache API
+  const cache = caches.default;
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.delete('refresh'); // Normalize cache key
+  const cacheKey = new Request(cacheUrl.toString(), request);
+
+  if (!forceRefresh) {
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      // Add header to indicate cache hit
+      const headers = new Headers(cachedResponse.headers);
+      headers.set('X-Cache', 'HIT');
+      headers.set('X-Cache-Duration', isGameDay() ? `${GAME_DAY_CACHE_HOURS}h (game day)` : `${NON_GAME_DAY_CACHE_HOURS}h (non-game day)`);
+      return new Response(cachedResponse.body, {
+        status: cachedResponse.status,
+        headers,
+      });
+    }
   }
 
   const oddsApiUrl = new URL('https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/');
@@ -77,6 +120,8 @@ async function handleOdds(request, env) {
   const headers = new Headers({
     'Content-Type': 'application/json',
     ...CORS_HEADERS,
+    'X-Cache': 'MISS',
+    'X-Cache-Duration': isGameDay() ? `${GAME_DAY_CACHE_HOURS}h (game day)` : `${NON_GAME_DAY_CACHE_HOURS}h (non-game day)`,
   });
 
   // Pass through rate limit headers
@@ -85,7 +130,23 @@ async function handleOdds(request, env) {
   if (remaining) headers.set('x-requests-remaining', remaining);
   if (used) headers.set('x-requests-used', used);
 
-  return new Response(data, { status: response.status, headers });
+  // Create the response
+  const newResponse = new Response(data, { status: response.status, headers });
+
+  // Cache the response (only cache successful responses)
+  if (response.status === 200) {
+    const cacheSeconds = getCacheDurationMs() / 1000;
+    const responseToCache = new Response(data, {
+      status: response.status,
+      headers: {
+        ...Object.fromEntries(headers),
+        'Cache-Control': `public, max-age=${cacheSeconds}`,
+      },
+    });
+    ctx.waitUntil(cache.put(cacheKey, responseToCache));
+  }
+
+  return newResponse;
 }
 
 /**

@@ -4205,8 +4205,11 @@ function renderGames() {
     if (!gamesList) return;
 
     let weekGames = getGamesForWeek(currentWeek);
+    // Merge picks from both allPicks and weeklyPicksCache (Google Sheets data)
     const weekPicks = allPicks[currentWeek] || {};
-    const pickerPicks = weekPicks[currentPicker] || {};
+    const localPicks = weekPicks[currentPicker] || {};
+    const cachedPicks = weeklyPicksCache[currentWeek]?.picks?.[currentPicker] || {};
+    const pickerPicks = { ...cachedPicks, ...localPicks }; // Local picks override cached
     const isHistoricalWeek = currentWeek < CURRENT_NFL_WEEK;
 
     // Apply filter
