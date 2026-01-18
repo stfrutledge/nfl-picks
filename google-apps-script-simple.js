@@ -10,6 +10,7 @@
  *
  * ENDPOINTS:
  * - GET ?action=spreads&week=19 - Get saved spreads for a week
+ * - GET ?action=picks&week=19&picker=Steve - Get saved picks for a week and picker
  * - POST { week, picker, picks, spreads } - Save picks and/or spreads
  */
 
@@ -25,12 +26,25 @@ function doGet(e) {
       return jsonResponse(getSpreadsForWeek(week));
     }
 
+    if (action === 'picks') {
+      const week = e.parameter.week;
+      const picker = e.parameter.picker;
+      if (!week) {
+        return jsonResponse({ error: 'Missing week parameter' });
+      }
+      if (!picker) {
+        return jsonResponse({ error: 'Missing picker parameter' });
+      }
+      return jsonResponse(getPicksForWeek(week, picker));
+    }
+
     // Default response
     return jsonResponse({
       status: 'ok',
       message: 'NFL Picks Backup API is running',
       endpoints: {
         'GET ?action=spreads&week=N': 'Get spreads for week N',
+        'GET ?action=picks&week=N&picker=X': 'Get picks for week N and picker X',
         'POST': 'Save picks and/or spreads'
       }
     });
@@ -195,6 +209,86 @@ function getSpreadsForWeek(week) {
     week: week,
     spreads: spreads,
     count: Object.keys(spreads).length
+  };
+}
+
+/**
+ * Get picks for a specific week and picker
+ * Returns the latest picks for each game (most recent timestamp wins)
+ */
+function getPicksForWeek(week, picker) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Backup');
+
+  if (!sheet) {
+    return { week: week, picker: picker, picks: {} };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread, Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line
+  // Index:  0          1     2       3     4          5          6            7            8          9            10      11        12
+
+  // Collect all picks for this week/picker, keyed by gameId with timestamp
+  const picksWithTimestamp = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const rowWeek = String(data[i][1]);
+    const rowPicker = String(data[i][2]);
+
+    if (rowWeek === String(week) && rowPicker === picker) {
+      const timestamp = new Date(data[i][0]).getTime();
+      const gameId = data[i][3];
+
+      // Only keep if this is a newer timestamp than what we have
+      if (!picksWithTimestamp[gameId] || timestamp > picksWithTimestamp[gameId].timestamp) {
+        picksWithTimestamp[gameId] = {
+          timestamp: timestamp,
+          away: data[i][4],
+          home: data[i][5],
+          awaySpread: data[i][6],
+          homeSpread: data[i][7],
+          linePick: data[i][8],
+          winnerPick: data[i][9],
+          blazin: data[i][10] === 'Yes',
+          overUnder: data[i][11],
+          totalLine: data[i][12]
+        };
+      }
+    }
+  }
+
+  // Convert to the format app.js expects: { gameId: { line, winner, blazin, overUnder, totalLine } }
+  const picks = {};
+  for (const [gameId, pickData] of Object.entries(picksWithTimestamp)) {
+    // Convert team names back to 'home'/'away' format
+    let linePick = pickData.linePick;
+    if (linePick === pickData.away) {
+      linePick = 'away';
+    } else if (linePick === pickData.home) {
+      linePick = 'home';
+    }
+
+    let winnerPick = pickData.winnerPick;
+    if (winnerPick === pickData.away) {
+      winnerPick = 'away';
+    } else if (winnerPick === pickData.home) {
+      winnerPick = 'home';
+    }
+
+    picks[gameId] = {
+      line: linePick || '',
+      winner: winnerPick || '',
+      blazin: pickData.blazin || false,
+      overUnder: pickData.overUnder || '',
+      totalLine: pickData.totalLine || ''
+    };
+  }
+
+  return {
+    week: week,
+    picker: picker,
+    picks: picks,
+    count: Object.keys(picks).length
   };
 }
 

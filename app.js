@@ -745,12 +745,13 @@ async function loadWeekSchedule(week, forceRefresh = false) {
         // Helper to apply saved spreads and fallback spreads to playoff games
         const applySpreadsToGames = (gameList) => {
             if (!gameList) return;
+            const weekNum = parseInt(week); // Ensure numeric key for FALLBACK_SPREADS lookup
             gameList.forEach(game => {
                 const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
 
                 // Only apply if game spread is 0 or missing
                 if (!game.spread || game.spread === 0) {
-                    // Try saved spreads first (from localStorage)
+                    // Try saved spreads first (from localStorage - uses string keys)
                     if (savedSpreads[week] && savedSpreads[week][key]) {
                         game.spread = savedSpreads[week][key].spread;
                         game.favorite = savedSpreads[week][key].favorite;
@@ -759,12 +760,12 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                         }
                         console.log(`[Schedule] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
                     }
-                    // Fall back to hardcoded fallback spreads
-                    else if (FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key]) {
-                        game.spread = FALLBACK_SPREADS[week][key].spread;
-                        game.favorite = FALLBACK_SPREADS[week][key].favorite;
-                        if (FALLBACK_SPREADS[week][key].overUnder) {
-                            game.overUnder = FALLBACK_SPREADS[week][key].overUnder;
+                    // Fall back to hardcoded fallback spreads (uses numeric keys)
+                    else if (FALLBACK_SPREADS[weekNum] && FALLBACK_SPREADS[weekNum][key]) {
+                        game.spread = FALLBACK_SPREADS[weekNum][key].spread;
+                        game.favorite = FALLBACK_SPREADS[weekNum][key].favorite;
+                        if (FALLBACK_SPREADS[weekNum][key].overUnder) {
+                            game.overUnder = FALLBACK_SPREADS[weekNum][key].overUnder;
                         }
                         console.log(`[Schedule] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
                     }
@@ -773,8 +774,8 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                 if (!game.overUnder || game.overUnder === 0) {
                     if (savedSpreads[week] && savedSpreads[week][key] && savedSpreads[week][key].overUnder) {
                         game.overUnder = savedSpreads[week][key].overUnder;
-                    } else if (FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key] && FALLBACK_SPREADS[week][key].overUnder) {
-                        game.overUnder = FALLBACK_SPREADS[week][key].overUnder;
+                    } else if (FALLBACK_SPREADS[weekNum] && FALLBACK_SPREADS[weekNum][key] && FALLBACK_SPREADS[weekNum][key].overUnder) {
+                        game.overUnder = FALLBACK_SPREADS[weekNum][key].overUnder;
                     }
                 }
             });
@@ -907,10 +908,11 @@ async function loadWeekSchedule(week, forceRefresh = false) {
                 }
                 console.log(`[Schedule] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
-            // Apply hardcoded fallback spreads for games still at 0
-            if ((!game.spread || game.spread === 0) && FALLBACK_SPREADS[week] && FALLBACK_SPREADS[week][key]) {
-                game.spread = FALLBACK_SPREADS[week][key].spread;
-                game.favorite = FALLBACK_SPREADS[week][key].favorite;
+            // Apply hardcoded fallback spreads for games still at 0 (use parseInt for numeric key lookup)
+            const weekNum = parseInt(week);
+            if ((!game.spread || game.spread === 0) && FALLBACK_SPREADS[weekNum] && FALLBACK_SPREADS[weekNum][key]) {
+                game.spread = FALLBACK_SPREADS[weekNum][key].spread;
+                game.favorite = FALLBACK_SPREADS[weekNum][key].favorite;
                 console.log(`[Schedule] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
         });
@@ -1313,13 +1315,14 @@ function applyOddsData(oddsData) {
 
     // Then apply fallback spreads for any games still at 0 (e.g., games never fetched from API)
     Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
-        if (!games || !FALLBACK_SPREADS[week]) return;
+        const weekNum = parseInt(week); // Convert to number for FALLBACK_SPREADS lookup
+        if (!games || !FALLBACK_SPREADS[weekNum]) return;
         games.forEach(game => {
             if (!game.spread || game.spread === 0) {
                 const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-                if (FALLBACK_SPREADS[week][key]) {
-                    game.spread = FALLBACK_SPREADS[week][key].spread;
-                    game.favorite = FALLBACK_SPREADS[week][key].favorite;
+                if (FALLBACK_SPREADS[weekNum][key]) {
+                    game.spread = FALLBACK_SPREADS[weekNum][key].spread;
+                    game.favorite = FALLBACK_SPREADS[weekNum][key].favorite;
                     console.log(`[Odds API] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
                 }
             }
@@ -1869,6 +1872,9 @@ async function setCurrentWeek(week) {
         }
     }
 
+    // Load picks from Google Sheets backup if localStorage is empty for this week
+    await loadAllPicksFromBackup();
+
     // Hide loading indicator
     if (loadingIndicator) {
         loadingIndicator.classList.add('hidden');
@@ -2356,6 +2362,9 @@ async function loadFromGoogleSheets() {
 
         // Sync spreads to Google Sheets for backup
         await syncSpreadsToGoogleSheets();
+
+        // Load picks from Google Sheets backup if localStorage is empty
+        await loadAllPicksFromBackup();
 
         // Mark initial load as complete before rendering
         initialLoadComplete = true;
@@ -5791,7 +5800,7 @@ function randomizePicks() {
 /**
  * Save picks to localStorage and optionally sync to Google Sheets
  */
-function savePicksToStorage(showSyncToast = true) {
+function savePicksToStorage(showSyncToast = false) {
     localStorage.setItem('nflPicks', JSON.stringify(allPicks));
 
     // Debounce sync to Google Sheets
@@ -5841,7 +5850,9 @@ async function syncPicksToGoogleSheets(displayToast = true) {
             homeSpread: homeSpread,
             linePick: lineTeam,
             winnerPick: winnerTeam,
-            blazin: pickData?.blazin || false
+            blazin: pickData?.blazin || false,
+            overUnder: pickData?.overUnder || '',
+            totalLine: pickData?.totalLine || ''
         });
     }
 
@@ -5970,6 +5981,76 @@ async function loadSpreadsFromGoogleSheets(week) {
         console.warn(`[Spreads Load] Failed to load week ${week} spreads from Google Sheets:`, error.message);
     }
     return null;
+}
+
+/**
+ * Load picks from Google Sheets backup
+ * Called during initialization to restore picks if localStorage is empty for a picker
+ */
+async function loadPicksFromGoogleSheets(week, picker) {
+    try {
+        console.log(`[Picks Load] Attempting to load picks for ${picker} week ${week} from Google Sheets...`);
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=picks&week=${week}&picker=${encodeURIComponent(picker)}`);
+        const result = await response.json();
+
+        if (result.error) {
+            console.warn(`[Picks Load] Error from Google Sheets:`, result.error);
+            return null;
+        }
+
+        if (result.picks && Object.keys(result.picks).length > 0) {
+            console.log(`[Picks Load] Loaded ${result.count} picks for ${picker} week ${week} from Google Sheets`);
+
+            // Merge into allPicks (don't overwrite existing localStorage picks)
+            if (!allPicks[week]) {
+                allPicks[week] = {};
+            }
+            if (!allPicks[week][picker]) {
+                allPicks[week][picker] = {};
+            }
+
+            for (const [gameId, pickData] of Object.entries(result.picks)) {
+                // Only add if not already present
+                if (!allPicks[week][picker][gameId]) {
+                    allPicks[week][picker][gameId] = pickData;
+                }
+            }
+
+            // Save to localStorage for future loads
+            savePicksToStorage(false);
+            return result.picks;
+        } else {
+            console.log(`[Picks Load] No picks found for ${picker} week ${week} in Google Sheets`);
+        }
+    } catch (error) {
+        console.warn(`[Picks Load] Failed to load ${picker} week ${week} picks from Google Sheets:`, error.message);
+    }
+    return null;
+}
+
+/**
+ * Load picks from localStorage, then fallback to Google Sheets if empty
+ * Returns a promise that resolves when all loading is complete
+ */
+async function loadAllPicksFromBackup() {
+    // For each picker and the current week, check if picks are missing and load from Google Sheets
+    const week = currentWeek || CURRENT_NFL_WEEK;
+    const loadPromises = [];
+
+    for (const picker of PICKERS) {
+        // Check if this picker has any picks for this week in allPicks
+        const hasPicks = allPicks[week]?.[picker] && Object.keys(allPicks[week][picker]).length > 0;
+
+        if (!hasPicks) {
+            console.log(`[Picks Load] ${picker} has no picks for week ${week} in localStorage, checking Google Sheets...`);
+            loadPromises.push(loadPicksFromGoogleSheets(week, picker));
+        }
+    }
+
+    if (loadPromises.length > 0) {
+        await Promise.all(loadPromises);
+        console.log(`[Picks Load] Finished loading backup picks for week ${week}`);
+    }
 }
 
 /**

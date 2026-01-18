@@ -181,35 +181,62 @@ async function handleSheets(request, url) {
 
 /**
  * Proxy Google Apps Script for picks/spreads sync
+ * GET: Fetch spreads or picks from Google Sheets
+ * POST: Save picks and/or spreads to Google Sheets
  */
 async function handleSync(request, env) {
-  if (request.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405);
-  }
-
   const appsScriptUrl = env.APPS_SCRIPT_URL;
   if (!appsScriptUrl) {
     return jsonResponse({ error: 'APPS_SCRIPT_URL not configured' }, 500);
   }
 
-  // Forward the request body to Apps Script
-  const body = await request.text();
+  if (request.method === 'GET') {
+    // Forward GET request with query params to Apps Script
+    const url = new URL(request.url);
+    const targetUrl = new URL(appsScriptUrl);
 
-  const response = await fetch(appsScriptUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body,
-  });
+    // Copy all query parameters
+    for (const [key, value] of url.searchParams) {
+      targetUrl.searchParams.set(key, value);
+    }
 
-  const data = await response.text();
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
+    });
 
-  return new Response(data, {
-    status: response.status,
-    headers: {
-      'Content-Type': 'application/json',
-      ...CORS_HEADERS,
-    },
-  });
+    const data = await response.text();
+
+    return new Response(data, {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        ...CORS_HEADERS,
+      },
+    });
+  }
+
+  if (request.method === 'POST') {
+    // Forward the request body to Apps Script
+    const body = await request.text();
+
+    const response = await fetch(appsScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body,
+    });
+
+    const data = await response.text();
+
+    return new Response(data, {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        ...CORS_HEADERS,
+      },
+    });
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405);
 }
 
 /**
