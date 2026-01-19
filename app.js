@@ -738,9 +738,8 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
 async function loadWeekSchedule(week, forceRefresh = false) {
     // For playoff weeks, fetch from ESPN
     if (isPlayoffWeek(week)) {
-        // Check if we already have games cached for this playoff week
-        let games = NFL_GAMES_BY_WEEK[week];
         const savedSpreads = getSavedSpreads();
+        const weekStr = String(week);
 
         // Helper to apply saved spreads and fallback spreads to playoff games
         const applySpreadsToGames = (gameList) => {
@@ -781,25 +780,84 @@ async function loadWeekSchedule(week, forceRefresh = false) {
             });
         };
 
-        if (!forceRefresh && games && games.length > 0) {
-            // Apply saved spreads to existing cached games (in case they were cached with spread: 0)
-            applySpreadsToGames(games);
-            console.log(`[Schedule] Using existing ${getWeekDisplayName(week)} games (${games.length} games)`);
-            return games;
+        // Fetch ESPN games first
+        const espnGames = await fetchNFLSchedule(week, forceRefresh);
+        const normalizeTeam = (name) => TEAM_NAME_MAP[name] || name;
+
+        // Check if we have historical games for this playoff week (preserves pick ID mapping)
+        const historicalGames = HISTORICAL_GAMES && (HISTORICAL_GAMES[week] || HISTORICAL_GAMES[weekStr]);
+
+        if (espnGames && espnGames.length > 0) {
+            let mergedGames = [];
+            const usedEspnIndices = new Set();
+
+            // First, add historical games with ESPN data merged in (preserving IDs)
+            if (historicalGames && historicalGames.length > 0) {
+                historicalGames.forEach(histGame => {
+                    const histAway = normalizeTeam(histGame.away).toLowerCase();
+                    const histHome = normalizeTeam(histGame.home).toLowerCase();
+                    const espnIndex = espnGames.findIndex(eg =>
+                        eg.away.toLowerCase() === histAway && eg.home.toLowerCase() === histHome
+                    );
+
+                    if (espnIndex !== -1) {
+                        const espnMatch = espnGames[espnIndex];
+                        usedEspnIndices.add(espnIndex);
+                        // Merge ESPN data (scores, status, times) with historical data (ID, spread)
+                        mergedGames.push({
+                            ...histGame,
+                            espnId: espnMatch.espnId,
+                            day: espnMatch.day || histGame.day,
+                            time: espnMatch.time || histGame.time,
+                            kickoff: espnMatch.kickoff || histGame.kickoff,
+                            location: espnMatch.location || histGame.location,
+                            stadium: espnMatch.stadium || histGame.stadium,
+                            broadcast: espnMatch.broadcast,
+                            status: espnMatch.status,
+                            completed: espnMatch.completed,
+                            homeScore: espnMatch.homeScore,
+                            awayScore: espnMatch.awayScore
+                        });
+                    } else {
+                        mergedGames.push(histGame);
+                    }
+                });
+            }
+
+            // Then, add any ESPN games that weren't in historical data (upcoming games)
+            // These get IDs starting after the last historical game ID
+            const nextId = historicalGames ? historicalGames.length + 1 : 1;
+            espnGames.forEach((espnGame, index) => {
+                if (!usedEspnIndices.has(index)) {
+                    mergedGames.push({
+                        ...espnGame,
+                        id: nextId + (mergedGames.length - (historicalGames ? historicalGames.length : 0))
+                    });
+                }
+            });
+
+            // Sort by kickoff time to keep games in chronological order
+            mergedGames.sort((a, b) => {
+                const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
+                const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
+                return timeA - timeB;
+            });
+
+            applySpreadsToGames(mergedGames);
+            NFL_GAMES_BY_WEEK[week] = mergedGames;
+            console.log(`[Schedule] Merged ${mergedGames.length} ${getWeekDisplayName(week)} games (${historicalGames ? historicalGames.length : 0} historical + ${mergedGames.length - (historicalGames ? historicalGames.length : 0)} ESPN)`);
+            return mergedGames;
+        } else if (historicalGames && historicalGames.length > 0) {
+            // No ESPN data, use historical games only
+            applySpreadsToGames(historicalGames);
+            NFL_GAMES_BY_WEEK[week] = historicalGames;
+            console.log(`[Schedule] Using ${historicalGames.length} historical ${getWeekDisplayName(week)} games (no ESPN data)`);
+            return historicalGames;
         }
 
-        // Fetch playoff games from ESPN
-        const espnGames = await fetchNFLSchedule(week, forceRefresh);
-        if (espnGames && espnGames.length > 0) {
-            // Apply saved spreads to playoff games
-            applySpreadsToGames(espnGames);
-            NFL_GAMES_BY_WEEK[week] = espnGames;
-            cacheSchedule(week, espnGames);
-            console.log(`[Schedule] Loaded ${espnGames.length} games for ${getWeekDisplayName(week)} from ESPN`);
-        } else {
-            NFL_GAMES_BY_WEEK[week] = [];
-            console.warn(`[Schedule] No games found for ${getWeekDisplayName(week)}`);
-        }
+        // No historical or ESPN data available
+        NFL_GAMES_BY_WEEK[week] = [];
+        console.warn(`[Schedule] No games found for ${getWeekDisplayName(week)}`);
         return NFL_GAMES_BY_WEEK[week];
     }
 
@@ -1595,12 +1653,12 @@ if (typeof HISTORICAL_RESULTS !== 'undefined') {
 
 // Helper function to get games for current week
 function getGamesForWeek(week) {
-    return NFL_GAMES_BY_WEEK[week] || [];
+    return NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[String(week)] || [];
 }
 
 // Helper function to get results for current week
 function getResultsForWeek(week) {
-    return NFL_RESULTS_BY_WEEK[week] || {};
+    return NFL_RESULTS_BY_WEEK[week] || NFL_RESULTS_BY_WEEK[String(week)] || {};
 }
 
 // DOM Elements
@@ -2475,6 +2533,128 @@ function setupConsolidatedTabs() {
 }
 
 /**
+ * Calculate combined playoff stats (Line + SU + O/U) for weeks 19-22
+ * Uses the same calculation logic as renderScoringSummary for consistency
+ */
+function calculatePlayoffStats() {
+    const stats = {};
+
+    // Initialize stats for all pickers
+    PICKERS.forEach(picker => {
+        stats[picker] = {
+            name: picker,
+            // Line (ATS) totals
+            lineWins: 0, lineLosses: 0, linePushes: 0,
+            // Straight Up totals
+            suWins: 0, suLosses: 0,
+            // Over/Under totals
+            ouWins: 0, ouLosses: 0, ouPushes: 0
+        };
+    });
+
+    // Loop through playoff weeks (19-22)
+    for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
+        const weekStr = String(week);
+        const weekGames = getGamesForWeek(week);
+        const weekResults = getResultsForWeek(week);
+        // Try both string and number keys for allPicks (historical data uses string keys)
+        const weekPicks = allPicks[week] || allPicks[weekStr] || {};
+        const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
+
+        if (!weekGames || weekGames.length === 0) continue;
+
+        PICKERS.forEach(picker => {
+            const pickerPicks = weekPicks[picker] || {};
+            const cachedPicks = cachedWeek?.picks?.[picker] || {};
+
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+                const cachedGamePicks = cachedPicks[gameIdStr] || cachedPicks[game.id] || {};
+
+                // Get result - try both string and number keys
+                let result = weekResults[game.id] || weekResults[gameIdStr];
+                if (!result) {
+                    const liveData = getLiveGameStatus(game);
+                    if (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) {
+                        result = {
+                            winner: liveData.homeScore > liveData.awayScore ? 'home' : 'away',
+                            homeScore: liveData.homeScore,
+                            awayScore: liveData.awayScore
+                        };
+                    }
+                }
+
+                if (!result) return;
+
+                const atsWinner = calculateATSWinner(game, result);
+
+                // Line pick result (same logic as renderScoringSummary)
+                const linePick = gamePicks.line || cachedGamePicks.line;
+                if (linePick) {
+                    if (atsWinner === 'push') {
+                        stats[picker].linePushes++;
+                    } else if (linePick === atsWinner) {
+                        stats[picker].lineWins++;
+                    } else {
+                        stats[picker].lineLosses++;
+                    }
+                }
+
+                // Straight up result (same logic as renderScoringSummary)
+                const winnerPick = gamePicks.winner || cachedGamePicks.winner;
+                if (winnerPick) {
+                    if (winnerPick === result.winner) {
+                        stats[picker].suWins++;
+                    } else {
+                        stats[picker].suLosses++;
+                    }
+                }
+
+                // Over/Under result (same logic as renderScoringSummary)
+                const ouPick = gamePicks.overUnder || cachedGamePicks.overUnder;
+                const ouLine = game.overUnder || gamePicks.totalLine || cachedGamePicks.totalLine;
+                if (ouPick && ouLine > 0) {
+                    const totalScore = (result.awayScore || 0) + (result.homeScore || 0);
+                    const ouResult = totalScore > ouLine ? 'over' : (totalScore < ouLine ? 'under' : 'push');
+                    if (ouResult === 'push') {
+                        stats[picker].ouPushes++;
+                    } else if (ouPick === ouResult) {
+                        stats[picker].ouWins++;
+                    } else {
+                        stats[picker].ouLosses++;
+                    }
+                }
+            });
+        });
+    }
+
+    // Calculate combined totals and percentage for ranking
+    PICKERS.forEach(picker => {
+        const s = stats[picker];
+
+        // Combined wins/losses across all three categories
+        s.wins = s.lineWins + s.suWins + s.ouWins;
+        s.losses = s.lineLosses + s.suLosses + s.ouLosses;
+        s.pushes = s.linePushes + s.ouPushes;
+        s.totalPicks = s.wins + s.losses + s.pushes;
+
+        // Percentage based on combined record
+        const total = s.wins + s.losses;
+        s.percentage = total > 0 ? (s.wins / total * 100) : 0;
+
+        // Format breakdown records for display
+        const linePushStr = s.linePushes > 0 ? `-${s.linePushes}` : '';
+        const ouPushStr = s.ouPushes > 0 ? `-${s.ouPushes}` : '';
+        s.lineRecord = `${s.lineWins}-${s.lineLosses}${linePushStr}`;
+        s.suRecord = `${s.suWins}-${s.suLosses}`;
+        s.ouRecord = `${s.ouWins}-${s.ouLosses}${ouPushStr}`;
+    });
+
+    return stats;
+}
+
+/**
  * Render the full dashboard
  */
 function renderDashboard() {
@@ -2496,6 +2676,10 @@ function renderDashboard() {
             stats = dashboardData.winnerPicks;
             weeklyData = dashboardData.weeklyWinnerPicks;
             break;
+        case 'playoffs':
+            stats = calculatePlayoffStats();
+            weeklyData = null; // No weekly trend for combined playoffs
+            break;
         default:
             return;
     }
@@ -2512,6 +2696,27 @@ function renderDashboard() {
 
     // PRIMARY: Render leaderboard
     renderLeaderboard(stats);
+
+    // Get section elements
+    const performanceInsightsSection = document.getElementById('performance-insights-section');
+    const recordsAnalysisSection = document.getElementById('records-analysis-section');
+
+    // Playoffs tab: only show leaderboard cards with breakdown, hide all other sections
+    if (currentSubcategory === 'playoffs') {
+        performanceInsightsSection?.classList.add('hidden');
+        recordsAnalysisSection?.classList.add('hidden');
+        return;
+    }
+
+    // Show all panels for non-playoff tabs
+    document.getElementById('trend-chart-container')?.classList.remove('hidden');
+    document.querySelector('.insights-panel')?.classList.remove('hidden');
+    document.querySelector('.patterns-panel')?.classList.remove('hidden');
+    document.querySelector('.group-stats-panel')?.classList.remove('hidden');
+
+    // Show sections for non-playoff tabs
+    performanceInsightsSection?.classList.remove('hidden');
+    recordsAnalysisSection?.classList.remove('hidden');
 
     // SECONDARY: Performance & Insights - render all panels
     renderStandingsTable(stats);
@@ -4010,6 +4215,47 @@ function renderPickerCard(picker, index, isCompact = false) {
     const yearChangeClass = picker.yearChange?.includes('▲') ? 'up' : 'down';
     const pctClass = picker.percentage >= 50 ? 'positive' : 'negative';
     const compactClass = isCompact ? 'compact' : '';
+    const isPlayoffs = currentSubcategory === 'playoffs';
+
+    // Playoff-specific stats breakdown
+    const playoffStatsHtml = `
+        <div class="stat-row">
+            <span class="stat-label">Line (ATS)</span>
+            <span class="stat-value">${picker.lineRecord || '-'}</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Straight Up</span>
+            <span class="stat-value">${picker.suRecord || '-'}</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Over/Under</span>
+            <span class="stat-value">${picker.ouRecord || '-'}</span>
+        </div>
+    `;
+
+    // Regular season stats
+    const regularStatsHtml = `
+        <div class="stat-row">
+            <span class="stat-label">Total Picks</span>
+            <span class="stat-value">${picker.totalPicks || 0}</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Last 3 Weeks</span>
+            <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
+                ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
+            </span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Best Week</span>
+            <span class="stat-value">${picker.bestWeek || '-'}</span>
+        </div>
+        ${picker.worstWeek ? `
+        <div class="stat-row">
+            <span class="stat-label">Worst Week</span>
+            <span class="stat-value">${picker.worstWeek}</span>
+        </div>
+        ` : ''}
+    `;
 
     if (isCompact) {
         // Expandable compact card for runners-up section
@@ -4029,28 +4275,9 @@ function renderPickerCard(picker, index, isCompact = false) {
                 </div>
                 <div class="compact-expanded">
                     <div class="picker-stats">
-                        <div class="stat-row">
-                            <span class="stat-label">Total Picks</span>
-                            <span class="stat-value">${picker.totalPicks || 0}</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Last 3 Weeks</span>
-                            <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
-                                ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
-                            </span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Best Week</span>
-                            <span class="stat-value">${picker.bestWeek || '-'}</span>
-                        </div>
-                        ${picker.worstWeek ? `
-                        <div class="stat-row">
-                            <span class="stat-label">Worst Week</span>
-                            <span class="stat-value">${picker.worstWeek}</span>
-                        </div>
-                        ` : ''}
+                        ${isPlayoffs ? playoffStatsHtml : regularStatsHtml}
                     </div>
-                    ${picker.winnings !== undefined ? `
+                    ${!isPlayoffs && picker.winnings !== undefined ? `
                         <div class="year-comparison">
                             <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
                                 <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
@@ -4073,6 +4300,7 @@ function renderPickerCard(picker, index, isCompact = false) {
             <div class="win-pct ${pctClass}">${picker.percentage?.toFixed(2) || 0}%</div>
             <div class="record">${picker.wins}-${picker.losses}-${picker.pushes || picker.draws || 0}</div>
             <div class="picker-stats">
+                ${isPlayoffs ? playoffStatsHtml : `
                 <div class="stat-row">
                     <span class="stat-label">Total Picks</span>
                     <span class="stat-value">${picker.totalPicks || 0}</span>
@@ -4092,9 +4320,9 @@ function renderPickerCard(picker, index, isCompact = false) {
                     <span class="stat-label">Worst Week</span>
                     <span class="stat-value">${picker.worstWeek}</span>
                 </div>
-                ` : ''}
+                ` : ''}`}
             </div>
-            ${picker.bestTeam && picker.worstTeam ? `
+            ${!isPlayoffs && picker.bestTeam && picker.worstTeam ? `
             <div class="team-records">
                 <div class="team-record best">
                     <img src="${getTeamLogo(picker.bestTeam.team)}" alt="${picker.bestTeam.team} logo" class="team-badge-logo" onerror="handleLogoError(this, '${picker.bestTeam.team}')">
@@ -4108,6 +4336,7 @@ function renderPickerCard(picker, index, isCompact = false) {
                 </div>
             </div>
             ` : ''}
+            ${!isPlayoffs ? `
             <div class="year-comparison">
                 ${picker.yearChange ? `
                     <div class="year-change ${yearChangeClass}">
@@ -4122,6 +4351,7 @@ function renderPickerCard(picker, index, isCompact = false) {
                     </div>
                 ` : ''}
             </div>
+            ` : ''}
         </div>
     `;
 }
@@ -4131,9 +4361,77 @@ function renderPickerCard(picker, index, isCompact = false) {
  */
 function renderStandingsTable(stats) {
     const tbody = document.getElementById('standings-table-body');
-    if (!tbody) return;
+    const thead = document.querySelector('#standings-table thead');
+    if (!tbody || !thead) return;
 
     const sorted = getSortedPickers(stats);
+
+    // Playoffs uses a different table layout showing Line/SU/O/U breakdown
+    if (currentSubcategory === 'playoffs') {
+        // Update table title to explain combined scoring
+        const tableTitle = document.querySelector('.standings-panel h3');
+        if (tableTitle) {
+            tableTitle.innerHTML = 'Playoff Standings <span style="font-weight: normal; font-size: 0.85em; color: var(--text-secondary);">(Combined: Line + Straight Up + Over/Under)</span>';
+        }
+
+        thead.innerHTML = `
+            <tr>
+                <th>Picker</th>
+                <th colspan="4" style="text-align: center; border-bottom: 2px solid var(--border-color);">Combined Record</th>
+                <th colspan="3" style="text-align: center; border-bottom: 2px solid var(--border-color);">Breakdown</th>
+            </tr>
+            <tr>
+                <th></th>
+                <th>W</th>
+                <th>L</th>
+                <th>P</th>
+                <th>%</th>
+                <th>Line (ATS)</th>
+                <th>Straight Up</th>
+                <th>Over/Under</th>
+            </tr>
+        `;
+
+        tbody.innerHTML = sorted.map((picker, index) => {
+            const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(1) + '%' : '-';
+            return `
+                <tr class="${index === 0 ? 'leader' : ''}">
+                    <td class="picker-name">${picker.name}</td>
+                    <td>${picker.wins || 0}</td>
+                    <td>${picker.losses || 0}</td>
+                    <td>${picker.pushes || 0}</td>
+                    <td class="pct">${pct}</td>
+                    <td>${picker.lineRecord || '-'}</td>
+                    <td>${picker.suRecord || '-'}</td>
+                    <td>${picker.ouRecord || '-'}</td>
+                </tr>
+            `;
+        }).join('');
+        return;
+    }
+
+    // Restore default table title for non-playoff tabs
+    const tableTitle = document.querySelector('.standings-panel h3');
+    if (tableTitle) {
+        tableTitle.textContent = 'Season Standings';
+    }
+
+    // Default table layout for other subcategories
+    thead.innerHTML = `
+        <tr>
+            <th>Picker</th>
+            <th>Win</th>
+            <th>Loss</th>
+            <th>Push</th>
+            <th>%</th>
+            <th>Total</th>
+            <th>Last 3-Wk</th>
+            <th>Best Week</th>
+            <th>High %</th>
+            <th>Low %</th>
+            <th>Year Chg</th>
+        </tr>
+    `;
 
     tbody.innerHTML = sorted.map((picker, index) => {
         const yearChange = picker.yearChange || '';
@@ -4217,10 +4515,12 @@ function renderGames() {
     if (!gamesList) return;
 
     let weekGames = getGamesForWeek(currentWeek);
+    const weekStr = String(currentWeek);
     // Merge picks from both allPicks and weeklyPicksCache (Google Sheets data)
-    const weekPicks = allPicks[currentWeek] || {};
+    // Try both number and string keys for compatibility with historical data
+    const weekPicks = allPicks[currentWeek] || allPicks[weekStr] || {};
     const localPicks = weekPicks[currentPicker] || {};
-    const cachedPicks = weeklyPicksCache[currentWeek]?.picks?.[currentPicker] || {};
+    const cachedPicks = weeklyPicksCache[currentWeek]?.picks?.[currentPicker] || weeklyPicksCache[weekStr]?.picks?.[currentPicker] || {};
     const pickerPicks = { ...cachedPicks, ...localPicks }; // Local picks override cached
     const isHistoricalWeek = currentWeek < CURRENT_NFL_WEEK;
 

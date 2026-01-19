@@ -1941,6 +1941,74 @@
             "spread": 3.5,
             "favorite": "away"
         }
+    ],
+    "19": [
+        {
+            "id": 1,
+            "away": "Rams",
+            "home": "Panthers",
+            "spread": 10.5,
+            "favorite": "away",
+            "overUnder": 46.5
+        },
+        {
+            "id": 2,
+            "away": "Packers",
+            "home": "Bears",
+            "spread": 1,
+            "favorite": "home",
+            "overUnder": 46.5
+        },
+        {
+            "id": 3,
+            "away": "Bills",
+            "home": "Jaguars",
+            "spread": 1.5,
+            "favorite": "away",
+            "overUnder": 51.5
+        },
+        {
+            "id": 4,
+            "away": "49ers",
+            "home": "Eagles",
+            "spread": 5,
+            "favorite": "home",
+            "overUnder": 44.5
+        },
+        {
+            "id": 5,
+            "away": "Chargers",
+            "home": "Patriots",
+            "spread": 3.5,
+            "favorite": "home",
+            "overUnder": 43.5
+        },
+        {
+            "id": 6,
+            "away": "Texans",
+            "home": "Steelers",
+            "spread": 3,
+            "favorite": "away",
+            "overUnder": 39.5
+        }
+    ],
+    "20": [
+        {
+            "id": 1,
+            "away": "Bills",
+            "home": "Broncos",
+            "spread": 1.5,
+            "favorite": "home",
+            "overUnder": 44.5
+        },
+        {
+            "id": 2,
+            "away": "49ers",
+            "home": "Seahawks",
+            "spread": 7,
+            "favorite": "home",
+            "overUnder": 47.5
+        }
     ]
 };
 
@@ -9781,6 +9849,68 @@
             "6": {
                 "line": "away",
                 "winner": "away",
+                "overUnder": "over"
+            }
+        }
+    },
+    "20": {
+        "Dylan": {
+            "1": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "over"
+            }
+        },
+        "Sean": {
+            "1": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "over"
+            }
+        },
+        "Daniel": {
+            "1": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            },
+            "2": {
+                "line": "away",
+                "winner": "home",
+                "overUnder": "over"
+            }
+        },
+        "Jason": {
+            "1": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "2": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
+            }
+        },
+        "Stephen": {
+            "1": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "2": {
+                "line": "away",
+                "winner": "home",
                 "overUnder": "over"
             }
         }
