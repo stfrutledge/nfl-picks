@@ -738,6 +738,8 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
 async function loadWeekSchedule(week, forceRefresh = false) {
     // For playoff weeks, fetch from ESPN
     if (isPlayoffWeek(week)) {
+        // Try to load spreads from Google Sheets backup first (ensures we have spreads even for completed games)
+        await loadSpreadsFromGoogleSheets(week);
         const savedSpreads = getSavedSpreads();
         const weekStr = String(week);
 
@@ -1532,6 +1534,7 @@ async function checkAndAdvanceWeekIfNeeded() {
  * Falls back to Google Sheets backup if spreads are missing locally
  */
 async function prefetchAndSaveSpreads() {
+    console.warn(`[Prefetch] === STARTING prefetchAndSaveSpreads, currentWeek=${currentWeek} ===`);
     let saved = getSavedSpreads();
     const weeksToCheck = [currentWeek];
 
@@ -1550,6 +1553,15 @@ async function prefetchAndSaveSpreads() {
         const games = NFL_GAMES_BY_WEEK[week];
         if (!games || games.length === 0) continue;
 
+        // Debug: log game keys and their spreads
+        console.warn(`[Prefetch] Week ${week} games:`, games.map(g => ({
+            key: `${g.away.toLowerCase()}_${g.home.toLowerCase()}`,
+            spread: g.spread,
+            away: g.away,
+            home: g.home
+        })));
+        console.warn(`[Prefetch] Saved spreads for week ${week}:`, saved[week]);
+
         // Check if we have spreads saved for all games in this week
         let missingSpreadGames = games.filter(game => {
             const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
@@ -1559,10 +1571,12 @@ async function prefetchAndSaveSpreads() {
         });
 
         // If spreads are missing, first try loading from Google Sheets backup
+        console.warn(`[Prefetch] Missing spread games for week ${week}:`, missingSpreadGames.length, missingSpreadGames.map(g => `${g.away}@${g.home}`));
         if (missingSpreadGames.length > 0) {
-            console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads, trying Google Sheets backup...`);
+            console.warn(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads, trying Google Sheets backup...`);
             await loadSpreadsFromGoogleSheets(week);
             saved = getSavedSpreads(); // Refresh after loading from backup
+            applySavedSpreads(); // Apply loaded spreads to games in memory
 
             // Re-check after loading from backup
             missingSpreadGames = games.filter(game => {
@@ -6256,11 +6270,13 @@ async function syncSpreadsToGoogleSheets() {
  */
 async function loadSpreadsFromGoogleSheets(week) {
     try {
+        console.warn(`[Spreads Load] Fetching spreads for week ${week} from Google Sheets...`);
         const response = await fetch(`${WORKER_PROXY_URL}/sync?action=spreads&week=${week}`);
         const result = await response.json();
+        console.warn(`[Spreads Load] Google Sheets response for week ${week}:`, result);
 
         if (result.spreads && Object.keys(result.spreads).length > 0) {
-            console.log(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets`);
+            console.warn(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets:`, Object.keys(result.spreads));
 
             // Merge with localStorage (localStorage takes priority)
             const saved = getSavedSpreads();
@@ -6269,7 +6285,8 @@ async function loadSpreadsFromGoogleSheets(week) {
             }
 
             for (const [key, data] of Object.entries(result.spreads)) {
-                if (!saved[week][key]) {
+                // Use Google Sheets data if localStorage is missing or has spread=0
+                if (!saved[week][key] || !saved[week][key].spread || saved[week][key].spread === 0) {
                     saved[week][key] = data;
                 }
             }
