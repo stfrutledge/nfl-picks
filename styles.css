@@ -23,6 +23,7 @@
     /* NFL Brand Colors */
     --nfl-blue: #013369;
     --nfl-red: #d50a0a;
+    --primary-color: #013369;
 
     /* Accent Colors */
     --accent-green: #059669;
@@ -49,6 +50,7 @@
     --text-primary: #f5f5f5;
     --text-secondary: #a3a3a3;
     --text-light: #737373;
+    --primary-color: #013369;
 
     --accent-green: #10b981;
     --accent-red: #ef4444;
@@ -3632,50 +3634,47 @@ footer a:hover {
     display: block;
 }
 
-/* Standings Table */
+/* Standings Table - styled to match team-records-table */
 .standings-table-container {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
 }
 
 .standings-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.9rem;
-    background: var(--card-bg);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.standings-table thead {
-    background: var(--primary-color);
-    color: white;
 }
 
 .standings-table th {
-    padding: 12px 10px;
+    background: var(--bg-secondary);
+    padding: 12px 16px;
     text-align: center;
-    font-weight: 600;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
 }
 
 .standings-table th:first-child {
     text-align: left;
-    padding-left: 16px;
 }
 
 .standings-table td {
-    padding: 12px 10px;
+    padding: 12px 16px;
     text-align: center;
+    font-size: 0.85rem;
     border-bottom: 1px solid var(--border-color);
 }
 
 .standings-table td:first-child {
     text-align: left;
-    padding-left: 16px;
 }
 
 .standings-table tbody tr:last-child td {
@@ -3683,7 +3682,7 @@ footer a:hover {
 }
 
 .standings-table tbody tr:hover {
-    background: var(--hover-bg);
+    background: var(--bg-secondary);
 }
 
 .standings-table tbody tr.leader {
@@ -3700,8 +3699,8 @@ footer a:hover {
 }
 
 .standings-table .pct {
-    font-weight: 600;
-    color: var(--primary-color);
+    font-weight: 700;
+    color: var(--accent-green);
 }
 
 .standings-table .best-week {
@@ -3715,20 +3714,16 @@ footer a:hover {
 }
 
 .standings-table .year-change.positive {
-    color: var(--success-color);
+    color: var(--accent-green);
 }
 
 .standings-table .year-change.negative {
-    color: var(--danger-color);
+    color: var(--accent-red);
 }
 
 /* Dark mode standings table */
-[data-theme="dark"] .standings-table {
-    background: var(--card-bg);
-}
-
-[data-theme="dark"] .standings-table thead {
-    background: var(--primary-color);
+[data-theme="dark"] .standings-table-container {
+    background: var(--bg-primary);
 }
 
 [data-theme="dark"] .standings-table tbody tr.leader {
