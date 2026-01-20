@@ -38,6 +38,11 @@ function doGet(e) {
       return jsonResponse(getPicksForWeek(week, picker));
     }
 
+    // Get ALL picks for all weeks and all pickers in one call
+    if (action === 'allpicks') {
+      return jsonResponse(getAllPicks());
+    }
+
     // Default response
     return jsonResponse({
       status: 'ok',
@@ -45,6 +50,7 @@ function doGet(e) {
       endpoints: {
         'GET ?action=spreads&week=N': 'Get spreads for week N',
         'GET ?action=picks&week=N&picker=X': 'Get picks for week N and picker X',
+        'GET ?action=allpicks': 'Get all picks for all weeks and pickers',
         'POST': 'Save picks and/or spreads'
       }
     });
@@ -56,9 +62,14 @@ function doGet(e) {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { week, picker, picks, spreads } = data;
+    const { week, picker, picks, spreads, cleared } = data;
 
     const results = {};
+
+    // Save cleared status if provided
+    if (typeof cleared === 'boolean' && week && picker) {
+      results.cleared = saveClearedStatus(week, picker, cleared);
+    }
 
     // Save picks if provided
     if (picks && picks.length > 0 && picker) {
@@ -71,7 +82,7 @@ function doPost(e) {
     }
 
     if (Object.keys(results).length === 0) {
-      return jsonResponse({ error: 'No picks or spreads provided' });
+      return jsonResponse({ error: 'No picks, spreads, or cleared status provided' });
     }
 
     return jsonResponse({
@@ -176,6 +187,66 @@ function saveSpreads(week, spreads) {
     message: `Saved ${savedCount} new spreads for Week ${week}`,
     savedCount: savedCount
   };
+}
+
+/**
+ * Save cleared status for a picker's week
+ * cleared=true means picks were intentionally cleared and shouldn't be restored from backup
+ */
+function saveClearedStatus(week, picker, cleared) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('ClearedPicks');
+  if (!sheet) {
+    sheet = ss.insertSheet('ClearedPicks');
+    sheet.appendRow(['Week', 'Picker', 'Cleared', 'Timestamp']);
+    sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
+  }
+
+  const timestamp = new Date().toISOString();
+
+  // Find existing row for this week/picker
+  const data = sheet.getDataRange().getValues();
+  let existingRow = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(week) && String(data[i][1]) === picker) {
+      existingRow = i + 1; // 1-indexed
+      break;
+    }
+  }
+
+  if (existingRow > 0) {
+    // Update existing row
+    sheet.getRange(existingRow, 3, 1, 2).setValues([[cleared ? 'Yes' : 'No', timestamp]]);
+  } else {
+    // Add new row
+    sheet.appendRow([week, picker, cleared ? 'Yes' : 'No', timestamp]);
+  }
+
+  return {
+    message: `Cleared status for ${picker} Week ${week} set to ${cleared}`,
+    cleared: cleared
+  };
+}
+
+/**
+ * Check if picks were cleared for a specific week/picker
+ */
+function isClearedForWeek(week, picker) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('ClearedPicks');
+
+  if (!sheet) {
+    return false;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(week) && String(data[i][1]) === picker) {
+      return data[i][2] === 'Yes';
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -284,11 +355,121 @@ function getPicksForWeek(week, picker) {
     };
   }
 
+  // Check if picks were intentionally cleared
+  const cleared = isClearedForWeek(week, picker);
+
   return {
     week: week,
     picker: picker,
     picks: picks,
-    count: Object.keys(picks).length
+    count: Object.keys(picks).length,
+    cleared: cleared
+  };
+}
+
+/**
+ * Get ALL picks for all weeks and all pickers in one call
+ * Returns: { picks: { week: { picker: { gameId: pickData } } }, cleared: { week: { picker: true } } }
+ */
+function getAllPicks() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Backup');
+
+  const allPicks = {};
+  const allCleared = {};
+
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread, Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line
+
+    // Collect all picks with timestamps to get the latest for each game
+    const picksWithTimestamp = {};
+
+    for (let i = 1; i < data.length; i++) {
+      const timestamp = new Date(data[i][0]).getTime();
+      const week = String(data[i][1]);
+      const picker = String(data[i][2]);
+      const gameId = String(data[i][3]);
+
+      if (!picksWithTimestamp[week]) {
+        picksWithTimestamp[week] = {};
+      }
+      if (!picksWithTimestamp[week][picker]) {
+        picksWithTimestamp[week][picker] = {};
+      }
+
+      // Only keep if this is a newer timestamp than what we have
+      if (!picksWithTimestamp[week][picker][gameId] || timestamp > picksWithTimestamp[week][picker][gameId].timestamp) {
+        picksWithTimestamp[week][picker][gameId] = {
+          timestamp: timestamp,
+          away: data[i][4],
+          home: data[i][5],
+          linePick: data[i][8],
+          winnerPick: data[i][9],
+          blazin: data[i][10] === 'Yes',
+          overUnder: data[i][11],
+          totalLine: data[i][12]
+        };
+      }
+    }
+
+    // Convert to final format
+    for (const week in picksWithTimestamp) {
+      allPicks[week] = {};
+      for (const picker in picksWithTimestamp[week]) {
+        allPicks[week][picker] = {};
+        for (const gameId in picksWithTimestamp[week][picker]) {
+          const pickData = picksWithTimestamp[week][picker][gameId];
+
+          // Convert team names back to 'home'/'away' format
+          let linePick = pickData.linePick;
+          if (linePick === pickData.away) {
+            linePick = 'away';
+          } else if (linePick === pickData.home) {
+            linePick = 'home';
+          }
+
+          let winnerPick = pickData.winnerPick;
+          if (winnerPick === pickData.away) {
+            winnerPick = 'away';
+          } else if (winnerPick === pickData.home) {
+            winnerPick = 'home';
+          }
+
+          allPicks[week][picker][gameId] = {
+            line: linePick || '',
+            winner: winnerPick || '',
+            blazin: pickData.blazin || false,
+            overUnder: pickData.overUnder || '',
+            totalLine: pickData.totalLine || ''
+          };
+        }
+      }
+    }
+  }
+
+  // Get all cleared statuses
+  const clearedSheet = ss.getSheetByName('ClearedPicks');
+  if (clearedSheet) {
+    const clearedData = clearedSheet.getDataRange().getValues();
+    for (let i = 1; i < clearedData.length; i++) {
+      const week = String(clearedData[i][0]);
+      const picker = String(clearedData[i][1]);
+      const cleared = clearedData[i][2] === 'Yes';
+
+      if (cleared) {
+        if (!allCleared[week]) {
+          allCleared[week] = {};
+        }
+        allCleared[week][picker] = true;
+      }
+    }
+  }
+
+  return {
+    picks: allPicks,
+    cleared: allCleared,
+    weekCount: Object.keys(allPicks).length
   };
 }
 

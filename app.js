@@ -19,6 +19,8 @@ let currentSubcategory = 'blazin'; // Default standings subcategory
 let currentPicker = localStorage.getItem('selectedPicker') || 'Stephen';
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
+let clearedPicks = JSON.parse(localStorage.getItem('clearedPicks') || '{}'); // Track intentionally cleared picks: { week: { picker: true } }
+let backupFetchedThisSession = false; // Only fetch all picks from backup once per session
 let initialLoadComplete = false; // Track whether initial data load is complete
 
 // Available weeks (1-18 for regular season)
@@ -4975,6 +4977,14 @@ function handlePickSelect(e) {
         }
     }
 
+    // Clear the "intentionally cleared" flag since user is making new picks
+    // This allows future backup restores
+    if (clearedPicks[currentWeek]?.[currentPicker]) {
+        delete clearedPicks[currentWeek][currentPicker];
+        localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+        syncClearedStatusToGoogleSheets(currentWeek, currentPicker, false);
+    }
+
     // Save to localStorage
     savePicksToStorage();
 
@@ -5802,6 +5812,17 @@ function clearCurrentPickerPicks() {
 
                 allPicks[currentWeek][currentPicker] = preservedPicks;
             }
+
+            // Mark picks as intentionally cleared (prevents backup restore)
+            if (!clearedPicks[currentWeek]) {
+                clearedPicks[currentWeek] = {};
+            }
+            clearedPicks[currentWeek][currentPicker] = true;
+            localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+
+            // Sync cleared status to Google Sheets
+            syncClearedStatusToGoogleSheets(currentWeek, currentPicker, true);
+
             savePicksToStorage();
             renderGames();
             renderScoringSummary();
@@ -5813,6 +5834,14 @@ function clearCurrentPickerPicks() {
                     allPicks[savedWeek] = {};
                 }
                 allPicks[savedWeek][savedPicker] = savedPicks;
+
+                // Remove the cleared flag since we're restoring
+                if (clearedPicks[savedWeek]) {
+                    delete clearedPicks[savedWeek][savedPicker];
+                    localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+                    syncClearedStatusToGoogleSheets(savedWeek, savedPicker, false);
+                }
+
                 savePicksToStorage();
                 renderGames();
                 renderScoringSummary();
@@ -6224,6 +6253,41 @@ async function syncPicksToGoogleSheets(displayToast = true) {
 }
 
 /**
+ * Sync cleared status to Google Sheets
+ * This tells the backup whether picks were intentionally cleared
+ */
+async function syncClearedStatusToGoogleSheets(week, picker, cleared) {
+    if (!APPS_SCRIPT_URL) {
+        return;
+    }
+
+    const payload = {
+        week: week,
+        picker: picker,
+        cleared: cleared
+    };
+
+    console.log('[Sync] Syncing cleared status to Google Sheets:', payload);
+
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            console.log(`[Sync] Cleared status synced for ${picker} week ${week}: ${cleared}`);
+        } else {
+            console.warn('[Sync] Failed to sync cleared status:', result.error);
+        }
+    } catch (error) {
+        console.warn('[Sync] Failed to sync cleared status:', error.message);
+    }
+}
+
+/**
  * Sync spreads to Google Sheets for backup
  * This ensures spreads are preserved even if localStorage is cleared
  */
@@ -6315,10 +6379,22 @@ async function loadPicksFromGoogleSheets(week, picker) {
             return null;
         }
 
+        // Check if picks were intentionally cleared (from Google Sheets)
+        if (result.cleared) {
+            console.log(`[Picks Load] ${picker} week ${week} was intentionally cleared (from Google Sheets), skipping restore`);
+            // Update local cleared status to match
+            if (!clearedPicks[week]) {
+                clearedPicks[week] = {};
+            }
+            clearedPicks[week][picker] = true;
+            localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+            return null;
+        }
+
         if (result.picks && Object.keys(result.picks).length > 0) {
             console.log(`[Picks Load] Loaded ${result.count} picks for ${picker} week ${week} from Google Sheets`);
 
-            // Merge into allPicks (don't overwrite existing localStorage picks)
+            // Merge into allPicks - prefer backup data over historical data
             if (!allPicks[week]) {
                 allPicks[week] = {};
             }
@@ -6327,10 +6403,8 @@ async function loadPicksFromGoogleSheets(week, picker) {
             }
 
             for (const [gameId, pickData] of Object.entries(result.picks)) {
-                // Only add if not already present
-                if (!allPicks[week][picker][gameId]) {
-                    allPicks[week][picker][gameId] = pickData;
-                }
+                // Overwrite with backup data (backup is source of truth)
+                allPicks[week][picker][gameId] = pickData;
             }
 
             // Save to localStorage for future loads
@@ -6346,27 +6420,81 @@ async function loadPicksFromGoogleSheets(week, picker) {
 }
 
 /**
- * Load picks from localStorage, then fallback to Google Sheets if empty
- * Returns a promise that resolves when all loading is complete
+ * Load ALL picks from Google Sheets backup in one API call
+ * This fetches picks for all weeks and all pickers at once
  */
 async function loadAllPicksFromBackup() {
-    // For each picker and the current week, check if picks are missing and load from Google Sheets
-    const week = currentWeek || CURRENT_NFL_WEEK;
-    const loadPromises = [];
-
-    for (const picker of PICKERS) {
-        // Check if this picker has any picks for this week in allPicks
-        const hasPicks = allPicks[week]?.[picker] && Object.keys(allPicks[week][picker]).length > 0;
-
-        if (!hasPicks) {
-            console.log(`[Picks Load] ${picker} has no picks for week ${week} in localStorage, checking Google Sheets...`);
-            loadPromises.push(loadPicksFromGoogleSheets(week, picker));
-        }
+    // Only fetch from Google Sheets once per session to avoid excessive API calls
+    if (backupFetchedThisSession) {
+        console.log('[Picks Load] Backup already fetched this session, skipping');
+        return;
     }
 
-    if (loadPromises.length > 0) {
-        await Promise.all(loadPromises);
-        console.log(`[Picks Load] Finished loading backup picks for week ${week}`);
+    // Mark as fetched immediately to prevent duplicate calls
+    backupFetchedThisSession = true;
+    console.log('[Picks Load] Starting backup fetch from Google Sheets...');
+
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=allpicks`);
+        console.log('[Picks Load] Got response, parsing JSON...');
+        const result = await response.json();
+        console.log('[Picks Load] Response:', result);
+
+        if (result.error) {
+            console.warn('[Picks Load] Error from Google Sheets:', result.error);
+            return;
+        }
+
+        // Update cleared picks from backup
+        if (result.cleared) {
+            for (const week in result.cleared) {
+                if (!clearedPicks[week]) {
+                    clearedPicks[week] = {};
+                }
+                for (const picker in result.cleared[week]) {
+                    clearedPicks[week][picker] = true;
+                }
+            }
+            localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+        }
+
+        // Merge picks from backup into allPicks
+        if (result.picks) {
+            let totalPicks = 0;
+            for (const week in result.picks) {
+                const weekNum = parseInt(week);
+
+                for (const picker in result.picks[week]) {
+                    // Skip if user intentionally cleared picks for this week/picker
+                    if (clearedPicks[week]?.[picker]) {
+                        console.log(`[Picks Load] ${picker} week ${week} was cleared, skipping`);
+                        continue;
+                    }
+
+                    if (!allPicks[weekNum]) {
+                        allPicks[weekNum] = {};
+                    }
+                    if (!allPicks[weekNum][picker]) {
+                        allPicks[weekNum][picker] = {};
+                    }
+
+                    // Overwrite with backup data (backup is source of truth)
+                    for (const gameId in result.picks[week][picker]) {
+                        allPicks[weekNum][picker][gameId] = result.picks[week][picker][gameId];
+                        totalPicks++;
+                    }
+                }
+            }
+            console.log(`[Picks Load] Loaded ${totalPicks} picks across ${result.weekCount} weeks from Google Sheets backup`);
+
+            // Save to localStorage
+            savePicksToStorage(false);
+        } else {
+            console.log('[Picks Load] No picks in response');
+        }
+
+    } catch (error) {
+        console.error('[Picks Load] Failed to load picks from Google Sheets backup:', error);
     }
 }
 
