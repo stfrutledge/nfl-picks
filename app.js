@@ -1772,7 +1772,7 @@ function restoreStephenWeek16Pick() {
         winner: 'home'   // Seahawks to win
     };
 
-    savePicksToStorage(false); // No toast for automated restore
+    savePicksToStorage(false, true); // No toast, skip sync for automated restore
     console.log('Restored Stephen\'s week 16 Seahawks pick (Game 1, home)');
 }
 
@@ -4216,9 +4216,9 @@ async function loadAllWeeklyDataForBlazin() {
 
     console.log(`Blazin' 5 data: ${loadedWeeks} weeks loaded, ${failedWeeks} failed`);
 
-    // Save merged picks to localStorage so they persist
+    // Save merged picks to localStorage so they persist (skip sync - just loading data)
     if (loadedWeeks > 0) {
-        savePicksToStorage();
+        savePicksToStorage(false, true);
     }
 }
 
@@ -6142,12 +6142,14 @@ function randomizePicks() {
 
 /**
  * Save picks to localStorage and optionally sync to Google Sheets
+ * @param {boolean} showSyncToast - Whether to show a toast on successful sync
+ * @param {boolean} skipSync - If true, skip syncing to Google Sheets (used when loading from backup)
  */
-function savePicksToStorage(showSyncToast = false) {
+function savePicksToStorage(showSyncToast = false, skipSync = false) {
     localStorage.setItem('nflPicks', JSON.stringify(allPicks));
 
-    // Debounce sync to Google Sheets
-    if (APPS_SCRIPT_URL) {
+    // Debounce sync to Google Sheets (skip if we're just loading data)
+    if (APPS_SCRIPT_URL && !skipSync) {
         if (pendingSyncTimeout) {
             clearTimeout(pendingSyncTimeout);
         }
@@ -6407,8 +6409,8 @@ async function loadPicksFromGoogleSheets(week, picker) {
                 allPicks[week][picker][gameId] = pickData;
             }
 
-            // Save to localStorage for future loads
-            savePicksToStorage(false);
+            // Save to localStorage for future loads (skip sync - we just loaded from backup)
+            savePicksToStorage(false, true);
             return result.picks;
         } else {
             console.log(`[Picks Load] No picks found for ${picker} week ${week} in Google Sheets`);
@@ -6487,8 +6489,8 @@ async function loadAllPicksFromBackup() {
             }
             console.log(`[Picks Load] Loaded ${totalPicks} picks across ${result.weekCount} weeks from Google Sheets backup`);
 
-            // Save to localStorage
-            savePicksToStorage(false);
+            // Save to localStorage (skip sync - we just loaded from backup)
+            savePicksToStorage(false, true);
         } else {
             console.log('[Picks Load] No picks in response');
         }
@@ -6542,8 +6544,8 @@ function loadPicksFromStorage() {
                         });
                     }
                 });
-                // Save migrated data (no toast for migration)
-                savePicksToStorage(false);
+                // Save migrated data (no toast, skip sync for migration)
+                savePicksToStorage(false, true);
             }
         } catch (e) {
             console.error('Failed to load picks from storage, clearing...', e);
