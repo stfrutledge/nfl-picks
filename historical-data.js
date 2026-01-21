@@ -2008,6 +2008,22 @@
             "spread": 7,
             "favorite": "home",
             "overUnder": 47.5
+        },
+        {
+            "id": 3,
+            "away": "Texans",
+            "home": "Patriots",
+            "spread": 3,
+            "favorite": "home",
+            "overUnder": 40.5
+        },
+        {
+            "id": 4,
+            "away": "Rams",
+            "home": "Bears",
+            "spread": 3.5,
+            "favorite": "away",
+            "overUnder": 48.5
         }
     ]
 };
@@ -9864,6 +9880,16 @@
                 "line": "home",
                 "winner": "home",
                 "overUnder": "over"
+            },
+            "3": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "4": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
             }
         },
         "Sean": {
@@ -9873,6 +9899,16 @@
                 "overUnder": "under"
             },
             "2": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "3": {
+                "line": "away",
+                "winner": "home",
+                "overUnder": "over"
+            },
+            "4": {
                 "line": "home",
                 "winner": "home",
                 "overUnder": "over"
@@ -9888,6 +9924,16 @@
                 "line": "away",
                 "winner": "home",
                 "overUnder": "over"
+            },
+            "3": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "4": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
             }
         },
         "Jason": {
@@ -9900,6 +9946,16 @@
                 "line": "away",
                 "winner": "away",
                 "overUnder": "under"
+            },
+            "3": {
+                "line": "home",
+                "winner": "home",
+                "overUnder": "under"
+            },
+            "4": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
             }
         },
         "Stephen": {
@@ -9912,6 +9968,16 @@
                 "line": "away",
                 "winner": "home",
                 "overUnder": "over"
+            },
+            "3": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "over"
+            },
+            "4": {
+                "line": "away",
+                "winner": "away",
+                "overUnder": "under"
             }
         }
     }
