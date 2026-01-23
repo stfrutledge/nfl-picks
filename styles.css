@@ -755,7 +755,7 @@ header h1 {
 }
 
 .picker-card.rank-1 {
-    border-top: 5px solid var(--accent-green);
+    border-top: 5px solid #FFD700;
 }
 
 .picker-card.rank-1::before {
@@ -763,8 +763,8 @@ header h1 {
     position: absolute;
     top: 16px;
     right: 16px;
-    background: var(--accent-green);
-    color: white;
+    background: linear-gradient(135deg, #FFD700 0%, #FFC107 50%, #B8860B 100%);
+    color: #5D4E00;
     padding: 5px 12px;
     border-radius: 4px;
     font-size: 0.7rem;
@@ -773,7 +773,7 @@ header h1 {
 }
 
 .picker-card.rank-2 {
-    border-top: 5px solid #71717a;
+    border-top: 5px solid #C0C0C0;
 }
 
 .picker-card.rank-2::before {
@@ -781,8 +781,8 @@ header h1 {
     position: absolute;
     top: 16px;
     right: 16px;
-    background: #71717a;
-    color: white;
+    background: linear-gradient(135deg, #E8E8E8 0%, #C0C0C0 50%, #A8A8A8 100%);
+    color: #404040;
     padding: 5px 12px;
     border-radius: 4px;
     font-size: 0.7rem;
@@ -791,7 +791,7 @@ header h1 {
 }
 
 .picker-card.rank-3 {
-    border-top: 5px solid #b45309;
+    border-top: 5px solid #CD7F32;
 }
 
 .picker-card.rank-3::before {
@@ -799,8 +799,8 @@ header h1 {
     position: absolute;
     top: 16px;
     right: 16px;
-    background: #b45309;
-    color: white;
+    background: linear-gradient(135deg, #CD7F32 0%, #E8B87D 50%, #A05A2C 100%);
+    color: #4A2C17;
     padding: 5px 12px;
     border-radius: 4px;
     font-size: 0.7rem;
