@@ -1875,6 +1875,21 @@ async function setCurrentWeek(week) {
         scoringWeekNum.textContent = getWeekTitle(week, 'Scoring Summary');
     }
 
+    // Hide game filters for playoff weeks (not useful with only 4-6 games)
+    const gameFilters = document.querySelector('.game-filters');
+    if (gameFilters) {
+        if (week >= 19) {
+            gameFilters.style.display = 'none';
+            // Reset filter to 'all' so all games show
+            currentGameFilter = 'all';
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            const allBtn = document.querySelector('.filter-btn[data-filter="all"]');
+            if (allBtn) allBtn.classList.add('active');
+        } else {
+            gameFilters.style.display = '';
+        }
+    }
+
     // Show loading indicator
     const loadingIndicator = document.getElementById('week-loading');
     if (loadingIndicator) {
@@ -4493,33 +4508,7 @@ function renderStandingsTable(stats) {
 function renderLeaderboard(stats) {
     const sorted = getSortedPickers(stats);
 
-    // Use podium layout for 6 pickers (Blazin' 5 with Cowherd)
-    if (sorted.length === 6) {
-        const podium = sorted.slice(0, 3);
-        const runnersUp = sorted.slice(3);
-
-        // Podium order: 2nd, 1st, 3rd (visual podium arrangement)
-        const podiumOrder = [podium[1], podium[0], podium[2]];
-
-        leaderboard.innerHTML = `
-            <div class="podium-section">
-                <div class="podium-row">
-                    ${podiumOrder.map((picker, i) => {
-                        const originalIndex = i === 1 ? 0 : (i === 0 ? 1 : 2);
-                        return renderPickerCard(picker, originalIndex, false);
-                    }).join('')}
-                </div>
-            </div>
-            <div class="runners-up-section">
-                <div class="runners-up-row">
-                    ${runnersUp.map((picker, i) => renderPickerCard(picker, i + 3, true)).join('')}
-                </div>
-            </div>
-        `;
-        return;
-    }
-
-    // Standard grid layout for 5 pickers
+    // Standard grid layout for all categories (consistent styling)
     leaderboard.innerHTML = sorted.map((picker, index) => renderPickerCard(picker, index, false)).join('');
 }
 
