@@ -1955,23 +1955,23 @@
             "id": 2,
             "away": "Packers",
             "home": "Bears",
-            "spread": 1,
-            "favorite": "home",
-            "overUnder": 46.5
+            "spread": 1.5,
+            "favorite": "away",
+            "overUnder": 44.5
         },
         {
             "id": 3,
             "away": "Bills",
             "home": "Jaguars",
             "spread": 1.5,
-            "favorite": "away",
+            "favorite": "home",
             "overUnder": 51.5
         },
         {
             "id": 4,
             "away": "49ers",
             "home": "Eagles",
-            "spread": 5,
+            "spread": 5.5,
             "favorite": "home",
             "overUnder": 44.5
         },
@@ -1981,7 +1981,7 @@
             "home": "Patriots",
             "spread": 3.5,
             "favorite": "home",
-            "overUnder": 43.5
+            "overUnder": 45.5
         },
         {
             "id": 6,
@@ -1989,7 +1989,7 @@
             "home": "Steelers",
             "spread": 3,
             "favorite": "away",
-            "overUnder": 39.5
+            "overUnder": 38.5
         }
     ],
     "20": [
@@ -1999,7 +1999,7 @@
             "home": "Broncos",
             "spread": 1.5,
             "favorite": "home",
-            "overUnder": 44.5
+            "overUnder": 46.5
         },
         {
             "id": 2,
@@ -2007,7 +2007,7 @@
             "home": "Seahawks",
             "spread": 7,
             "favorite": "home",
-            "overUnder": 47.5
+            "overUnder": 44.5
         },
         {
             "id": 3,

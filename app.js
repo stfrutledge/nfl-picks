@@ -6371,6 +6371,13 @@ async function loadSpreadsFromGoogleSheets(week) {
  * Called during initialization to restore picks if localStorage is empty for a picker
  */
 async function loadPicksFromGoogleSheets(week, picker) {
+    // Skip playoff weeks that have historical data - historical data is authoritative
+    const weekNum = parseInt(week);
+    if (weekNum >= 19 && typeof HISTORICAL_PICKS !== 'undefined' && HISTORICAL_PICKS[week]) {
+        console.log(`[Picks Load] Skipping playoff week ${week} - using historical data`);
+        return null;
+    }
+
     try {
         console.log(`[Picks Load] Attempting to load picks for ${picker} week ${week} from Google Sheets...`);
         const response = await fetch(`${WORKER_PROXY_URL}/sync?action=picks&week=${week}&picker=${encodeURIComponent(picker)}`);
@@ -6466,6 +6473,11 @@ async function loadAllPicksFromBackup() {
             for (const week in result.picks) {
                 const weekNum = parseInt(week);
 
+                // Skip playoff weeks that have historical data - historical data is authoritative
+                if (weekNum >= 19 && typeof HISTORICAL_PICKS !== 'undefined' && HISTORICAL_PICKS[week]) {
+                    continue;
+                }
+
                 for (const picker in result.picks[week]) {
                     // Skip if user intentionally cleared picks for this week/picker
                     if (clearedPicks[week]?.[picker]) {
@@ -6517,6 +6529,11 @@ function loadPicksFromStorage() {
                 // New format: { week: { picker: { gameId: picks } } }
                 Object.keys(parsed).forEach(week => {
                     const weekNum = parseInt(week);
+                    // Skip playoff weeks that have historical data - historical data is authoritative
+                    // This means games are complete and results are final
+                    if (weekNum >= 19 && typeof HISTORICAL_PICKS !== 'undefined' && HISTORICAL_PICKS[week]) {
+                        return;
+                    }
                     if (!allPicks[weekNum]) {
                         allPicks[weekNum] = {};
                     }
