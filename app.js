@@ -6590,7 +6590,7 @@ async function loadAllPicksFromBackup() {
             return;
         }
 
-        // Update cleared picks from backup
+        // Update cleared picks from backup and clear local picks if server says cleared
         if (result.cleared) {
             for (const week in result.cleared) {
                 if (!clearedPicks[week]) {
@@ -6598,9 +6598,20 @@ async function loadAllPicksFromBackup() {
                 }
                 for (const picker in result.cleared[week]) {
                     clearedPicks[week][picker] = true;
+                    // Also clear local picks to match server state
+                    const weekNum = parseInt(week);
+                    if (allPicks[weekNum]?.[picker]) {
+                        console.log(`[Picks Load] Clearing local picks for ${picker} week ${week} (server says cleared)`);
+                        delete allPicks[weekNum][picker];
+                    }
+                    if (allPicks[week]?.[picker]) {
+                        delete allPicks[week][picker];
+                    }
                 }
             }
             localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+            // Save cleared state to localStorage
+            savePicksToStorage(false, true);
         }
 
         // Merge picks from backup into allPicks
