@@ -5813,6 +5813,12 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 
 /* Mobile-specific adjustments for Make Picks section */
 @media (max-width: 600px) {
+    /* Hide week/picker navigation arrows on mobile */
+    .week-nav-btn,
+    .picker-nav-btn {
+        display: none;
+    }
+
     /* Fix week dropdown overflow - limit width */
     .week-dropdown {
         max-width: 160px;
