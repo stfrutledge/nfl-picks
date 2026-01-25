@@ -2019,18 +2019,16 @@ async function setActiveSubcategory(subcategory) {
 }
 
 /**
- * Load schedules for all playoff weeks that haven't been loaded yet
+ * Load schedules for all playoff weeks
+ * Always fetches from ESPN to get latest scores for completed games
  */
 async function loadAllPlayoffSchedules() {
     const loadPromises = [];
 
     for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
-        const games = getGamesForWeek(week);
-        // Only load if we don't have games for this week yet
-        if (!games || games.length === 0) {
-            console.log(`[Playoffs] Loading schedule for week ${week}...`);
-            loadPromises.push(loadWeekSchedule(week, true));
-        }
+        // Always load from ESPN for playoff weeks to get fresh scores
+        console.log(`[Playoffs] Loading schedule for week ${week}...`);
+        loadPromises.push(loadWeekSchedule(week, true));
     }
 
     if (loadPromises.length > 0) {
