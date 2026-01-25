@@ -1555,14 +1555,15 @@ async function prefetchAndSaveSpreads() {
         const games = NFL_GAMES_BY_WEEK[week];
         if (!games || games.length === 0) continue;
 
-        // Debug: log game keys and their spreads
-        console.warn(`[Prefetch] Week ${week} games:`, games.map(g => ({
-            key: `${g.away.toLowerCase()}_${g.home.toLowerCase()}`,
-            spread: g.spread,
-            away: g.away,
-            home: g.home
-        })));
-        console.warn(`[Prefetch] Saved spreads for week ${week}:`, saved[week]);
+        // For current week: always load from Google Sheets (authoritative for corrections)
+        // For future weeks: only load if spreads are missing
+        const weekNum = parseInt(week);
+        if (weekNum <= CURRENT_NFL_WEEK) {
+            console.log(`[Prefetch] Week ${week} is current/past - loading authoritative spreads from Google Sheets...`);
+            await loadSpreadsFromGoogleSheets(week);
+            saved = getSavedSpreads();
+            applySavedSpreads();
+        }
 
         // Check if we have spreads saved for all games in this week
         let missingSpreadGames = games.filter(game => {
@@ -1572,13 +1573,12 @@ async function prefetchAndSaveSpreads() {
             return !hasSaved && !hasGame;
         });
 
-        // If spreads are missing, first try loading from Google Sheets backup
-        console.warn(`[Prefetch] Missing spread games for week ${week}:`, missingSpreadGames.length, missingSpreadGames.map(g => `${g.away}@${g.home}`));
-        if (missingSpreadGames.length > 0) {
-            console.warn(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads, trying Google Sheets backup...`);
+        // If spreads are still missing (future weeks or Google Sheets didn't have them), try backup
+        if (missingSpreadGames.length > 0 && weekNum > CURRENT_NFL_WEEK) {
+            console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads, trying Google Sheets backup...`);
             await loadSpreadsFromGoogleSheets(week);
-            saved = getSavedSpreads(); // Refresh after loading from backup
-            applySavedSpreads(); // Apply loaded spreads to games in memory
+            saved = getSavedSpreads();
+            applySavedSpreads();
 
             // Re-check after loading from backup
             missingSpreadGames = games.filter(game => {
@@ -6536,28 +6536,35 @@ async function syncSpreadsToGoogleSheets() {
 
 /**
  * Load spreads from Google Sheets backup
- * Called during initialization to restore spreads if localStorage is empty
+ * For current/past weeks: Google Sheets is authoritative (allows manual corrections)
+ * For future weeks: localStorage takes priority (avoids unnecessary overwrites)
  */
 async function loadSpreadsFromGoogleSheets(week) {
     try {
-        console.warn(`[Spreads Load] Fetching spreads for week ${week} from Google Sheets...`);
+        console.log(`[Spreads Load] Fetching spreads for week ${week} from Google Sheets...`);
         const response = await fetch(`${WORKER_PROXY_URL}/sync?action=spreads&week=${week}`);
         const result = await response.json();
-        console.warn(`[Spreads Load] Google Sheets response for week ${week}:`, result);
 
         if (result.spreads && Object.keys(result.spreads).length > 0) {
-            console.warn(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets:`, Object.keys(result.spreads));
+            console.log(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets`);
 
-            // Merge with localStorage (localStorage takes priority)
             const saved = getSavedSpreads();
             if (!saved[week]) {
                 saved[week] = {};
             }
 
+            const weekNum = parseInt(week);
+            const isCurrentOrPastWeek = weekNum <= CURRENT_NFL_WEEK;
+
             for (const [key, data] of Object.entries(result.spreads)) {
-                // Use Google Sheets data if localStorage is missing or has spread=0
-                if (!saved[week][key] || !saved[week][key].spread || saved[week][key].spread === 0) {
+                if (isCurrentOrPastWeek) {
+                    // Current/past weeks: Google Sheets is authoritative (allows manual corrections)
                     saved[week][key] = data;
+                } else {
+                    // Future weeks: only use Google Sheets if localStorage is missing or has spread=0
+                    if (!saved[week][key] || !saved[week][key].spread || saved[week][key].spread === 0) {
+                        saved[week][key] = data;
+                    }
                 }
             }
 
