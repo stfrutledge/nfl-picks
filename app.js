@@ -2001,7 +2001,7 @@ function setupTabs() {
 /**
  * Set active subcategory within standings
  */
-function setActiveSubcategory(subcategory) {
+async function setActiveSubcategory(subcategory) {
     currentSubcategory = subcategory;
 
     // Update subtab styling
@@ -2009,8 +2009,34 @@ function setActiveSubcategory(subcategory) {
         subtab.classList.toggle('active', subtab.dataset.subcategory === subcategory);
     });
 
+    // For playoffs tab, ensure all playoff week schedules are loaded
+    if (subcategory === 'playoffs') {
+        await loadAllPlayoffSchedules();
+    }
+
     // Re-render dashboard with new subcategory
     renderDashboard();
+}
+
+/**
+ * Load schedules for all playoff weeks that haven't been loaded yet
+ */
+async function loadAllPlayoffSchedules() {
+    const loadPromises = [];
+
+    for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
+        const games = getGamesForWeek(week);
+        // Only load if we don't have games for this week yet
+        if (!games || games.length === 0) {
+            console.log(`[Playoffs] Loading schedule for week ${week}...`);
+            loadPromises.push(loadWeekSchedule(week, true));
+        }
+    }
+
+    if (loadPromises.length > 0) {
+        await Promise.all(loadPromises);
+        console.log(`[Playoffs] Loaded ${loadPromises.length} playoff week schedules`);
+    }
 }
 
 /**
