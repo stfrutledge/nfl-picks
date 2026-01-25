@@ -2172,6 +2172,9 @@ function setupPicksActions() {
         }
     });
 
+    // Export all picks button (admin only)
+    document.getElementById('export-all-picks-btn')?.addEventListener('click', exportAllPicksToClipboard);
+
     // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
         const dropdown = document.getElementById('quick-picks-dropdown');
@@ -6060,6 +6063,77 @@ function copyPicksToClipboard() {
     }).catch(err => {
         console.error('Failed to copy:', err);
         showToast('Failed to copy picks');
+    });
+}
+
+/**
+ * Export all pickers' picks for the current week in a compact format
+ * Format: "PickerName: Team (spread), Team win, Over. Team (spread), Team win, Under."
+ */
+function exportAllPicksToClipboard() {
+    const weekGames = getGamesForWeek(currentWeek);
+    const weekPicks = allPicks[currentWeek] || {};
+
+    if (weekGames.length === 0) {
+        showToast('No games available for this week');
+        return;
+    }
+
+    const lines = [];
+    const weekTitle = getWeekTitle(currentWeek, '').trim();
+    lines.push(`${weekTitle} Picks`);
+    lines.push('');
+
+    // Loop through all pickers in alphabetical order
+    PICKERS.forEach(picker => {
+        const pickerPicks = weekPicks[picker] || {};
+        const pickStrings = [];
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+
+            // Only include if there's at least a line pick
+            if (gamePicks.line) {
+                const parts = [];
+
+                // Line pick with spread
+                const lineTeam = gamePicks.line === 'away' ? game.away : game.home;
+                const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+                const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+                const spread = gamePicks.line === 'away' ? awaySpread : homeSpread;
+                const spreadStr = spread > 0 ? `+${spread}` : spread;
+                parts.push(`${lineTeam} (${spreadStr})`);
+
+                // Winner pick
+                if (gamePicks.winner) {
+                    const winnerTeam = gamePicks.winner === 'away' ? game.away : game.home;
+                    parts.push(`${winnerTeam} win`);
+                }
+
+                // Over/Under pick
+                if (gamePicks.overUnder) {
+                    parts.push(gamePicks.overUnder.charAt(0).toUpperCase() + gamePicks.overUnder.slice(1));
+                }
+
+                pickStrings.push(parts.join(', '));
+            }
+        });
+
+        if (pickStrings.length > 0) {
+            lines.push(`${picker}: ${pickStrings.join('. ')}.`);
+        } else {
+            lines.push(`${picker}: No picks yet.`);
+        }
+    });
+
+    const text = lines.join('\n');
+
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('All picks exported!', 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showToast('Failed to export picks');
     });
 }
 
