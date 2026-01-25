@@ -28,8 +28,8 @@ function addValidationError(section, message, severity = 'warning') {
     console.warn(`[CSV Validation - ${severity}] ${section}: ${message}`);
 }
 
-const PICKERS = ['Stephen', 'Sean', 'Dylan', 'Jason', 'Daniel'];
-const PICKERS_WITH_COWHERD = ['Stephen', 'Sean', 'Dylan', 'Jason', 'Daniel', 'Cowherd'];
+const PICKERS = ['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
+const PICKERS_WITH_COWHERD = ['Cowherd', 'Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
 
 const PICKER_COLORS = {
     'Stephen': '#3b82f6',
