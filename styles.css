@@ -5883,3 +5883,32 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         font-size: 0.65rem;
     }
 }
+
+/* Picks disabled state - shown when no picker is selected */
+.picks-disabled .pick-btn {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.picks-disabled .pick-btn:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.picks-disabled .blazin-star-btn {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.picks-disabled .blazin-star-btn:hover {
+    transform: none;
+}
+
+.picks-disabled .picks-actions .btn {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.picks-disabled .picks-actions .btn:hover {
+    transform: none;
+}

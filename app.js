@@ -16,7 +16,7 @@ const SYNC_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before syncin
 let dashboardData = null;
 let currentCategory = 'make-picks';
 let currentSubcategory = 'blazin'; // Default standings subcategory
-let currentPicker = localStorage.getItem('selectedPicker') || 'Daniel';
+let currentPicker = localStorage.getItem('selectedPicker') || null;
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
 let clearedPicks = JSON.parse(localStorage.getItem('clearedPicks') || '{}'); // Track intentionally cleared picks: { week: { picker: true } }
@@ -2046,15 +2046,25 @@ function setupPickerButtons() {
     const pickerDropdown = document.getElementById('picker-dropdown');
     if (!pickerDropdown) return;
 
-    // Set initial value
-    pickerDropdown.value = currentPicker;
+    // Set initial value (empty string for null picker shows "- Choose Picker -")
+    pickerDropdown.value = currentPicker || '';
+
+    // Update picks-disabled class based on picker selection
+    updatePicksDisabledState();
 
     // Show/hide admin-only buttons based on picker
     updateAdminButtons();
 
     pickerDropdown.addEventListener('change', (e) => {
-        currentPicker = e.target.value;
-        localStorage.setItem('selectedPicker', currentPicker);
+        const newValue = e.target.value;
+        currentPicker = newValue || null;
+        if (currentPicker) {
+            localStorage.setItem('selectedPicker', currentPicker);
+        } else {
+            localStorage.removeItem('selectedPicker');
+        }
+        // Update picks-disabled class
+        updatePicksDisabledState();
         // Show/hide admin-only buttons based on picker
         updateAdminButtons();
         // Update nav button states
@@ -2114,10 +2124,26 @@ function setupPickerNavigation() {
 function updatePickerNavButtons() {
     const prevBtn = document.getElementById('prev-picker-btn');
     const nextBtn = document.getElementById('next-picker-btn');
-    const currentIndex = PICKERS.indexOf(currentPicker);
+    const currentIndex = currentPicker ? PICKERS.indexOf(currentPicker) : -1;
 
+    // Disable prev if no picker selected or at first picker
     if (prevBtn) prevBtn.disabled = currentIndex <= 0;
-    if (nextBtn) nextBtn.disabled = currentIndex >= PICKERS.length - 1;
+    // Disable next if no picker selected or at last picker
+    if (nextBtn) nextBtn.disabled = !currentPicker || currentIndex >= PICKERS.length - 1;
+}
+
+/**
+ * Update picks-disabled state based on whether a picker is selected
+ */
+function updatePicksDisabledState() {
+    const makePicksSection = document.getElementById('make-picks-section');
+    if (makePicksSection) {
+        if (!currentPicker) {
+            makePicksSection.classList.add('picks-disabled');
+        } else {
+            makePicksSection.classList.remove('picks-disabled');
+        }
+    }
 }
 
 /**
@@ -2209,6 +2235,11 @@ function closeDropdown() {
  * Pick all favorites for the current picker
  */
 function pickAllFavorites() {
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
+
     const weekGames = getGamesForWeek(currentWeek);
 
     if (weekGames.length === 0) {
@@ -2249,6 +2280,11 @@ function pickAllFavorites() {
  * Pick all underdogs for the current picker
  */
 function pickAllUnderdogs() {
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
+
     const weekGames = getGamesForWeek(currentWeek);
 
     if (weekGames.length === 0) {
@@ -4950,6 +4986,12 @@ function handlePickSelect(e) {
     e.preventDefault();
     e.stopPropagation();
 
+    // Require a picker to be selected before making picks
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
+
     const btn = e.currentTarget;
     const gameId = btn.dataset.gameId; // Keep as string for consistent object keys
     const pickType = btn.dataset.pickType; // 'line' or 'winner'
@@ -5172,6 +5214,12 @@ function handleOUSelect(e) {
 function handleBlazinToggle(e) {
     e.preventDefault();
     e.stopPropagation();
+
+    // Require a picker to be selected before making picks
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
 
     const btn = e.currentTarget;
     const gameId = btn.dataset.gameId;
@@ -5844,6 +5892,11 @@ function renderScoringSummary() {
  * Clear current picker's picks for the current week (only unlocked games)
  */
 function clearCurrentPickerPicks() {
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
+
     showConfirmModal(
         'Clear Picks',
         `Clear Week ${currentWeek} picks for ${currentPicker}? Picks for locked/completed games will be preserved.`,
@@ -6236,8 +6289,13 @@ function showUndoToast(message, undoCallback, duration = 5000) {
  * Rule: If picking the favorite on the line, also pick them to win straight up
  */
 function randomizePicks() {
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
+
     const weekGames = getGamesForWeek(currentWeek);
-    
+
     if (weekGames.length === 0) {
         alert('No games available for this week.');
         return;
