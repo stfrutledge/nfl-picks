@@ -5819,11 +5819,21 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         display: none;
     }
 
-    /* Fix week dropdown overflow - limit width */
-    .week-dropdown {
+    /* Right align selection row content on mobile */
+    .week-selector,
+    .picker-selector {
+        align-items: flex-end;
+    }
+
+    /* Consistent dropdown styles for mobile */
+    .week-dropdown,
+    .picker-dropdown {
         max-width: 160px;
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         padding: 8px 10px;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
     }
 
     /* Hide game status filters on mobile */
