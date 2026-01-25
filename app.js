@@ -7124,6 +7124,199 @@ function setupPullToRefresh() {
 
 const MARKET_CACHE_KEY = 'marketPricesCache';
 const MARKET_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+const CUSTOM_MARKETS_KEY = 'customMarkets';
+const HIDDEN_DEFAULTS_KEY = 'hiddenDefaultMarkets';
+const MARKET_LAST_UPDATED_KEY = 'marketLastUpdated';
+
+// Default markets (can be hidden by user)
+const DEFAULT_MARKETS = [
+    { symbol: '^GSPC', name: 'S&P 500', type: 'index' },
+    { symbol: 'GC=F', name: 'Gold', type: 'commodity' },
+    { symbol: 'BTC', name: 'Bitcoin', type: 'crypto' }
+];
+
+// CORS proxies to try in order if one fails
+const CORS_PROXIES = [
+    'https://corsproxy.io/?',
+    'https://api.allorigins.win/raw?url=',
+    'https://cors-anywhere.herokuapp.com/'
+];
+
+// Track market data state
+let marketDataState = {
+    lastUpdated: null,
+    loading: false,
+    error: null,
+    data: null
+};
+
+/**
+ * Get hidden default market symbols
+ * @returns {Array} Array of hidden symbol strings
+ */
+function getHiddenDefaults() {
+    const hiddenJson = localStorage.getItem(HIDDEN_DEFAULTS_KEY);
+    return hiddenJson ? JSON.parse(hiddenJson) : [];
+}
+
+/**
+ * Save hidden default markets to localStorage
+ * @param {Array} symbols - Array of hidden symbol strings
+ */
+function saveHiddenDefaults(symbols) {
+    localStorage.setItem(HIDDEN_DEFAULTS_KEY, JSON.stringify(symbols));
+}
+
+/**
+ * Get all active markets (visible defaults + custom)
+ * @returns {Array} Array of market objects { symbol, name, type }
+ */
+function getActiveMarkets() {
+    const hiddenDefaults = getHiddenDefaults();
+    const visibleDefaults = DEFAULT_MARKETS.filter(m => !hiddenDefaults.includes(m.symbol));
+    const customMarketsJson = localStorage.getItem(CUSTOM_MARKETS_KEY);
+    const customMarkets = customMarketsJson ? JSON.parse(customMarketsJson) : [];
+    return [...visibleDefaults, ...customMarkets];
+}
+
+/**
+ * Get custom markets only
+ * @returns {Array} Array of custom market objects
+ */
+function getCustomMarkets() {
+    const customMarketsJson = localStorage.getItem(CUSTOM_MARKETS_KEY);
+    return customMarketsJson ? JSON.parse(customMarketsJson) : [];
+}
+
+/**
+ * Save custom markets to localStorage
+ * @param {Array} markets - Array of custom market objects
+ */
+function saveCustomMarkets(markets) {
+    localStorage.setItem(CUSTOM_MARKETS_KEY, JSON.stringify(markets));
+}
+
+/**
+ * Hide a default market
+ * @param {string} symbol - Symbol to hide
+ * @returns {boolean} True if hidden
+ */
+function hideDefaultMarket(symbol) {
+    const isDefault = DEFAULT_MARKETS.some(m => m.symbol === symbol);
+    if (!isDefault) return false;
+
+    const hidden = getHiddenDefaults();
+    if (!hidden.includes(symbol)) {
+        hidden.push(symbol);
+        saveHiddenDefaults(hidden);
+        localStorage.removeItem(MARKET_CACHE_KEY);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Restore a hidden default market
+ * @param {string} symbol - Symbol to restore
+ * @returns {boolean} True if restored
+ */
+function restoreDefaultMarket(symbol) {
+    const hidden = getHiddenDefaults();
+    const index = hidden.indexOf(symbol);
+    if (index > -1) {
+        hidden.splice(index, 1);
+        saveHiddenDefaults(hidden);
+        localStorage.removeItem(MARKET_CACHE_KEY);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Validate a ticker symbol by checking Yahoo Finance
+ * @param {string} symbol - Ticker symbol to validate
+ * @returns {Promise<Object|null>} Market object if valid, null if invalid
+ */
+async function validateTicker(symbol) {
+    const cleanSymbol = symbol.trim().toUpperCase();
+    if (!cleanSymbol || cleanSymbol.length > 10) {
+        return null;
+    }
+
+    // Check if already exists
+    const activeMarkets = getActiveMarkets();
+    if (activeMarkets.some(m => m.symbol.toUpperCase() === cleanSymbol)) {
+        return { error: 'Market already added' };
+    }
+
+    // Try to fetch from Yahoo Finance to validate
+    for (const proxy of CORS_PROXIES) {
+        try {
+            const url = `${proxy}${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?interval=1d&range=5d`)}`;
+            const response = await fetch(url, { timeout: 5000 });
+            if (response.ok) {
+                const data = await response.json();
+                const result = data.chart?.result?.[0];
+                if (result && result.meta) {
+                    const name = result.meta.shortName || result.meta.symbol || cleanSymbol;
+                    return {
+                        symbol: cleanSymbol,
+                        name: name.length > 20 ? name.substring(0, 20) + '...' : name,
+                        type: 'custom'
+                    };
+                }
+            }
+        } catch (e) {
+            console.warn(`[Market] Proxy ${proxy} failed for validation:`, e.message);
+            continue;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Add a custom market
+ * @param {string} symbol - Ticker symbol to add
+ * @returns {Promise<Object>} Result object { success, market?, error? }
+ */
+async function addCustomMarket(symbol) {
+    const validatedMarket = await validateTicker(symbol);
+
+    if (!validatedMarket) {
+        return { success: false, error: 'Invalid ticker symbol' };
+    }
+
+    if (validatedMarket.error) {
+        return { success: false, error: validatedMarket.error };
+    }
+
+    const customMarkets = getCustomMarkets();
+    customMarkets.push(validatedMarket);
+    saveCustomMarkets(customMarkets);
+
+    // Clear cache to force refetch with new market
+    localStorage.removeItem(MARKET_CACHE_KEY);
+
+    return { success: true, market: validatedMarket };
+}
+
+/**
+ * Remove a custom market
+ * @param {string} symbol - Ticker symbol to remove
+ * @returns {boolean} True if removed
+ */
+function removeCustomMarket(symbol) {
+    const customMarkets = getCustomMarkets();
+    const filtered = customMarkets.filter(m => m.symbol !== symbol);
+
+    if (filtered.length < customMarkets.length) {
+        saveCustomMarkets(filtered);
+        localStorage.removeItem(MARKET_CACHE_KEY);
+        return true;
+    }
+    return false;
+}
 
 /**
  * Get the start date for an NFL week
@@ -7234,67 +7427,113 @@ function calculatePickerWeeklyBankroll(picker) {
 }
 
 /**
- * Fetch market prices from APIs
- * @returns {Promise<Object>} Market data for S&P, Gold, Bitcoin
+ * Fetch market prices from APIs for all active markets
+ * @param {boolean} forceRefresh - Skip cache and force fresh data
+ * @returns {Promise<Object>} Market data keyed by symbol
  */
-async function fetchMarketPrices() {
-    // Check cache first
-    const cached = localStorage.getItem(MARKET_CACHE_KEY);
-    if (cached) {
-        const { data, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < MARKET_CACHE_EXPIRY) {
-            console.log('[Market] Using cached market data');
-            return data;
+async function fetchMarketPrices(forceRefresh = false) {
+    const activeMarkets = getActiveMarkets();
+
+    // Check cache first (unless forcing refresh)
+    if (!forceRefresh) {
+        const cached = localStorage.getItem(MARKET_CACHE_KEY);
+        if (cached) {
+            const { data, timestamp } = JSON.parse(cached);
+            if (Date.now() - timestamp < MARKET_CACHE_EXPIRY) {
+                console.log('[Market] Using cached market data');
+                marketDataState.lastUpdated = new Date(timestamp);
+                // Check if all active markets are in cache
+                const cachedSymbols = Object.keys(data);
+                const missingMarkets = activeMarkets.filter(m =>
+                    !cachedSymbols.includes(m.symbol) && m.symbol !== 'BTC'
+                );
+                if (missingMarkets.length === 0) {
+                    return data;
+                }
+                console.log('[Market] Cache missing markets:', missingMarkets.map(m => m.symbol));
+            }
         }
     }
 
     console.log('[Market] Fetching fresh market data...');
+    marketDataState.loading = true;
+    marketDataState.error = null;
 
-    const marketData = {
-        sp500: [],
-        gold: [],
-        bitcoin: []
-    };
+    const marketData = {};
+    let hasError = false;
 
-    try {
-        // Fetch Bitcoin from CoinGecko (most reliable free API)
-        const btcResponse = await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=180&interval=daily');
-        if (btcResponse.ok) {
-            const btcData = await btcResponse.json();
-            marketData.bitcoin = btcData.prices.map(([timestamp, price]) => ({
-                date: new Date(timestamp),
-                price
-            }));
+    // Fetch Bitcoin from CoinGecko
+    const btcMarket = activeMarkets.find(m => m.symbol === 'BTC');
+    if (btcMarket) {
+        try {
+            const btcResponse = await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=180&interval=daily');
+            if (btcResponse.ok) {
+                const btcData = await btcResponse.json();
+                marketData['BTC'] = {
+                    name: 'Bitcoin',
+                    prices: btcData.prices.map(([timestamp, price]) => ({
+                        date: new Date(timestamp),
+                        price
+                    }))
+                };
+            } else {
+                hasError = true;
+            }
+        } catch (e) {
+            console.warn('[Market] Failed to fetch Bitcoin prices:', e);
+            hasError = true;
         }
-    } catch (e) {
-        console.warn('[Market] Failed to fetch Bitcoin prices:', e);
     }
 
-    try {
-        // Fetch S&P 500 and Gold from Yahoo Finance via CORS proxy
-        const symbols = ['^GSPC', 'GC=F'];
-        for (const symbol of symbols) {
-            const url = `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=6mo`)}`;
-            const response = await fetch(url);
-            if (response.ok) {
-                const data = await response.json();
-                const quotes = data.chart?.result?.[0];
-                if (quotes) {
-                    const timestamps = quotes.timestamp || [];
-                    const prices = quotes.indicators?.quote?.[0]?.close || [];
-                    const priceData = timestamps.map((ts, i) => ({
-                        date: new Date(ts * 1000),
-                        price: prices[i]
-                    })).filter(p => p.price != null);
+    // Fetch all Yahoo Finance symbols
+    const yahooMarkets = activeMarkets.filter(m => m.symbol !== 'BTC');
 
-                    if (symbol === '^GSPC') marketData.sp500 = priceData;
-                    else if (symbol === 'GC=F') marketData.gold = priceData;
+    for (const market of yahooMarkets) {
+        let fetched = false;
+
+        for (const proxy of CORS_PROXIES) {
+            if (fetched) break;
+
+            try {
+                const url = `${proxy}${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${market.symbol}?interval=1d&range=6mo`)}`;
+                const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const quotes = data.chart?.result?.[0];
+
+                    if (quotes) {
+                        const timestamps = quotes.timestamp || [];
+                        const prices = quotes.indicators?.quote?.[0]?.close || [];
+                        const priceData = timestamps.map((ts, i) => ({
+                            date: new Date(ts * 1000),
+                            price: prices[i]
+                        })).filter(p => p.price != null);
+
+                        marketData[market.symbol] = {
+                            name: market.name,
+                            prices: priceData
+                        };
+                        fetched = true;
+                    }
                 }
+            } catch (e) {
+                console.warn(`[Market] Proxy ${proxy} failed for ${market.symbol}:`, e.message);
+                continue;
             }
         }
-    } catch (e) {
-        console.warn('[Market] Failed to fetch Yahoo Finance data:', e);
+
+        if (!fetched) {
+            console.warn(`[Market] All proxies failed for ${market.symbol}`);
+            hasError = true;
+        }
     }
+
+    // Update state
+    marketDataState.loading = false;
+    marketDataState.lastUpdated = new Date();
+    marketDataState.error = hasError ? 'Some market data could not be fetched' : null;
+    marketDataState.data = marketData;
 
     // Cache the data
     localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify({
@@ -7302,7 +7541,21 @@ async function fetchMarketPrices() {
         timestamp: Date.now()
     }));
 
+    localStorage.setItem(MARKET_LAST_UPDATED_KEY, marketDataState.lastUpdated.toISOString());
+
     return marketData;
+}
+
+/**
+ * Get last updated timestamp
+ * @returns {Date|null}
+ */
+function getMarketLastUpdated() {
+    if (marketDataState.lastUpdated) {
+        return marketDataState.lastUpdated;
+    }
+    const stored = localStorage.getItem(MARKET_LAST_UPDATED_KEY);
+    return stored ? new Date(stored) : null;
 }
 
 /**
@@ -7405,10 +7658,12 @@ function calculateFinalMarketValue(weeklyData, prices) {
 
 /**
  * Get all comparison data (pickers + markets)
+ * @param {boolean} forceRefresh - Force refresh market data
  * @returns {Promise<Object>} Comparison data
  */
-async function getVsMarketData() {
-    const marketPrices = await fetchMarketPrices();
+async function getVsMarketData(forceRefresh = false) {
+    const marketPrices = await fetchMarketPrices(forceRefresh);
+    const activeMarkets = getActiveMarkets();
 
     // Calculate picker returns
     const pickerData = {};
@@ -7416,21 +7671,95 @@ async function getVsMarketData() {
         pickerData[picker] = calculatePickerWeeklyBankroll(picker);
     });
 
-    // Calculate market returns (weekly values for chart)
-    const marketReturns = {
-        sp500: calculateMarketDCA(marketPrices.sp500),
-        gold: calculateMarketDCA(marketPrices.gold),
-        bitcoin: calculateMarketDCA(marketPrices.bitcoin)
-    };
+    // Calculate market returns (weekly values for chart) - keyed by symbol
+    const marketReturns = {};
+    const finalValues = {};
 
-    // Calculate final values at current prices (for summary cards)
-    const finalValues = {
-        sp500: calculateFinalMarketValue(marketReturns.sp500, marketPrices.sp500),
-        gold: calculateFinalMarketValue(marketReturns.gold, marketPrices.gold),
-        bitcoin: calculateFinalMarketValue(marketReturns.bitcoin, marketPrices.bitcoin)
-    };
+    for (const market of activeMarkets) {
+        const priceData = marketPrices[market.symbol]?.prices || [];
+        if (priceData.length > 0) {
+            marketReturns[market.symbol] = {
+                name: market.name,
+                symbol: market.symbol,
+                type: market.type,
+                weekly: calculateMarketDCA(priceData)
+            };
+            finalValues[market.symbol] = {
+                name: market.name,
+                symbol: market.symbol,
+                type: market.type,
+                ...calculateFinalMarketValue(marketReturns[market.symbol].weekly, priceData)
+            };
+        }
+    }
 
-    return { pickerData, marketReturns, marketPrices, finalValues };
+    return {
+        pickerData,
+        marketReturns,
+        marketPrices,
+        finalValues,
+        activeMarkets,
+        lastUpdated: marketDataState.lastUpdated,
+        error: marketDataState.error
+    };
+}
+
+// Track current market view
+let currentMarketView = 'summary';
+
+/**
+ * Format timestamp for display
+ * @param {Date} date
+ * @returns {string}
+ */
+function formatMarketTimestamp(date) {
+    if (!date) return 'Never';
+    const now = new Date();
+    const diff = now - date;
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return date.toLocaleDateString();
+}
+
+/**
+ * Get picker final return data
+ * @param {Array} data - Weekly bankroll data
+ * @returns {Object}
+ */
+function getPickerFinalReturn(data) {
+    if (!data || data.length === 0) return { value: 0, returnPct: 0, invested: 0 };
+    const last = data[data.length - 1];
+    return {
+        value: last.bankroll || last.value || 0,
+        returnPct: last.returnPct || 0,
+        invested: last.invested || 0
+    };
+}
+
+/**
+ * Show market status banner
+ * @param {string} message
+ * @param {string} type - 'error' or 'warning'
+ */
+function showMarketStatusBanner(message, type = 'error') {
+    const banner = document.getElementById('market-status-banner');
+    if (!banner) return;
+
+    // Update message while keeping dismiss button
+    banner.innerHTML = `
+        <span class="message">${message}</span>
+        <button class="dismiss-btn" onclick="this.parentElement.classList.remove('visible')">&times;</button>
+    `;
+    banner.className = `market-status-banner visible ${type}`;
+
+    // Auto-dismiss after 10 seconds
+    setTimeout(() => {
+        banner.classList.remove('visible');
+    }, 10000);
 }
 
 /**
@@ -7443,135 +7772,534 @@ async function renderVsMarketSection() {
     // Show loading state
     section.innerHTML = `
         <div class="vs-market-loading">
+            <div class="loading-spinner"></div>
             <p>Loading market data...</p>
         </div>
     `;
 
     try {
-        const { pickerData, marketReturns, finalValues } = await getVsMarketData();
-
-        // Get final values for summary cards
-        const getPickerFinalReturn = (data) => {
-            if (!data || data.length === 0) return { value: 0, returnPct: 0, invested: 0 };
-            const last = data[data.length - 1];
-            return {
-                value: last.bankroll || last.value || 0,
-                returnPct: last.returnPct || 0,
-                invested: last.invested || 0
-            };
-        };
-
-        // Use finalValues for markets (current price valuation)
-        const sp500Final = finalValues.sp500;
-        const goldFinal = finalValues.gold;
-        const btcFinal = finalValues.bitcoin;
-
-        // Find best picker
-        let bestPicker = { name: '', returnPct: -Infinity, value: 0 };
-        PICKERS.forEach(picker => {
-            const final = getPickerFinalReturn(pickerData[picker]);
-            if (final.returnPct > bestPicker.returnPct) {
-                bestPicker = { name: picker, ...final };
-            }
-        });
-
-        // Build leaderboard data
-        const leaderboard = [
-            { name: 'S&P 500', type: 'market', ...sp500Final },
-            { name: 'Gold', type: 'market', ...goldFinal },
-            { name: 'Bitcoin', type: 'market', ...btcFinal },
-            ...PICKERS.map(picker => ({
-                name: picker,
-                type: 'picker',
-                ...getPickerFinalReturn(pickerData[picker])
-            }))
-        ].sort((a, b) => b.returnPct - a.returnPct);
-
-        // Render HTML
-        section.innerHTML = `
-            <div class="vs-market-header">
-                <h2>vs Market</h2>
-                <p class="vs-market-subtitle">Blazin' 5 picks ($20/pick) vs. investing $100/week</p>
-            </div>
-
-            <div class="vs-market-summary">
-                <div class="market-card">
-                    <div class="market-card-name">S&P 500</div>
-                    <div class="market-card-return ${sp500Final.returnPct >= 0 ? 'positive' : 'negative'}">
-                        ${sp500Final.returnPct >= 0 ? '+' : ''}${sp500Final.returnPct.toFixed(1)}%
-                    </div>
-                    <div class="market-card-value">$${sp500Final.value.toFixed(2)}</div>
-                </div>
-                <div class="market-card">
-                    <div class="market-card-name">Gold</div>
-                    <div class="market-card-return ${goldFinal.returnPct >= 0 ? 'positive' : 'negative'}">
-                        ${goldFinal.returnPct >= 0 ? '+' : ''}${goldFinal.returnPct.toFixed(1)}%
-                    </div>
-                    <div class="market-card-value">$${goldFinal.value.toFixed(2)}</div>
-                </div>
-                <div class="market-card">
-                    <div class="market-card-name">Bitcoin</div>
-                    <div class="market-card-return ${btcFinal.returnPct >= 0 ? 'positive' : 'negative'}">
-                        ${btcFinal.returnPct >= 0 ? '+' : ''}${btcFinal.returnPct.toFixed(1)}%
-                    </div>
-                    <div class="market-card-value">$${btcFinal.value.toFixed(2)}</div>
-                </div>
-                <div class="market-card best-picker">
-                    <div class="market-card-name">Best Picker</div>
-                    <div class="market-card-return ${bestPicker.returnPct >= 0 ? 'positive' : 'negative'}">
-                        ${bestPicker.returnPct >= 0 ? '+' : ''}${bestPicker.returnPct.toFixed(1)}%
-                    </div>
-                    <div class="market-card-value">${bestPicker.name}</div>
-                </div>
-            </div>
-
-            <div class="vs-market-chart-container">
-                <h3>Performance Over Time</h3>
-                <canvas id="vs-market-chart"></canvas>
-            </div>
-
-            <div class="vs-market-leaderboard">
-                <h3>Leaderboard</h3>
-                <table class="vs-market-table">
-                    <thead>
-                        <tr>
-                            <th>Rank</th>
-                            <th>Name</th>
-                            <th>Return</th>
-                            <th>Value</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${leaderboard.map((item, i) => `
-                            <tr class="${item.type}">
-                                <td class="rank">${i + 1}</td>
-                                <td class="name">${item.name}</td>
-                                <td class="return ${item.returnPct >= 0 ? 'positive' : 'negative'}">
-                                    ${item.returnPct >= 0 ? '+' : ''}${item.returnPct.toFixed(1)}%
-                                </td>
-                                <td class="value">$${item.value.toFixed(2)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        // Render chart
-        renderVsMarketChart(pickerData, marketReturns);
-
+        const data = await getVsMarketData();
+        renderVsMarketContent(section, data);
     } catch (error) {
         console.error('[Market] Error rendering vs market section:', error);
         section.innerHTML = `
             <div class="vs-market-error">
                 <p>Failed to load market data. Please try again later.</p>
+                <p style="font-size: 0.8rem; margin-top: 8px;">${error.message || ''}</p>
             </div>
         `;
     }
 }
 
 /**
+ * Render the market content with data
+ * @param {HTMLElement} section
+ * @param {Object} data
+ */
+function renderVsMarketContent(section, data) {
+    const { pickerData, marketReturns, finalValues, activeMarkets, lastUpdated, error } = data;
+    const customMarkets = getCustomMarkets();
+
+    // Calculate picker finals
+    const pickerFinals = {};
+    PICKERS.forEach(picker => {
+        pickerFinals[picker] = getPickerFinalReturn(pickerData[picker]);
+    });
+
+    // Find best performer (picker or market)
+    let bestPerformer = { name: '', returnPct: -Infinity, type: 'picker' };
+
+    // Check pickers
+    PICKERS.forEach(picker => {
+        if (pickerFinals[picker].returnPct > bestPerformer.returnPct) {
+            bestPerformer = { name: picker, returnPct: pickerFinals[picker].returnPct, type: 'picker' };
+        }
+    });
+
+    // Check markets
+    Object.values(finalValues).forEach(market => {
+        if (market.returnPct > bestPerformer.returnPct) {
+            bestPerformer = { name: market.name, returnPct: market.returnPct, type: 'market' };
+        }
+    });
+
+    // Build leaderboard
+    const leaderboard = [
+        ...Object.values(finalValues).map(m => ({
+            name: m.name,
+            symbol: m.symbol,
+            type: 'market',
+            returnPct: m.returnPct || 0,
+            value: m.value || 0,
+            invested: m.invested || 0
+        })),
+        ...PICKERS.map(picker => ({
+            name: picker,
+            type: 'picker',
+            ...pickerFinals[picker]
+        }))
+    ].sort((a, b) => b.returnPct - a.returnPct);
+
+    // Generate ticker strip HTML - focus on P&L
+    const tickerHtml = [
+        ...Object.values(finalValues).map(m => {
+            const pnl = m.value - m.invested;
+            return `
+                <div class="ticker-item">
+                    <span class="ticker-symbol">${m.symbol || m.name}</span>
+                    <span class="ticker-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+                        ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(0)}
+                    </span>
+                    <span class="ticker-change ${m.returnPct >= 0 ? 'positive' : 'negative'}">
+                        ${m.returnPct >= 0 ? '+' : ''}${m.returnPct.toFixed(1)}%
+                    </span>
+                </div>
+            `;
+        }),
+        ...PICKERS.map(picker => {
+            const f = pickerFinals[picker];
+            const pnl = f.value - f.invested;
+            return `
+                <div class="ticker-item picker">
+                    <span class="ticker-symbol">${picker}</span>
+                    <span class="ticker-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+                        ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(0)}
+                    </span>
+                    <span class="ticker-change ${f.returnPct >= 0 ? 'positive' : 'negative'}">
+                        ${f.returnPct >= 0 ? '+' : ''}${f.returnPct.toFixed(1)}%
+                    </span>
+                </div>
+            `;
+        })
+    ].join('');
+
+    // Generate market chips HTML - all markets can be removed
+    const hiddenDefaults = getHiddenDefaults();
+    const visibleDefaults = DEFAULT_MARKETS.filter(m => !hiddenDefaults.includes(m.symbol));
+    const hiddenDefaultMarkets = DEFAULT_MARKETS.filter(m => hiddenDefaults.includes(m.symbol));
+
+    const chipsHtml = [
+        // Visible default markets (can be removed)
+        ...visibleDefaults.map(m => `
+            <span class="market-chip default">
+                ${m.name}
+                <button class="remove-btn" data-symbol="${m.symbol}" data-type="default" title="Remove">&times;</button>
+            </span>
+        `),
+        // Custom markets (can be removed)
+        ...customMarkets.map(m => `
+            <span class="market-chip custom">
+                ${m.name}
+                <button class="remove-btn" data-symbol="${m.symbol}" data-type="custom" title="Remove">&times;</button>
+            </span>
+        `),
+        // Hidden defaults (can be restored)
+        ...hiddenDefaultMarkets.map(m => `
+            <span class="market-chip hidden">
+                ${m.name}
+                <button class="restore-btn" data-symbol="${m.symbol}" title="Restore">+</button>
+            </span>
+        `)
+    ].join('');
+
+    // Generate leaderboard rows HTML - P&L first for emphasis
+    const leaderboardHtml = leaderboard.map((item, i) => {
+        const pnl = item.value - item.invested;
+        const typeLabel = item.type === 'picker' ? 'Picker' : 'Market';
+        return `
+            <tr class="${item.type}">
+                <td class="rank">${i + 1}</td>
+                <td class="type-cell"><span class="type-badge ${item.type}">${typeLabel}</span></td>
+                <td class="name">
+                    ${item.name}
+                    ${item.symbol ? `<span class="symbol">${item.symbol}</span>` : ''}
+                </td>
+                <td class="pnl-main ${pnl >= 0 ? 'positive' : 'negative'}">
+                    ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}
+                </td>
+                <td class="return ${item.returnPct >= 0 ? 'positive' : 'negative'}">
+                    ${item.returnPct >= 0 ? '+' : ''}${item.returnPct.toFixed(1)}%
+                </td>
+                <td class="value">$${item.value.toFixed(2)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // Generate picker cards HTML
+    const pickerCardsHtml = PICKERS.map(picker => {
+        const f = pickerFinals[picker];
+        const isBest = picker === bestPerformer.name;
+        const pnl = f.value - f.invested;
+        return `
+            <div class="market-card ${isBest ? 'best-performer' : ''}">
+                <div class="market-card-header">
+                    <span class="market-card-name">${picker}</span>
+                    <span class="market-card-type picker">Picker</span>
+                </div>
+                <div class="market-card-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+                    ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}
+                </div>
+                <div class="market-card-return-small ${f.returnPct >= 0 ? 'positive' : 'negative'}">
+                    ${f.returnPct >= 0 ? '+' : ''}${f.returnPct.toFixed(1)}%
+                </div>
+                <div class="market-card-details">
+                    <span class="market-card-value">$${f.value.toFixed(2)}</span>
+                    <span class="market-card-invested">invested $${f.invested.toFixed(0)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Generate market cards HTML
+    const marketCardsHtml = Object.values(finalValues).map(m => {
+        const isBest = m.name === bestPerformer.name;
+        const pnl = m.value - m.invested;
+        return `
+            <div class="market-card ${isBest ? 'best-performer' : ''}">
+                <div class="market-card-header">
+                    <span class="market-card-name">${m.name}</span>
+                    <span class="market-card-type market">Market</span>
+                </div>
+                <div class="market-card-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+                    ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}
+                </div>
+                <div class="market-card-return-small ${m.returnPct >= 0 ? 'positive' : 'negative'}">
+                    ${m.returnPct >= 0 ? '+' : ''}${m.returnPct.toFixed(1)}%
+                </div>
+                <div class="market-card-details">
+                    <span class="market-card-value">$${m.value.toFixed(2)}</span>
+                    <span class="market-card-invested">invested $${m.invested.toFixed(0)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Render main HTML
+    section.innerHTML = `
+        <div class="market-header">
+            <div class="market-header-left">
+                <h2>vs Market</h2>
+                <p class="market-subtitle">Blazin' 5 picks ($20/pick) vs. investing $100/week</p>
+            </div>
+            <div class="market-header-right">
+                <span class="market-last-updated">Updated: ${formatMarketTimestamp(lastUpdated)}</span>
+                <button class="market-refresh-btn" id="market-refresh-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                        <path d="M16 16h5v5"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <details class="how-it-works-box">
+            <summary class="how-it-works-toggle">How It Works</summary>
+            <div class="how-it-works-content">
+                <div class="how-it-works-column">
+                    <div class="how-it-works-title">Pickers (Betting)</div>
+                    <p>$20 bet on each Blazin' 5 pick (5 picks/week = $100/week)</p>
+                    <ul>
+                        <li>Wins pay at -110 odds (~$18.18 profit per win)</li>
+                        <li>Losses cost $20 each</li>
+                    </ul>
+                </div>
+                <div class="how-it-works-column">
+                    <div class="how-it-works-title">Markets (Investing)</div>
+                    <p>$100/week invested (dollar-cost averaging)</p>
+                    <ul>
+                        <li>Buy shares at each week's price</li>
+                        <li>Value = total shares × current price</li>
+                    </ul>
+                </div>
+            </div>
+        </details>
+
+        <div id="market-status-banner" class="market-status-banner">
+            <span class="message"></span>
+            <button class="dismiss-btn">&times;</button>
+        </div>
+
+        <div class="market-view-tabs">
+            <button class="market-view-tab ${currentMarketView === 'summary' ? 'active' : ''}" data-view="summary">Summary</button>
+            <button class="market-view-tab ${currentMarketView === 'weekly' ? 'active' : ''}" data-view="weekly">Weekly Breakdown</button>
+        </div>
+
+        <div class="summary-view ${currentMarketView === 'summary' ? 'active' : ''}">
+            <div class="market-ticker-strip">
+                ${tickerHtml}
+            </div>
+
+            <div class="card-sections-container">
+                <div class="card-section">
+                    <div class="card-section-header">
+                        <span class="card-section-title">Pickers</span>
+                        <span class="card-section-subtitle">$20/pick betting strategy</span>
+                    </div>
+                    <div class="market-summary-grid">
+                        ${pickerCardsHtml}
+                    </div>
+                </div>
+                <div class="card-section">
+                    <div class="card-section-header">
+                        <span class="card-section-title">Markets</span>
+                        <span class="card-section-subtitle">$100/week investing strategy</span>
+                    </div>
+                    <div class="market-summary-grid">
+                        ${marketCardsHtml}
+                    </div>
+                </div>
+            </div>
+
+            <div class="add-market-container">
+                <div class="add-market-header">Add Custom Market</div>
+                <div class="add-market-form">
+                    <input type="text" class="add-market-input" id="add-market-input" placeholder="e.g. AAPL, QQQ, TSLA" maxlength="10">
+                    <button class="add-market-btn" id="add-market-btn">Add Market</button>
+                </div>
+                <div class="market-chips">
+                    ${chipsHtml}
+                </div>
+                <div class="add-market-error" id="add-market-error"></div>
+            </div>
+
+            <div class="vs-market-chart-container">
+                <div class="chart-header">
+                    <h3>Profit Over Time</h3>
+                    <div class="chart-filters">
+                        <button class="chart-filter-btn active" data-filter="all">All</button>
+                        <button class="chart-filter-btn" data-filter="markets">Markets</button>
+                        <button class="chart-filter-btn" data-filter="pickers">Pickers</button>
+                    </div>
+                </div>
+                <canvas id="vs-market-chart"></canvas>
+                <div class="chart-legend-note">
+                    <span class="legend-line solid"></span> Pickers (solid)
+                    <span class="legend-line dotted"></span> Markets (dotted)
+                </div>
+            </div>
+
+            <div class="vs-market-leaderboard">
+                <h3>Rankings</h3>
+                <table class="vs-market-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Type</th>
+                            <th>Name</th>
+                            <th>Profit</th>
+                            <th>Return</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${leaderboardHtml}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="weekly-breakdown-view ${currentMarketView === 'weekly' ? 'active' : ''}" id="weekly-breakdown-view">
+            <!-- Will be rendered by renderWeeklyBreakdown -->
+        </div>
+    `;
+
+    // Show error banner if needed
+    if (error) {
+        showMarketStatusBanner(error, 'warning');
+    }
+
+    // Render chart
+    renderVsMarketChart(pickerData, marketReturns);
+
+    // Render weekly breakdown
+    renderWeeklyBreakdown(pickerData, marketReturns);
+
+    // Setup event listeners
+    setupMarketEventListeners(data);
+}
+
+/**
+ * Setup event listeners for market section
+ * @param {Object} data - Market data
+ */
+function setupMarketEventListeners(data) {
+    // Refresh button
+    const refreshBtn = document.getElementById('market-refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.classList.add('loading');
+            refreshBtn.disabled = true;
+
+            try {
+                const newData = await getVsMarketData(true);
+                const section = document.getElementById('vs-market-section');
+                if (section) {
+                    renderVsMarketContent(section, newData);
+                }
+            } catch (error) {
+                showMarketStatusBanner('Failed to refresh market data', 'error');
+            } finally {
+                const btn = document.getElementById('market-refresh-btn');
+                if (btn) {
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                }
+            }
+        });
+    }
+
+    // View tabs
+    document.querySelectorAll('.market-view-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const view = tab.dataset.view;
+            switchMarketView(view);
+        });
+    });
+
+    // Add market form
+    const addMarketBtn = document.getElementById('add-market-btn');
+    const addMarketInput = document.getElementById('add-market-input');
+
+    if (addMarketBtn && addMarketInput) {
+        addMarketBtn.addEventListener('click', () => handleAddMarket(addMarketInput.value));
+
+        addMarketInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleAddMarket(addMarketInput.value);
+            }
+        });
+    }
+
+    // Remove market buttons (handles both default and custom)
+    document.querySelectorAll('.market-chip .remove-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const symbol = btn.dataset.symbol;
+            const type = btn.dataset.type;
+
+            if (!symbol) return;
+
+            let removed = false;
+            if (type === 'default') {
+                removed = hideDefaultMarket(symbol);
+            } else {
+                removed = removeCustomMarket(symbol);
+            }
+
+            if (removed) {
+                renderVsMarketSection();
+            }
+        });
+    });
+
+    // Restore hidden default market buttons
+    document.querySelectorAll('.market-chip .restore-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const symbol = btn.dataset.symbol;
+            if (symbol && restoreDefaultMarket(symbol)) {
+                renderVsMarketSection();
+            }
+        });
+    });
+
+    // Chart filter buttons
+    document.querySelectorAll('.chart-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.chart-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            filterChartDatasets(btn.dataset.filter);
+        });
+    });
+
+    // Status banner dismiss
+    const dismissBtn = document.querySelector('.market-status-banner .dismiss-btn');
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+            document.getElementById('market-status-banner')?.classList.remove('visible');
+        });
+    }
+}
+
+/**
+ * Handle adding a custom market
+ * @param {string} symbol
+ */
+async function handleAddMarket(symbol) {
+    const input = document.getElementById('add-market-input');
+    const errorDiv = document.getElementById('add-market-error');
+    const btn = document.getElementById('add-market-btn');
+
+    if (!symbol || !symbol.trim()) {
+        if (errorDiv) errorDiv.textContent = 'Please enter a ticker symbol';
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+    if (errorDiv) errorDiv.textContent = '';
+
+    try {
+        const result = await addCustomMarket(symbol);
+
+        if (result.success) {
+            if (input) input.value = '';
+            renderVsMarketSection();
+        } else {
+            if (errorDiv) errorDiv.textContent = result.error || 'Failed to add market';
+        }
+    } catch (error) {
+        if (errorDiv) errorDiv.textContent = 'Failed to validate ticker';
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+/**
+ * Switch between summary and weekly views
+ * @param {string} view - 'summary' or 'weekly'
+ */
+function switchMarketView(view) {
+    currentMarketView = view;
+
+    // Update tabs
+    document.querySelectorAll('.market-view-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.view === view);
+    });
+
+    // Update views
+    document.querySelector('.summary-view')?.classList.toggle('active', view === 'summary');
+    document.querySelector('.weekly-breakdown-view')?.classList.toggle('active', view === 'weekly');
+}
+
+/**
+ * Filter chart datasets by type
+ * @param {string} filter - 'all', 'markets', or 'pickers'
+ */
+function filterChartDatasets(filter) {
+    if (!window.vsMarketChart) return;
+
+    window.vsMarketChart.data.datasets.forEach((dataset, index) => {
+        const meta = window.vsMarketChart.getDatasetMeta(index);
+        const isMarket = dataset.isMarket;
+        const isBaseline = dataset.label === 'Total Invested';
+
+        if (filter === 'all') {
+            meta.hidden = false;
+        } else if (filter === 'markets') {
+            meta.hidden = !isMarket && !isBaseline;
+        } else if (filter === 'pickers') {
+            meta.hidden = isMarket;
+        }
+    });
+
+    window.vsMarketChart.update();
+}
+
+/**
  * Render the comparison chart
+ * @param {Object} pickerData
+ * @param {Object} marketReturns
  */
 function renderVsMarketChart(pickerData, marketReturns) {
     const canvas = document.getElementById('vs-market-chart');
@@ -7579,40 +8307,66 @@ function renderVsMarketChart(pickerData, marketReturns) {
 
     const ctx = canvas.getContext('2d');
 
-    // Prepare datasets
-    const weeks = Array.from({ length: CURRENT_NFL_WEEK }, (_, i) => `Week ${i + 1}`);
+    // Regular season only (weeks 1-18)
+    const REGULAR_SEASON_WEEKS = 18;
+    const maxWeeks = Math.min(CURRENT_NFL_WEEK, REGULAR_SEASON_WEEKS);
 
-    const datasets = [
-        {
-            label: 'S&P 500',
-            data: marketReturns.sp500.map(d => d.value),
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            borderWidth: 3,
-            tension: 0.3,
-            pointRadius: 0
-        },
-        {
-            label: 'Gold',
-            data: marketReturns.gold.map(d => d.value),
-            borderColor: '#eab308',
-            backgroundColor: 'rgba(234, 179, 8, 0.1)',
-            borderWidth: 3,
-            tension: 0.3,
-            pointRadius: 0
-        },
-        {
-            label: 'Bitcoin',
-            data: marketReturns.bitcoin.map(d => d.value),
-            borderColor: '#f97316',
-            backgroundColor: 'rgba(249, 115, 22, 0.1)',
-            borderWidth: 3,
-            tension: 0.3,
-            pointRadius: 0
+    // Prepare datasets - showing PROFIT (value - invested), not total value
+    const weeks = Array.from({ length: maxWeeks }, (_, i) => `Week ${i + 1}`);
+
+    // Market colors
+    const marketColors = {
+        '^GSPC': '#3b82f6',
+        'GC=F': '#eab308',
+        'BTC': '#f97316',
+        // Custom markets get generated colors
+    };
+
+    const customColors = ['#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e', '#06b6d4'];
+    let customColorIndex = 0;
+
+    const datasets = [];
+
+    // Add breakeven baseline (dotted gray line at $0)
+    const breakevenLine = Array.from({ length: maxWeeks }, () => 0);
+    datasets.push({
+        label: 'Breakeven',
+        data: breakevenLine,
+        borderColor: '#6b7280',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [4, 4],
+        tension: 0,
+        pointRadius: 0,
+        isMarket: false,
+        order: 999 // Draw behind other lines
+    });
+
+    // Add market datasets - plot PROFIT (value - invested) - DOTTED lines
+    Object.entries(marketReturns).forEach(([symbol, marketData]) => {
+        let color = marketColors[symbol];
+        if (!color) {
+            color = customColors[customColorIndex % customColors.length];
+            customColorIndex++;
         }
-    ];
 
-    // Add picker datasets
+        // Limit to regular season
+        const regularSeasonData = marketData.weekly.slice(0, REGULAR_SEASON_WEEKS);
+
+        datasets.push({
+            label: marketData.name,
+            data: regularSeasonData.map(d => d.value - d.invested), // PROFIT
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [5, 5], // Dotted for markets
+            tension: 0.3,
+            pointRadius: 0,
+            isMarket: true
+        });
+    });
+
+    // Picker colors
     const pickerColors = {
         'Stephen': '#3b82f6',
         'Sean': '#059669',
@@ -7621,17 +8375,23 @@ function renderVsMarketChart(pickerData, marketReturns) {
         'Daniel': '#06b6d4'
     };
 
+    // Add picker datasets - plot PROFIT (bankroll - invested) - SOLID lines
     PICKERS.forEach(picker => {
-        datasets.push({
-            label: picker,
-            data: pickerData[picker].map(d => d.bankroll),
-            borderColor: pickerColors[picker] || '#6b7280',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            borderDash: [5, 5],
-            tension: 0.3,
-            pointRadius: 0
-        });
+        if (pickerData[picker]) {
+            // Limit to regular season
+            const regularSeasonData = pickerData[picker].slice(0, REGULAR_SEASON_WEEKS);
+
+            datasets.push({
+                label: picker,
+                data: regularSeasonData.map(d => d.bankroll - d.invested), // PROFIT
+                borderColor: pickerColors[picker] || '#6b7280',
+                backgroundColor: (pickerColors[picker] || '#6b7280') + '1A', // 10% opacity
+                borderWidth: 3,
+                tension: 0.3,
+                pointRadius: 0,
+                isMarket: false
+            });
+        }
     });
 
     // Destroy existing chart if any
@@ -7661,23 +8421,200 @@ function renderVsMarketChart(pickerData, marketReturns) {
                     }
                 },
                 tooltip: {
+                    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-card').trim() || '#ffffff',
+                    titleColor: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#0a0a0a',
+                    bodyColor: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#0a0a0a',
+                    borderColor: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim() || '#e5e7eb',
+                    borderWidth: 1,
+                    titleFont: { family: "'Inter', sans-serif", weight: '700', size: 13 },
+                    bodyFont: { family: "'SF Mono', 'Monaco', 'Consolas', monospace", size: 12 },
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: true,
+                    boxPadding: 4,
+                    filter: function(tooltipItem) {
+                        // Hide breakeven line from tooltip
+                        return tooltipItem.dataset.label !== 'Breakeven';
+                    },
                     callbacks: {
                         label: function(context) {
-                            return `${context.dataset.label}: $${context.raw?.toFixed(2) || '0.00'}`;
+                            const profit = context.raw || 0;
+                            const sign = profit >= 0 ? '+' : '';
+                            return ` ${context.dataset.label}: ${sign}$${profit.toFixed(2)}`;
                         }
                     }
                 }
             },
             scales: {
                 y: {
-                    beginAtZero: false,
+                    grid: {
+                        color: function(context) {
+                            // Highlight zero line
+                            if (context.tick.value === 0) {
+                                return 'rgba(128, 128, 128, 0.4)';
+                            }
+                            return 'rgba(128, 128, 128, 0.1)';
+                        }
+                    },
                     ticks: {
-                        callback: value => `$${value}`
+                        callback: function(value) {
+                            const sign = value >= 0 ? '+' : '';
+                            return `${sign}$${value}`;
+                        }
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
                     }
                 }
             }
         }
     });
+}
+
+/**
+ * Render the weekly breakdown table
+ * Shows week-by-week % changes for each picker and market
+ * Regular season only (weeks 1-18)
+ * @param {Object} pickerData
+ * @param {Object} marketReturns
+ */
+function renderWeeklyBreakdown(pickerData, marketReturns) {
+    const container = document.getElementById('weekly-breakdown-view');
+    if (!container) return;
+
+    // Regular season is weeks 1-18
+    const REGULAR_SEASON_WEEKS = 18;
+    const maxWeeks = Math.min(CURRENT_NFL_WEEK, REGULAR_SEASON_WEEKS);
+
+    // Build rows data - each row is a picker or market
+    const rows = [];
+
+    // Add market rows
+    Object.entries(marketReturns).forEach(([symbol, marketData]) => {
+        const weeklyChanges = [];
+        let prevValue = 100; // Starting investment
+
+        // Only include regular season weeks
+        const regularSeasonData = marketData.weekly.slice(0, REGULAR_SEASON_WEEKS);
+
+        regularSeasonData.forEach((week, i) => {
+            const weeklyInvestment = 100;
+            const expectedValue = (i + 1) * weeklyInvestment;
+            const weeklyReturn = expectedValue > 0 ? ((week.value - expectedValue) / expectedValue) * 100 : 0;
+
+            // Calculate week-over-week change
+            let weekChange = 0;
+            if (i === 0) {
+                weekChange = weeklyReturn;
+            } else {
+                const prevWeekValue = regularSeasonData[i - 1].value;
+                const prevExpected = i * weeklyInvestment;
+                const prevReturn = prevExpected > 0 ? ((prevWeekValue - prevExpected) / prevExpected) * 100 : 0;
+                weekChange = weeklyReturn - prevReturn;
+            }
+
+            weeklyChanges.push({
+                week: i + 1,
+                value: week.value,
+                returnPct: weeklyReturn,
+                change: weekChange
+            });
+        });
+
+        const lastWeek = regularSeasonData[regularSeasonData.length - 1];
+        rows.push({
+            name: marketData.name,
+            symbol: symbol,
+            type: 'market',
+            weeklyChanges,
+            totalReturn: lastWeek?.returnPct || 0,
+            finalValue: lastWeek?.value || 0
+        });
+    });
+
+    // Add picker rows
+    PICKERS.forEach(picker => {
+        const data = pickerData[picker];
+        if (!data) return;
+
+        // Only include regular season weeks
+        const regularSeasonData = data.slice(0, REGULAR_SEASON_WEEKS);
+        const weeklyChanges = [];
+
+        regularSeasonData.forEach((week, i) => {
+            let weekChange = 0;
+            if (i === 0) {
+                weekChange = week.returnPct;
+            } else {
+                weekChange = week.returnPct - regularSeasonData[i - 1].returnPct;
+            }
+
+            weeklyChanges.push({
+                week: i + 1,
+                value: week.bankroll,
+                returnPct: week.returnPct,
+                change: weekChange
+            });
+        });
+
+        const lastWeek = regularSeasonData[regularSeasonData.length - 1];
+        rows.push({
+            name: picker,
+            type: 'picker',
+            weeklyChanges,
+            totalReturn: lastWeek?.returnPct || 0,
+            finalValue: lastWeek?.bankroll || 0
+        });
+    });
+
+    // Sort by total return descending
+    rows.sort((a, b) => b.totalReturn - a.totalReturn);
+
+    // Generate table HTML - regular season weeks only (1-18)
+    const weekHeaders = Array.from({ length: maxWeeks }, (_, i) => `
+        <th class="week-cell">W${i + 1}</th>
+    `).join('');
+
+    const tableRows = rows.map(row => {
+        const weekCells = row.weeklyChanges.map(w => {
+            const changeClass = w.change >= 0 ? 'positive' : 'negative';
+            const sign = w.change >= 0 ? '+' : '';
+            return `<td class="week-cell ${changeClass}">${sign}${w.change.toFixed(1)}%</td>`;
+        }).join('');
+
+        const totalClass = row.totalReturn >= 0 ? 'positive' : 'negative';
+        const totalSign = row.totalReturn >= 0 ? '+' : '';
+        const typeLabel = row.type === 'picker' ? 'Picker' : 'Market';
+
+        return `
+            <tr class="${row.type}-row">
+                <td class="type-cell"><span class="type-badge ${row.type}">${typeLabel}</span></td>
+                <td>${row.name}</td>
+                ${weekCells}
+                <td class="total-cell ${totalClass}">${totalSign}${row.totalReturn.toFixed(1)}%</td>
+            </tr>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="weekly-breakdown-table-container">
+            <table class="weekly-breakdown-table">
+                <thead>
+                    <tr>
+                        <th class="type-header">Type</th>
+                        <th>Name</th>
+                        ${weekHeaders}
+                        <th class="total-cell">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        </div>
+    `;
 }
 
 // Initialize when DOM is ready
