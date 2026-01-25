@@ -535,6 +535,22 @@ header h1 {
     transform: translateX(-50%) translateY(0);
 }
 
+/* Success toast */
+.toast-success {
+    background: var(--accent-green);
+}
+
+/* Error toast */
+.toast-error {
+    background: #dc2626;
+}
+
+/* Warning toast */
+.toast-warning {
+    background: #f59e0b;
+    color: #1a1a1a;
+}
+
 /* Auto-save toast - smaller and less intrusive */
 .toast-autosave {
     padding: 10px 16px;

@@ -5003,6 +5003,11 @@ function handlePickSelect(e) {
     // Save to localStorage (this will also sync cleared=false to Google Sheets)
     savePicksToStorage();
 
+    // Check if all picks are complete for the week (only when making a pick, not deselecting)
+    if (!isDeselecting) {
+        checkAllPicksComplete();
+    }
+
     // Update only the relevant buttons instead of re-rendering all games
     // Deselect the other team's button in the same row
     const otherBtn = document.querySelector(`.pick-btn[data-game-id="${gameId}"][data-pick-type="${pickType}"][data-team="${otherTeam}"]`);
@@ -5056,6 +5061,42 @@ function handlePickSelect(e) {
 
     // Update scoring summary
     renderScoringSummary();
+}
+
+// Track if we've already shown the "all picks complete" message for this week/picker
+let allPicksCompleteShown = {};
+
+/**
+ * Check if all picks are complete for the current week and show confirmation
+ */
+function checkAllPicksComplete() {
+    const weekGames = getGamesForWeek(currentWeek);
+    if (!weekGames || weekGames.length === 0) return;
+
+    const pickerPicks = allPicks[currentWeek]?.[currentPicker] || {};
+    const key = `${currentWeek}-${currentPicker}`;
+
+    // Count games with complete picks (both line and winner)
+    let completeCount = 0;
+    for (const game of weekGames) {
+        const gameId = String(game.id);
+        const gamePicks = pickerPicks[gameId];
+        if (gamePicks?.line && gamePicks?.winner) {
+            completeCount++;
+        }
+    }
+
+    // Check if all games are complete
+    if (completeCount === weekGames.length) {
+        // Only show the message once per week/picker combination
+        if (!allPicksCompleteShown[key]) {
+            allPicksCompleteShown[key] = true;
+            showToast(`All ${weekGames.length} picks saved!`, 'success');
+        }
+    } else {
+        // Reset the flag if picks become incomplete (user deselected something)
+        allPicksCompleteShown[key] = false;
+    }
 }
 
 /**
@@ -6024,8 +6065,10 @@ function copyPicksToClipboard() {
 
 /**
  * Show a toast notification
+ * @param {string} message - The message to display
+ * @param {string} type - Optional type: 'success', 'error', 'warning' (default: neutral)
  */
-function showToast(message) {
+function showToast(message, type = '') {
     // Remove existing toast if any
     const existingToast = document.querySelector('.toast');
     if (existingToast) {
@@ -6034,6 +6077,9 @@ function showToast(message) {
 
     const toast = document.createElement('div');
     toast.className = 'toast';
+    if (type) {
+        toast.classList.add(`toast-${type}`);
+    }
     toast.textContent = message;
     document.body.appendChild(toast);
 
