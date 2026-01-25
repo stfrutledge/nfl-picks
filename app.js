@@ -2020,20 +2020,38 @@ async function setActiveSubcategory(subcategory) {
 
 /**
  * Load schedules for all playoff weeks
- * Always fetches from ESPN to get latest scores for completed games
+ * Only fetches from ESPN if games are missing scores (for completed games)
  */
 async function loadAllPlayoffSchedules() {
     const loadPromises = [];
 
     for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
-        // Always load from ESPN for playoff weeks to get fresh scores
-        console.log(`[Playoffs] Loading schedule for week ${week}...`);
-        loadPromises.push(loadWeekSchedule(week, true));
+        const games = getGamesForWeek(week);
+
+        // Check if we need to fetch: no games, or games without scores that should have them
+        const needsFetch = !games || games.length === 0 || games.some(game => {
+            // If game has a status indicating it's complete but no scores, we need to fetch
+            const isComplete = game.status === 'STATUS_FINAL' || game.status === 'final' || game.completed;
+            const hasScores = (game.homeScore !== undefined && game.homeScore !== 0) ||
+                             (game.awayScore !== undefined && game.awayScore !== 0);
+            // Also fetch if game should be complete (kickoff in the past) but we don't have status
+            const kickoffPassed = game.kickoff && new Date(game.kickoff) < new Date();
+            const missingStatus = kickoffPassed && !game.status;
+
+            return (isComplete && !hasScores) || missingStatus;
+        });
+
+        if (needsFetch) {
+            console.log(`[Playoffs] Loading schedule for week ${week}...`);
+            loadPromises.push(loadWeekSchedule(week, true));
+        }
     }
 
     if (loadPromises.length > 0) {
         await Promise.all(loadPromises);
         console.log(`[Playoffs] Loaded ${loadPromises.length} playoff week schedules`);
+    } else {
+        console.log(`[Playoffs] All playoff schedules already loaded with scores`);
     }
 }
 
