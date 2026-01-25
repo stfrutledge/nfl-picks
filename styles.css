@@ -5789,6 +5789,11 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     }
 }
 
+/* Clear Picks Mobile Button - hidden by default */
+.clear-picks-mobile {
+    display: none;
+}
+
 /* Mobile-specific adjustments for Make Picks section */
 @media (max-width: 600px) {
     /* Fix week dropdown overflow - limit width */
@@ -5808,15 +5813,22 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         display: none;
     }
 
-    /* Move Clear My Picks to bottom by reordering flex items */
+    /* Hide original Clear My Picks button on mobile */
     .picks-actions {
-        display: flex;
-        flex-direction: column;
+        display: none;
     }
 
-    .picks-actions #clear-picks-btn {
-        order: 2;
-        margin-top: 8px;
+    /* Show Clear My Picks at bottom on mobile */
+    .clear-picks-mobile {
+        display: flex;
+        justify-content: center;
+        padding: 20px 0;
+        margin-top: 16px;
+    }
+
+    .clear-picks-mobile .btn {
+        width: 100%;
+        max-width: 300px;
     }
 
     /* Make game cards responsive - prevent overflow */

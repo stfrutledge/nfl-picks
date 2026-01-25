@@ -16,7 +16,7 @@ const SYNC_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before syncin
 let dashboardData = null;
 let currentCategory = 'make-picks';
 let currentSubcategory = 'blazin'; // Default standings subcategory
-let currentPicker = localStorage.getItem('selectedPicker') || 'Stephen';
+let currentPicker = localStorage.getItem('selectedPicker') || 'Daniel';
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
 let clearedPicks = JSON.parse(localStorage.getItem('clearedPicks') || '{}'); // Track intentionally cleared picks: { week: { picker: true } }
@@ -2113,6 +2113,7 @@ function updateAdminButtons() {
  */
 function setupPicksActions() {
     document.getElementById('clear-picks-btn')?.addEventListener('click', clearCurrentPickerPicks);
+    document.getElementById('clear-picks-btn-mobile')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
     document.getElementById('randomize-picks-btn')?.addEventListener('click', () => {
         randomizePicks();
