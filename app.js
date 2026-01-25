@@ -4971,10 +4971,9 @@ function handlePickSelect(e) {
     if (clearedPicks[currentWeek]?.[currentPicker]) {
         delete clearedPicks[currentWeek][currentPicker];
         localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
-        syncClearedStatusToGoogleSheets(currentWeek, currentPicker, false);
     }
 
-    // Save to localStorage
+    // Save to localStorage (this will also sync cleared=false to Google Sheets)
     savePicksToStorage();
 
     // Update only the relevant buttons instead of re-rendering all games
@@ -6197,7 +6196,8 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     const payload = {
         week: currentWeek,
         picker: currentPicker,
-        picks: formattedPicks
+        picks: formattedPicks,
+        cleared: false  // Always reset cleared flag when syncing picks
     };
 
     console.log('[Sync] Syncing picks to Google Sheets:', payload);
