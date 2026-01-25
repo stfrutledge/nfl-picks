@@ -5819,10 +5819,11 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         display: none;
     }
 
-    /* Right align selection row content on mobile */
+    /* Labels left, dropdowns right, vertically centered */
     .week-selector,
     .picker-selector {
-        align-items: flex-end;
+        justify-content: space-between;
+        align-items: center;
     }
 
     /* Consistent dropdown styles for mobile */
