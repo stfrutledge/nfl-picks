@@ -2833,6 +2833,7 @@ footer a:hover {
 .admin-actions {
     display: flex;
     justify-content: center;
+    gap: 12px;
     padding: 0 0 24px 0;
 }
 

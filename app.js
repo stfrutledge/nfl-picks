@@ -6067,8 +6067,8 @@ function copyPicksToClipboard() {
 }
 
 /**
- * Export all pickers' picks for the current week in a compact format
- * Format: "PickerName: Team (spread), Team win, Over. Team (spread), Team win, Under."
+ * Export all pickers' picks for the current week in WhatsApp-friendly format
+ * Format: *PickerName* (bold) followed by each game on its own line
  */
 function exportAllPicksToClipboard() {
     const weekGames = getGamesForWeek(currentWeek);
@@ -6081,13 +6081,13 @@ function exportAllPicksToClipboard() {
 
     const lines = [];
     const weekTitle = getWeekTitle(currentWeek, '').trim();
-    lines.push(`${weekTitle} Picks`);
+    lines.push(`*${weekTitle} Picks*`);
     lines.push('');
 
     // Loop through all pickers in alphabetical order
-    PICKERS.forEach(picker => {
+    PICKERS.forEach((picker, index) => {
         const pickerPicks = weekPicks[picker] || {};
-        const pickStrings = [];
+        const gameLines = [];
 
         weekGames.forEach(game => {
             const gameIdStr = String(game.id);
@@ -6116,14 +6116,24 @@ function exportAllPicksToClipboard() {
                     parts.push(gamePicks.overUnder.charAt(0).toUpperCase() + gamePicks.overUnder.slice(1));
                 }
 
-                pickStrings.push(parts.join(', '));
+                gameLines.push(parts.join(', '));
             }
         });
 
-        if (pickStrings.length > 0) {
-            lines.push(`${picker}: ${pickStrings.join('. ')}.`);
+        // Add picker name with WhatsApp bold formatting
+        lines.push(`*${picker}*`);
+
+        if (gameLines.length > 0) {
+            gameLines.forEach(gameLine => {
+                lines.push(gameLine);
+            });
         } else {
-            lines.push(`${picker}: No picks yet.`);
+            lines.push('No picks yet');
+        }
+
+        // Add blank line between pickers (except after the last one)
+        if (index < PICKERS.length - 1) {
+            lines.push('');
         }
     });
 
