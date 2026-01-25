@@ -7,7 +7,7 @@
 const WORKER_PROXY_URL = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
 
 // Google Apps Script URL (legacy - now proxied through worker)
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8YB5AwLyiF3_kPi6fZ8Ol9RDpbnNJcuAxI65b1j7Ca9A1bOyxqwzyI3XAJ8_PLuay/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0KsLgDXHRcwJ3ACBdm52oQq1mXAy0w6Cf1xjvF5qQZCddO1kV9CSS6RbvXtjf2Ow2/exec';
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
@@ -5691,10 +5691,10 @@ function calculateLivePickMargin(game, liveData, pick) {
     let status, message;
     if (currentMargin > 0) {
         status = 'covering';
-        message = `Covering by ${currentMargin}`;
+        message = `+${currentMargin} ATS`;
     } else if (currentMargin < 0) {
         status = 'losing';
-        message = `Not covering by ${Math.abs(currentMargin)}`;
+        message = `${currentMargin} ATS`;
     } else {
         status = 'push';
         message = 'Currently a push';

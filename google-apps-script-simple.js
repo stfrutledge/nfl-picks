@@ -142,6 +142,8 @@ function savePicks(week, picker, picks) {
 /**
  * Save spreads to the Spreads sheet
  * spreads format: { 'away_home': { spread, favorite, overUnder } }
+ *
+ * Updates existing spreads if they've changed (client controls when updates are allowed)
  */
 function saveSpreads(week, spreads) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -153,39 +155,49 @@ function saveSpreads(week, spreads) {
   }
 
   const timestamp = new Date().toISOString();
-  let savedCount = 0;
+  let addedCount = 0;
+  let updatedCount = 0;
 
-  // Get existing data to check for duplicates
+  // Get existing data to find rows to update
   const existingData = sheet.getDataRange().getValues();
-  const existingKeys = new Set();
+  const existingRows = {}; // Map of uniqueKey -> row number (1-indexed)
   for (let i = 1; i < existingData.length; i++) {
-    const rowWeek = existingData[i][0];
+    const rowWeek = String(existingData[i][0]);
     const rowKey = existingData[i][1];
-    existingKeys.add(`${rowWeek}_${rowKey}`);
+    existingRows[`${rowWeek}_${rowKey}`] = i + 1; // 1-indexed row number
   }
 
   for (const [gameKey, data] of Object.entries(spreads)) {
     const uniqueKey = `${week}_${gameKey}`;
+    const existingRow = existingRows[uniqueKey];
 
-    // Skip if we already have this spread saved
-    if (existingKeys.has(uniqueKey)) {
-      continue;
+    if (existingRow) {
+      // Update existing row
+      sheet.getRange(existingRow, 3, 1, 4).setValues([[
+        data.spread || 0,
+        data.favorite || '',
+        data.overUnder || '',
+        timestamp
+      ]]);
+      updatedCount++;
+    } else {
+      // Add new row
+      sheet.appendRow([
+        week,
+        gameKey,
+        data.spread || 0,
+        data.favorite || '',
+        data.overUnder || '',
+        timestamp
+      ]);
+      addedCount++;
     }
-
-    sheet.appendRow([
-      week,
-      gameKey,
-      data.spread || 0,
-      data.favorite || '',
-      data.overUnder || '',
-      timestamp
-    ]);
-    savedCount++;
   }
 
   return {
-    message: `Saved ${savedCount} new spreads for Week ${week}`,
-    savedCount: savedCount
+    message: `Week ${week}: ${addedCount} new, ${updatedCount} updated`,
+    addedCount: addedCount,
+    updatedCount: updatedCount
   };
 }
 
