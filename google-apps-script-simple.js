@@ -351,9 +351,13 @@ function getPicksForWeek(week, picker) {
     }
   }
 
-  // Convert to the format app.js expects: { gameId: { line, winner, blazin, overUnder, totalLine } }
+  // Convert to the format app.js expects, keyed by matchup (away_home) instead of gameId
+  // This ensures picks are applied to the correct game regardless of game order
   const picks = {};
   for (const [gameId, pickData] of Object.entries(picksWithTimestamp)) {
+    // Create matchup key from team names
+    const matchupKey = `${pickData.away.toLowerCase()}_${pickData.home.toLowerCase()}`;
+
     // Convert team names back to 'home'/'away' format
     let linePick = pickData.linePick;
     if (linePick === pickData.away) {
@@ -369,7 +373,7 @@ function getPicksForWeek(week, picker) {
       winnerPick = 'home';
     }
 
-    picks[gameId] = {
+    picks[matchupKey] = {
       line: linePick || '',
       winner: winnerPick || '',
       blazin: pickData.blazin || false,
@@ -436,13 +440,17 @@ function getAllPicks() {
       }
     }
 
-    // Convert to final format
+    // Convert to final format, keyed by matchup (away_home) instead of gameId
+    // This ensures picks are applied to the correct game regardless of game order
     for (const week in picksWithTimestamp) {
       allPicks[week] = {};
       for (const picker in picksWithTimestamp[week]) {
         allPicks[week][picker] = {};
         for (const gameId in picksWithTimestamp[week][picker]) {
           const pickData = picksWithTimestamp[week][picker][gameId];
+
+          // Create matchup key from team names
+          const matchupKey = `${pickData.away.toLowerCase()}_${pickData.home.toLowerCase()}`;
 
           // Convert team names back to 'home'/'away' format
           let linePick = pickData.linePick;
@@ -459,7 +467,7 @@ function getAllPicks() {
             winnerPick = 'home';
           }
 
-          allPicks[week][picker][gameId] = {
+          allPicks[week][picker][matchupKey] = {
             line: linePick || '',
             winner: winnerPick || '',
             blazin: pickData.blazin || false,

@@ -7,7 +7,7 @@
 const WORKER_PROXY_URL = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
 
 // Google Apps Script URL (legacy - now proxied through worker)
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz7BrzsxtH_RdN4C5yE79_KtegNHzZ6vof1nWkm4HIywkwZpvhpRt8qN3TmzfcdjfFY/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCHuKNnwrPzu1noWrJS7i4BGo5UUnKKFQ_uN0hljS0KSfigusJQjuyearqRt-xGx31/exec';
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
@@ -1699,6 +1699,19 @@ function getResultsForWeek(week) {
     return NFL_RESULTS_BY_WEEK[week] || NFL_RESULTS_BY_WEEK[String(week)] || {};
 }
 
+// Helper function to get matchup key for a game (used for pick lookups)
+function getMatchupKey(game) {
+    return `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+}
+
+// Helper function to look up picks for a game (tries matchup key first, then game ID)
+function getPicksForGame(pickerPicks, game) {
+    const matchupKey = getMatchupKey(game);
+    const gameIdStr = String(game.id);
+    // Try matchup key first (more reliable), then fall back to game ID
+    return pickerPicks[matchupKey] || pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+}
+
 // DOM Elements
 const dashboard = document.getElementById('dashboard');
 const leaderboard = document.getElementById('leaderboard');
@@ -2699,11 +2712,11 @@ function calculatePlayoffStats() {
             const cachedPicks = cachedWeek?.picks?.[picker] || {};
 
             weekGames.forEach(game => {
-                const gameIdStr = String(game.id);
-                const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
-                const cachedGamePicks = cachedPicks[gameIdStr] || cachedPicks[game.id] || {};
+                const gamePicks = getPicksForGame(pickerPicks, game);
+                const cachedGamePicks = getPicksForGame(cachedPicks, game);
 
                 // Get result - try both string and number keys
+                const gameIdStr = String(game.id);
                 let result = weekResults[game.id] || weekResults[gameIdStr];
                 if (!result) {
                     const liveData = getLiveGameStatus(game);
@@ -4659,13 +4672,13 @@ function renderGames() {
     // Count current blazin picks for the week (only for regular season)
     const isPlayoff = isPlayoffWeek(currentWeek);
     const blazinCount = isPlayoff ? 0 : weekGames.reduce((count, g) => {
-        const gPicks = pickerPicks[String(g.id)] || pickerPicks[g.id] || {};
+        const gPicks = getPicksForGame(pickerPicks, g);
         return count + (gPicks.blazin ? 1 : 0);
     }, 0);
 
     gamesList.innerHTML = weekGames.map(game => {
         const gameIdStr = String(game.id);
-        const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+        const gamePicks = getPicksForGame(pickerPicks, game);
         const linePick = gamePicks.line;
         const winnerPick = gamePicks.winner;
         const isBlazin = gamePicks.blazin || false;
@@ -5805,9 +5818,8 @@ function renderScoringSummary() {
         const cachedPicks = cachedWeek?.picks?.[picker] || {};
 
         weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
-            const cachedGamePicks = cachedPicks[gameIdStr] || cachedPicks[game.id] || {};
+            const gamePicks = getPicksForGame(pickerPicks, game);
+            const cachedGamePicks = getPicksForGame(cachedPicks, game);
 
             // Get result from historical data or live scores
             let result = weekResults[game.id];
