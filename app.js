@@ -7,7 +7,7 @@
 const WORKER_PROXY_URL = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
 
 // Google Apps Script URL (legacy - now proxied through worker)
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0KsLgDXHRcwJ3ACBdm52oQq1mXAy0w6Cf1xjvF5qQZCddO1kV9CSS6RbvXtjf2Ow2/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz7BrzsxtH_RdN4C5yE79_KtegNHzZ6vof1nWkm4HIywkwZpvhpRt8qN3TmzfcdjfFY/exec';
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
@@ -1535,6 +1535,18 @@ async function checkAndAdvanceWeekIfNeeded() {
  * This ensures spreads are captured before games start
  * Falls back to Google Sheets backup if spreads are missing locally
  */
+/**
+ * Check if a timestamp is from today (in local timezone)
+ */
+function isFromToday(timestamp) {
+    if (!timestamp) return false;
+    const date = new Date(timestamp);
+    const today = new Date();
+    return date.getFullYear() === today.getFullYear() &&
+           date.getMonth() === today.getMonth() &&
+           date.getDate() === today.getDate();
+}
+
 async function prefetchAndSaveSpreads() {
     console.warn(`[Prefetch] === STARTING prefetchAndSaveSpreads, currentWeek=${currentWeek} ===`);
     let saved = getSavedSpreads();
@@ -1544,6 +1556,8 @@ async function prefetchAndSaveSpreads() {
     if (currentWeek < LAST_PLAYOFF_WEEK) {
         weeksToCheck.push(currentWeek + 1);
     }
+
+    let needsOddsApiRefresh = false;
 
     for (const week of weeksToCheck) {
         // Load schedule if not already loaded
@@ -1555,14 +1569,23 @@ async function prefetchAndSaveSpreads() {
         const games = NFL_GAMES_BY_WEEK[week];
         if (!games || games.length === 0) continue;
 
-        // For current week: always load from Google Sheets (authoritative for corrections)
-        // For future weeks: only load if spreads are missing
+        // Load spreads from Google Sheets
         const weekNum = parseInt(week);
-        if (weekNum <= CURRENT_NFL_WEEK) {
-            console.log(`[Prefetch] Week ${week} is current/past - loading authoritative spreads from Google Sheets...`);
-            await loadSpreadsFromGoogleSheets(week);
-            saved = getSavedSpreads();
-            applySavedSpreads();
+        console.log(`[Prefetch] Week ${week} - loading spreads from Google Sheets...`);
+        const sheetResult = await loadSpreadsFromGoogleSheets(week);
+        saved = getSavedSpreads();
+        applySavedSpreads();
+
+        // For current week: check if spreads need daily refresh
+        // First visitor of each day should call Odds API to get fresh spreads
+        if (weekNum === CURRENT_NFL_WEEK && !needsOddsApiRefresh) {
+            const lastUpdated = sheetResult?.lastUpdated;
+            if (!isFromToday(lastUpdated)) {
+                console.log(`[Prefetch] Week ${week} spreads last updated: ${lastUpdated || 'never'} - needs daily refresh`);
+                needsOddsApiRefresh = true;
+            } else {
+                console.log(`[Prefetch] Week ${week} spreads were already updated today (${lastUpdated})`);
+            }
         }
 
         // Check if we have spreads saved for all games in this week
@@ -1573,30 +1596,27 @@ async function prefetchAndSaveSpreads() {
             return !hasSaved && !hasGame;
         });
 
-        // If spreads are still missing (future weeks or Google Sheets didn't have them), try backup
-        if (missingSpreadGames.length > 0 && weekNum > CURRENT_NFL_WEEK) {
-            console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads, trying Google Sheets backup...`);
-            await loadSpreadsFromGoogleSheets(week);
-            saved = getSavedSpreads();
-            applySavedSpreads();
-
-            // Re-check after loading from backup
-            missingSpreadGames = games.filter(game => {
-                const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-                const hasSaved = saved[week] && saved[week][key] && saved[week][key].spread > 0;
-                const hasGame = game.spread && game.spread > 0;
-                return !hasSaved && !hasGame;
-            });
-        }
-
-        // If still missing, try fetching from Odds API
+        // Only trigger API refresh for missing spreads in the CURRENT week
+        // Future weeks may not have matchups determined yet (e.g., Super Bowl before Conference Championships)
         if (missingSpreadGames.length > 0) {
-            console.log(`[Prefetch] Week ${week} still has ${missingSpreadGames.length} games missing spreads, fetching from Odds API...`);
-            await updateOddsFromAPI(true); // Force refresh to get latest
-            break; // Only need one API call since it returns all upcoming games
+            if (weekNum === CURRENT_NFL_WEEK) {
+                console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads - will fetch from API`);
+                needsOddsApiRefresh = true;
+            } else {
+                console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads (future week - skipping API fetch)`);
+            }
         } else {
             console.log(`[Prefetch] Week ${week} spreads are complete`);
         }
+    }
+
+    // If we need fresh spreads (first visitor of day or missing spreads), call Odds API
+    if (needsOddsApiRefresh) {
+        console.log(`[Prefetch] Fetching fresh spreads from Odds API (daily refresh)...`);
+        await updateOddsFromAPI(true);
+        // Sync to Google Sheets so subsequent visitors today don't need to call the API
+        await syncSpreadsToGoogleSheets();
+        applySavedSpreads();
     }
 
     // Re-cache schedules with updated spreads
@@ -1622,16 +1642,18 @@ async function preloadNextWeekIfAvailable() {
     // Check if we already have games for next week
     if (NFL_GAMES_BY_WEEK[nextWeek] && NFL_GAMES_BY_WEEK[nextWeek].length > 0) {
         console.log(`[Preload] Next week ${nextWeek} already has ${NFL_GAMES_BY_WEEK[nextWeek].length} games`);
-        // Still fetch odds to ensure spreads are saved
-        await updateOddsFromAPI(false);
+        // Load spreads from Google Sheets
+        await loadSpreadsFromGoogleSheets(nextWeek);
+        applySavedSpreads();
         return;
     }
 
     console.log(`[Preload] Loading games for ${getWeekDisplayName(nextWeek)}...`);
     await loadWeekSchedule(nextWeek);
 
-    // Fetch odds for all weeks (ensures spreads are saved)
-    await updateOddsFromAPI(false);
+    // Load spreads from Google Sheets
+    await loadSpreadsFromGoogleSheets(nextWeek);
+    applySavedSpreads();
 
     // Update the week dropdown to show the new week if not already there
     setupWeekButtons();
@@ -2205,7 +2227,9 @@ function setupPicksActions() {
         showToast('Refreshing spreads from API...');
         const success = await updateSpreadsFromAPI(true); // Force refresh
         if (success) {
-            showToast('Spreads updated successfully!', 'success');
+            // Sync to Google Sheets so other users get the updated spreads
+            await syncSpreadsToGoogleSheets();
+            showToast('Spreads updated and synced!', 'success');
             renderGames(); // Re-render to show new spreads
         } else {
             showToast('Could not fetch odds. Using saved/fallback spreads.', 'warning');
@@ -2524,15 +2548,9 @@ async function loadFromGoogleSheets() {
             console.log(`[Init] Advanced to ${getWeekDisplayName(currentWeek)}`);
         }
 
-        // Fetch current odds from The Odds API
-        updateLoadingProgress(95, 'Loading betting odds...');
-        await updateOddsFromAPI();
-
-        // Proactively fetch and save spreads for current and upcoming weeks
+        // Load spreads from Google Sheets (primary source for all users)
+        updateLoadingProgress(95, 'Loading spreads...');
         await prefetchAndSaveSpreads();
-
-        // Sync spreads to Google Sheets for backup
-        await syncSpreadsToGoogleSheets();
 
         // Load picks from Google Sheets backup if localStorage is empty
         await loadAllPicksFromBackup();
@@ -6554,6 +6572,7 @@ async function syncSpreadsToGoogleSheets() {
  * Load spreads from Google Sheets backup
  * For current/past weeks: Google Sheets is authoritative (allows manual corrections)
  * For future weeks: localStorage takes priority (avoids unnecessary overwrites)
+ * Returns { spreads, lastUpdated } or null if failed
  */
 async function loadSpreadsFromGoogleSheets(week) {
     try {
@@ -6562,7 +6581,7 @@ async function loadSpreadsFromGoogleSheets(week) {
         const result = await response.json();
 
         if (result.spreads && Object.keys(result.spreads).length > 0) {
-            console.log(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets`);
+            console.log(`[Spreads Load] Loaded ${result.count} spreads for week ${week} from Google Sheets (last updated: ${result.lastUpdated || 'unknown'})`);
 
             const saved = getSavedSpreads();
             if (!saved[week]) {
@@ -6585,7 +6604,7 @@ async function loadSpreadsFromGoogleSheets(week) {
             }
 
             localStorage.setItem(SAVED_SPREADS_KEY, JSON.stringify(saved));
-            return result.spreads;
+            return { spreads: result.spreads, lastUpdated: result.lastUpdated };
         }
     } catch (error) {
         console.warn(`[Spreads Load] Failed to load week ${week} spreads from Google Sheets:`, error.message);

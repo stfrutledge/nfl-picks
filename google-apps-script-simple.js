@@ -263,33 +263,44 @@ function isClearedForWeek(week, picker) {
 
 /**
  * Get spreads for a specific week
+ * Returns spreads and the latest timestamp for cache validation
  */
 function getSpreadsForWeek(week) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Spreads');
 
   if (!sheet) {
-    return { week: week, spreads: {} };
+    return { week: week, spreads: {}, lastUpdated: null };
   }
 
   const data = sheet.getDataRange().getValues();
   const spreads = {};
+  let latestTimestamp = null;
 
   // Skip header row
+  // Columns: Week, Game Key, Spread, Favorite, Over/Under, Timestamp
   for (let i = 1; i < data.length; i++) {
     const rowWeek = String(data[i][0]);
     if (rowWeek === String(week)) {
       const gameKey = data[i][1];
+      const timestamp = data[i][5]; // Timestamp column
+
       spreads[gameKey] = {
         spread: data[i][2],
         favorite: data[i][3],
         overUnder: data[i][4]
       };
+
+      // Track the latest timestamp
+      if (timestamp && (!latestTimestamp || new Date(timestamp) > new Date(latestTimestamp))) {
+        latestTimestamp = timestamp;
+      }
     }
   }
 
   return {
     week: week,
+    lastUpdated: latestTimestamp,
     spreads: spreads,
     count: Object.keys(spreads).length
   };
