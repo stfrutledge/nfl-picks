@@ -205,24 +205,20 @@
                 <button class="btn btn-primary" id="retry-btn">Try Again</button>
             </section>
 
+            <!-- Tab Loading State -->
+            <section class="tab-loading hidden" id="tab-loading">
+                <div class="tab-loading-content">
+                    <div class="tab-loading-spinner"></div>
+                    <p>Loading playoff data...</p>
+                </div>
+            </section>
+
             <!-- PRIMARY: Leaderboard -->
             <section class="leaderboard hidden" id="leaderboard">
                 <!-- Cards will be injected here -->
             </section>
 
             <!-- Playoff Standings Table (only visible on Playoffs tab) -->
-            <!-- Playoff Loading Overlay -->
-            <section class="playoff-loading hidden" id="playoff-loading">
-                <div class="playoff-loading-content">
-                    <div class="loading-progress">
-                        <div class="loading-progress-bar">
-                            <div class="loading-progress-fill" id="playoff-loading-fill"></div>
-                        </div>
-                        <p class="loading-progress-text" id="playoff-loading-text">Loading playoff data...</p>
-                    </div>
-                </div>
-            </section>
-
             <section class="playoff-standings-section hidden" id="playoff-standings-section">
                 <div class="standings-panel">
                     <h3>Playoff Standings</h3>
@@ -244,6 +240,40 @@
                                 <!-- Rows will be injected here -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Playoff Comparison Section -->
+            <section class="playoff-comparison-section hidden" id="playoff-comparison-section">
+                <!-- Agreement Matrix Panel -->
+                <div class="standings-panel">
+                    <div class="comparison-panel-header">
+                        <h3>Picker Agreement</h3>
+                        <select id="agreement-pick-type" class="comparison-select">
+                            <option value="all">All Picks</option>
+                            <option value="line">Line (ATS)</option>
+                            <option value="winner">Moneyline</option>
+                            <option value="overUnder">Over/Under</option>
+                        </select>
+                    </div>
+                    <div class="agreement-matrix-container">
+                        <table class="agreement-matrix" id="agreement-matrix-table">
+                            <thead id="agreement-matrix-header">
+                                <!-- Headers will be injected here -->
+                            </thead>
+                            <tbody id="agreement-matrix-body">
+                                <!-- Matrix rows will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Game-by-Game Breakdown Panel -->
+                <div class="standings-panel">
+                    <h3>Game-by-Game Breakdown</h3>
+                    <div class="game-breakdown-container" id="game-breakdown-container">
+                        <!-- Game breakdown tables by week will be injected here -->
                     </div>
                 </div>
             </section>

@@ -31,7 +31,7 @@ const PLAYOFF_WEEKS = {
     19: { name: 'Wild Card', shortName: 'WC', espnWeek: 1 },
     20: { name: 'Divisional', shortName: 'DIV', espnWeek: 2 },
     21: { name: 'Conference Championships', shortName: 'CONF', espnWeek: 3 },
-    22: { name: 'Super Bowl', shortName: 'SB', espnWeek: 4 }
+    22: { name: 'Super Bowl', shortName: 'SB', espnWeek: 5 }  // ESPN week 4 is Pro Bowl, week 5 is Super Bowl
 };
 const FIRST_PLAYOFF_WEEK = 19;
 const LAST_PLAYOFF_WEEK = 22;
@@ -74,7 +74,7 @@ function calculateCurrentNFLWeek() {
     const WILD_CARD_START = new Date('2026-01-10T00:00:00');
     const DIVISIONAL_START = new Date('2026-01-17T00:00:00');
     const CONFERENCE_START = new Date('2026-01-25T00:00:00');
-    const SUPER_BOWL_START = new Date('2026-02-08T00:00:00');
+    const SUPER_BOWL_START = new Date('2026-01-26T00:00:00'); // Start showing Super Bowl after Conference Championship games
     const SUPER_BOWL_END = new Date('2026-02-09T00:00:00');
     const now = new Date();
 
@@ -465,7 +465,7 @@ function getLiveGameStatus(game) {
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 5; // Increment to invalidate all caches (v5 validates full game data)
+const SCHEDULE_CACHE_VERSION = 6; // Increment to invalidate all caches (v6 filters out non-game events)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -677,12 +677,39 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
         const data = await response.json();
         const games = [];
 
+        console.log(`[ESPN] Raw response for week ${week}:`, data.events?.length || 0, 'events');
+
         if (data.events) {
-            data.events.forEach((event, index) => {
+            let gameIndex = 0;
+            data.events.forEach((event) => {
+                console.log(`[ESPN] Event: "${event.name}", Date: ${event.date}, ID: ${event.id}`);
                 const competition = event.competitions[0];
                 const competitors = competition.competitors;
+
+                // Skip events that aren't actual NFL games (e.g., Pro Bowl, NFL Experience)
+                // Real games have exactly 2 competitors with valid team IDs
+                if (!competitors || competitors.length !== 2) {
+                    console.log(`[ESPN] Skipping non-game event: ${event.name}`);
+                    return;
+                }
+
                 const homeTeam = competitors.find(c => c.homeAway === 'home');
                 const awayTeam = competitors.find(c => c.homeAway === 'away');
+
+                // Skip if teams don't look like real NFL teams
+                if (!homeTeam?.team?.displayName || !awayTeam?.team?.displayName) {
+                    console.log(`[ESPN] Skipping event with invalid teams: ${event.name}`);
+                    return;
+                }
+
+                // Skip Pro Bowl and other exhibition games
+                const eventName = (event.name || '').toLowerCase();
+                if (eventName.includes('pro bowl') || eventName.includes('experience') ||
+                    eventName.includes('skills') || eventName.includes('flag')) {
+                    console.log(`[ESPN] Skipping exhibition event: ${event.name}`);
+                    return;
+                }
+
                 const venue = competition.venue;
                 const gameDate = new Date(event.date);
 
@@ -693,7 +720,7 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                 const awayScore = parseInt(awayTeam.score) || 0;
 
                 games.push({
-                    id: index + 1,
+                    id: ++gameIndex,
                     espnId: event.id,
                     away: getTeamNickname(awayTeam.team.displayName),
                     home: getTeamNickname(homeTeam.team.displayName),
@@ -1856,6 +1883,7 @@ function init() {
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
     setupPatternFilters();
+    setupPlayoffComparisonControls();
     loadPicksFromStorage();
 
     // Show loading state
@@ -2122,14 +2150,38 @@ async function setActiveSubcategory(subcategory) {
         subtab.classList.toggle('active', subtab.dataset.subcategory === subcategory);
     });
 
-    // For playoffs tab, ensure all playoff week schedules are loaded
+    // For playoffs tab, show loading state while data loads
     if (subcategory === 'playoffs') {
-        // Only show loading if we need to fetch
-        if (!playoffSchedulesLoaded) {
-            showPlayoffLoading();
+        // Immediately hide current content and show loading
+        const leaderboard = document.getElementById('leaderboard');
+        const performanceSection = document.getElementById('performance-insights-section');
+        const recordsSection = document.getElementById('records-analysis-section');
+        const playoffStandingsSection = document.getElementById('playoff-standings-section');
+        const playoffComparisonSection = document.getElementById('playoff-comparison-section');
+        const tabLoadingEl = document.getElementById('tab-loading');
+
+        // Hide all content sections
+        leaderboard?.classList.add('hidden');
+        performanceSection?.classList.add('hidden');
+        recordsSection?.classList.add('hidden');
+        playoffStandingsSection?.classList.add('hidden');
+        playoffComparisonSection?.classList.add('hidden');
+
+        // Show loading message
+        if (tabLoadingEl) {
+            tabLoadingEl.classList.remove('hidden');
         }
+
+        // Load playoff data
         await loadAllPlayoffSchedules();
-        hidePlayoffLoading();
+
+        // Hide loading message
+        if (tabLoadingEl) {
+            tabLoadingEl.classList.add('hidden');
+        }
+
+        // Show leaderboard again for the render
+        leaderboard?.classList.remove('hidden');
     }
 
     // Re-render dashboard with new subcategory
@@ -2144,19 +2196,24 @@ let playoffSchedulesLoaded = false;
  * Only fetches from ESPN if games are missing scores (for completed games)
  */
 async function loadAllPlayoffSchedules() {
-    // Skip if already loaded this session
-    if (playoffSchedulesLoaded) {
-        console.log(`[Playoffs] Schedules already loaded this session, skipping`);
-        return;
-    }
-
     const weeksToLoad = [];
 
     for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
         const games = getGamesForWeek(week);
 
-        // Check if we need to fetch: no games, or games without scores/status
-        const needsFetch = !games || games.length === 0 || games.some(game => {
+        // Always fetch if no games for this week (e.g., Super Bowl not yet available)
+        if (!games || games.length === 0) {
+            weeksToLoad.push(week);
+            continue;
+        }
+
+        // Skip if already loaded this session and we have games
+        if (playoffSchedulesLoaded) {
+            continue;
+        }
+
+        // Check if we need to fetch: games without scores/status for completed games
+        const needsFetch = games.some(game => {
             // If game has a status indicating it's complete but no scores, we need to fetch
             const isComplete = game.status === 'STATUS_FINAL' || game.status === 'final' || game.completed;
             const hasScores = (game.homeScore !== undefined && game.homeScore !== 0) ||
@@ -2176,23 +2233,13 @@ async function loadAllPlayoffSchedules() {
     }
 
     if (weeksToLoad.length > 0) {
-        const totalWeeks = weeksToLoad.length;
-        let loadedCount = 0;
-
-        updatePlayoffLoadingProgress(10, `Loading playoff schedules (0/${totalWeeks})...`);
-
-        // Create promises that track progress
         const loadPromises = weeksToLoad.map(async (week) => {
             console.log(`[Playoffs] Loading schedule for week ${week}...`);
             await loadWeekSchedule(week, false);
-            loadedCount++;
-            const percent = 10 + Math.round((loadedCount / totalWeeks) * 80);
-            updatePlayoffLoadingProgress(percent, `Loading playoff schedules (${loadedCount}/${totalWeeks})...`);
         });
 
         await Promise.all(loadPromises);
-        updatePlayoffLoadingProgress(95, 'Finalizing...');
-        console.log(`[Playoffs] Loaded ${totalWeeks} playoff week schedules`);
+        console.log(`[Playoffs] Loaded ${weeksToLoad.length} playoff week schedules`);
     } else {
         console.log(`[Playoffs] All playoff schedules already loaded with scores`);
     }
@@ -2956,18 +3003,22 @@ function renderDashboard() {
     const performanceInsightsSection = document.getElementById('performance-insights-section');
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
     const playoffStandingsSection = document.getElementById('playoff-standings-section');
+    const playoffComparisonSection = document.getElementById('playoff-comparison-section');
 
     // Playoffs tab: show leaderboard cards and playoff standings table, hide other sections
     if (currentSubcategory === 'playoffs') {
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
         playoffStandingsSection?.classList.remove('hidden');
+        playoffComparisonSection?.classList.remove('hidden');
         renderPlayoffStandingsTable(stats);
+        renderPlayoffComparison();
         return;
     }
 
-    // Hide playoff standings table for non-playoff tabs
+    // Hide playoff standings table and comparison for non-playoff tabs
     playoffStandingsSection?.classList.add('hidden');
+    playoffComparisonSection?.classList.add('hidden');
 
     // Show all panels for non-playoff tabs
     document.getElementById('trend-chart-container')?.classList.remove('hidden');
@@ -4836,6 +4887,470 @@ function setupPlayoffTableSorting(table) {
             });
         });
     });
+}
+
+/**
+ * Calculate agreement percentage between two pickers for playoff picks
+ * @param {string} picker1 - First picker name
+ * @param {string} picker2 - Second picker name
+ * @param {string} pickType - 'line', 'winner', 'overUnder', or 'all'
+ * @returns {object} { agreement: number, total: number, agreed: number, picker1, picker2 }
+ */
+function calculatePlayoffAgreement(picker1, picker2, pickType = 'all') {
+    let agreed = 0;
+    let total = 0;
+
+    for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
+        const weekStr = String(week);
+        const weekGames = getGamesForWeek(week);
+        const weekPicks = allPicks[week] || allPicks[weekStr] || {};
+        const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
+
+        if (!weekGames || weekGames.length === 0) continue;
+
+        const picks1 = weekPicks[picker1] || {};
+        const picks2 = weekPicks[picker2] || {};
+        const cachedPicks1 = cachedWeek?.picks?.[picker1] || {};
+        const cachedPicks2 = cachedWeek?.picks?.[picker2] || {};
+
+        weekGames.forEach(game => {
+            const gamePicks1 = getPicksForGame(picks1, game);
+            const gamePicks2 = getPicksForGame(picks2, game);
+            const cachedGamePicks1 = getPicksForGame(cachedPicks1, game);
+            const cachedGamePicks2 = getPicksForGame(cachedPicks2, game);
+
+            // Check each pick type
+            const pickTypes = pickType === 'all' ? ['line', 'winner', 'overUnder'] : [pickType];
+
+            pickTypes.forEach(type => {
+                const p1Pick = gamePicks1[type] || cachedGamePicks1[type];
+                const p2Pick = gamePicks2[type] || cachedGamePicks2[type];
+
+                // Only count if both pickers made a pick
+                if (p1Pick && p2Pick) {
+                    total++;
+                    if (p1Pick === p2Pick) {
+                        agreed++;
+                    }
+                }
+            });
+        });
+    }
+
+    return {
+        agreement: total > 0 ? (agreed / total * 100) : 0,
+        total,
+        agreed,
+        picker1,
+        picker2
+    };
+}
+
+/**
+ * Generate the full agreement matrix for all picker pairs
+ * @param {string} pickType - 'line', 'winner', 'overUnder', or 'all'
+ * @returns {object} Matrix object with picker names as keys
+ */
+function generatePlayoffAgreementMatrix(pickType = 'all') {
+    const matrix = {};
+
+    PICKERS.forEach(picker1 => {
+        matrix[picker1] = {};
+        PICKERS.forEach(picker2 => {
+            if (picker1 === picker2) {
+                matrix[picker1][picker2] = { agreement: 100, total: 0, agreed: 0, self: true };
+            } else {
+                matrix[picker1][picker2] = calculatePlayoffAgreement(picker1, picker2, pickType);
+            }
+        });
+    });
+
+    return matrix;
+}
+
+/**
+ * Get sorted list of picker pairs by similarity
+ * @param {string} pickType - 'line', 'winner', 'overUnder', or 'all'
+ * @returns {array} Array of agreement objects sorted by agreement descending
+ */
+function getPlayoffSimilarityRanking(pickType = 'all') {
+    const pairs = [];
+    const seen = new Set();
+
+    PICKERS.forEach(picker1 => {
+        PICKERS.forEach(picker2 => {
+            if (picker1 === picker2) return;
+            const pairKey = [picker1, picker2].sort().join('-');
+            if (seen.has(pairKey)) return;
+            seen.add(pairKey);
+
+            pairs.push(calculatePlayoffAgreement(picker1, picker2, pickType));
+        });
+    });
+
+    return pairs.sort((a, b) => b.agreement - a.agreement);
+}
+
+/**
+ * Get all playoff picks organized by game
+ * @returns {array} Array of game breakdown objects
+ */
+function getPlayoffGameBreakdown() {
+    const breakdown = [];
+
+    for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
+        const weekStr = String(week);
+        const weekGames = getGamesForWeek(week);
+        const weekPicks = allPicks[week] || allPicks[weekStr] || {};
+        const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
+        const weekName = PLAYOFF_WEEKS[week]?.name || `Week ${week}`;
+
+        if (!weekGames || weekGames.length === 0) continue;
+
+        weekGames.forEach(game => {
+            const gameEntry = {
+                game,
+                week,
+                weekName,
+                picks: {},
+                consensus: {
+                    line: { away: 0, home: 0 },
+                    winner: { away: 0, home: 0 },
+                    overUnder: { over: 0, under: 0 }
+                }
+            };
+
+            PICKERS.forEach(picker => {
+                const pickerPicks = weekPicks[picker] || {};
+                const cachedPicks = cachedWeek?.picks?.[picker] || {};
+                const gamePicks = getPicksForGame(pickerPicks, game);
+                const cachedGamePicks = getPicksForGame(cachedPicks, game);
+
+                gameEntry.picks[picker] = {
+                    line: gamePicks.line || cachedGamePicks.line || null,
+                    winner: gamePicks.winner || cachedGamePicks.winner || null,
+                    overUnder: gamePicks.overUnder || cachedGamePicks.overUnder || null
+                };
+
+                // Count for consensus
+                if (gameEntry.picks[picker].line) {
+                    gameEntry.consensus.line[gameEntry.picks[picker].line]++;
+                }
+                if (gameEntry.picks[picker].winner) {
+                    gameEntry.consensus.winner[gameEntry.picks[picker].winner]++;
+                }
+                if (gameEntry.picks[picker].overUnder) {
+                    gameEntry.consensus.overUnder[gameEntry.picks[picker].overUnder]++;
+                }
+            });
+
+            breakdown.push(gameEntry);
+        });
+    }
+
+    return breakdown;
+}
+
+/**
+ * Render the agreement matrix table
+ */
+function renderPlayoffAgreementMatrix() {
+    const selectEl = document.getElementById('agreement-pick-type');
+    const pickType = selectEl?.value || 'all';
+    const matrix = generatePlayoffAgreementMatrix(pickType);
+    const ranking = getPlayoffSimilarityRanking(pickType);
+
+    // Create a lookup for rank by picker pair
+    const rankLookup = {};
+    ranking.forEach((pair, index) => {
+        const key1 = `${pair.picker1}-${pair.picker2}`;
+        const key2 = `${pair.picker2}-${pair.picker1}`;
+        rankLookup[key1] = index + 1;
+        rankLookup[key2] = index + 1;
+    });
+
+    const thead = document.getElementById('agreement-matrix-header');
+    const tbody = document.getElementById('agreement-matrix-body');
+    if (!thead || !tbody) return;
+
+    // Render header row
+    thead.innerHTML = `
+        <tr>
+            <th></th>
+            ${PICKERS.map(p => `<th>${p}</th>`).join('')}
+        </tr>
+    `;
+
+    // Find the highest agreement (rank 1)
+    const bestPairs = new Set();
+    if (ranking.length > 0) {
+        const bestAgreement = ranking[0].agreement;
+        ranking.forEach(pair => {
+            if (pair.agreement === bestAgreement) {
+                bestPairs.add(`${pair.picker1}-${pair.picker2}`);
+                bestPairs.add(`${pair.picker2}-${pair.picker1}`);
+            }
+        });
+    }
+
+    // Render matrix rows
+    tbody.innerHTML = PICKERS.map(picker1 => {
+        const cells = PICKERS.map(picker2 => {
+            const data = matrix[picker1][picker2];
+            if (data.self) {
+                return `<td class="agreement-cell agreement-self">-</td>`;
+            }
+            const pct = data.agreement.toFixed(0);
+            const pairKey = `${picker1}-${picker2}`;
+            const rank = rankLookup[pairKey] || '-';
+            const isBestMatch = bestPairs.has(pairKey);
+            const cellClass = `agreement-cell${isBestMatch ? ' best-match' : ''}`;
+            return `<td class="${cellClass}" data-picker1="${picker1}" data-picker2="${picker2}" data-rank="${rank}" data-agreed="${data.agreed}" data-total="${data.total}" data-pct="${pct}">${pct}%</td>`;
+        }).join('');
+
+        return `<tr><td>${picker1}</td>${cells}</tr>`;
+    }).join('');
+
+    // Add click handlers to cells
+    tbody.querySelectorAll('.agreement-cell:not(.agreement-self)').forEach(cell => {
+        cell.style.cursor = 'pointer';
+        cell.addEventListener('click', showAgreementPopup);
+    });
+}
+
+/**
+ * Show popup with agreement details when cell is clicked
+ */
+function showAgreementPopup(e) {
+    const cell = e.currentTarget;
+    const picker1 = cell.dataset.picker1;
+    const picker2 = cell.dataset.picker2;
+    const rank = cell.dataset.rank;
+    const agreed = cell.dataset.agreed;
+    const total = cell.dataset.total;
+    const pct = cell.dataset.pct;
+
+    // Remove any existing popup
+    const existingPopup = document.querySelector('.agreement-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+
+    // Create popup
+    const popup = document.createElement('div');
+    popup.className = 'agreement-popup';
+    popup.innerHTML = `
+        <div class="agreement-popup-header">
+            <strong>${picker1} & ${picker2}</strong>
+            <button class="agreement-popup-close">&times;</button>
+        </div>
+        <div class="agreement-popup-content">
+            <div class="agreement-popup-stat">
+                <span class="agreement-popup-label">Agreement</span>
+                <span class="agreement-popup-value">${pct}%</span>
+            </div>
+            <div class="agreement-popup-stat">
+                <span class="agreement-popup-label">Picks Match</span>
+                <span class="agreement-popup-value">${agreed}/${total}</span>
+            </div>
+            <div class="agreement-popup-stat">
+                <span class="agreement-popup-label">Similarity Rank</span>
+                <span class="agreement-popup-value">#${rank} of 10</span>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(popup);
+
+    // Position popup near the clicked cell
+    const rect = cell.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+
+    let left = rect.left + rect.width / 2 - popupRect.width / 2;
+    let top = rect.bottom + 8;
+
+    // Keep popup within viewport
+    if (left < 10) left = 10;
+    if (left + popupRect.width > window.innerWidth - 10) {
+        left = window.innerWidth - popupRect.width - 10;
+    }
+    if (top + popupRect.height > window.innerHeight - 10) {
+        top = rect.top - popupRect.height - 8;
+    }
+
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+
+    // Close button handler
+    popup.querySelector('.agreement-popup-close').addEventListener('click', () => {
+        popup.remove();
+    });
+
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', function closePopup(e) {
+            if (!popup.contains(e.target) && e.target !== cell) {
+                popup.remove();
+                document.removeEventListener('click', closePopup);
+            }
+        });
+    }, 0);
+}
+
+/**
+ * Render the similarity ranking cards
+ */
+function renderPlayoffSimilarityRanking() {
+    const selectEl = document.getElementById('agreement-pick-type');
+    const pickType = selectEl?.value || 'all';
+    const ranking = getPlayoffSimilarityRanking(pickType);
+    const container = document.getElementById('similarity-ranking');
+    if (!container) return;
+
+    container.innerHTML = ranking.map((pair, index) => {
+        return `
+            <div class="similarity-card">
+                <span class="similarity-rank">${index + 1}.</span>
+                <div class="similarity-pair">
+                    <span class="similarity-pair-names">${pair.picker1} & ${pair.picker2}</span>
+                    <span class="similarity-pair-detail">${pair.agreed}/${pair.total} picks match</span>
+                </div>
+                <span class="similarity-pct">${pair.agreement.toFixed(0)}%</span>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Render the game-by-game breakdown tables
+ */
+function renderPlayoffGameBreakdown() {
+    const container = document.getElementById('game-breakdown-container');
+    if (!container) return;
+
+    const breakdown = getPlayoffGameBreakdown();
+
+    // Group by week
+    const byWeek = {};
+    breakdown.forEach(entry => {
+        if (!byWeek[entry.week]) {
+            byWeek[entry.week] = {
+                weekName: entry.weekName,
+                games: []
+            };
+        }
+        byWeek[entry.week].games.push(entry);
+    });
+
+    if (Object.keys(byWeek).length === 0) {
+        container.innerHTML = '<p class="no-data-message">No playoff picks data available yet.</p>';
+        return;
+    }
+
+    container.innerHTML = Object.entries(byWeek).map(([week, data]) => {
+        const gamesHtml = data.games.map(entry => {
+            const game = entry.game;
+            const gameLabel = `${game.away} @ ${game.home}`;
+            const spreadLabel = game.spread ? `${game.favorite === 'away' ? game.away : game.home} -${game.spread}` : '-';
+
+            // Determine consensus and lone wolves for line picks
+            const lineConsensus = entry.consensus.line.away >= entry.consensus.line.home ? 'away' : 'home';
+            const lineCounts = entry.consensus.line;
+            const isLineUnanimous = lineCounts.away === PICKERS.length || lineCounts.home === PICKERS.length;
+
+            const pickerCells = PICKERS.map(picker => {
+                const pick = entry.picks[picker];
+                let lineClass = 'pick-cell';
+                let lineText = '-';
+
+                if (pick.line) {
+                    lineText = pick.line === 'away' ? game.away : game.home;
+                    // Check if lone wolf (only one with this pick)
+                    const count = lineCounts[pick.line];
+                    if (count === 1) lineClass += ' lone-wolf';
+                } else {
+                    lineClass += ' no-pick';
+                }
+
+                return `<td class="${lineClass}">${lineText}</td>`;
+            }).join('');
+
+            // Consensus display
+            const consensusText = lineCounts.away + lineCounts.home > 0
+                ? `${lineConsensus === 'away' ? game.away : game.home} (${Math.max(lineCounts.away, lineCounts.home)}/${lineCounts.away + lineCounts.home})`
+                : '-';
+            const consensusClass = isLineUnanimous ? 'consensus-cell unanimous' : 'consensus-cell';
+
+            return `
+                <tr>
+                    <td class="game-cell">${gameLabel}</td>
+                    <td class="spread-cell">${spreadLabel}</td>
+                    ${pickerCells}
+                    <td class="${consensusClass}">${consensusText}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="game-breakdown-week">
+                <div class="game-breakdown-week-header">${data.weekName}</div>
+                <div class="game-breakdown-table-container">
+                    <table class="game-breakdown-table">
+                        <thead>
+                            <tr>
+                                <th>Game</th>
+                                <th>Spread</th>
+                                ${PICKERS.map(p => `<th>${p}</th>`).join('')}
+                                <th>Consensus</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${gamesHtml}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Render the complete playoff comparison section
+ */
+function renderPlayoffComparison() {
+    const section = document.getElementById('playoff-comparison-section');
+    if (!section) return;
+
+    // Check if we have any playoff data
+    let hasData = false;
+    for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
+        const games = getGamesForWeek(week);
+        if (games && games.length > 0) {
+            hasData = true;
+            break;
+        }
+    }
+
+    if (!hasData) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    section.classList.remove('hidden');
+    renderPlayoffAgreementMatrix();
+    renderPlayoffGameBreakdown();
+}
+
+/**
+ * Setup event listeners for playoff comparison controls
+ */
+function setupPlayoffComparisonControls() {
+    const selectEl = document.getElementById('agreement-pick-type');
+    if (selectEl) {
+        selectEl.addEventListener('change', () => {
+            renderPlayoffAgreementMatrix();
+        });
+    }
 }
 
 /**
@@ -7124,45 +7639,6 @@ function hideLoadingState() {
         // Brief delay to show completion, then hide
         setTimeout(() => {
             loadingState.classList.add('hidden');
-        }, 200);
-    }
-}
-
-/**
- * Show playoff loading state
- */
-function showPlayoffLoading() {
-    const playoffLoading = document.getElementById('playoff-loading');
-    if (playoffLoading) {
-        playoffLoading.classList.remove('hidden');
-        updatePlayoffLoadingProgress(0, 'Loading playoff data...');
-    }
-}
-
-/**
- * Update playoff loading progress
- */
-function updatePlayoffLoadingProgress(percent, message) {
-    const progressFill = document.getElementById('playoff-loading-fill');
-    const progressText = document.getElementById('playoff-loading-text');
-
-    if (progressFill) {
-        progressFill.style.width = `${percent}%`;
-    }
-    if (progressText && message) {
-        progressText.textContent = message;
-    }
-}
-
-/**
- * Hide playoff loading state
- */
-function hidePlayoffLoading() {
-    const playoffLoading = document.getElementById('playoff-loading');
-    if (playoffLoading) {
-        updatePlayoffLoadingProgress(100, 'Ready!');
-        setTimeout(() => {
-            playoffLoading.classList.add('hidden');
         }, 200);
     }
 }

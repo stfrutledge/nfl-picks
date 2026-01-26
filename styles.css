@@ -2539,6 +2539,13 @@ footer a:hover {
     font-size: 0.85rem;
 }
 
+.no-data-message {
+    text-align: center;
+    padding: 24px 20px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
 /* Game Matchup Line */
 .game-matchup-line {
     display: flex;
@@ -3772,50 +3779,42 @@ footer a:hover {
     }
 }
 
-/* ===== PLAYOFF LOADING OVERLAY ===== */
-.playoff-loading {
+/* ===== TAB LOADING STATE ===== */
+.tab-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 20px;
     margin: 24px 16px;
-    padding: 32px;
-    background: var(--bg-primary);
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
 }
 
-.playoff-loading-content {
-    max-width: 400px;
-    margin: 0 auto;
-}
-
-.playoff-loading .loading-progress {
-    margin-bottom: 0;
-}
-
-.playoff-loading .loading-progress-bar {
-    height: 6px;
-    background: var(--bg-secondary);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: 12px;
-}
-
-.playoff-loading .loading-progress-fill {
-    height: 100%;
-    background: var(--accent-blue);
-    border-radius: 3px;
-    width: 0%;
-    transition: width 0.3s ease;
-}
-
-.playoff-loading .loading-progress-text {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
+.tab-loading-content {
     text-align: center;
+}
+
+.tab-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-green);
+    border-radius: 50%;
+    animation: tab-spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+}
+
+@keyframes tab-spin {
+    to { transform: rotate(360deg); }
+}
+
+.tab-loading-content p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
     margin: 0;
 }
 
 /* ===== PLAYOFF STANDINGS SECTION ===== */
 .playoff-standings-section {
-    margin: 24px 16px;
+    margin: 0 40px 24px;
 }
 
 .playoff-standings-section .standings-panel {
@@ -3902,7 +3901,350 @@ footer a:hover {
 
 @media (max-width: 768px) {
     .playoff-standings-section {
-        margin: 16px 12px;
+        margin: 0 16px 20px;
+    }
+}
+
+/* ===== PLAYOFF COMPARISON SECTION ===== */
+.playoff-comparison-section {
+    margin: 0 40px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Reuse standings-panel styling for consistency */
+.playoff-comparison-section .standings-panel {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    padding: 16px;
+}
+
+.playoff-comparison-section .standings-panel > h3 {
+    margin: 0 0 16px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.comparison-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.comparison-panel-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.comparison-select {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.comparison-select:focus {
+    outline: none;
+    border-color: var(--nfl-blue);
+}
+
+/* Agreement Matrix - using standings-table styling */
+.agreement-matrix-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.agreement-matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.agreement-matrix th {
+    background: var(--bg-secondary);
+    padding: 12px 16px;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.agreement-matrix th:first-child {
+    text-align: left;
+}
+
+.agreement-matrix td {
+    padding: 12px 16px;
+    text-align: center;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.agreement-matrix td:first-child {
+    text-align: left;
+    font-weight: 600;
+    background: var(--bg-secondary);
+}
+
+.agreement-matrix tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.agreement-matrix tbody tr:hover {
+    background: var(--bg-secondary);
+}
+
+.agreement-matrix td.agreement-cell {
+    font-weight: 600;
+}
+
+.agreement-matrix td.agreement-self {
+    background: var(--bg-secondary);
+    color: var(--text-light);
+}
+
+.agreement-matrix td.agreement-cell:not(.agreement-self):hover {
+    background: var(--bg-secondary);
+}
+
+.agreement-matrix td.agreement-cell.best-match {
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+.agreement-matrix td.agreement-cell.best-match:hover {
+    background: var(--bg-secondary);
+}
+
+/* Agreement Popup */
+.agreement-popup {
+    position: fixed;
+    z-index: 1000;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+}
+
+.agreement-popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    border-radius: 8px 8px 0 0;
+}
+
+.agreement-popup-header strong {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.agreement-popup-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.agreement-popup-close:hover {
+    color: var(--text-primary);
+}
+
+.agreement-popup-content {
+    padding: 12px;
+}
+
+.agreement-popup-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.agreement-popup-stat:not(:last-child) {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+.agreement-popup-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.agreement-popup-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .agreement-popup {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Game Breakdown - matches standings table */
+.game-breakdown-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.game-breakdown-week {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.game-breakdown-week-header {
+    background: var(--bg-secondary);
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.game-breakdown-table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.game-breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.game-breakdown-table th {
+    background: var(--bg-secondary);
+    padding: 10px 12px;
+    text-align: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.game-breakdown-table th:first-child {
+    text-align: left;
+    min-width: 130px;
+}
+
+.game-breakdown-table td {
+    padding: 10px 12px;
+    text-align: center;
+    font-size: 0.8rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.game-breakdown-table td:first-child {
+    text-align: left;
+}
+
+.game-breakdown-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.game-breakdown-table tbody tr:hover {
+    background: var(--bg-secondary);
+}
+
+.game-breakdown-table td.game-cell {
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.game-breakdown-table td.spread-cell {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.game-breakdown-table td.pick-cell {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.game-breakdown-table td.pick-cell.no-pick {
+    color: var(--text-light);
+    font-style: italic;
+}
+
+.game-breakdown-table td.consensus-cell {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.game-breakdown-table td.unanimous {
+    background: rgba(0, 53, 148, 0.08);
+}
+
+/* Lone wolf indicator - subtle */
+.game-breakdown-table td.lone-wolf {
+    font-style: italic;
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .game-breakdown-table td.unanimous {
+    background: rgba(0, 53, 148, 0.15);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .playoff-comparison-section {
+        margin: 0 16px 20px;
+    }
+
+    .comparison-panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .agreement-matrix th,
+    .agreement-matrix td {
+        padding: 8px 10px;
+        font-size: 0.8rem;
+    }
+
+    .agreement-matrix th {
+        font-size: 0.7rem;
+    }
+
+    .game-breakdown-table th,
+    .game-breakdown-table td {
+        padding: 8px 10px;
+        font-size: 0.75rem;
+    }
+
+    .game-breakdown-table th {
+        font-size: 0.65rem;
     }
 }
 
