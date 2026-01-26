@@ -210,6 +210,44 @@
                 <!-- Cards will be injected here -->
             </section>
 
+            <!-- Playoff Standings Table (only visible on Playoffs tab) -->
+            <!-- Playoff Loading Overlay -->
+            <section class="playoff-loading hidden" id="playoff-loading">
+                <div class="playoff-loading-content">
+                    <div class="loading-progress">
+                        <div class="loading-progress-bar">
+                            <div class="loading-progress-fill" id="playoff-loading-fill"></div>
+                        </div>
+                        <p class="loading-progress-text" id="playoff-loading-text">Loading playoff data...</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="playoff-standings-section hidden" id="playoff-standings-section">
+                <div class="standings-panel">
+                    <h3>Playoff Standings</h3>
+                    <div class="standings-table-container">
+                        <table class="standings-table playoff-standings" id="playoff-standings-table">
+                            <thead>
+                                <tr>
+                                    <th>Picker</th>
+                                    <th>ATS</th>
+                                    <th>Moneyline</th>
+                                    <th>Over/Under</th>
+                                    <th class="divider-left">W</th>
+                                    <th>L</th>
+                                    <th>P</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="playoff-standings-table-body">
+                                <!-- Rows will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
             <!-- SECONDARY: Performance & Insights -->
             <section class="consolidated-section performance-insights-section hidden" id="performance-insights-section">
                 <div class="consolidated-header">

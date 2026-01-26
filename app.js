@@ -998,7 +998,54 @@ async function loadWeekSchedule(week, forceRefresh = false) {
         console.warn(`[Schedule] No games found for week ${week}`);
     }
 
+    // Migrate any stored picks to matchup keys now that games are available
+    migrateWeekPicksToMatchupKeys(week);
+
     return NFL_GAMES_BY_WEEK[week];
+}
+
+/**
+ * Migrate stored picks from numeric IDs to matchup keys for a specific week
+ * This ensures picks remain matched to the correct games regardless of data source
+ */
+function migrateWeekPicksToMatchupKeys(week) {
+    const weekGames = NFL_GAMES_BY_WEEK[week];
+    if (!weekGames || weekGames.length === 0) return;
+
+    // Build ID to matchup key mapping
+    const idToMatchupKey = {};
+    weekGames.forEach(game => {
+        const matchupKey = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+        idToMatchupKey[String(game.id)] = matchupKey;
+    });
+
+    let migrated = false;
+    const weekPicks = allPicks[week];
+    if (!weekPicks) return;
+
+    for (const picker in weekPicks) {
+        const pickerPicks = weekPicks[picker];
+        const newPickerPicks = {};
+
+        for (const gameId in pickerPicks) {
+            // Check if this looks like a numeric ID that should be converted
+            if (idToMatchupKey[gameId]) {
+                // Convert to matchup key
+                newPickerPicks[idToMatchupKey[gameId]] = pickerPicks[gameId];
+                migrated = true;
+            } else {
+                // Already a matchup key or unknown, keep as-is
+                newPickerPicks[gameId] = pickerPicks[gameId];
+            }
+        }
+
+        allPicks[week][picker] = newPickerPicks;
+    }
+
+    if (migrated) {
+        console.log(`[Migration] Converted week ${week} picks to matchup keys`);
+        savePicksToStorage(false, true); // Save without toast, skip sync
+    }
 }
 
 /**
@@ -1734,22 +1781,53 @@ function initializePicksStorage() {
 }
 initializePicksStorage();
 
+// Helper function to convert numeric game IDs to matchup keys
+// This makes picks portable across data sources (historical vs ESPN)
+function migratePicksToMatchupKeys(weekPicks, weekGames) {
+    if (!weekGames || !weekPicks) return weekPicks;
+
+    // Build a map of numeric ID to matchup key
+    const idToMatchupKey = {};
+    weekGames.forEach(game => {
+        const matchupKey = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+        idToMatchupKey[String(game.id)] = matchupKey;
+    });
+
+    // Convert picks from numeric IDs to matchup keys
+    const migratedPicks = {};
+    for (const gameId in weekPicks) {
+        // If this looks like a numeric ID and we have a mapping, convert it
+        if (idToMatchupKey[gameId]) {
+            migratedPicks[idToMatchupKey[gameId]] = weekPicks[gameId];
+        } else {
+            // Already a matchup key or no mapping available, keep as-is
+            migratedPicks[gameId] = weekPicks[gameId];
+        }
+    }
+    return migratedPicks;
+}
+
 // Merge historical picks if available (from historical-data.js)
 if (typeof HISTORICAL_PICKS !== 'undefined') {
     for (const week in HISTORICAL_PICKS) {
         if (!allPicks[week]) {
             allPicks[week] = {};
         }
+
+        // Get historical games for this week to enable ID-to-matchup-key conversion
+        const weekGames = (typeof HISTORICAL_GAMES !== 'undefined') ? HISTORICAL_GAMES[week] : null;
+
         for (const picker in HISTORICAL_PICKS[week]) {
             // For playoff weeks (19+), always use historical data (overrides localStorage)
             // For regular season, only merge if picker has no picks
             const weekNum = parseInt(week);
             if (weekNum >= 19 || !allPicks[week][picker] || Object.keys(allPicks[week][picker]).length === 0) {
-                allPicks[week][picker] = HISTORICAL_PICKS[week][picker];
+                // Migrate numeric IDs to matchup keys for portability
+                allPicks[week][picker] = migratePicksToMatchupKeys(HISTORICAL_PICKS[week][picker], weekGames);
             }
         }
     }
-    console.log('Historical picks merged into allPicks');
+    console.log('Historical picks merged into allPicks (with matchup key migration)');
 }
 
 /**
@@ -2046,24 +2124,38 @@ async function setActiveSubcategory(subcategory) {
 
     // For playoffs tab, ensure all playoff week schedules are loaded
     if (subcategory === 'playoffs') {
+        // Only show loading if we need to fetch
+        if (!playoffSchedulesLoaded) {
+            showPlayoffLoading();
+        }
         await loadAllPlayoffSchedules();
+        hidePlayoffLoading();
     }
 
     // Re-render dashboard with new subcategory
     renderDashboard();
 }
 
+// Track if playoff schedules have been loaded this session
+let playoffSchedulesLoaded = false;
+
 /**
  * Load schedules for all playoff weeks
  * Only fetches from ESPN if games are missing scores (for completed games)
  */
 async function loadAllPlayoffSchedules() {
-    const loadPromises = [];
+    // Skip if already loaded this session
+    if (playoffSchedulesLoaded) {
+        console.log(`[Playoffs] Schedules already loaded this session, skipping`);
+        return;
+    }
+
+    const weeksToLoad = [];
 
     for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
         const games = getGamesForWeek(week);
 
-        // Check if we need to fetch: no games, or games without scores that should have them
+        // Check if we need to fetch: no games, or games without scores/status
         const needsFetch = !games || games.length === 0 || games.some(game => {
             // If game has a status indicating it's complete but no scores, we need to fetch
             const isComplete = game.status === 'STATUS_FINAL' || game.status === 'final' || game.completed;
@@ -2072,22 +2164,41 @@ async function loadAllPlayoffSchedules() {
             // Also fetch if game should be complete (kickoff in the past) but we don't have status
             const kickoffPassed = game.kickoff && new Date(game.kickoff) < new Date();
             const missingStatus = kickoffPassed && !game.status;
+            // For historical games without status/kickoff, always fetch to get ESPN data
+            const isHistoricalWithoutStatus = !game.status && !game.kickoff;
 
-            return (isComplete && !hasScores) || missingStatus;
+            return (isComplete && !hasScores) || missingStatus || isHistoricalWithoutStatus;
         });
 
         if (needsFetch) {
-            console.log(`[Playoffs] Loading schedule for week ${week}...`);
-            loadPromises.push(loadWeekSchedule(week, true));
+            weeksToLoad.push(week);
         }
     }
 
-    if (loadPromises.length > 0) {
+    if (weeksToLoad.length > 0) {
+        const totalWeeks = weeksToLoad.length;
+        let loadedCount = 0;
+
+        updatePlayoffLoadingProgress(10, `Loading playoff schedules (0/${totalWeeks})...`);
+
+        // Create promises that track progress
+        const loadPromises = weeksToLoad.map(async (week) => {
+            console.log(`[Playoffs] Loading schedule for week ${week}...`);
+            await loadWeekSchedule(week, false);
+            loadedCount++;
+            const percent = 10 + Math.round((loadedCount / totalWeeks) * 80);
+            updatePlayoffLoadingProgress(percent, `Loading playoff schedules (${loadedCount}/${totalWeeks})...`);
+        });
+
         await Promise.all(loadPromises);
-        console.log(`[Playoffs] Loaded ${loadPromises.length} playoff week schedules`);
+        updatePlayoffLoadingProgress(95, 'Finalizing...');
+        console.log(`[Playoffs] Loaded ${totalWeeks} playoff week schedules`);
     } else {
         console.log(`[Playoffs] All playoff schedules already loaded with scores`);
     }
+
+    // Mark as loaded for this session
+    playoffSchedulesLoaded = true;
 }
 
 /**
@@ -2844,13 +2955,19 @@ function renderDashboard() {
     // Get section elements
     const performanceInsightsSection = document.getElementById('performance-insights-section');
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
+    const playoffStandingsSection = document.getElementById('playoff-standings-section');
 
-    // Playoffs tab: only show leaderboard cards with breakdown, hide all other sections
+    // Playoffs tab: show leaderboard cards and playoff standings table, hide other sections
     if (currentSubcategory === 'playoffs') {
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
+        playoffStandingsSection?.classList.remove('hidden');
+        renderPlayoffStandingsTable(stats);
         return;
     }
+
+    // Hide playoff standings table for non-playoff tabs
+    playoffStandingsSection?.classList.add('hidden');
 
     // Show all panels for non-playoff tabs
     document.getElementById('trend-chart-container')?.classList.remove('hidden');
@@ -4512,8 +4629,8 @@ function renderStandingsTable(stats) {
 
     // Playoffs uses a different table layout showing Line/SU/O/U breakdown
     if (currentSubcategory === 'playoffs') {
-        // Update table title to explain combined scoring
-        const tableTitle = document.querySelector('.standings-panel h3');
+        // Update table title to explain combined scoring (only target the one in performance-insights)
+        const tableTitle = document.querySelector('#performance-insights-section .standings-panel h3');
         if (tableTitle) {
             tableTitle.innerHTML = 'Playoff Standings <span style="font-weight: normal; font-size: 0.85em; color: var(--text-secondary);">(Combined: Line + Straight Up + Over/Under)</span>';
         }
@@ -4554,8 +4671,8 @@ function renderStandingsTable(stats) {
         return;
     }
 
-    // Restore default table title for non-playoff tabs
-    const tableTitle = document.querySelector('.standings-panel h3');
+    // Restore default table title for non-playoff tabs (only target the one in performance-insights)
+    const tableTitle = document.querySelector('#performance-insights-section .standings-panel h3');
     if (tableTitle) {
         tableTitle.textContent = 'Season Standings';
     }
@@ -4613,6 +4730,112 @@ function renderStandingsTable(stats) {
             </tr>
         `;
     }).join('');
+}
+
+/**
+ * Render the playoff standings table with detailed breakdown
+ */
+function renderPlayoffStandingsTable(stats) {
+    const table = document.getElementById('playoff-standings-table');
+    const tbody = document.getElementById('playoff-standings-table-body');
+    if (!tbody || !table) return;
+
+    // Store stats for sorting
+    table._playoffStats = stats;
+
+    const sorted = getSortedPickers(stats);
+
+    tbody.innerHTML = sorted.map((picker, index) => {
+        const pctValue = typeof picker.percentage === 'number' ? picker.percentage : 0;
+        const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(1) + '%' : '-';
+
+        // Determine percentage color class
+        let pctClass = 'pct';
+        if (pctValue > 50) {
+            pctClass += ' pct-positive';
+        } else if (pctValue < 50) {
+            pctClass += ' pct-negative';
+        } else {
+            pctClass += ' pct-neutral';
+        }
+
+        // Calculate wins from records for sorting
+        const lineWins = picker.lineWins || 0;
+        const suWins = picker.suWins || 0;
+        const ouWins = picker.ouWins || 0;
+
+        return `
+            <tr class="${index === 0 ? 'leader' : ''}" data-picker="${picker.name}">
+                <td class="picker-name">${picker.name}</td>
+                <td data-sort="${lineWins}">${picker.lineRecord || '-'}</td>
+                <td data-sort="${suWins}">${picker.suRecord || '-'}</td>
+                <td data-sort="${ouWins}">${picker.ouRecord || '-'}</td>
+                <td class="divider-left" data-sort="${picker.wins || 0}">${picker.wins || 0}</td>
+                <td data-sort="${picker.losses || 0}">${picker.losses || 0}</td>
+                <td data-sort="${picker.pushes || 0}">${picker.pushes || 0}</td>
+                <td class="${pctClass}" data-sort="${pctValue}">${pct}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // Setup sortable headers (only once)
+    if (!table._sortInitialized) {
+        setupPlayoffTableSorting(table);
+        table._sortInitialized = true;
+    }
+}
+
+/**
+ * Setup sorting for playoff standings table
+ */
+function setupPlayoffTableSorting(table) {
+    const headers = table.querySelectorAll('thead th');
+
+    headers.forEach((th, index) => {
+        // Make headers look clickable
+        th.style.cursor = 'pointer';
+        th.title = 'Click to sort';
+
+        th.addEventListener('click', () => {
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const isAscending = th.classList.contains('sort-asc');
+
+            // Remove sort classes from all headers
+            headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+
+            // Sort rows
+            rows.sort((a, b) => {
+                const aCell = a.cells[index];
+                const bCell = b.cells[index];
+
+                // Use data-sort attribute if available, otherwise use text content
+                let aVal = aCell.dataset.sort !== undefined ? parseFloat(aCell.dataset.sort) : aCell.textContent.trim();
+                let bVal = bCell.dataset.sort !== undefined ? parseFloat(bCell.dataset.sort) : bCell.textContent.trim();
+
+                // Handle string comparison for picker names
+                if (index === 0) {
+                    return isAscending ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
+                }
+
+                // Numeric comparison
+                if (isNaN(aVal)) aVal = 0;
+                if (isNaN(bVal)) bVal = 0;
+
+                return isAscending ? aVal - bVal : bVal - aVal;
+            });
+
+            // Toggle sort direction
+            th.classList.add(isAscending ? 'sort-desc' : 'sort-asc');
+
+            // Re-append sorted rows and update leader class
+            rows.forEach((row, i) => {
+                row.classList.remove('leader');
+                if (i === 0) row.classList.add('leader');
+                tbody.appendChild(row);
+            });
+        });
+    });
 }
 
 /**
@@ -5044,6 +5267,14 @@ function handlePickSelect(e) {
     const pickType = btn.dataset.pickType; // 'line' or 'winner'
     const team = btn.dataset.team; // 'away' or 'home'
 
+    // Look up the game to get matchup key (more reliable than game ID across data sources)
+    const weekGames = getGamesForWeek(currentWeek);
+    const game = weekGames.find(g => String(g.id) === gameId);
+
+    // Use matchup key for storing picks (portable across ESPN/historical data sources)
+    // Fall back to gameId if game not found (shouldn't happen)
+    const pickKey = game ? getMatchupKey(game) : gameId;
+
     // Ensure week and picker structure exists
     if (!allPicks[currentWeek]) {
         allPicks[currentWeek] = {};
@@ -5053,33 +5284,31 @@ function handlePickSelect(e) {
     }
 
     // Initialize game picks object if needed
-    if (!allPicks[currentWeek][currentPicker][gameId]) {
-        allPicks[currentWeek][currentPicker][gameId] = {};
+    if (!allPicks[currentWeek][currentPicker][pickKey]) {
+        allPicks[currentWeek][currentPicker][pickKey] = {};
     }
 
     // Get current selection state
-    const currentSelection = allPicks[currentWeek][currentPicker][gameId][pickType];
+    const currentSelection = allPicks[currentWeek][currentPicker][pickKey][pickType];
     const isDeselecting = currentSelection === team;
     const otherTeam = team === 'home' ? 'away' : 'home';
     let autoSelectWinner = false;
 
     // Toggle selection
     if (isDeselecting) {
-        delete allPicks[currentWeek][currentPicker][gameId][pickType];
+        delete allPicks[currentWeek][currentPicker][pickKey][pickType];
         // Clean up empty game object
-        if (Object.keys(allPicks[currentWeek][currentPicker][gameId]).length === 0) {
-            delete allPicks[currentWeek][currentPicker][gameId];
+        if (Object.keys(allPicks[currentWeek][currentPicker][pickKey]).length === 0) {
+            delete allPicks[currentWeek][currentPicker][pickKey];
         }
     } else {
-        allPicks[currentWeek][currentPicker][gameId][pickType] = team;
+        allPicks[currentWeek][currentPicker][pickKey][pickType] = team;
 
         // If picking a favorite on the line, automatically pick them to win
         if (pickType === 'line') {
-            const weekGames = getGamesForWeek(currentWeek);
-            const game = weekGames.find(g => String(g.id) === gameId);
             if (game && game.favorite === team) {
                 // Picked the favorite to cover, auto-select them as winner
-                allPicks[currentWeek][currentPicker][gameId].winner = team;
+                allPicks[currentWeek][currentPicker][pickKey].winner = team;
                 autoSelectWinner = true;
             }
         }
@@ -6895,6 +7124,45 @@ function hideLoadingState() {
         // Brief delay to show completion, then hide
         setTimeout(() => {
             loadingState.classList.add('hidden');
+        }, 200);
+    }
+}
+
+/**
+ * Show playoff loading state
+ */
+function showPlayoffLoading() {
+    const playoffLoading = document.getElementById('playoff-loading');
+    if (playoffLoading) {
+        playoffLoading.classList.remove('hidden');
+        updatePlayoffLoadingProgress(0, 'Loading playoff data...');
+    }
+}
+
+/**
+ * Update playoff loading progress
+ */
+function updatePlayoffLoadingProgress(percent, message) {
+    const progressFill = document.getElementById('playoff-loading-fill');
+    const progressText = document.getElementById('playoff-loading-text');
+
+    if (progressFill) {
+        progressFill.style.width = `${percent}%`;
+    }
+    if (progressText && message) {
+        progressText.textContent = message;
+    }
+}
+
+/**
+ * Hide playoff loading state
+ */
+function hidePlayoffLoading() {
+    const playoffLoading = document.getElementById('playoff-loading');
+    if (playoffLoading) {
+        updatePlayoffLoadingProgress(100, 'Ready!');
+        setTimeout(() => {
+            playoffLoading.classList.add('hidden');
         }, 200);
     }
 }
