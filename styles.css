@@ -4002,6 +4002,8 @@ footer a:hover {
     text-align: left;
     font-weight: 600;
     background: var(--bg-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .agreement-matrix tbody tr:last-child td {
