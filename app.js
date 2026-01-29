@@ -21,6 +21,8 @@ let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
 let clearedPicks = JSON.parse(localStorage.getItem('clearedPicks') || '{}'); // Track intentionally cleared picks: { week: { picker: true } }
 let backupFetchedThisSession = false; // Only fetch all picks from backup once per session
+let resultsFetchedThisSession = false; // Only fetch results from backup once per session
+let resultsSyncedGames = {}; // Track which games have had results synced to avoid duplicates
 let initialLoadComplete = false; // Track whether initial data load is complete
 
 // Available weeks (1-18 for regular season)
@@ -1524,12 +1526,15 @@ function startLiveScoresRefresh() {
     }
 
     // Fetch immediately to get current game states
-    fetchLiveScores().then(() => {
+    fetchLiveScores().then(async () => {
         // Only render if initial load is complete (odds have been fetched)
         // During initial load, renderGames is called after updateOddsFromAPI
         if (initialLoadComplete) {
             renderGames();
             renderScoringSummary();
+
+            // Sync any final games to Google Sheets
+            await syncResultsToGoogleSheets(currentWeek, 'ESPN');
         }
 
         // Only start polling interval if games are scheduled or in progress
@@ -1539,6 +1544,9 @@ function startLiveScoresRefresh() {
                 await fetchLiveScores();
                 renderGames();
                 renderScoringSummary();
+
+                // Sync any newly final games to Google Sheets
+                await syncResultsToGoogleSheets(currentWeek, 'ESPN');
 
                 // Stop polling when all games are final
                 if (!shouldPollLiveScores()) {
@@ -1551,6 +1559,9 @@ function startLiveScoresRefresh() {
             }, 120000);
         } else {
             console.log('All games final or no games - skipping live refresh');
+
+            // Even if not polling, sync any final games
+            await syncResultsToGoogleSheets(currentWeek, 'ESPN');
         }
     });
 }
@@ -2725,6 +2736,9 @@ async function loadFromGoogleSheets() {
 
         // Load picks from Google Sheets backup if localStorage is empty
         await loadAllPicksFromBackup();
+
+        // Load results from Google Sheets backup
+        await loadAllResultsFromBackup();
 
         // Mark initial load as complete before rendering
         initialLoadComplete = true;
@@ -7523,6 +7537,164 @@ async function loadAllPicksFromBackup() {
 
     } catch (error) {
         console.error('[Picks Load] Failed to load picks from Google Sheets backup:', error);
+    }
+}
+
+/**
+ * Load ALL results from Google Sheets backup in one API call
+ * This fetches results for all weeks at once and merges into NFL_RESULTS_BY_WEEK
+ */
+async function loadAllResultsFromBackup() {
+    // Only fetch from Google Sheets once per session
+    if (resultsFetchedThisSession) {
+        console.log('[Results Load] Results already fetched this session, skipping');
+        return;
+    }
+
+    resultsFetchedThisSession = true;
+    console.log('[Results Load] Starting results fetch from Google Sheets...');
+
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=allresults`);
+        const result = await response.json();
+
+        if (result.error) {
+            console.warn('[Results Load] Error from Google Sheets:', result.error);
+            return;
+        }
+
+        if (result.results && Object.keys(result.results).length > 0) {
+            let totalResults = 0;
+            for (const week in result.results) {
+                const weekNum = parseInt(week);
+
+                // Skip if historical data already has complete results for this week
+                if (typeof HISTORICAL_RESULTS !== 'undefined' && HISTORICAL_RESULTS[week] &&
+                    Object.keys(HISTORICAL_RESULTS[week]).length > 0) {
+                    // Still merge - backup results might have more recent data
+                }
+
+                if (!NFL_RESULTS_BY_WEEK[weekNum]) {
+                    NFL_RESULTS_BY_WEEK[weekNum] = {};
+                }
+
+                for (const gameKey in result.results[week]) {
+                    const resultData = result.results[week][gameKey];
+
+                    // Find the game by matchup key to get the game ID
+                    const games = getGamesForWeek(weekNum);
+                    const matchingGame = games.find(g => {
+                        const key = `${g.away.toLowerCase()}_${g.home.toLowerCase()}`;
+                        return key === gameKey;
+                    });
+
+                    if (matchingGame) {
+                        // Use game ID as the key (consistent with existing code)
+                        NFL_RESULTS_BY_WEEK[weekNum][matchingGame.id] = {
+                            winner: resultData.winner,
+                            awayScore: resultData.awayScore,
+                            homeScore: resultData.homeScore
+                        };
+                        totalResults++;
+                    }
+                }
+            }
+            console.log(`[Results Load] Loaded ${totalResults} results across ${result.weekCount} weeks from Google Sheets backup`);
+        } else {
+            console.log('[Results Load] No results in response');
+        }
+    } catch (error) {
+        console.error('[Results Load] Failed to load results from Google Sheets backup:', error);
+    }
+}
+
+/**
+ * Sync game results to Google Sheets when games finish
+ * @param {number} week - The week number
+ * @param {string} source - Source of the results (e.g., 'ESPN')
+ */
+async function syncResultsToGoogleSheets(week, source = 'ESPN') {
+    if (!APPS_SCRIPT_URL) {
+        return;
+    }
+
+    const games = getGamesForWeek(week);
+    if (!games || games.length === 0) {
+        return;
+    }
+
+    const resultsToSync = {};
+    let newResults = 0;
+
+    for (const game of games) {
+        // Get live status for the game
+        const liveData = getLiveGameStatus(game);
+
+        // Check if game is final
+        const isFinal = (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) ||
+                        (game.status === 'STATUS_FINAL' || game.completed);
+
+        if (!isFinal) continue;
+
+        // Get the game key for tracking
+        const gameKey = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+        const syncKey = `${week}_${gameKey}`;
+
+        // Skip if already synced
+        if (resultsSyncedGames[syncKey]) continue;
+
+        // Get scores
+        const awayScore = liveData?.awayScore ?? game.awayScore ?? 0;
+        const homeScore = liveData?.homeScore ?? game.homeScore ?? 0;
+
+        // Skip if no scores available
+        if (awayScore === 0 && homeScore === 0) continue;
+
+        resultsToSync[gameKey] = {
+            awayScore: awayScore,
+            homeScore: homeScore
+        };
+
+        // Mark as synced to prevent duplicate syncs
+        resultsSyncedGames[syncKey] = true;
+        newResults++;
+    }
+
+    if (newResults === 0) {
+        return;
+    }
+
+    console.log(`[Results Sync] Syncing ${newResults} new results for week ${week}...`);
+
+    const payload = {
+        week: week,
+        results: resultsToSync,
+        source: source
+    };
+
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            console.log(`[Results Sync] Synced ${newResults} results for week ${week}:`, result.results?.results?.message);
+        } else {
+            console.error('[Results Sync] Sync failed:', result.error);
+            // Reset synced status on failure so we can retry
+            for (const gameKey in resultsToSync) {
+                delete resultsSyncedGames[`${week}_${gameKey}`];
+            }
+        }
+    } catch (error) {
+        console.error('[Results Sync] Failed to sync results:', error);
+        // Reset synced status on failure so we can retry
+        for (const gameKey in resultsToSync) {
+            delete resultsSyncedGames[`${week}_${gameKey}`];
+        }
     }
 }
 

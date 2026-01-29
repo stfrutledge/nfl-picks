@@ -1,5 +1,5 @@
 /**
- * NFL Picks Backup - With Spreads Support
+ * NFL Picks Backup - With Spreads, Results & Outcomes Support
  *
  * SETUP:
  * 1. Create a new Google Sheet (or use existing)
@@ -11,7 +11,11 @@
  * ENDPOINTS:
  * - GET ?action=spreads&week=19 - Get saved spreads for a week
  * - GET ?action=picks&week=19&picker=Steve - Get saved picks for a week and picker
+ * - GET ?action=allpicks - Get all picks for all weeks and pickers
+ * - GET ?action=results&week=19 - Get results for a week
+ * - GET ?action=allresults - Get all results
  * - POST { week, picker, picks, spreads } - Save picks and/or spreads
+ * - POST { week, results, source } - Save results and calculate outcomes
  */
 
 function doGet(e) {
@@ -43,6 +47,20 @@ function doGet(e) {
       return jsonResponse(getAllPicks());
     }
 
+    // Get results for a specific week
+    if (action === 'results') {
+      const week = e.parameter.week;
+      if (!week) {
+        return jsonResponse({ error: 'Missing week parameter' });
+      }
+      return jsonResponse(getResultsForWeek(week));
+    }
+
+    // Get ALL results for all weeks
+    if (action === 'allresults') {
+      return jsonResponse(getAllResults());
+    }
+
     // Default response
     return jsonResponse({
       status: 'ok',
@@ -51,7 +69,9 @@ function doGet(e) {
         'GET ?action=spreads&week=N': 'Get spreads for week N',
         'GET ?action=picks&week=N&picker=X': 'Get picks for week N and picker X',
         'GET ?action=allpicks': 'Get all picks for all weeks and pickers',
-        'POST': 'Save picks and/or spreads'
+        'GET ?action=results&week=N': 'Get results for week N',
+        'GET ?action=allresults': 'Get all results',
+        'POST': 'Save picks, spreads, or results'
       }
     });
   } catch (error) {
@@ -62,32 +82,37 @@ function doGet(e) {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { week, picker, picks, spreads, cleared } = data;
+    const { week, picker, picks, spreads, cleared, results: gameResults, source } = data;
 
-    const results = {};
+    const response = {};
 
     // Save cleared status if provided
     if (typeof cleared === 'boolean' && week && picker) {
-      results.cleared = saveClearedStatus(week, picker, cleared);
+      response.cleared = saveClearedStatus(week, picker, cleared);
     }
 
     // Save picks if provided
     if (picks && picks.length > 0 && picker) {
-      results.picks = savePicks(week, picker, picks);
+      response.picks = savePicks(week, picker, picks);
     }
 
     // Save spreads if provided
     if (spreads && Object.keys(spreads).length > 0) {
-      results.spreads = saveSpreads(week, spreads);
+      response.spreads = saveSpreads(week, spreads);
     }
 
-    if (Object.keys(results).length === 0) {
-      return jsonResponse({ error: 'No picks, spreads, or cleared status provided' });
+    // Save game results if provided (and calculate outcomes)
+    if (gameResults && Object.keys(gameResults).length > 0 && week) {
+      response.results = saveResults(week, gameResults, source || 'ESPN');
+    }
+
+    if (Object.keys(response).length === 0) {
+      return jsonResponse({ error: 'No picks, spreads, results, or cleared status provided' });
     }
 
     return jsonResponse({
       success: true,
-      results: results
+      results: response
     });
 
   } catch (error) {
@@ -97,6 +122,8 @@ function doPost(e) {
 
 /**
  * Save picks to the Backup sheet
+ * Columns: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
+ *          Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
  */
 function savePicks(week, picker, picks) {
   if (!week || !picker) {
@@ -107,8 +134,18 @@ function savePicks(week, picker, picks) {
   let sheet = ss.getSheetByName('Backup');
   if (!sheet) {
     sheet = ss.insertSheet('Backup');
-    sheet.appendRow(['Timestamp', 'Week', 'Picker', 'Game', 'Away Team', 'Home Team', 'Away Spread', 'Home Spread', 'Line Pick', 'Winner Pick', 'Blazin', 'O/U Pick', 'O/U Line']);
-    sheet.getRange(1, 1, 1, 13).setFontWeight('bold');
+    sheet.appendRow(['Timestamp', 'Week', 'Picker', 'Game', 'Away Team', 'Home Team', 'Away Spread', 'Home Spread', 'Line Pick', 'Winner Pick', 'Blazin', 'O/U Pick', 'O/U Line', 'Line Outcome', 'Winner Outcome', 'O/U Outcome']);
+    sheet.getRange(1, 1, 1, 16).setFontWeight('bold');
+  } else {
+    // Check if sheet needs migration (add outcome columns if missing)
+    const headers = sheet.getRange(1, 1, 1, 16).getValues()[0];
+    if (headers[13] !== 'Line Outcome') {
+      // Add the three new outcome columns
+      sheet.getRange(1, 14).setValue('Line Outcome');
+      sheet.getRange(1, 15).setValue('Winner Outcome');
+      sheet.getRange(1, 16).setValue('O/U Outcome');
+      sheet.getRange(1, 14, 1, 3).setFontWeight('bold');
+    }
   }
 
   const timestamp = new Date().toISOString();
@@ -128,7 +165,10 @@ function savePicks(week, picker, picks) {
       pick.winnerPick || '',
       pick.blazin ? 'Yes' : '',
       pick.overUnder || '',
-      pick.totalLine || ''
+      pick.totalLine || '',
+      '', // Line Outcome - populated when results come in
+      '', // Winner Outcome - populated when results come in
+      ''  // O/U Outcome - populated when results come in
     ]);
     rowsAdded++;
   }
@@ -319,8 +359,10 @@ function getPicksForWeek(week, picker) {
   }
 
   const data = sheet.getDataRange().getValues();
-  // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread, Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line
-  // Index:  0          1     2       3     4          5          6            7            8          9            10      11        12
+  // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
+  //         Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
+  // Index:  0          1     2       3     4          5          6            7
+  //         8          9            10      11        12         13            14              15
 
   // Collect all picks for this week/picker, keyed by gameId with timestamp
   const picksWithTimestamp = {};
@@ -345,7 +387,10 @@ function getPicksForWeek(week, picker) {
           winnerPick: data[i][9],
           blazin: data[i][10] === 'Yes',
           overUnder: data[i][11],
-          totalLine: data[i][12]
+          totalLine: data[i][12],
+          lineOutcome: data[i][13] || '',
+          winnerOutcome: data[i][14] || '',
+          ouOutcome: data[i][15] || ''
         };
       }
     }
@@ -378,7 +423,10 @@ function getPicksForWeek(week, picker) {
       winner: winnerPick || '',
       blazin: pickData.blazin || false,
       overUnder: pickData.overUnder || '',
-      totalLine: pickData.totalLine || ''
+      totalLine: pickData.totalLine || '',
+      lineOutcome: pickData.lineOutcome || '',
+      winnerOutcome: pickData.winnerOutcome || '',
+      ouOutcome: pickData.ouOutcome || ''
     };
   }
 
@@ -407,7 +455,8 @@ function getAllPicks() {
 
   if (sheet) {
     const data = sheet.getDataRange().getValues();
-    // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread, Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line
+    // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
+    //         Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
 
     // Collect all picks with timestamps to get the latest for each game
     const picksWithTimestamp = {};
@@ -435,7 +484,10 @@ function getAllPicks() {
           winnerPick: data[i][9],
           blazin: data[i][10] === 'Yes',
           overUnder: data[i][11],
-          totalLine: data[i][12]
+          totalLine: data[i][12],
+          lineOutcome: data[i][13] || '',
+          winnerOutcome: data[i][14] || '',
+          ouOutcome: data[i][15] || ''
         };
       }
     }
@@ -472,7 +524,10 @@ function getAllPicks() {
             winner: winnerPick || '',
             blazin: pickData.blazin || false,
             overUnder: pickData.overUnder || '',
-            totalLine: pickData.totalLine || ''
+            totalLine: pickData.totalLine || '',
+            lineOutcome: pickData.lineOutcome || '',
+            winnerOutcome: pickData.winnerOutcome || '',
+            ouOutcome: pickData.ouOutcome || ''
           };
         }
       }
@@ -502,6 +557,325 @@ function getAllPicks() {
     cleared: allCleared,
     weekCount: Object.keys(allPicks).length
   };
+}
+
+/**
+ * Save game results to the Results sheet
+ * Results format: { 'gameKey': { awayScore, homeScore, winner } }
+ * Also triggers outcome calculation for all picks on these games
+ */
+function saveResults(week, results, source) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Results');
+  if (!sheet) {
+    sheet = ss.insertSheet('Results');
+    sheet.appendRow(['Week', 'Game Key', 'Away Team', 'Home Team', 'Away Score', 'Home Score', 'Winner', 'Timestamp', 'Source']);
+    sheet.getRange(1, 1, 1, 9).setFontWeight('bold');
+  }
+
+  const timestamp = new Date().toISOString();
+  let addedCount = 0;
+  let updatedCount = 0;
+
+  // Get existing data to find rows to update
+  const existingData = sheet.getDataRange().getValues();
+  const existingRows = {}; // Map of uniqueKey -> row number (1-indexed)
+  for (let i = 1; i < existingData.length; i++) {
+    const rowWeek = String(existingData[i][0]);
+    const rowKey = existingData[i][1];
+    existingRows[`${rowWeek}_${rowKey}`] = i + 1;
+  }
+
+  for (const [gameKey, data] of Object.entries(results)) {
+    const uniqueKey = `${week}_${gameKey}`;
+    const existingRow = existingRows[uniqueKey];
+
+    // Determine winner from scores
+    const winner = data.awayScore > data.homeScore ? 'away' :
+                   data.homeScore > data.awayScore ? 'home' : 'tie';
+
+    // Parse team names from gameKey (format: "away_home")
+    const [awayTeam, homeTeam] = gameKey.split('_').map(t =>
+      t.charAt(0).toUpperCase() + t.slice(1)
+    );
+
+    if (existingRow) {
+      // Update existing row
+      sheet.getRange(existingRow, 3, 1, 7).setValues([[
+        awayTeam,
+        homeTeam,
+        data.awayScore,
+        data.homeScore,
+        winner,
+        timestamp,
+        source
+      ]]);
+      updatedCount++;
+    } else {
+      // Add new row
+      sheet.appendRow([
+        week,
+        gameKey,
+        awayTeam,
+        homeTeam,
+        data.awayScore,
+        data.homeScore,
+        winner,
+        timestamp,
+        source
+      ]);
+      addedCount++;
+    }
+
+    // Calculate and save outcomes for all picks on this game
+    calculateAndSaveOutcomes(week, gameKey, {
+      awayScore: data.awayScore,
+      homeScore: data.homeScore,
+      winner: winner
+    });
+  }
+
+  return {
+    message: `Week ${week}: ${addedCount} new results, ${updatedCount} updated`,
+    addedCount: addedCount,
+    updatedCount: updatedCount
+  };
+}
+
+/**
+ * Get results for a specific week
+ */
+function getResultsForWeek(week) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Results');
+
+  if (!sheet) {
+    return { week: week, results: {}, count: 0 };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const results = {};
+
+  // Skip header row
+  // Columns: Week, Game Key, Away Team, Home Team, Away Score, Home Score, Winner, Timestamp, Source
+  for (let i = 1; i < data.length; i++) {
+    const rowWeek = String(data[i][0]);
+    if (rowWeek === String(week)) {
+      const gameKey = data[i][1];
+      results[gameKey] = {
+        awayTeam: data[i][2],
+        homeTeam: data[i][3],
+        awayScore: data[i][4],
+        homeScore: data[i][5],
+        winner: data[i][6],
+        timestamp: data[i][7],
+        source: data[i][8]
+      };
+    }
+  }
+
+  return {
+    week: week,
+    results: results,
+    count: Object.keys(results).length
+  };
+}
+
+/**
+ * Get ALL results for all weeks
+ */
+function getAllResults() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Results');
+
+  if (!sheet) {
+    return { results: {}, weekCount: 0 };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const allResults = {};
+
+  // Skip header row
+  for (let i = 1; i < data.length; i++) {
+    const week = String(data[i][0]);
+    const gameKey = data[i][1];
+
+    if (!allResults[week]) {
+      allResults[week] = {};
+    }
+
+    allResults[week][gameKey] = {
+      awayTeam: data[i][2],
+      homeTeam: data[i][3],
+      awayScore: data[i][4],
+      homeScore: data[i][5],
+      winner: data[i][6],
+      timestamp: data[i][7],
+      source: data[i][8]
+    };
+  }
+
+  return {
+    results: allResults,
+    weekCount: Object.keys(allResults).length
+  };
+}
+
+/**
+ * Calculate and save outcomes for all picks on a specific game
+ * Called when a result is saved
+ */
+function calculateAndSaveOutcomes(week, gameKey, result) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const backupSheet = ss.getSheetByName('Backup');
+  const spreadsSheet = ss.getSheetByName('Spreads');
+
+  if (!backupSheet) {
+    return { message: 'Backup sheet not found', updated: 0 };
+  }
+
+  // Get spread data for this game
+  let spread = null;
+  let favorite = null;
+  let overUnder = null;
+
+  if (spreadsSheet) {
+    const spreadsData = spreadsSheet.getDataRange().getValues();
+    for (let i = 1; i < spreadsData.length; i++) {
+      if (String(spreadsData[i][0]) === String(week) && spreadsData[i][1] === gameKey) {
+        spread = spreadsData[i][2];
+        favorite = spreadsData[i][3];
+        overUnder = spreadsData[i][4];
+        break;
+      }
+    }
+  }
+
+  // Find all picks for this game in Backup sheet
+  const backupData = backupSheet.getDataRange().getValues();
+  // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
+  //         Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
+  // Index:  0          1     2       3     4          5          6            7
+  //         8          9            10      11        12         13            14              15
+
+  let updatedCount = 0;
+
+  for (let i = 1; i < backupData.length; i++) {
+    const rowWeek = String(backupData[i][1]);
+    const awayTeam = String(backupData[i][4]).toLowerCase();
+    const homeTeam = String(backupData[i][5]).toLowerCase();
+    const rowGameKey = `${awayTeam}_${homeTeam}`;
+
+    if (rowWeek === String(week) && rowGameKey === gameKey) {
+      const linePick = backupData[i][8]; // Team name or 'away'/'home'
+      const winnerPick = backupData[i][9];
+      const ouPick = backupData[i][11];
+      const pickOULine = backupData[i][12] || overUnder;
+
+      let lineOutcome = '';
+      let winnerOutcome = '';
+      let ouOutcome = '';
+
+      // Calculate Line (ATS) outcome
+      if (linePick && spread) {
+        const atsWinner = calculateATSWinner(spread, favorite, result, awayTeam, homeTeam);
+        if (atsWinner === 'push') {
+          lineOutcome = 'push';
+        } else {
+          // linePick could be team name or 'away'/'home'
+          const pickSide = getPickSide(linePick, awayTeam, homeTeam);
+          lineOutcome = (pickSide === atsWinner) ? 'win' : 'loss';
+        }
+      }
+
+      // Calculate Winner (straight up) outcome
+      if (winnerPick) {
+        const pickSide = getPickSide(winnerPick, awayTeam, homeTeam);
+        if (result.winner === 'tie') {
+          winnerOutcome = 'push';
+        } else {
+          winnerOutcome = (pickSide === result.winner) ? 'win' : 'loss';
+        }
+      }
+
+      // Calculate O/U outcome
+      if (ouPick && pickOULine) {
+        const total = result.awayScore + result.homeScore;
+        if (total === pickOULine) {
+          ouOutcome = 'push';
+        } else if ((ouPick.toLowerCase() === 'over' && total > pickOULine) ||
+                   (ouPick.toLowerCase() === 'under' && total < pickOULine)) {
+          ouOutcome = 'win';
+        } else {
+          ouOutcome = 'loss';
+        }
+      }
+
+      // Update the row with outcomes (columns N, O, P = indices 14, 15, 16)
+      if (lineOutcome || winnerOutcome || ouOutcome) {
+        backupSheet.getRange(i + 1, 14, 1, 3).setValues([[lineOutcome, winnerOutcome, ouOutcome]]);
+        updatedCount++;
+      }
+    }
+  }
+
+  return { message: `Updated ${updatedCount} pick outcomes for ${gameKey}`, updated: updatedCount };
+}
+
+/**
+ * Calculate ATS (against the spread) winner
+ * Returns 'away', 'home', or 'push'
+ */
+function calculateATSWinner(spread, favorite, result, awayTeam, homeTeam) {
+  // Spread is always positive, favorite tells us who it applies to
+  // Calculate margin: positive means home won by that margin
+  const margin = result.homeScore - result.awayScore;
+
+  // Normalize favorite to 'home' or 'away'
+  let favSide = 'home';
+  if (favorite) {
+    const favLower = String(favorite).toLowerCase();
+    if (favLower === 'away' || favLower === awayTeam) {
+      favSide = 'away';
+    }
+  }
+
+  // Calculate adjusted margin (positive = home covers)
+  // If home is favorite, they need to win by more than spread
+  // If away is favorite, home covers if they win or lose by less than spread
+  let adjustedMargin;
+  if (favSide === 'home') {
+    adjustedMargin = margin - spread;
+  } else {
+    adjustedMargin = margin + spread;
+  }
+
+  if (adjustedMargin === 0) {
+    return 'push';
+  }
+  return adjustedMargin > 0 ? 'home' : 'away';
+}
+
+/**
+ * Get the side ('away' or 'home') from a pick value
+ * Pick could be team name or 'away'/'home'
+ */
+function getPickSide(pick, awayTeam, homeTeam) {
+  const pickLower = String(pick).toLowerCase();
+  if (pickLower === 'away' || pickLower === awayTeam) {
+    return 'away';
+  }
+  if (pickLower === 'home' || pickLower === homeTeam) {
+    return 'home';
+  }
+  // Try partial match (e.g., "Chiefs" matches "kansas city chiefs")
+  if (awayTeam.includes(pickLower) || pickLower.includes(awayTeam.split(' ').pop())) {
+    return 'away';
+  }
+  if (homeTeam.includes(pickLower) || pickLower.includes(homeTeam.split(' ').pop())) {
+    return 'home';
+  }
+  return null;
 }
 
 function jsonResponse(data) {
