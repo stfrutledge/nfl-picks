@@ -2162,10 +2162,264 @@ footer a:hover {
         flex-direction: column;
     }
 
+    .season-selector,
     .week-selector,
     .picker-selector {
         flex: none;
         width: 100%;
+    }
+}
+
+/* Season Selector */
+.season-selector {
+    background: var(--bg-primary);
+    border-radius: 8px;
+    padding: 16px 20px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.season-selector label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+}
+
+.season-dropdown {
+    padding: 10px 16px;
+    border-radius: 4px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-width: 130px;
+}
+
+.season-dropdown:hover {
+    border-color: var(--text-light);
+}
+
+.season-dropdown:focus {
+    outline: none;
+    border-color: var(--accent-green);
+}
+
+/* Read-only state for historical seasons */
+.season-readonly .pick-btn,
+.season-readonly .ou-btn,
+.season-readonly .blazin-toggle {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.season-readonly .pick-controls,
+.season-readonly .clear-picks-btn,
+.season-readonly .randomize-picks-btn,
+.season-readonly .all-favorites-btn,
+.season-readonly .all-underdogs-btn {
+    display: none;
+}
+
+/* History Section */
+.history-section {
+    padding: 24px 40px;
+}
+
+.history-header {
+    margin-bottom: 24px;
+}
+
+.history-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 8px 0;
+}
+
+.history-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.history-controls {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.history-games {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.history-game-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.history-game-card.complete {
+    border-left: 3px solid var(--accent-green);
+}
+
+.history-matchup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.history-matchup .vs {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.history-score {
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--accent-green);
+}
+
+.history-spread {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.history-picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+}
+
+.history-picks .picker-pick {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+/* History Picks Grid - shows all pickers for each game */
+.history-games-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.history-picks-grid {
+    margin-top: 12px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 12px;
+}
+
+.history-picks-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-light);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: 4px;
+}
+
+.history-picker-pick {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.history-picker-pick:hover {
+    background: var(--bg-hover);
+}
+
+.history-picker-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.history-picker-name.blazin {
+    color: var(--accent-amber);
+}
+
+.history-pick-line,
+.history-pick-winner {
+    text-align: center;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.history-pick-line.correct,
+.history-pick-winner.correct {
+    background: rgba(5, 150, 105, 0.15);
+    color: var(--accent-green);
+}
+
+.history-pick-line.incorrect,
+.history-pick-winner.incorrect {
+    background: rgba(220, 38, 38, 0.15);
+    color: var(--accent-red);
+}
+
+.history-pick-line.push {
+    background: rgba(217, 119, 6, 0.15);
+    color: var(--accent-amber);
+}
+
+@media (max-width: 480px) {
+    .history-picks-header,
+    .history-picker-pick {
+        font-size: 0.75rem;
+    }
+
+    .history-picker-name {
+        font-size: 0.7rem;
+    }
+}
+
+.no-data-message {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 40px;
+    font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+    .history-section {
+        padding: 16px;
+    }
+
+    .history-controls {
+        flex-direction: column;
+    }
+
+    .history-games {
+        grid-template-columns: 1fr;
     }
 }
 

@@ -25,6 +25,17 @@ let resultsFetchedThisSession = false; // Only fetch results from backup once pe
 let resultsSyncedGames = {}; // Track which games have had results synced to avoid duplicates
 let initialLoadComplete = false; // Track whether initial data load is complete
 
+// Season configuration
+const CURRENT_SEASON = 2025;
+let currentSeason = CURRENT_SEASON;
+const AVAILABLE_SEASONS = [2025, 2024]; // Historical seasons available
+
+// Season data storage - keyed by season year
+// 2025 (current) uses NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, allPicks directly
+// Historical seasons loaded on-demand from historical-YYYY.js files
+let seasonData = {};
+let seasonDataLoading = {}; // Track which seasons are currently being loaded
+
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
 
@@ -1774,14 +1785,37 @@ if (typeof HISTORICAL_RESULTS !== 'undefined') {
     console.log('Historical results merged into NFL_RESULTS_BY_WEEK');
 }
 
-// Helper function to get games for current week
+// Helper function to get games for current week (season-aware)
 function getGamesForWeek(week) {
+    // If viewing a historical season, get data from seasonData
+    if (typeof currentSeason !== 'undefined' && currentSeason !== CURRENT_SEASON && seasonData[currentSeason]) {
+        const data = seasonData[currentSeason];
+        return data.games[week] || data.games[String(week)] || [];
+    }
+    // Current season uses live data
     return NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[String(week)] || [];
 }
 
-// Helper function to get results for current week
+// Helper function to get results for current week (season-aware)
 function getResultsForWeek(week) {
+    // If viewing a historical season, get data from seasonData
+    if (typeof currentSeason !== 'undefined' && currentSeason !== CURRENT_SEASON && seasonData[currentSeason]) {
+        const data = seasonData[currentSeason];
+        return data.results[week] || data.results[String(week)] || {};
+    }
+    // Current season uses live data
     return NFL_RESULTS_BY_WEEK[week] || NFL_RESULTS_BY_WEEK[String(week)] || {};
+}
+
+// Helper function to get all picks for a week (season-aware)
+function getPicksForWeek(week) {
+    // If viewing a historical season, get data from seasonData
+    if (typeof currentSeason !== 'undefined' && currentSeason !== CURRENT_SEASON && seasonData[currentSeason]) {
+        const data = seasonData[currentSeason];
+        return data.picks[week] || data.picks[String(week)] || {};
+    }
+    // Current season uses live data
+    return allPicks[week] || allPicks[String(week)] || {};
 }
 
 // Helper function to get matchup key for a game (used for pick lookups)
@@ -1795,6 +1829,146 @@ function getPicksForGame(pickerPicks, game) {
     const gameIdStr = String(game.id);
     // Try matchup key first (more reliable), then fall back to game ID
     return pickerPicks[matchupKey] || pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+}
+
+// Season-aware helper functions
+
+/**
+ * Check if viewing a historical (non-current) season
+ */
+function isHistoricalSeason() {
+    return currentSeason !== CURRENT_SEASON;
+}
+
+/**
+ * Get games for a specific week and season
+ * @param {number} week - Week number
+ * @param {number} season - Season year (defaults to currentSeason)
+ */
+function getGamesForWeekAndSeason(week, season = currentSeason) {
+    if (season === CURRENT_SEASON) {
+        return getGamesForWeek(week);
+    }
+    const data = seasonData[season];
+    if (!data || !data.games) return [];
+    return data.games[week] || data.games[String(week)] || [];
+}
+
+/**
+ * Get results for a specific week and season
+ * @param {number} week - Week number
+ * @param {number} season - Season year (defaults to currentSeason)
+ */
+function getResultsForWeekAndSeason(week, season = currentSeason) {
+    if (season === CURRENT_SEASON) {
+        return getResultsForWeek(week);
+    }
+    const data = seasonData[season];
+    if (!data || !data.results) return {};
+    return data.results[week] || data.results[String(week)] || {};
+}
+
+/**
+ * Get picks for a specific week and season
+ * @param {number} week - Week number
+ * @param {number} season - Season year (defaults to currentSeason)
+ */
+function getPicksForWeekAndSeason(week, season = currentSeason) {
+    if (season === CURRENT_SEASON) {
+        return allPicks[week] || allPicks[String(week)] || {};
+    }
+    const data = seasonData[season];
+    if (!data || !data.picks) return {};
+    return data.picks[week] || data.picks[String(week)] || {};
+}
+
+/**
+ * Get the maximum week number for a season
+ * Historical seasons have all weeks complete; current season uses CURRENT_NFL_WEEK
+ * @param {number} season - Season year (defaults to currentSeason)
+ */
+function getMaxWeekForSeason(season = currentSeason) {
+    if (season === CURRENT_SEASON) {
+        return CURRENT_NFL_WEEK;
+    }
+    // Historical seasons are complete - return 22 (includes playoffs) or check actual data
+    const data = seasonData[season];
+    if (data && data.games) {
+        const weeks = Object.keys(data.games).map(Number).filter(n => !isNaN(n));
+        return weeks.length > 0 ? Math.max(...weeks) : LAST_PLAYOFF_WEEK;
+    }
+    return LAST_PLAYOFF_WEEK;
+}
+
+/**
+ * Load season data (lazy loading for historical seasons)
+ * @param {number} season - Season year to load
+ * @returns {Promise<object|null>} - Season data or null if load failed
+ */
+async function loadSeasonData(season) {
+    // Current season uses live data, no need to load
+    if (season === CURRENT_SEASON) {
+        return { games: NFL_GAMES_BY_WEEK, results: NFL_RESULTS_BY_WEEK, picks: allPicks };
+    }
+
+    // Already loaded into seasonData
+    if (seasonData[season]) {
+        return seasonData[season];
+    }
+
+    // Check if data is already available on window (from historical-data.js loaded at startup)
+    const dataKey = `SEASON_${season}_DATA`;
+    if (window[dataKey]) {
+        seasonData[season] = window[dataKey];
+        console.log(`Using pre-loaded ${season} season data`);
+        return seasonData[season];
+    }
+
+    // Already loading - wait for it
+    if (seasonDataLoading[season]) {
+        return seasonDataLoading[season];
+    }
+
+    // Show loading indicator
+    showLoadingState(`Loading ${season} season...`);
+
+    // Create loading promise
+    seasonDataLoading[season] = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = `historical-${season}.js`;
+
+        script.onload = () => {
+            // Access the loaded data (file sets window.SEASON_XXXX_DATA)
+            const dataKey = `SEASON_${season}_DATA`;
+            if (window[dataKey]) {
+                seasonData[season] = window[dataKey];
+                console.log(`Loaded ${season} season data`);
+                hideLoadingState();
+                resolve(seasonData[season]);
+            } else {
+                console.error(`${dataKey} not found after loading script`);
+                hideLoadingState();
+                reject(new Error(`Season data not found`));
+            }
+            delete seasonDataLoading[season];
+        };
+
+        script.onerror = () => {
+            console.error(`Failed to load historical-${season}.js`);
+            hideLoadingState();
+            showToast(`Failed to load ${season} season data`, 'error');
+            delete seasonDataLoading[season];
+            reject(new Error(`Failed to load season data`));
+        };
+
+        document.head.appendChild(script);
+    });
+
+    try {
+        return await seasonDataLoading[season];
+    } catch (error) {
+        return null;
+    }
 }
 
 // DOM Elements
@@ -1879,6 +2053,7 @@ function init() {
     // See the merge blocks after NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, and initializePicksStorage()
 
     setupTabs();
+    setupSeasonDropdown();
     setupWeekButtons();
     setupPickerButtons();
     setupPicksActions();
@@ -2003,6 +2178,488 @@ function setupWeekButtons() {
         const week = parseInt(e.target.value);
         setCurrentWeek(week);
     });
+}
+
+/**
+ * Setup season dropdown
+ */
+function setupSeasonDropdown() {
+    // Show/hide History tab based on available historical seasons
+    const historyTab = document.getElementById('history-tab');
+    const hasHistoricalSeasons = AVAILABLE_SEASONS.some(s => s !== CURRENT_SEASON);
+
+    if (historyTab) {
+        historyTab.style.display = hasHistoricalSeasons ? '' : 'none';
+    }
+
+    // Setup history section dropdowns
+    const historySeasonDropdown = document.getElementById('history-season-dropdown');
+    if (historySeasonDropdown && hasHistoricalSeasons) {
+        // Only show historical seasons (not current)
+        const historicalSeasons = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON);
+        let optionsHtml = '';
+        historicalSeasons.forEach(season => {
+            optionsHtml += `<option value="${season}">${season}</option>`;
+        });
+        historySeasonDropdown.innerHTML = optionsHtml;
+
+        historySeasonDropdown.addEventListener('change', async (e) => {
+            const season = parseInt(e.target.value);
+            await loadHistorySeason(season);
+        });
+    }
+
+    const historyWeekDropdown = document.getElementById('history-week-dropdown');
+    if (historyWeekDropdown) {
+        historyWeekDropdown.addEventListener('change', (e) => {
+            const week = parseInt(e.target.value);
+            renderHistoryWeek(week);
+            updateHistoryWeekDisplay(week);
+        });
+    }
+
+    // History picker dropdown
+    const historyPickerDropdown = document.getElementById('history-picker-dropdown');
+    if (historyPickerDropdown) {
+        historyPickerDropdown.addEventListener('change', () => {
+            const weekDropdown = document.getElementById('history-week-dropdown');
+            const week = weekDropdown ? parseInt(weekDropdown.value) : 1;
+            renderHistoryWeek(week);
+        });
+    }
+
+    // History week navigation buttons
+    const historyPrevWeekBtn = document.getElementById('history-prev-week-btn');
+    const historyNextWeekBtn = document.getElementById('history-next-week-btn');
+    if (historyPrevWeekBtn && historyWeekDropdown) {
+        historyPrevWeekBtn.addEventListener('click', () => {
+            const currentIdx = historyWeekDropdown.selectedIndex;
+            if (currentIdx > 0) {
+                historyWeekDropdown.selectedIndex = currentIdx - 1;
+                const week = parseInt(historyWeekDropdown.value);
+                renderHistoryWeek(week);
+                updateHistoryWeekDisplay(week);
+            }
+        });
+    }
+    if (historyNextWeekBtn && historyWeekDropdown) {
+        historyNextWeekBtn.addEventListener('click', () => {
+            const currentIdx = historyWeekDropdown.selectedIndex;
+            if (currentIdx < historyWeekDropdown.options.length - 1) {
+                historyWeekDropdown.selectedIndex = currentIdx + 1;
+                const week = parseInt(historyWeekDropdown.value);
+                renderHistoryWeek(week);
+                updateHistoryWeekDisplay(week);
+            }
+        });
+    }
+
+    // History picker navigation buttons
+    const historyPrevPickerBtn = document.getElementById('history-prev-picker-btn');
+    const historyNextPickerBtn = document.getElementById('history-next-picker-btn');
+    if (historyPrevPickerBtn && historyPickerDropdown) {
+        historyPrevPickerBtn.addEventListener('click', () => {
+            const currentIdx = historyPickerDropdown.selectedIndex;
+            if (currentIdx > 0) {
+                historyPickerDropdown.selectedIndex = currentIdx - 1;
+                const weekDropdown = document.getElementById('history-week-dropdown');
+                const week = weekDropdown ? parseInt(weekDropdown.value) : 1;
+                renderHistoryWeek(week);
+            }
+        });
+    }
+    if (historyNextPickerBtn && historyPickerDropdown) {
+        historyNextPickerBtn.addEventListener('click', () => {
+            const currentIdx = historyPickerDropdown.selectedIndex;
+            if (currentIdx < historyPickerDropdown.options.length - 1) {
+                historyPickerDropdown.selectedIndex = currentIdx + 1;
+                const weekDropdown = document.getElementById('history-week-dropdown');
+                const week = weekDropdown ? parseInt(weekDropdown.value) : 1;
+                renderHistoryWeek(week);
+            }
+        });
+    }
+}
+
+/**
+ * Update the history week display header
+ */
+function updateHistoryWeekDisplay(week) {
+    const weekDisplay = document.getElementById('history-week-display');
+    const seasonDisplay = document.getElementById('history-season-display');
+    const seasonDropdown = document.getElementById('history-season-dropdown');
+
+    if (weekDisplay) {
+        if (isPlayoffWeek(week)) {
+            weekDisplay.textContent = PLAYOFF_WEEKS[week].name;
+        } else {
+            weekDisplay.textContent = `Week ${week}`;
+        }
+    }
+    if (seasonDisplay && seasonDropdown) {
+        seasonDisplay.textContent = seasonDropdown.value;
+    }
+}
+
+/**
+ * Load and display a historical season
+ */
+async function loadHistorySeason(season) {
+    const data = await loadSeasonData(season);
+    if (!data) {
+        showToast(`Failed to load ${season} season data`, 'error');
+        return;
+    }
+
+    // Populate week dropdown
+    const weekDropdown = document.getElementById('history-week-dropdown');
+    if (weekDropdown && data.games) {
+        const weeks = Object.keys(data.games).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        let optionsHtml = '';
+
+        // Regular season weeks
+        const regularWeeks = weeks.filter(w => w <= TOTAL_WEEKS);
+        if (regularWeeks.length > 0) {
+            optionsHtml += '<optgroup label="Regular Season">';
+            regularWeeks.forEach(week => {
+                optionsHtml += `<option value="${week}">Week ${week}</option>`;
+            });
+            optionsHtml += '</optgroup>';
+        }
+
+        // Playoff weeks
+        const playoffWeeks = weeks.filter(w => w > TOTAL_WEEKS);
+        if (playoffWeeks.length > 0) {
+            optionsHtml += '<optgroup label="Playoffs">';
+            playoffWeeks.forEach(week => {
+                const name = PLAYOFF_WEEKS[week]?.name || `Week ${week}`;
+                optionsHtml += `<option value="${week}">${name}</option>`;
+            });
+            optionsHtml += '</optgroup>';
+        }
+
+        weekDropdown.innerHTML = optionsHtml;
+    }
+
+    // Render first week by default and update display
+    renderHistoryWeek(1);
+    updateHistoryWeekDisplay(1);
+}
+
+/**
+ * Render historical data for a specific week - matches Make Picks layout exactly
+ */
+function renderHistoryWeek(week) {
+    const content = document.getElementById('history-content');
+    if (!content) return;
+
+    const seasonDropdown = document.getElementById('history-season-dropdown');
+    const pickerDropdown = document.getElementById('history-picker-dropdown');
+    const season = seasonDropdown ? parseInt(seasonDropdown.value) : null;
+    const selectedPicker = pickerDropdown ? pickerDropdown.value : PICKERS[0];
+
+    if (!season || !seasonData[season]) {
+        content.innerHTML = '<p class="no-data-message">No historical data available.</p>';
+        return;
+    }
+
+    const data = seasonData[season];
+    const games = data.games[week] || data.games[String(week)] || [];
+    const results = data.results[week] || data.results[String(week)] || {};
+    const allPicks = data.picks[week] || data.picks[String(week)] || {};
+    const pickerPicks = allPicks[selectedPicker] || {};
+
+    if (games.length === 0) {
+        content.innerHTML = '<p class="no-data-message">No games data for this week.</p>';
+        return;
+    }
+
+    // Render game cards matching the Make Picks layout exactly
+    content.innerHTML = games.map(game => {
+        const gameIdStr = String(game.id);
+        const gamePick = pickerPicks[game.id] || pickerPicks[gameIdStr] || {};
+        const linePick = gamePick.line;
+        const winnerPick = gamePick.winner;
+        const isBlazin = gamePick.blazin || false;
+
+        const result = results[game.id] || results[gameIdStr];
+        const gameComplete = !!result;
+
+        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
+        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+        const awaySpreadDisplay = awaySpread > 0 ? `+${awaySpread}` : awaySpread;
+        const homeSpreadDisplay = homeSpread > 0 ? `+${homeSpread}` : homeSpread;
+
+        // Calculate pick results
+        let lineAwayResult = '', lineHomeResult = '', winnerAwayResult = '', winnerHomeResult = '';
+        if (gameComplete && result) {
+            const atsWinner = calculateATSWinner(game, result);
+            // Line pick results
+            if (linePick === 'away') {
+                lineAwayResult = atsWinner === 'push' ? 'push' : (atsWinner === 'away' ? 'correct' : 'incorrect');
+            }
+            if (linePick === 'home') {
+                lineHomeResult = atsWinner === 'push' ? 'push' : (atsWinner === 'home' ? 'correct' : 'incorrect');
+            }
+            // Winner pick results
+            if (winnerPick === 'away') {
+                winnerAwayResult = result.winner === 'away' ? 'correct' : 'incorrect';
+            }
+            if (winnerPick === 'home') {
+                winnerHomeResult = result.winner === 'home' ? 'correct' : 'incorrect';
+            }
+        }
+
+        // Build final score display
+        let gameStatusDisplay = '';
+        if (gameComplete && result) {
+            const awayWon = result.awayScore > result.homeScore;
+            const homeWon = result.homeScore > result.awayScore;
+            gameStatusDisplay = `
+                <div class="game-final-score">
+                    <span class="final-score-team ${awayWon ? 'winner' : ''}">
+                        <span class="final-team-name">${game.away}</span>
+                        <span class="final-team-score">${result.awayScore}</span>
+                    </span>
+                    <span class="final-score-divider">-</span>
+                    <span class="final-score-team ${homeWon ? 'winner' : ''}">
+                        <span class="final-team-score">${result.homeScore}</span>
+                        <span class="final-team-name">${game.home}</span>
+                    </span>
+                </div>`;
+        }
+
+        const cardClasses = [
+            'game-card',
+            (linePick && winnerPick) ? 'has-pick' : ((linePick || winnerPick) ? 'has-partial-pick' : ''),
+            'game-locked',
+            gameComplete ? 'game-final' : ''
+        ].filter(Boolean).join(' ');
+
+        // Status badge
+        const statusBadge = gameComplete
+            ? '<span class="status-badge final">FINAL</span>'
+            : '<span class="locked-badge">LOCKED</span>';
+
+        return `
+            <div class="${cardClasses}" data-game-id="${game.id}">
+                <div class="game-header">
+                    <span class="game-time">${game.time || ''}</span>
+                    ${statusBadge}
+                    <span class="game-day">${game.day || ''}</span>
+                </div>
+                ${gameStatusDisplay}
+
+                <div class="game-matchup-line">
+                    <span class="away-team">
+                        <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo" onerror="handleLogoError(this, '${game.away}')">
+                        ${game.away} (${awaySpreadDisplay})
+                    </span>
+                    <span class="at-symbol">@</span>
+                    <span class="home-team">
+                        <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo" onerror="handleLogoError(this, '${game.home}')">
+                        ${game.home} (${homeSpreadDisplay})
+                    </span>
+                </div>
+
+                <div class="picks-row">
+                    <div class="pick-type">
+                        <span class="pick-label">Line Pick (ATS)</span>
+                        <div class="pick-options">
+                            <button class="pick-btn ${linePick === 'away' ? 'selected' : ''} ${lineAwayResult}" disabled>
+                                ${game.away} ${awaySpreadDisplay}
+                            </button>
+                            <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}" disabled>
+                                ${game.home} ${homeSpreadDisplay}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pick-type">
+                        <span class="pick-label">Straight Up (Winner)</span>
+                        <div class="pick-options">
+                            <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''} ${winnerAwayResult}" disabled>
+                                ${game.away}
+                            </button>
+                            <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''} ${winnerHomeResult}" disabled>
+                                ${game.home}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="game-footer">
+                    <div class="game-location">
+                        <span class="location-city">${game.location || ''}</span>
+                        <span class="location-stadium">${game.stadium || ''}</span>
+                    </div>
+                    <button class="blazin-star ${isBlazin ? 'active' : ''}" disabled title="${isBlazin ? 'Blazin\' 5 Pick' : ''}">
+                        <span class="blazin-label">B5</span>${isBlazin ? '★' : '☆'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Set current season and reload data
+ * @param {number} season - Season year to switch to
+ */
+async function setCurrentSeason(season) {
+    if (season === currentSeason) return;
+
+    const previousSeason = currentSeason;
+    currentSeason = season;
+
+    // Update season display in header
+    const seasonDisplay = document.getElementById('season-display');
+    if (seasonDisplay) {
+        seasonDisplay.textContent = season;
+    }
+
+    // Update dropdown selection
+    const seasonDropdown = document.getElementById('season-dropdown');
+    if (seasonDropdown) {
+        seasonDropdown.value = season;
+    }
+
+    // Load season data (lazy loading for historical seasons)
+    if (isHistoricalSeason()) {
+        const data = await loadSeasonData(season);
+        if (!data) {
+            // Failed to load - revert
+            currentSeason = previousSeason;
+            if (seasonDropdown) seasonDropdown.value = previousSeason;
+            if (seasonDisplay) seasonDisplay.textContent = previousSeason;
+            return;
+        }
+    }
+
+    // Update week to appropriate default
+    if (isHistoricalSeason()) {
+        // Historical season: start at week 1 (or keep current if valid)
+        const maxWeek = getMaxWeekForSeason(season);
+        if (currentWeek > maxWeek) {
+            currentWeek = 1;
+        }
+    } else {
+        // Current season: go to current NFL week
+        currentWeek = CURRENT_NFL_WEEK;
+    }
+
+    // Rebuild week dropdown for the season
+    setupWeekButtonsForSeason(season);
+
+    // Update read-only state
+    updateSeasonReadOnlyState();
+
+    // Refresh the UI
+    updateWeekUI();
+
+    // Re-render dashboard if on standings tab
+    if (currentCategory === 'standings') {
+        renderDashboard();
+    }
+
+    console.log(`Switched to ${season} season`);
+}
+
+/**
+ * Setup week buttons for a specific season
+ * @param {number} season - Season year
+ */
+function setupWeekButtonsForSeason(season) {
+    const weekDropdown = document.getElementById('week-dropdown');
+    if (!weekDropdown) return;
+
+    let optionsHtml = '';
+
+    if (isHistoricalSeason()) {
+        // Historical season: show all weeks with data
+        const maxWeek = getMaxWeekForSeason(season);
+
+        // Playoffs section
+        if (maxWeek >= FIRST_PLAYOFF_WEEK) {
+            optionsHtml += '<optgroup label="Playoffs">';
+            for (let week = Math.min(maxWeek, LAST_PLAYOFF_WEEK); week >= FIRST_PLAYOFF_WEEK; week--) {
+                const games = getGamesForWeekAndSeason(week, season);
+                if (games.length > 0) {
+                    const selected = week === currentWeek ? 'selected' : '';
+                    optionsHtml += `<option value="${week}" ${selected}>${PLAYOFF_WEEKS[week].name}</option>`;
+                }
+            }
+            optionsHtml += '</optgroup>';
+        }
+
+        // Regular Season section
+        optionsHtml += '<optgroup label="Regular Season">';
+        for (let week = TOTAL_WEEKS; week >= 1; week--) {
+            const games = getGamesForWeekAndSeason(week, season);
+            if (games.length > 0) {
+                const selected = week === currentWeek ? 'selected' : '';
+                optionsHtml += `<option value="${week}" ${selected}>Week ${week}</option>`;
+            }
+        }
+        optionsHtml += '</optgroup>';
+    } else {
+        // Current season: use existing logic
+        const effectiveWeek = typeof getMaxNavigableWeek === 'function'
+            ? getMaxNavigableWeek()
+            : Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
+
+        // Playoffs section (if we're in or past playoffs)
+        if (effectiveWeek >= FIRST_PLAYOFF_WEEK) {
+            optionsHtml += '<optgroup label="Playoffs">';
+            for (let week = effectiveWeek; week >= FIRST_PLAYOFF_WEEK; week--) {
+                const selected = week === currentWeek ? 'selected' : '';
+                optionsHtml += `<option value="${week}" ${selected}>${PLAYOFF_WEEKS[week].name}</option>`;
+            }
+            optionsHtml += '</optgroup>';
+        }
+
+        // Regular Season section
+        optionsHtml += '<optgroup label="Regular Season">';
+        const maxRegularWeek = Math.min(effectiveWeek, TOTAL_WEEKS);
+        for (let week = maxRegularWeek; week >= 1; week--) {
+            const selected = week === currentWeek ? 'selected' : '';
+            optionsHtml += `<option value="${week}" ${selected}>Week ${week}</option>`;
+        }
+        optionsHtml += '</optgroup>';
+    }
+
+    weekDropdown.innerHTML = optionsHtml;
+}
+
+/**
+ * Update the read-only state based on current season
+ */
+function updateSeasonReadOnlyState() {
+    const makePicksSection = document.getElementById('make-picks-section');
+    const historicalBanner = document.getElementById('historical-season-banner');
+    const bannerSeasonYear = document.getElementById('banner-season-year');
+
+    if (isHistoricalSeason()) {
+        // Add read-only class
+        if (makePicksSection) {
+            makePicksSection.classList.add('season-readonly');
+        }
+        // Show historical banner
+        if (historicalBanner) {
+            historicalBanner.classList.remove('hidden');
+        }
+        if (bannerSeasonYear) {
+            bannerSeasonYear.textContent = currentSeason;
+        }
+    } else {
+        // Remove read-only class
+        if (makePicksSection) {
+            makePicksSection.classList.remove('season-readonly');
+        }
+        // Hide historical banner
+        if (historicalBanner) {
+            historicalBanner.classList.add('hidden');
+        }
+    }
 }
 
 /**
@@ -2457,6 +3114,12 @@ function closeDropdown() {
  * Pick all favorites for the current picker
  */
 function pickAllFavorites() {
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
+
     if (!currentPicker) {
         showToast('Please select a picker first', 'warning');
         return;
@@ -2502,6 +3165,12 @@ function pickAllFavorites() {
  * Pick all underdogs for the current picker
  */
 function pickAllUnderdogs() {
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
+
     if (!currentPicker) {
         showToast('Please select a picker first', 'warning');
         return;
@@ -2772,6 +3441,7 @@ async function setActiveCategory(category) {
     const performanceInsightsSection = document.getElementById('performance-insights-section');
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
     const vsMarketSection = document.getElementById('vs-market-section');
+    const historySection = document.getElementById('history-section');
 
     if (category === 'make-picks') {
         // Destroy chart instances to prevent memory leaks
@@ -2785,6 +3455,7 @@ async function setActiveCategory(category) {
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
         vsMarketSection?.classList.add('hidden');
+        historySection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -2800,6 +3471,7 @@ async function setActiveCategory(category) {
         performanceInsightsSection?.classList.remove('hidden');
         recordsAnalysisSection?.classList.remove('hidden');
         vsMarketSection?.classList.add('hidden');
+        historySection?.classList.add('hidden');
         makePicksSection?.classList.add('hidden');
 
         renderDashboard();
@@ -2818,10 +3490,34 @@ async function setActiveCategory(category) {
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
         makePicksSection?.classList.add('hidden');
+        historySection?.classList.add('hidden');
         vsMarketSection?.classList.remove('hidden');
 
         // Render the vs market section
         renderVsMarketSection();
+    } else if (category === 'history') {
+        // Stop live scores refresh when leaving picks tab
+        stopLiveScoresRefresh();
+
+        // Destroy chart instances to prevent memory leaks
+        if (typeof destroyAllCharts === 'function') {
+            destroyAllCharts();
+        }
+
+        // Hide other sections
+        standingsSubtabs?.classList.add('hidden');
+        leaderboard.classList.add('hidden');
+        performanceInsightsSection?.classList.add('hidden');
+        recordsAnalysisSection?.classList.add('hidden');
+        makePicksSection?.classList.add('hidden');
+        vsMarketSection?.classList.add('hidden');
+        historySection?.classList.remove('hidden');
+
+        // Load the first historical season
+        const historicalSeasons = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON);
+        if (historicalSeasons.length > 0) {
+            loadHistorySeason(historicalSeasons[0]);
+        }
     }
 }
 
@@ -2871,10 +3567,11 @@ function calculatePlayoffStats() {
     // Loop through playoff weeks (19-22)
     for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
         const weekStr = String(week);
-        const weekGames = getGamesForWeek(week);
-        const weekResults = getResultsForWeek(week);
-        // Try both string and number keys for allPicks (historical data uses string keys)
-        const weekPicks = allPicks[week] || allPicks[weekStr] || {};
+        const weekGames = getGamesForWeekAndSeason(week, currentSeason);
+        const weekResults = getResultsForWeekAndSeason(week, currentSeason);
+        // Get picks from season-aware helper
+        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason);
+        const weekPicks = seasonPicks || {};
         const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
 
         if (!weekGames || weekGames.length === 0) continue;
@@ -3100,12 +3797,16 @@ function renderDashboard() {
 function calculateTeamPickRecords(picker) {
     const teamRecords = {};
 
+    // Use season-aware max week
+    const maxWeek = isHistoricalSeason() ? getMaxWeekForSeason(currentSeason) : CURRENT_NFL_WEEK;
+
     // Loop through all weeks with results
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const games = NFL_GAMES_BY_WEEK[week];
-        const results = NFL_RESULTS_BY_WEEK[week];
-        // Get picks from both allPicks AND weeklyPicksCache (Google Sheets data)
-        const pickerPicks = allPicks[week]?.[picker] || {};
+    for (let week = 1; week <= maxWeek; week++) {
+        const games = getGamesForWeekAndSeason(week, currentSeason);
+        const results = getResultsForWeekAndSeason(week, currentSeason);
+        const weekPicks = getPicksForWeekAndSeason(week, currentSeason);
+        // Get picks from both season data AND weeklyPicksCache (Google Sheets data)
+        const pickerPicks = weekPicks[picker] || {};
         const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
 
         if (!games || !results) continue;
@@ -3357,17 +4058,21 @@ function calculateWorstBlazinWeeks() {
     const worstWeeks = {};
     const pickers = PICKERS_WITH_COWHERD;
 
+    // Use season-aware max week
+    const maxWeek = isHistoricalSeason() ? getMaxWeekForSeason(currentSeason) : CURRENT_NFL_WEEK;
+
     pickers.forEach(picker => {
         const weeklyRecords = {};
 
         // Calculate record for each week
-        for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-            const games = NFL_GAMES_BY_WEEK[week];
-            const results = NFL_RESULTS_BY_WEEK[week];
-            const pickerPicks = allPicks[week]?.[picker] || {};
+        for (let week = 1; week <= maxWeek; week++) {
+            const games = getGamesForWeekAndSeason(week, currentSeason);
+            const results = getResultsForWeekAndSeason(week, currentSeason);
+            const weekPicks = getPicksForWeekAndSeason(week, currentSeason);
+            const pickerPicks = weekPicks[picker] || {};
             const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
 
-            if (!games || !results) continue;
+            if (!games || games.length === 0 || !results) continue;
 
             let wins = 0, losses = 0, pushes = 0;
 
@@ -3423,14 +4128,18 @@ function calculateWorstBlazinWeeks() {
 function calculateBlazinTeamPickRecords(picker) {
     const teamRecords = {};
 
+    // Use season-aware max week
+    const maxWeek = isHistoricalSeason() ? getMaxWeekForSeason(currentSeason) : CURRENT_NFL_WEEK;
+
     // Loop through all weeks with results
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const games = NFL_GAMES_BY_WEEK[week];
-        const results = NFL_RESULTS_BY_WEEK[week];
-        const pickerPicks = allPicks[week]?.[picker] || {};
+    for (let week = 1; week <= maxWeek; week++) {
+        const games = getGamesForWeekAndSeason(week, currentSeason);
+        const results = getResultsForWeekAndSeason(week, currentSeason);
+        const weekPicks = getPicksForWeekAndSeason(week, currentSeason);
+        const pickerPicks = weekPicks[picker] || {};
         const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
 
-        if (!games || !results) continue;
+        if (!games || games.length === 0 || !results) continue;
 
         games.forEach(game => {
             const gameId = game.id;
@@ -3607,14 +4316,18 @@ function setupBlazinTeamRecordsDropdown() {
 function calculateBlazinSpreadRecords(picker) {
     const spreadRecords = {};
 
+    // Use season-aware max week
+    const maxWeek = isHistoricalSeason() ? getMaxWeekForSeason(currentSeason) : CURRENT_NFL_WEEK;
+
     // Loop through all weeks with results
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const games = NFL_GAMES_BY_WEEK[week];
-        const results = NFL_RESULTS_BY_WEEK[week];
-        const pickerPicks = allPicks[week]?.[picker] || {};
+    for (let week = 1; week <= maxWeek; week++) {
+        const games = getGamesForWeekAndSeason(week, currentSeason);
+        const results = getResultsForWeekAndSeason(week, currentSeason);
+        const weekPicks = getPicksForWeekAndSeason(week, currentSeason);
+        const pickerPicks = weekPicks[picker] || {};
         const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
 
-        if (!games || !results) continue;
+        if (!games || games.length === 0 || !results) continue;
 
         games.forEach(game => {
             const gameId = game.id;
@@ -3796,12 +4509,15 @@ function calculateLoneWolfPicksWithDetails() {
         };
     });
 
-    // Loop through all weeks
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const games = NFL_GAMES_BY_WEEK[week];
-        const results = NFL_RESULTS_BY_WEEK[week];
+    // Use season-aware max week
+    const maxWeek = isHistoricalSeason() ? getMaxWeekForSeason(currentSeason) : CURRENT_NFL_WEEK;
 
-        if (!games || !results) continue;
+    // Loop through all weeks
+    for (let week = 1; week <= maxWeek; week++) {
+        const games = getGamesForWeekAndSeason(week, currentSeason);
+        const results = getResultsForWeekAndSeason(week, currentSeason);
+
+        if (!games || games.length === 0 || !results) continue;
 
         games.forEach(game => {
             const gameId = game.id;
@@ -3810,9 +4526,10 @@ function calculateLoneWolfPicksWithDetails() {
 
             // Collect all picks for this game
             const picksByChoice = { away: [], home: [] };
+            const weekPicks = getPicksForWeekAndSeason(week, currentSeason);
 
             PICKERS.forEach(picker => {
-                const pickerPicks = allPicks[week]?.[picker] || {};
+                const pickerPicks = weekPicks[picker] || {};
                 const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
                 const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
                            cachedPicks[gameId] || cachedPicks[String(gameId)];
@@ -4916,8 +5633,9 @@ function calculatePlayoffAgreement(picker1, picker2, pickType = 'all') {
 
     for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
         const weekStr = String(week);
-        const weekGames = getGamesForWeek(week);
-        const weekPicks = allPicks[week] || allPicks[weekStr] || {};
+        const weekGames = getGamesForWeekAndSeason(week, currentSeason);
+        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason);
+        const weekPicks = seasonPicks || {};
         const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
 
         if (!weekGames || weekGames.length === 0) continue;
@@ -5384,15 +6102,17 @@ function renderGames() {
     const gamesList = document.getElementById('games-list');
     if (!gamesList) return;
 
-    let weekGames = getGamesForWeek(currentWeek);
+    let weekGames = getGamesForWeekAndSeason(currentWeek, currentSeason);
     const weekStr = String(currentWeek);
-    // Merge picks from both allPicks and weeklyPicksCache (Google Sheets data)
-    // Try both number and string keys for compatibility with historical data
-    const weekPicks = allPicks[currentWeek] || allPicks[weekStr] || {};
+    // Get picks from season-aware helper
+    const seasonPicks = getPicksForWeekAndSeason(currentWeek, currentSeason);
+    // Merge picks from both season data and weeklyPicksCache (Google Sheets data for current season)
+    const weekPicks = seasonPicks || {};
     const localPicks = weekPicks[currentPicker] || {};
     const cachedPicks = weeklyPicksCache[currentWeek]?.picks?.[currentPicker] || weeklyPicksCache[weekStr]?.picks?.[currentPicker] || {};
     const pickerPicks = { ...cachedPicks, ...localPicks }; // Local picks override cached
-    const isHistoricalWeek = currentWeek < CURRENT_NFL_WEEK;
+    // For historical seasons, all weeks are historical; for current season, check against CURRENT_NFL_WEEK
+    const isHistoricalWeek = isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK;
 
     // Apply filter
     if (currentGameFilter !== 'all') {
@@ -5785,6 +6505,12 @@ function handlePickSelect(e) {
     e.preventDefault();
     e.stopPropagation();
 
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
+
     // Require a picker to be selected before making picks
     if (!currentPicker) {
         showToast('Please select a picker first', 'warning');
@@ -5956,6 +6682,12 @@ function handleOUSelect(e) {
     e.preventDefault();
     e.stopPropagation();
 
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
+
     const btn = e.currentTarget;
     const gameId = btn.dataset.gameId;
     const value = btn.dataset.value; // 'over' or 'under'
@@ -6019,6 +6751,12 @@ function handleOUSelect(e) {
 function handleBlazinToggle(e) {
     e.preventDefault();
     e.stopPropagation();
+
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
 
     // Require a picker to be selected before making picks
     if (!currentPicker) {
@@ -6543,9 +7281,10 @@ function renderScoringSummary() {
     const scoringTable = document.getElementById('scoring-table');
     if (!scoringTable) return;
 
-    const weekGames = getGamesForWeek(currentWeek);
-    const weekResults = getResultsForWeek(currentWeek);
-    const weekPicks = allPicks[currentWeek] || {};
+    const weekGames = getGamesForWeekAndSeason(currentWeek, currentSeason);
+    const weekResults = getResultsForWeekAndSeason(currentWeek, currentSeason);
+    const seasonPicks = getPicksForWeekAndSeason(currentWeek, currentSeason);
+    const weekPicks = seasonPicks || {};
     const cachedWeek = weeklyPicksCache[currentWeek];
 
     // Update the summary header
@@ -6696,6 +7435,12 @@ function renderScoringSummary() {
  * Clear current picker's picks for the current week (only unlocked games)
  */
 function clearCurrentPickerPicks() {
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
+
     if (!currentPicker) {
         showToast('Please select a picker first', 'warning');
         return;
@@ -7093,6 +7838,12 @@ function showUndoToast(message, undoCallback, duration = 5000) {
  * Rule: If picking the favorite on the line, also pick them to win straight up
  */
 function randomizePicks() {
+    // Block edits for historical seasons
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return;
+    }
+
     if (!currentPicker) {
         showToast('Please select a picker first', 'warning');
         return;
@@ -9928,6 +10679,123 @@ const HISTORICAL_PICKS = ${JSON.stringify(output.picks, null, 4)};
         }).catch(err => {
             console.log('Could not copy to clipboard:', err);
         });
+    }
+
+    return output;
+};
+
+/**
+ * Export 2024 season data from the 2024 Google Sheet
+ * Run this in the browser console: await export2024SeasonData()
+ */
+window.export2024SeasonData = async function() {
+    const SHEET_2024_ID = '129rK45ReRLEbOpFvhFJ1gWLKlXnbbbe29hi53O7EGoQ';
+
+    // GIDs for each week tab in the 2024 sheet
+    const WEEK_GIDS_2024 = {
+        1: '1734615654',
+        2: '1689030244',
+        3: '1682701664',
+        4: '64532151',
+        5: '1746053715',
+        6: '198483855',
+        7: '1162901378',
+        8: '2082913151',
+        9: '1101281524',
+        10: '238951705',
+        11: '323147745',
+        12: '1165295828',
+        13: '1809558420',
+        14: '1764593710',
+        15: '1886857596',
+        16: '1562551321',
+        17: '235789853',
+        18: '2065335001',
+        playoffs: '1441027737'
+    };
+
+    const output = {
+        games: {},
+        results: {},
+        picks: {}
+    };
+
+    console.log('=== Exporting 2024 Season Data ===');
+
+    // Fetch each regular season week
+    for (let week = 1; week <= 18; week++) {
+        const gid = WEEK_GIDS_2024[week];
+        console.log(`Fetching week ${week}...`);
+
+        try {
+            const url = `https://docs.google.com/spreadsheets/d/${SHEET_2024_ID}/export?format=csv&gid=${gid}`;
+            const response = await fetch(`${WORKER_PROXY_URL}/sheets?url=${encodeURIComponent(url)}`);
+
+            if (!response.ok) {
+                console.warn(`Failed to fetch week ${week}: ${response.status}`);
+                continue;
+            }
+
+            const csvText = await response.text();
+            const weekData = parseWeeklyPicksCSV(csvText, week);
+
+            if (weekData) {
+                output.games[week] = weekData.games || [];
+                output.results[week] = weekData.results || {};
+                output.picks[week] = weekData.picks || {};
+                console.log(`  Week ${week}: ${weekData.games?.length || 0} games`);
+            }
+        } catch (err) {
+            console.error(`Error fetching week ${week}:`, err);
+        }
+    }
+
+    // Fetch playoffs (single tab with all playoff games)
+    console.log('Fetching playoffs...');
+    try {
+        const playoffsGid = WEEK_GIDS_2024.playoffs;
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_2024_ID}/export?format=csv&gid=${playoffsGid}`;
+        const response = await fetch(`${WORKER_PROXY_URL}/sheets?url=${encodeURIComponent(url)}`);
+
+        if (response.ok) {
+            const csvText = await response.text();
+            // Log the raw CSV so we can see the playoff format
+            console.log('Playoff CSV preview (first 2000 chars):');
+            console.log(csvText.substring(0, 2000));
+            console.log('');
+            console.log('Playoff data will need manual parsing - see CSV above');
+        }
+    } catch (err) {
+        console.error('Error fetching playoffs:', err);
+    }
+
+    // Generate the JavaScript file content
+    const jsCode = `// Historical NFL Picks Data - 2024 Season
+// Auto-generated on ${new Date().toISOString().split('T')[0]}
+
+const SEASON_2024_DATA = {
+    games: ${JSON.stringify(output.games, null, 4)},
+    results: ${JSON.stringify(output.results, null, 4)},
+    picks: ${JSON.stringify(output.picks, null, 4)}
+};
+
+window.SEASON_2024_DATA = SEASON_2024_DATA;
+`;
+
+    console.log('');
+    console.log('=== COPY EVERYTHING BELOW THIS LINE ===');
+    console.log(jsCode);
+    console.log('=== COPY EVERYTHING ABOVE THIS LINE ===');
+
+    // Copy to clipboard
+    if (navigator.clipboard) {
+        try {
+            await navigator.clipboard.writeText(jsCode);
+            console.log('');
+            console.log('Code copied to clipboard! Save it as historical-2024.js');
+        } catch (err) {
+            console.log('Could not copy to clipboard:', err);
+        }
     }
 
     return output;
