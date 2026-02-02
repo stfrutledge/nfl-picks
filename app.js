@@ -2593,14 +2593,14 @@ function renderHistoryStandingsTable(season) {
         });
     });
 
-    // Sort by ATS wins descending, then by ATS percentage
+    // Sort by Blazin' 5 percentage descending, then by Blazin' wins
     const sorted = Object.values(pickerStats).sort((a, b) => {
-        const aLineTotal = a.lineWins + a.lineLosses;
-        const bLineTotal = b.lineWins + b.lineLosses;
-        const aLinePct = aLineTotal > 0 ? a.lineWins / aLineTotal : 0;
-        const bLinePct = bLineTotal > 0 ? b.lineWins / bLineTotal : 0;
-        if (b.lineWins !== a.lineWins) return b.lineWins - a.lineWins;
-        return bLinePct - aLinePct;
+        const aBlazinTotal = a.blazinWins + a.blazinLosses;
+        const bBlazinTotal = b.blazinWins + b.blazinLosses;
+        const aBlazinPct = aBlazinTotal > 0 ? a.blazinWins / aBlazinTotal : 0;
+        const bBlazinPct = bBlazinTotal > 0 ? b.blazinWins / bBlazinTotal : 0;
+        if (bBlazinPct !== aBlazinPct) return bBlazinPct - aBlazinPct;
+        return b.blazinWins - a.blazinWins;
     });
 
     tbody.innerHTML = sorted.map((stats, index) => {
@@ -2653,6 +2653,15 @@ function renderHistoryStandingsTable(season) {
     if (table && !table._sortInitialized) {
         setupHistoryTableSorting(table);
         table._sortInitialized = true;
+    }
+
+    // Mark Blazin' 5 % column (index 4) as default sorted
+    if (table) {
+        const headers = table.querySelectorAll('thead th');
+        headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        if (headers[4]) {
+            headers[4].classList.add('sort-desc');
+        }
     }
 }
 
