@@ -2286,8 +2286,6 @@ function setupSeasonDropdown() {
  */
 function updateHistoryWeekDisplay(week) {
     const weekDisplay = document.getElementById('history-week-display');
-    const seasonDisplay = document.getElementById('history-season-display');
-    const seasonDropdown = document.getElementById('history-season-dropdown');
 
     if (weekDisplay) {
         if (isPlayoffWeek(week)) {
@@ -2295,9 +2293,6 @@ function updateHistoryWeekDisplay(week) {
         } else {
             weekDisplay.textContent = `Week ${week}`;
         }
-    }
-    if (seasonDisplay && seasonDropdown) {
-        seasonDisplay.textContent = seasonDropdown.value;
     }
 }
 

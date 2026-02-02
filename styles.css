@@ -4159,6 +4159,24 @@ footer a:hover {
     }
 }
 
+/* ===== HISTORY SECTION ===== */
+.history-season-row {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 16px;
+}
+
+.history-season-row .season-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.history-season-row .season-selector label {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
 /* ===== HISTORY STANDINGS SECTION ===== */
 .history-standings-section {
     margin: 0 0 24px;

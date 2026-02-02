@@ -543,38 +543,8 @@
 
             <!-- History Section (for viewing past seasons) -->
             <section id="history-section" class="history-section hidden">
-                <div class="picks-header">
-                    <h2><span id="history-week-display">Week 1</span> - <span id="history-season-display">2024</span></h2>
-                </div>
-
-                <!-- Selection Row - matches Make Picks layout -->
-                <div class="selection-row">
-                    <div class="week-selector">
-                        <label for="history-week-dropdown">Select Week:</label>
-                        <div class="week-nav-row">
-                            <button class="week-nav-btn" id="history-prev-week-btn" title="Previous Week" aria-label="Go to previous week">&#8592;</button>
-                            <select id="history-week-dropdown" class="week-dropdown">
-                                <!-- Options populated by JavaScript -->
-                            </select>
-                            <button class="week-nav-btn" id="history-next-week-btn" title="Next Week" aria-label="Go to next week">&#8594;</button>
-                        </div>
-                    </div>
-
-                    <div class="picker-selector">
-                        <label for="history-picker-dropdown">Picks for:</label>
-                        <div class="picker-nav-row">
-                            <button class="picker-nav-btn" id="history-prev-picker-btn" title="Previous Picker" aria-label="Go to previous picker">&#8592;</button>
-                            <select id="history-picker-dropdown" class="picker-dropdown">
-                                <option value="Daniel">Daniel</option>
-                                <option value="Dylan">Dylan</option>
-                                <option value="Jason">Jason</option>
-                                <option value="Sean">Sean</option>
-                                <option value="Stephen">Stephen</option>
-                            </select>
-                            <button class="picker-nav-btn" id="history-next-picker-btn" title="Next Picker" aria-label="Go to next picker">&#8594;</button>
-                        </div>
-                    </div>
-
+                <!-- Season Selector (above standings) -->
+                <div class="history-season-row">
                     <div class="season-selector">
                         <label for="history-season-dropdown">Season:</label>
                         <select id="history-season-dropdown" class="season-dropdown">
@@ -607,6 +577,39 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- Week/Picker Selection Row (below standings) -->
+                <div class="picks-header">
+                    <h2><span id="history-week-display">Week 1</span> Picks</h2>
+                </div>
+
+                <div class="selection-row">
+                    <div class="week-selector">
+                        <label for="history-week-dropdown">Select Week:</label>
+                        <div class="week-nav-row">
+                            <button class="week-nav-btn" id="history-prev-week-btn" title="Previous Week" aria-label="Go to previous week">&#8592;</button>
+                            <select id="history-week-dropdown" class="week-dropdown">
+                                <!-- Options populated by JavaScript -->
+                            </select>
+                            <button class="week-nav-btn" id="history-next-week-btn" title="Next Week" aria-label="Go to next week">&#8594;</button>
+                        </div>
+                    </div>
+
+                    <div class="picker-selector">
+                        <label for="history-picker-dropdown">Picks for:</label>
+                        <div class="picker-nav-row">
+                            <button class="picker-nav-btn" id="history-prev-picker-btn" title="Previous Picker" aria-label="Go to previous picker">&#8592;</button>
+                            <select id="history-picker-dropdown" class="picker-dropdown">
+                                <option value="Daniel">Daniel</option>
+                                <option value="Dylan">Dylan</option>
+                                <option value="Jason">Jason</option>
+                                <option value="Sean">Sean</option>
+                                <option value="Stephen">Stephen</option>
+                            </select>
+                            <button class="picker-nav-btn" id="history-next-picker-btn" title="Next Picker" aria-label="Go to next picker">&#8594;</button>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Games List -->
                 <div class="games-list" id="history-content">
