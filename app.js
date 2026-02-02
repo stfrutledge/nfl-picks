@@ -2344,6 +2344,9 @@ async function loadHistorySeason(season) {
     // Render first week by default and update display
     renderHistoryWeek(1);
     updateHistoryWeekDisplay(1);
+
+    // Render season standings table
+    renderHistoryStandingsTable(season);
 }
 
 /**
@@ -2499,6 +2502,208 @@ function renderHistoryWeek(week) {
             </div>
         `;
     }).join('');
+}
+
+/**
+ * Render history standings table showing season totals
+ */
+function renderHistoryStandingsTable(season) {
+    const tbody = document.getElementById('history-standings-table-body');
+    const titleSpan = document.getElementById('history-standings-title');
+    if (!tbody) return;
+
+    if (titleSpan) {
+        titleSpan.textContent = season;
+    }
+
+    if (!seasonData[season]) {
+        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No data available</td></tr>';
+        return;
+    }
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    // Calculate stats for each picker
+    const pickerStats = {};
+    PICKERS.forEach(picker => {
+        pickerStats[picker] = {
+            name: picker,
+            lineWins: 0, lineLosses: 0, linePushes: 0,
+            suWins: 0, suLosses: 0,
+            blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
+            totalWins: 0, totalLosses: 0, totalPushes: 0
+        };
+    });
+
+    // Iterate through all weeks
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+
+        weekGames.forEach(game => {
+            const gameResult = weekResults[game.id] || weekResults[String(game.id)];
+            if (!gameResult) return; // Skip games without results
+
+            // Calculate ATS winner
+            const atsWinner = calculateATSWinner(game, gameResult);
+
+            PICKERS.forEach(picker => {
+                const pickerWeekPicks = weekPicks[picker] || {};
+                const gamePick = pickerWeekPicks[game.id] || pickerWeekPicks[String(game.id)] || {};
+                const stats = pickerStats[picker];
+
+                // Line pick (ATS)
+                if (gamePick.line) {
+                    if (atsWinner === 'push') {
+                        stats.linePushes++;
+                        stats.totalPushes++;
+                    } else if (atsWinner === gamePick.line) {
+                        stats.lineWins++;
+                        stats.totalWins++;
+                    } else {
+                        stats.lineLosses++;
+                        stats.totalLosses++;
+                    }
+
+                    // Blazin' 5 tracking
+                    if (gamePick.blazin) {
+                        if (atsWinner === 'push') {
+                            stats.blazinPushes++;
+                        } else if (atsWinner === gamePick.line) {
+                            stats.blazinWins++;
+                        } else {
+                            stats.blazinLosses++;
+                        }
+                    }
+                }
+
+                // Winner pick (Straight Up)
+                if (gamePick.winner) {
+                    if (gameResult.winner === gamePick.winner) {
+                        stats.suWins++;
+                        stats.totalWins++;
+                    } else {
+                        stats.suLosses++;
+                        stats.totalLosses++;
+                    }
+                }
+            });
+        });
+    });
+
+    // Sort by ATS wins descending, then by ATS percentage
+    const sorted = Object.values(pickerStats).sort((a, b) => {
+        const aLineTotal = a.lineWins + a.lineLosses;
+        const bLineTotal = b.lineWins + b.lineLosses;
+        const aLinePct = aLineTotal > 0 ? a.lineWins / aLineTotal : 0;
+        const bLinePct = bLineTotal > 0 ? b.lineWins / bLineTotal : 0;
+        if (b.lineWins !== a.lineWins) return b.lineWins - a.lineWins;
+        return bLinePct - aLinePct;
+    });
+
+    tbody.innerHTML = sorted.map((stats, index) => {
+        const lineRecord = `${stats.lineWins}-${stats.lineLosses}${stats.linePushes > 0 ? `-${stats.linePushes}` : ''}`;
+        const suRecord = `${stats.suWins}-${stats.suLosses}`;
+        const blazinRecord = `${stats.blazinWins}-${stats.blazinLosses}${stats.blazinPushes > 0 ? `-${stats.blazinPushes}` : ''}`;
+
+        // ATS percentage
+        const lineTotal = stats.lineWins + stats.lineLosses;
+        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : 0;
+        const linePct = lineTotal > 0 ? linePctValue.toFixed(1) + '%' : '-';
+        let linePctClass = 'pct';
+        if (linePctValue > 50) linePctClass += ' pct-positive';
+        else if (linePctValue < 50) linePctClass += ' pct-negative';
+        else linePctClass += ' pct-neutral';
+
+        // Straight Up percentage
+        const suTotal = stats.suWins + stats.suLosses;
+        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : 0;
+        const suPct = suTotal > 0 ? suPctValue.toFixed(1) + '%' : '-';
+        let suPctClass = 'pct';
+        if (suPctValue > 50) suPctClass += ' pct-positive';
+        else if (suPctValue < 50) suPctClass += ' pct-negative';
+        else suPctClass += ' pct-neutral';
+
+        // Blazin' 5 percentage
+        const blazinTotal = stats.blazinWins + stats.blazinLosses;
+        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : 0;
+        const blazinPct = blazinTotal > 0 ? blazinPctValue.toFixed(1) + '%' : '-';
+        let blazinPctClass = 'pct';
+        if (blazinPctValue > 50) blazinPctClass += ' pct-positive';
+        else if (blazinPctValue < 50) blazinPctClass += ' pct-negative';
+        else blazinPctClass += ' pct-neutral';
+
+        return `
+            <tr class="${index === 0 ? 'leader' : ''}" data-picker="${stats.name}">
+                <td class="picker-name">${stats.name}</td>
+                <td data-sort="${stats.lineWins}">${lineRecord}</td>
+                <td class="${linePctClass}" data-sort="${linePctValue}">${linePct}</td>
+                <td class="divider-left" data-sort="${stats.blazinWins}">${blazinRecord}</td>
+                <td class="${blazinPctClass}" data-sort="${blazinPctValue}">${blazinPct}</td>
+                <td class="divider-left" data-sort="${stats.suWins}">${suRecord}</td>
+                <td class="${suPctClass}" data-sort="${suPctValue}">${suPct}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // Setup sortable headers
+    const table = document.getElementById('history-standings-table');
+    if (table && !table._sortInitialized) {
+        setupHistoryTableSorting(table);
+        table._sortInitialized = true;
+    }
+}
+
+/**
+ * Setup sorting for history standings table
+ */
+function setupHistoryTableSorting(table) {
+    const headers = table.querySelectorAll('thead th');
+
+    headers.forEach((th, index) => {
+        th.style.cursor = 'pointer';
+        th.title = 'Click to sort';
+
+        th.addEventListener('click', () => {
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const isAscending = th.classList.contains('sort-asc');
+
+            headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+
+            rows.sort((a, b) => {
+                const aCell = a.cells[index];
+                const bCell = b.cells[index];
+
+                let aVal = aCell.dataset.sort !== undefined ? parseFloat(aCell.dataset.sort) : aCell.textContent.trim();
+                let bVal = bCell.dataset.sort !== undefined ? parseFloat(bCell.dataset.sort) : bCell.textContent.trim();
+
+                if (index === 0) {
+                    return isAscending ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
+                }
+
+                if (isNaN(aVal)) aVal = 0;
+                if (isNaN(bVal)) bVal = 0;
+
+                return isAscending ? aVal - bVal : bVal - aVal;
+            });
+
+            th.classList.add(isAscending ? 'sort-desc' : 'sort-asc');
+
+            rows.forEach((row, i) => {
+                row.classList.remove('leader');
+                if (i === 0) row.classList.add('leader');
+                tbody.appendChild(row);
+            });
+        });
+    });
 }
 
 /**
