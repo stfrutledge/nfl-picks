@@ -2068,6 +2068,7 @@ function init() {
     setupPullToRefresh();
     setupTeamRecordsDropdown();
     setupBlazinTeamRecordsDropdown();
+    setupHistoryBlazinRecords();
     setupPatternFilters();
     setupPlayoffComparisonControls();
     loadPicksFromStorage();
@@ -2342,6 +2343,10 @@ async function loadHistorySeason(season) {
 
     // Render season standings table
     renderHistoryStandingsTable(season);
+
+    // Render Blazin' 5 records tables
+    renderHistoryBlazinTeamRecords();
+    renderHistoryBlazinSpreadRecords();
 }
 
 /**
@@ -4080,7 +4085,9 @@ function calculateTeamPickRecords(picker) {
 const teamRecordsSortState = {
     line: { column: 'pct', direction: 'desc' },
     blazin: { column: 'record', direction: 'desc' },
-    spread: { column: 'record', direction: 'desc' }
+    spread: { column: 'record', direction: 'desc' },
+    'history-blazin': { column: 'record', direction: 'desc' },
+    'history-spread': { column: 'record', direction: 'desc' }
 };
 
 /**
@@ -4135,7 +4142,9 @@ function handleTeamRecordsSort(tableType, column) {
     const tableIds = {
         line: 'team-records-table',
         blazin: 'blazin-team-records-table',
-        spread: 'blazin-spread-records-table'
+        spread: 'blazin-spread-records-table',
+        'history-blazin': 'history-blazin-team-table',
+        'history-spread': 'history-blazin-spread-table'
     };
     const table = document.getElementById(tableIds[tableType]);
     if (table) {
@@ -4161,6 +4170,10 @@ function handleTeamRecordsSort(tableType, column) {
         renderBlazinTeamPickRecords();
     } else if (tableType === 'spread') {
         renderBlazinSpreadRecords();
+    } else if (tableType === 'history-blazin') {
+        renderHistoryBlazinTeamRecords();
+    } else if (tableType === 'history-spread') {
+        renderHistoryBlazinSpreadRecords();
     }
 }
 
@@ -4675,6 +4688,364 @@ function renderBlazinSpreadRecords(picker = null) {
 
     if (sortedSpreads.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
+    }
+}
+
+/**
+ * Calculate historical Blazin' 5 team pick records for a specific picker and season
+ */
+function calculateHistoryBlazinTeamRecords(picker, season) {
+    const teamRecords = {};
+
+    if (!seasonData[season]) return teamRecords;
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    // Loop through all weeks
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+        const pickerPicks = weekPicks[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+            const result = weekResults[game.id] || weekResults[gameIdStr];
+
+            // Only count Blazin' 5 picks
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const gameDetail = {
+                week: weekNum,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome
+            };
+
+            // Record result for BOTH teams involved in the game
+            [game.away, game.home].forEach(team => {
+                const normalizedTeam = TEAM_NAME_MAP[team] || team;
+
+                if (!teamRecords[normalizedTeam]) {
+                    teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                }
+
+                teamRecords[normalizedTeam].games.push(gameDetail);
+
+                if (isPush) {
+                    teamRecords[normalizedTeam].pushes++;
+                } else if (isWin) {
+                    teamRecords[normalizedTeam].wins++;
+                } else {
+                    teamRecords[normalizedTeam].losses++;
+                }
+            });
+        });
+    });
+
+    return teamRecords;
+}
+
+/**
+ * Render the historical Blazin' 5 team pick records table
+ */
+function renderHistoryBlazinTeamRecords(picker = null) {
+    const dropdown = document.getElementById('history-blazin-picker');
+    const tbody = document.getElementById('history-blazin-team-body');
+    const seasonDropdown = document.getElementById('history-season-dropdown');
+
+    if (!tbody) return;
+
+    const selectedPicker = picker || dropdown?.value || 'Stephen';
+    const season = seasonDropdown ? parseInt(seasonDropdown.value) : 2024;
+    const teamRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season);
+
+    // Convert to array
+    const teamsData = Object.entries(teamRecords)
+        .map(([team, record]) => {
+            const total = record.wins + record.losses;
+            const pct = total > 0 ? (record.wins / total) * 100 : 0;
+            return { team, ...record, total: total + record.pushes, pct };
+        })
+        .filter(t => t.total > 0);
+
+    // Sort based on current sort state
+    const { column, direction } = teamRecordsSortState['history-blazin'];
+    const sortedTeams = sortTeamRecordsData(teamsData, column, direction);
+
+    tbody.innerHTML = sortedTeams.map(({ team, wins, losses, pushes, total, pct, games }) => {
+        const pushStr = pushes > 0 ? `-${pushes}` : '';
+        const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
+        const teamId = 'hist-blazin-' + team.replace(/[^a-zA-Z0-9]/g, '');
+
+        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+
+        const gameDetailsHtml = sortedGames.map(g => {
+            const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
+            const outcomeText = g.outcome.toUpperCase();
+            const spreadText = g.favorite === 'away'
+                ? `${g.away} -${g.spread}`
+                : `${g.home} -${g.spread}`;
+            const pickedNormalized = TEAM_NAME_MAP[g.picked] || g.picked;
+
+            return `
+                <div class="game-detail-row ${outcomeClass}">
+                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                    <span class="game-spread">${spreadText}</span>
+                    <span class="game-picked">Picked: ${pickedNormalized}</span>
+                    <span class="game-outcome">${outcomeText}</span>
+                </div>
+            `;
+        }).join('');
+
+        const logoUrl = getTeamLogo(team);
+        const abbrev = getTeamAbbreviation(team);
+        const color = getTeamColor(team);
+
+        return `
+            <tr class="team-row" data-team="${teamId}" onclick="toggleTeamDetails('${teamId}')">
+                <td class="team-name">
+                    <img src="${logoUrl}" alt="${team}" class="team-logo-small" onerror="this.outerHTML='<span class=\\'team-logo-fallback-small\\' style=\\'background-color:${color}\\'>${abbrev}</span>'">
+                    ${team}
+                </td>
+                <td class="record">${wins}-${losses}${pushStr}</td>
+                <td class="picks-count">${total}</td>
+                <td class="win-pct ${pctClass}">${pct.toFixed(1)}%</td>
+            </tr>
+            <tr class="team-details-row hidden" id="details-${teamId}">
+                <td colspan="4">
+                    <div class="team-details-container">
+                        ${gameDetailsHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (sortedTeams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
+    }
+}
+
+/**
+ * Calculate historical Blazin' 5 spread records for a specific picker and season
+ */
+function calculateHistoryBlazinSpreadRecords(picker, season) {
+    const spreadRecords = {};
+
+    if (!seasonData[season]) return spreadRecords;
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    // Loop through all weeks
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+        const pickerPicks = weekPicks[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+            const result = weekResults[game.id] || weekResults[gameIdStr];
+
+            // Only count Blazin' 5 picks
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+
+            // Determine the spread for the picked team
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const isFavorite = (game.favorite === 'away' && pick.line === 'away') ||
+                             (game.favorite === 'home' && pick.line === 'home');
+
+            // Format spread: negative for favorites, positive for underdogs
+            const spreadValue = isFavorite ? -game.spread : game.spread;
+            const spreadKey = spreadValue === 0 ? 'PK' :
+                            (spreadValue > 0 ? `+${spreadValue}` : `${spreadValue}`);
+
+            const gameDetail = {
+                week: weekNum,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                pickedSpread: spreadKey,
+                outcome
+            };
+
+            if (!spreadRecords[spreadKey]) {
+                spreadRecords[spreadKey] = {
+                    wins: 0,
+                    losses: 0,
+                    pushes: 0,
+                    games: [],
+                    spreadValue: spreadValue
+                };
+            }
+
+            spreadRecords[spreadKey].games.push(gameDetail);
+
+            if (isPush) {
+                spreadRecords[spreadKey].pushes++;
+            } else if (isWin) {
+                spreadRecords[spreadKey].wins++;
+            } else {
+                spreadRecords[spreadKey].losses++;
+            }
+        });
+    });
+
+    return spreadRecords;
+}
+
+/**
+ * Render the historical Blazin' 5 spread records table
+ */
+function renderHistoryBlazinSpreadRecords(picker = null) {
+    const dropdown = document.getElementById('history-blazin-picker');
+    const tbody = document.getElementById('history-blazin-spread-body');
+    const seasonDropdown = document.getElementById('history-season-dropdown');
+
+    if (!tbody) return;
+
+    const selectedPicker = picker || dropdown?.value || 'Stephen';
+    const season = seasonDropdown ? parseInt(seasonDropdown.value) : 2024;
+    const spreadRecords = calculateHistoryBlazinSpreadRecords(selectedPicker, season);
+
+    // Convert to array
+    const spreadsData = Object.entries(spreadRecords)
+        .map(([spread, record]) => {
+            const total = record.wins + record.losses;
+            const pct = total > 0 ? (record.wins / total) * 100 : 0;
+            return {
+                spread,
+                spreadValue: record.spreadValue,
+                ...record,
+                total: total + record.pushes,
+                pct
+            };
+        })
+        .filter(s => s.total > 0);
+
+    // Sort based on current sort state
+    const { column, direction } = teamRecordsSortState['history-spread'];
+    const sortedSpreads = sortTeamRecordsData(spreadsData, column, direction);
+
+    tbody.innerHTML = sortedSpreads.map(({ spread, wins, losses, pushes, total, pct, games }) => {
+        const pushStr = pushes > 0 ? `-${pushes}` : '';
+        const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
+        const spreadId = 'hist-spread-' + spread.replace(/[^a-zA-Z0-9]/g, '');
+
+        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+
+        const gameDetailsHtml = sortedGames.map(g => {
+            const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
+            const outcomeText = g.outcome.toUpperCase();
+            const spreadText = g.favorite === 'away'
+                ? `${g.away} -${g.spread}`
+                : `${g.home} -${g.spread}`;
+            const pickedNormalized = TEAM_NAME_MAP[g.picked] || g.picked;
+
+            return `
+                <div class="game-detail-row ${outcomeClass}">
+                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                    <span class="game-spread">${spreadText}</span>
+                    <span class="game-picked">Picked: ${pickedNormalized} (${g.pickedSpread})</span>
+                    <span class="game-outcome">${outcomeText}</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <tr class="team-row" data-team="${spreadId}" onclick="toggleTeamDetails('${spreadId}')">
+                <td class="spread-value">${spread}</td>
+                <td class="record">${wins}-${losses}${pushStr}</td>
+                <td class="picks-count">${total}</td>
+                <td class="win-pct ${pctClass}">${pct.toFixed(1)}%</td>
+            </tr>
+            <tr class="team-details-row hidden" id="details-${spreadId}">
+                <td colspan="4">
+                    <div class="team-details-container">
+                        ${gameDetailsHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (sortedSpreads.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
+    }
+}
+
+/**
+ * Setup history Blazin' 5 records dropdown and sorting
+ */
+function setupHistoryBlazinRecords() {
+    const dropdown = document.getElementById('history-blazin-picker');
+    if (dropdown) {
+        dropdown.addEventListener('change', (e) => {
+            const picker = e.target.value;
+            renderHistoryBlazinTeamRecords(picker);
+            renderHistoryBlazinSpreadRecords(picker);
+        });
+    }
+
+    // Setup sortable headers for team table
+    const teamTable = document.getElementById('history-blazin-team-table');
+    if (teamTable) {
+        teamTable.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const column = th.getAttribute('data-sort');
+                handleTeamRecordsSort('history-blazin', column);
+            });
+        });
+    }
+
+    // Setup sortable headers for spread table
+    const spreadTable = document.getElementById('history-blazin-spread-table');
+    if (spreadTable) {
+        spreadTable.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const column = th.getAttribute('data-sort');
+                handleTeamRecordsSort('history-spread', column);
+            });
+        });
     }
 }
 

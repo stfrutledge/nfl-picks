@@ -4269,6 +4269,51 @@ footer a:hover {
     }
 }
 
+/* ===== HISTORY BLAZIN' 5 RECORDS SECTION ===== */
+.history-blazin-section {
+    margin: 0 0 24px;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    padding: 16px;
+}
+
+.history-blazin-section .consolidated-header {
+    margin-bottom: 16px;
+}
+
+.history-blazin-section .consolidated-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.history-blazin-section .blazin-records-controls {
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.history-blazin-section .blazin-records-controls label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.history-blazin-section .blazin-records-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 900px) {
+    .history-blazin-section .blazin-records-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* ===== PLAYOFF COMPARISON SECTION ===== */
 .playoff-comparison-section {
     margin: 0 40px 30px;

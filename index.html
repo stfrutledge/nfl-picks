@@ -578,6 +578,57 @@
                     </div>
                 </section>
 
+                <!-- Blazin' 5 Records & Analysis Section -->
+                <section class="history-blazin-section" id="history-blazin-section">
+                    <div class="consolidated-header">
+                        <h2 class="consolidated-title">Blazin' 5 Records & Analysis</h2>
+                    </div>
+                    <div class="blazin-records-controls">
+                        <label for="history-blazin-picker">Picker:</label>
+                        <select id="history-blazin-picker" class="team-records-dropdown">
+                            <option value="Daniel">Daniel</option>
+                            <option value="Dylan">Dylan</option>
+                            <option value="Jason">Jason</option>
+                            <option value="Sean">Sean</option>
+                            <option value="Stephen">Stephen</option>
+                        </select>
+                    </div>
+                    <div class="blazin-records-grid">
+                        <div class="blazin-records-column">
+                            <h4 class="records-column-title">By Team</h4>
+                            <div class="team-records-table-container">
+                                <table class="team-records-table" id="history-blazin-team-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="team" data-table="history-blazin">Team <span class="sort-icon"></span></th>
+                                            <th class="sortable active desc" data-sort="record" data-table="history-blazin">Record <span class="sort-icon">▼</span></th>
+                                            <th class="sortable" data-sort="picks" data-table="history-blazin"># Picks <span class="sort-icon"></span></th>
+                                            <th class="sortable" data-sort="pct" data-table="history-blazin">Win % <span class="sort-icon"></span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-blazin-team-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="blazin-records-column">
+                            <h4 class="records-column-title">By Spread Size</h4>
+                            <div class="team-records-table-container">
+                                <table class="team-records-table" id="history-blazin-spread-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="spread" data-table="history-spread">Spread <span class="sort-icon"></span></th>
+                                            <th class="sortable active desc" data-sort="record" data-table="history-spread">Record <span class="sort-icon">▼</span></th>
+                                            <th class="sortable" data-sort="picks" data-table="history-spread"># Picks <span class="sort-icon"></span></th>
+                                            <th class="sortable" data-sort="pct" data-table="history-spread">Win % <span class="sort-icon"></span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-blazin-spread-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Week/Picker Selection Row (below standings) -->
                 <div class="picks-header">
                     <h2><span id="history-week-display">Week 1</span> Picks</h2>
@@ -625,7 +676,6 @@
         </main>
 
         <footer>
-            <p>Data pulled from <a href="https://docs.google.com/spreadsheets/d/1JuftzmWWIlquN1oKrFqPNaGjMu9ysdnCHqCDj9lYzfE" target="_blank" rel="noopener">published Google Sheet</a></p>
         </footer>
     </div>
 

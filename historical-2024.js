@@ -1,5 +1,6 @@
 // Historical NFL Picks Data - 2024 Season
   // Auto-generated on 2026-02-02
+  // Game details fetched from ESPN API
 
   const SEASON_2024_DATA = {
   "games": {
@@ -10,10 +11,10 @@
         "home": "Chiefs",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:40 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       },
       {
         "id": 2,
@@ -21,10 +22,10 @@
         "home": "Eagles",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Fri",
+        "time": "8:15 PM",
+        "location": "Sao Paulo,",
+        "stadium": "Corinthians Arena"
       },
       {
         "id": 3,
@@ -32,10 +33,10 @@
         "home": "Bills",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 4,
@@ -43,10 +44,10 @@
         "home": "Saints",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 5,
@@ -54,10 +55,10 @@
         "home": "Colts",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 6,
@@ -65,10 +66,10 @@
         "home": "Dolphins",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 7,
@@ -76,10 +77,10 @@
         "home": "Giants",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 8,
@@ -87,10 +88,10 @@
         "home": "Bengals",
         "spread": 8.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 9,
@@ -98,10 +99,10 @@
         "home": "Falcons",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 10,
@@ -109,10 +110,10 @@
         "home": "Bears",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 11,
@@ -120,10 +121,10 @@
         "home": "Seahawks",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 12,
@@ -131,10 +132,10 @@
         "home": "Chargers",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 13,
@@ -142,10 +143,10 @@
         "home": "Browns",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 14,
@@ -153,10 +154,10 @@
         "home": "Buccs",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 15,
@@ -164,10 +165,10 @@
         "home": "Lions",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 16,
@@ -175,10 +176,10 @@
         "home": "49ers",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       }
     ],
     "2": [
@@ -188,10 +189,10 @@
         "home": "Dolphins",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 2,
@@ -199,10 +200,10 @@
         "home": "Jaguars",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 3,
@@ -210,10 +211,10 @@
         "home": "Packers",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 4,
@@ -221,10 +222,10 @@
         "home": "Ravens",
         "spread": 8.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 5,
@@ -232,10 +233,10 @@
         "home": "Panthers",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 6,
@@ -243,10 +244,10 @@
         "home": "Cowboys",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 7,
@@ -254,10 +255,10 @@
         "home": "Commanders",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 8,
@@ -265,10 +266,10 @@
         "home": "Titans",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 9,
@@ -276,10 +277,10 @@
         "home": "Vikings",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 10,
@@ -287,10 +288,10 @@
         "home": "Patriots",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 11,
@@ -298,10 +299,10 @@
         "home": "Lions",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 12,
@@ -309,10 +310,10 @@
         "home": "Cardinals",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 13,
@@ -320,10 +321,10 @@
         "home": "Chiefs",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       },
       {
         "id": 14,
@@ -331,10 +332,10 @@
         "home": "Broncos",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 15,
@@ -342,10 +343,10 @@
         "home": "Texans",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 16,
@@ -353,10 +354,10 @@
         "home": "Eagles",
         "spread": 6,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       }
     ],
     "3": [
@@ -366,10 +367,10 @@
         "home": "Jets",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 2,
@@ -377,10 +378,10 @@
         "home": "Colts",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 3,
@@ -388,10 +389,10 @@
         "home": "Buccs",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 4,
@@ -399,10 +400,10 @@
         "home": "Titans",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 5,
@@ -410,10 +411,10 @@
         "home": "Vikings",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 6,
@@ -421,10 +422,10 @@
         "home": "Steelers",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 7,
@@ -432,10 +433,10 @@
         "home": "Browns",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 8,
@@ -443,10 +444,10 @@
         "home": "Saints",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 9,
@@ -454,10 +455,10 @@
         "home": "Raiders",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 10,
@@ -465,10 +466,10 @@
         "home": "Seahawks",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 11,
@@ -476,10 +477,10 @@
         "home": "Cowboys",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 12,
@@ -487,10 +488,10 @@
         "home": "Cardinals",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 13,
@@ -498,10 +499,10 @@
         "home": "Rams",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 14,
@@ -509,10 +510,10 @@
         "home": "Falcons",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 15,
@@ -520,10 +521,10 @@
         "home": "Bills",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "7:30 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 16,
@@ -531,10 +532,10 @@
         "home": "Bengals",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       }
     ],
     "4": [
@@ -544,10 +545,10 @@
         "home": "Giants",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 2,
@@ -555,10 +556,10 @@
         "home": "Panthers",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 3,
@@ -566,10 +567,10 @@
         "home": "Jets",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 4,
@@ -577,10 +578,10 @@
         "home": "Texans",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 5,
@@ -588,10 +589,10 @@
         "home": "Bears",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 6,
@@ -599,10 +600,10 @@
         "home": "Packers",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 7,
@@ -610,10 +611,10 @@
         "home": "Falcons",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 8,
@@ -621,10 +622,10 @@
         "home": "Buccs",
         "spread": 1,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 9,
@@ -632,10 +633,10 @@
         "home": "Colts",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 10,
@@ -643,10 +644,10 @@
         "home": "49ers",
         "spread": 10.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 11,
@@ -654,10 +655,10 @@
         "home": "Cardinals",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 12,
@@ -665,10 +666,10 @@
         "home": "Raiders",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 13,
@@ -676,10 +677,10 @@
         "home": "Chargers",
         "spread": 7,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 14,
@@ -687,10 +688,10 @@
         "home": "Ravens",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 15,
@@ -698,10 +699,10 @@
         "home": "Dolphins",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "7:30 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 16,
@@ -709,10 +710,10 @@
         "home": "Lions",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       }
     ],
     "5": [
@@ -722,10 +723,10 @@
         "home": "Falcons",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 2,
@@ -733,10 +734,10 @@
         "home": "Vikings",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "9:30 AM",
+        "location": "London,",
+        "stadium": "Tottenham Hotspur Stadium"
       },
       {
         "id": 3,
@@ -744,10 +745,10 @@
         "home": "Bengals",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 4,
@@ -755,10 +756,10 @@
         "home": "Texans",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 5,
@@ -766,10 +767,10 @@
         "home": "Bears",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 6,
@@ -777,10 +778,10 @@
         "home": "Commanders",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 7,
@@ -788,10 +789,10 @@
         "home": "Jaguars",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 8,
@@ -799,10 +800,10 @@
         "home": "Patriots",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 9,
@@ -810,10 +811,10 @@
         "home": "49ers",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 10,
@@ -821,10 +822,10 @@
         "home": "Broncos",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 11,
@@ -832,10 +833,10 @@
         "home": "Rams",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 12,
@@ -843,10 +844,10 @@
         "home": "Seahawks",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 13,
@@ -854,10 +855,10 @@
         "home": "Steelers",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "9:45 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 14,
@@ -865,10 +866,10 @@
         "home": "Chiefs",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       }
     ],
     "6": [
@@ -878,10 +879,10 @@
         "home": "Seahawks",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 2,
@@ -889,10 +890,10 @@
         "home": "Jaguars",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "9:30 AM",
+        "location": "London, England",
+        "stadium": "Tottenham Hotspur Stadium"
       },
       {
         "id": 3,
@@ -900,10 +901,10 @@
         "home": "Packers",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 4,
@@ -911,10 +912,10 @@
         "home": "Eagles",
         "spread": 8.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 5,
@@ -922,10 +923,10 @@
         "home": "Patriots",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 6,
@@ -933,10 +934,10 @@
         "home": "Titans",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 7,
@@ -944,10 +945,10 @@
         "home": "Saints",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 8,
@@ -955,10 +956,10 @@
         "home": "Ravens",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 9,
@@ -966,10 +967,10 @@
         "home": "Broncos",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 10,
@@ -977,10 +978,10 @@
         "home": "Raiders",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 11,
@@ -988,10 +989,10 @@
         "home": "Panthers",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 12,
@@ -999,10 +1000,10 @@
         "home": "Cowboys",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 13,
@@ -1010,10 +1011,10 @@
         "home": "Giants",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 14,
@@ -1021,10 +1022,10 @@
         "home": "Jets",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       }
     ],
     "7": [
@@ -1034,10 +1035,10 @@
         "home": "Saints",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 2,
@@ -1045,10 +1046,10 @@
         "home": "Jaguars",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "9:30 AM",
+        "location": "London,",
+        "stadium": "Wembley Stadium"
       },
       {
         "id": 3,
@@ -1056,10 +1057,10 @@
         "home": "Browns",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 4,
@@ -1067,10 +1068,10 @@
         "home": "Vikings",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 5,
@@ -1078,10 +1079,10 @@
         "home": "Packers",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 6,
@@ -1089,10 +1090,10 @@
         "home": "Colts",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 7,
@@ -1100,10 +1101,10 @@
         "home": "Giants",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 8,
@@ -1111,10 +1112,10 @@
         "home": "Falcons",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 9,
@@ -1122,10 +1123,10 @@
         "home": "Bills",
         "spread": 9,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 10,
@@ -1133,10 +1134,10 @@
         "home": "Commanders",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 11,
@@ -1144,10 +1145,10 @@
         "home": "Rams",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 12,
@@ -1155,10 +1156,10 @@
         "home": "49ers",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 13,
@@ -1166,10 +1167,10 @@
         "home": "Steelers",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 14,
@@ -1177,10 +1178,10 @@
         "home": "Buccs",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 15,
@@ -1188,10 +1189,10 @@
         "home": "Cardinals",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "9:00 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       }
     ],
     "8": [
@@ -1201,10 +1202,10 @@
         "home": "Rams",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 2,
@@ -1212,10 +1213,10 @@
         "home": "Dolphins",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 3,
@@ -1223,10 +1224,10 @@
         "home": "Buccs",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 4,
@@ -1234,10 +1235,10 @@
         "home": "Browns",
         "spread": 8.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 5,
@@ -1245,10 +1246,10 @@
         "home": "Jaguars",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 6,
@@ -1256,10 +1257,10 @@
         "home": "Texans",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 7,
@@ -1267,10 +1268,10 @@
         "home": "Patriots",
         "spread": 7,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 8,
@@ -1278,10 +1279,10 @@
         "home": "Bengals",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 9,
@@ -1289,10 +1290,10 @@
         "home": "Lions",
         "spread": 11.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 10,
@@ -1300,10 +1301,10 @@
         "home": "Seahawks",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 11,
@@ -1311,10 +1312,10 @@
         "home": "Chargers",
         "spread": 7,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 12,
@@ -1322,10 +1323,10 @@
         "home": "Broncos",
         "spread": 10.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 13,
@@ -1333,10 +1334,10 @@
         "home": "Commanders",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 14,
@@ -1344,10 +1345,10 @@
         "home": "Raiders",
         "spread": 9.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 15,
@@ -1355,10 +1356,10 @@
         "home": "49ers",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 16,
@@ -1366,10 +1367,10 @@
         "home": "Steelers",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       }
     ],
     "9": [
@@ -1379,10 +1380,10 @@
         "home": "Jets",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 2,
@@ -1390,10 +1391,10 @@
         "home": "Falcons",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 3,
@@ -1401,10 +1402,10 @@
         "home": "Ravens",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 4,
@@ -1412,10 +1413,10 @@
         "home": "Bengals",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 5,
@@ -1423,10 +1424,10 @@
         "home": "Browns",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 6,
@@ -1434,10 +1435,10 @@
         "home": "Bills",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 7,
@@ -1445,10 +1446,10 @@
         "home": "Titans",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 8,
@@ -1456,10 +1457,10 @@
         "home": "Panthers",
         "spread": 7.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 9,
@@ -1467,10 +1468,10 @@
         "home": "Giants",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 10,
@@ -1478,10 +1479,10 @@
         "home": "Cardinals",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 11,
@@ -1489,10 +1490,10 @@
         "home": "Eagles",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 12,
@@ -1500,10 +1501,10 @@
         "home": "Packers",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 13,
@@ -1511,10 +1512,10 @@
         "home": "Seahawks",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 14,
@@ -1522,10 +1523,10 @@
         "home": "Vikings",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 15,
@@ -1533,10 +1534,10 @@
         "home": "Chiefs",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       }
     ],
     "10": [
@@ -1546,10 +1547,10 @@
         "home": "Ravens",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 2,
@@ -1557,10 +1558,10 @@
         "home": "Panthers",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "9:30 AM",
+        "location": "Munich,",
+        "stadium": "Allianz Arena"
       },
       {
         "id": 3,
@@ -1568,10 +1569,10 @@
         "home": "Saints",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 4,
@@ -1579,10 +1580,10 @@
         "home": "Colts",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 5,
@@ -1590,10 +1591,10 @@
         "home": "Chiefs",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       },
       {
         "id": 6,
@@ -1601,10 +1602,10 @@
         "home": "Jaguars",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 7,
@@ -1612,10 +1613,10 @@
         "home": "Bears",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 8,
@@ -1623,10 +1624,10 @@
         "home": "Commanders",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 9,
@@ -1634,10 +1635,10 @@
         "home": "Buccs",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 10,
@@ -1645,10 +1646,10 @@
         "home": "Chargers",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 11,
@@ -1656,10 +1657,10 @@
         "home": "Cardinals",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 12,
@@ -1667,10 +1668,10 @@
         "home": "Cowboys",
         "spread": 7.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 13,
@@ -1678,10 +1679,10 @@
         "home": "Texans",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 14,
@@ -1689,10 +1690,10 @@
         "home": "Rams",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       }
     ],
     "11": [
@@ -1702,10 +1703,10 @@
         "home": "Eagles",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 2,
@@ -1713,10 +1714,10 @@
         "home": "Steelers",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 3,
@@ -1724,10 +1725,10 @@
         "home": "Saints",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 4,
@@ -1735,10 +1736,10 @@
         "home": "Bears",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 5,
@@ -1746,10 +1747,10 @@
         "home": "Jets",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 6,
@@ -1757,10 +1758,10 @@
         "home": "Lions",
         "spread": 13.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 7,
@@ -1768,10 +1769,10 @@
         "home": "Dolphins",
         "spread": 7,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 8,
@@ -1779,10 +1780,10 @@
         "home": "Patriots",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 9,
@@ -1790,10 +1791,10 @@
         "home": "Titans",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 10,
@@ -1801,10 +1802,10 @@
         "home": "Broncos",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 11,
@@ -1812,10 +1813,10 @@
         "home": "49ers",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 12,
@@ -1823,10 +1824,10 @@
         "home": "Bills",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 13,
@@ -1834,10 +1835,10 @@
         "home": "Chargers",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 14,
@@ -1845,10 +1846,10 @@
         "home": "Cowboys",
         "spread": 7.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       }
     ],
     "12": [
@@ -1858,10 +1859,10 @@
         "home": "Browns",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 2,
@@ -1869,10 +1870,10 @@
         "home": "Commanders",
         "spread": 10.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 3,
@@ -1880,10 +1881,10 @@
         "home": "Colts",
         "spread": 7.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 4,
@@ -1891,10 +1892,10 @@
         "home": "Panthers",
         "spread": 10.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 5,
@@ -1902,10 +1903,10 @@
         "home": "Bears",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 6,
@@ -1913,10 +1914,10 @@
         "home": "Dolphins",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 7,
@@ -1924,10 +1925,10 @@
         "home": "Giants",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 8,
@@ -1935,10 +1936,10 @@
         "home": "Texans",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 9,
@@ -1946,10 +1947,10 @@
         "home": "Raiders",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 10,
@@ -1957,10 +1958,10 @@
         "home": "Seahawks",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 11,
@@ -1968,10 +1969,10 @@
         "home": "Packers",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 12,
@@ -1979,10 +1980,10 @@
         "home": "Rams",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 13,
@@ -1990,10 +1991,10 @@
         "home": "Chargers",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       }
     ],
     "13": [
@@ -2003,10 +2004,10 @@
         "home": "Lions",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "12:30 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 2,
@@ -2014,10 +2015,10 @@
         "home": "Cowboys",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "4:30 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 3,
@@ -2025,10 +2026,10 @@
         "home": "Packers",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:20 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 4,
@@ -2036,10 +2037,10 @@
         "home": "Chiefs",
         "spread": 12.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Fri",
+        "time": "3:00 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       },
       {
         "id": 5,
@@ -2047,10 +2048,10 @@
         "home": "Vikings",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 6,
@@ -2058,10 +2059,10 @@
         "home": "Jaguars",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 7,
@@ -2069,10 +2070,10 @@
         "home": "Patriots",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 8,
@@ -2080,10 +2081,10 @@
         "home": "Falcons",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 9,
@@ -2091,10 +2092,10 @@
         "home": "Bengals",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 10,
@@ -2102,10 +2103,10 @@
         "home": "Jets",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 11,
@@ -2113,10 +2114,10 @@
         "home": "Commanders",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 12,
@@ -2124,10 +2125,10 @@
         "home": "Saints",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 13,
@@ -2135,10 +2136,10 @@
         "home": "Panthers",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 14,
@@ -2146,10 +2147,10 @@
         "home": "Ravens",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 15,
@@ -2157,10 +2158,10 @@
         "home": "Bills",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 16,
@@ -2168,10 +2169,10 @@
         "home": "Broncos",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       }
     ],
     "14": [
@@ -2181,10 +2182,10 @@
         "home": "Lions",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 2,
@@ -2192,10 +2193,10 @@
         "home": "Vikings",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 3,
@@ -2203,10 +2204,10 @@
         "home": "Eagles",
         "spread": 13.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 4,
@@ -2214,10 +2215,10 @@
         "home": "Steelers",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 5,
@@ -2225,10 +2226,10 @@
         "home": "Titans",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 6,
@@ -2236,10 +2237,10 @@
         "home": "Buccs",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 7,
@@ -2247,10 +2248,10 @@
         "home": "Giants",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 8,
@@ -2258,10 +2259,10 @@
         "home": "Dolphins",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 9,
@@ -2269,10 +2270,10 @@
         "home": "Cardinals",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 10,
@@ -2280,10 +2281,10 @@
         "home": "Rams",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 11,
@@ -2291,10 +2292,10 @@
         "home": "49ers",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 12,
@@ -2302,10 +2303,10 @@
         "home": "Chiefs",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       },
       {
         "id": 13,
@@ -2313,10 +2314,10 @@
         "home": "Cowboys",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       }
     ],
     "15": [
@@ -2326,10 +2327,10 @@
         "home": "49ers",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       },
       {
         "id": 2,
@@ -2337,10 +2338,10 @@
         "home": "Giants",
         "spread": 16.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 3,
@@ -2348,10 +2349,10 @@
         "home": "Titans",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 4,
@@ -2359,10 +2360,10 @@
         "home": "Panthers",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 5,
@@ -2370,10 +2371,10 @@
         "home": "Browns",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 6,
@@ -2381,10 +2382,10 @@
         "home": "Texans",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 7,
@@ -2392,10 +2393,10 @@
         "home": "Jaguars",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 8,
@@ -2403,10 +2404,10 @@
         "home": "Saints",
         "spread": 7.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 9,
@@ -2414,10 +2415,10 @@
         "home": "Lions",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       },
       {
         "id": 10,
@@ -2425,10 +2426,10 @@
         "home": "Broncos",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 11,
@@ -2436,10 +2437,10 @@
         "home": "Cardinals",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 12,
@@ -2447,10 +2448,10 @@
         "home": "Eagles",
         "spread": 5.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 13,
@@ -2458,10 +2459,10 @@
         "home": "Chargers",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 14,
@@ -2469,10 +2470,10 @@
         "home": "Seahawks",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 15,
@@ -2480,10 +2481,10 @@
         "home": "Vikings",
         "spread": 7,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:00 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 16,
@@ -2491,10 +2492,10 @@
         "home": "Raiders",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:30 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       }
     ],
     "16": [
@@ -2504,10 +2505,10 @@
         "home": "Chargers",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 2,
@@ -2515,10 +2516,10 @@
         "home": "Chiefs",
         "spread": 0,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "1:00 PM",
+        "location": "Kansas City, MO",
+        "stadium": "GEHA Field at Arrowhead Stadium"
       },
       {
         "id": 3,
@@ -2526,10 +2527,10 @@
         "home": "Ravens",
         "spread": 7,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "4:30 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 4,
@@ -2537,10 +2538,10 @@
         "home": "Panthers",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Charlotte, NC",
+        "stadium": "Bank of America Stadium"
       },
       {
         "id": 5,
@@ -2548,10 +2549,10 @@
         "home": "Bengals",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 6,
@@ -2559,10 +2560,10 @@
         "home": "Bears",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 7,
@@ -2570,10 +2571,10 @@
         "home": "Jets",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 8,
@@ -2581,10 +2582,10 @@
         "home": "Falcons",
         "spread": 8.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 9,
@@ -2592,10 +2593,10 @@
         "home": "Commanders",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 10,
@@ -2603,10 +2604,10 @@
         "home": "Colts",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 11,
@@ -2614,10 +2615,10 @@
         "home": "Seahawks",
         "spread": 3,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Seattle, WA",
+        "stadium": "Lumen Field"
       },
       {
         "id": 12,
@@ -2625,10 +2626,10 @@
         "home": "Bills",
         "spread": 14.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 13,
@@ -2636,10 +2637,10 @@
         "home": "Raiders",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 14,
@@ -2647,10 +2648,10 @@
         "home": "Dolphins",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Miami Gardens, FL",
+        "stadium": "Hard Rock Stadium"
       },
       {
         "id": 15,
@@ -2658,10 +2659,10 @@
         "home": "Cowboys",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 16,
@@ -2669,10 +2670,10 @@
         "home": "Packers",
         "spread": 14.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       }
     ],
     "17": [
@@ -2682,10 +2683,10 @@
         "home": "Steelers",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Wed",
+        "time": "1:00 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 2,
@@ -2693,10 +2694,10 @@
         "home": "Texans",
         "spread": 5.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Wed",
+        "time": "4:30 PM",
+        "location": "Houston, TX",
+        "stadium": "NRG Stadium"
       },
       {
         "id": 3,
@@ -2704,10 +2705,10 @@
         "home": "Bears",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Thu",
+        "time": "8:15 PM",
+        "location": "Chicago, IL",
+        "stadium": "Soldier Field"
       },
       {
         "id": 4,
@@ -2715,10 +2716,10 @@
         "home": "Patriots",
         "spread": 4.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 5,
@@ -2726,10 +2727,10 @@
         "home": "Bengals",
         "spread": 3,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "4:30 PM",
+        "location": "Cincinnati, OH",
+        "stadium": "Paycor Stadium"
       },
       {
         "id": 6,
@@ -2737,10 +2738,10 @@
         "home": "Rams",
         "spread": 6.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "8:00 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 7,
@@ -2748,10 +2749,10 @@
         "home": "Eagles",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 8,
@@ -2759,10 +2760,10 @@
         "home": "Buccs",
         "spread": 8.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 9,
@@ -2770,10 +2771,10 @@
         "home": "Giants",
         "spread": 8.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 10,
@@ -2781,10 +2782,10 @@
         "home": "Saints",
         "spread": 1.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "New Orleans, LA",
+        "stadium": "Caesars Superdome"
       },
       {
         "id": 11,
@@ -2792,10 +2793,10 @@
         "home": "Bills",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Orchard Park, NY",
+        "stadium": "Highmark Stadium"
       },
       {
         "id": 12,
@@ -2803,10 +2804,10 @@
         "home": "Jaguars",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Jacksonville, FL",
+        "stadium": "EverBank Stadium"
       },
       {
         "id": 13,
@@ -2814,10 +2815,10 @@
         "home": "Browns",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:05 PM",
+        "location": "Cleveland, OH",
+        "stadium": "Huntington Bank Field"
       },
       {
         "id": 14,
@@ -2825,10 +2826,10 @@
         "home": "Vikings",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Minneapolis, MN",
+        "stadium": "U.S. Bank Stadium"
       },
       {
         "id": 15,
@@ -2836,10 +2837,10 @@
         "home": "Commanders",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Landover, MD",
+        "stadium": "Northwest Stadium"
       },
       {
         "id": 16,
@@ -2847,10 +2848,10 @@
         "home": "49ers",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Mon",
+        "time": "8:15 PM",
+        "location": "Santa Clara, CA",
+        "stadium": "Levi's Stadium"
       }
     ],
     "18": [
@@ -2860,10 +2861,10 @@
         "home": "Ravens",
         "spread": 19.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "4:30 PM",
+        "location": "Baltimore, MD",
+        "stadium": "M&T Bank Stadium"
       },
       {
         "id": 2,
@@ -2871,10 +2872,10 @@
         "home": "Steelers",
         "spread": 2.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sat",
+        "time": "8:00 PM",
+        "location": "Pittsburgh, PA",
+        "stadium": "Acrisure Stadium"
       },
       {
         "id": 3,
@@ -2882,10 +2883,10 @@
         "home": "Patriots",
         "spread": 3.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Foxborough, MA",
+        "stadium": "Gillette Stadium"
       },
       {
         "id": 4,
@@ -2893,10 +2894,10 @@
         "home": "Falcons",
         "spread": 7.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Atlanta, GA",
+        "stadium": "Mercedes-Benz Stadium"
       },
       {
         "id": 5,
@@ -2904,10 +2905,10 @@
         "home": "Packers",
         "spread": 9.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Green Bay, WI",
+        "stadium": "Lambeau Field"
       },
       {
         "id": 6,
@@ -2915,10 +2916,10 @@
         "home": "Titans",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Nashville, TN",
+        "stadium": "Nissan Stadium"
       },
       {
         "id": 7,
@@ -2926,10 +2927,10 @@
         "home": "Colts",
         "spread": 3.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Indianapolis, IN",
+        "stadium": "Lucas Oil Stadium"
       },
       {
         "id": 8,
@@ -2937,10 +2938,10 @@
         "home": "Buccs",
         "spread": 14.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Tampa, FL",
+        "stadium": "Raymond James Stadium"
       },
       {
         "id": 9,
@@ -2948,10 +2949,10 @@
         "home": "Eagles",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Philadelphia, PA",
+        "stadium": "Lincoln Financial Field"
       },
       {
         "id": 10,
@@ -2959,10 +2960,10 @@
         "home": "Cowboys",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "1:00 PM",
+        "location": "Arlington, TX",
+        "stadium": "AT&T Stadium"
       },
       {
         "id": 11,
@@ -2970,10 +2971,10 @@
         "home": "Broncos",
         "spread": 10.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Denver, CO",
+        "stadium": "Empower Field at Mile High"
       },
       {
         "id": 12,
@@ -2981,10 +2982,10 @@
         "home": "Raiders",
         "spread": 6.5,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Las Vegas, NV",
+        "stadium": "Allegiant Stadium"
       },
       {
         "id": 13,
@@ -2992,10 +2993,10 @@
         "home": "Jets",
         "spread": 1.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "East Rutherford, NJ",
+        "stadium": "MetLife Stadium"
       },
       {
         "id": 14,
@@ -3003,10 +3004,10 @@
         "home": "Cardinals",
         "spread": 4.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Glendale, AZ",
+        "stadium": "State Farm Stadium"
       },
       {
         "id": 15,
@@ -3014,10 +3015,10 @@
         "home": "Rams",
         "spread": 7,
         "favorite": "away",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "4:25 PM",
+        "location": "Inglewood, CA",
+        "stadium": "SoFi Stadium"
       },
       {
         "id": 16,
@@ -3025,10 +3026,10 @@
         "home": "Lions",
         "spread": 2.5,
         "favorite": "home",
-        "day": "",
-        "time": "",
-        "location": "",
-        "stadium": ""
+        "day": "Sun",
+        "time": "8:20 PM",
+        "location": "Detroit, MI",
+        "stadium": "Ford Field"
       }
     ]
   },
