@@ -2598,6 +2598,25 @@ function renderHistoryStandingsTable(season) {
         });
     });
 
+    // Add Cowherd's aggregate data for 2024 season (Blazin' 5 only, no pick-by-pick data)
+    if (season === 2024 && window.COWHERD_2024_RESULTS) {
+        let cowherdStats = {
+            name: 'Cowherd',
+            lineWins: 0, lineLosses: 0, linePushes: 0,
+            suWins: 0, suLosses: 0,
+            blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
+            totalWins: 0, totalLosses: 0, totalPushes: 0
+        };
+        Object.values(window.COWHERD_2024_RESULTS).forEach(weekData => {
+            if (weekData) {
+                cowherdStats.blazinWins += weekData.wins;
+                cowherdStats.blazinLosses += weekData.losses;
+                cowherdStats.blazinPushes += weekData.pushes;
+            }
+        });
+        pickerStats['Cowherd'] = cowherdStats;
+    }
+
     // Sort by Blazin' 5 percentage descending, then by Blazin' wins
     const sorted = Object.values(pickerStats).sort((a, b) => {
         const aBlazinTotal = a.blazinWins + a.blazinLosses;
@@ -2609,8 +2628,10 @@ function renderHistoryStandingsTable(season) {
     });
 
     tbody.innerHTML = sorted.map((stats, index) => {
-        const lineRecord = `${stats.lineWins}-${stats.lineLosses}${stats.linePushes > 0 ? `-${stats.linePushes}` : ''}`;
-        const suRecord = `${stats.suWins}-${stats.suLosses}`;
+        const hasLineData = stats.lineWins + stats.lineLosses + stats.linePushes > 0;
+        const hasSuData = stats.suWins + stats.suLosses > 0;
+        const lineRecord = hasLineData ? `${stats.lineWins}-${stats.lineLosses}${stats.linePushes > 0 ? `-${stats.linePushes}` : ''}` : '-';
+        const suRecord = hasSuData ? `${stats.suWins}-${stats.suLosses}` : '-';
         const blazinRecord = `${stats.blazinWins}-${stats.blazinLosses}${stats.blazinPushes > 0 ? `-${stats.blazinPushes}` : ''}`;
 
         // ATS percentage

@@ -10968,4 +10968,27 @@
   }
 };
 
-  window.SEASON_2024_DATA = SEASON_2024_DATA;
+// Cowherd's 2024 Blazin' 5 results (week-by-week aggregate, no pick-by-pick data)
+const COWHERD_2024_RESULTS = {
+  "1": { wins: 1, losses: 3, pushes: 1 },
+  "2": { wins: 2, losses: 3, pushes: 0 },
+  "3": { wins: 3, losses: 2, pushes: 0 },
+  "4": { wins: 1, losses: 4, pushes: 0 },
+  "5": { wins: 2, losses: 3, pushes: 0 },
+  "6": { wins: 3, losses: 1, pushes: 0 },
+  "7": { wins: 3, losses: 1, pushes: 1 },
+  "8": { wins: 1, losses: 3, pushes: 1 },
+  "9": { wins: 3, losses: 2, pushes: 0 },
+  "10": { wins: 1, losses: 4, pushes: 0 },
+  "11": { wins: 2, losses: 3, pushes: 0 },
+  "12": { wins: 0, losses: 5, pushes: 0 },
+  "13": null, // No picks this week
+  "14": { wins: 2, losses: 3, pushes: 0 },
+  "15": { wins: 1, losses: 4, pushes: 0 },
+  "16": { wins: 2, losses: 3, pushes: 0 },
+  "17": { wins: 2, losses: 3, pushes: 0 },
+  "18": null  // No picks this week
+};
+
+window.SEASON_2024_DATA = SEASON_2024_DATA;
+window.COWHERD_2024_RESULTS = COWHERD_2024_RESULTS;
