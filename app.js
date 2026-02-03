@@ -36,6 +36,13 @@ const AVAILABLE_SEASONS = [2025, 2024]; // Historical seasons available
 let seasonData = {};
 let seasonDataLoading = {}; // Track which seasons are currently being loaded
 
+// Lazy-loaded script tracking
+let historical2024Loaded = false;
+let historical2024Loading = null; // Promise for loading in progress
+
+// Track if spreads are still loading in background
+let spreadsLoading = true;
+
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
 
@@ -777,11 +784,14 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
 /**
  * Load schedule for a week, merging ESPN data with existing spreads
  */
-async function loadWeekSchedule(week, forceRefresh = false) {
+async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = false) {
     // For playoff weeks, fetch from ESPN
     if (isPlayoffWeek(week)) {
         // Try to load spreads from Google Sheets backup first (ensures we have spreads even for completed games)
-        await loadSpreadsFromGoogleSheets(week);
+        // Skip on initial load for faster startup - spreads will load in background
+        if (!skipSpreadsLoad) {
+            await loadSpreadsFromGoogleSheets(week);
+        }
         const savedSpreads = getSavedSpreads();
         const weekStr = String(week);
 
@@ -1645,7 +1655,6 @@ function isFromToday(timestamp) {
 
 async function prefetchAndSaveSpreads() {
     console.warn(`[Prefetch] === STARTING prefetchAndSaveSpreads, currentWeek=${currentWeek} ===`);
-    let saved = getSavedSpreads();
     const weeksToCheck = [currentWeek];
 
     // Also check next week if it exists
@@ -1653,27 +1662,44 @@ async function prefetchAndSaveSpreads() {
         weeksToCheck.push(currentWeek + 1);
     }
 
+    // Load schedules in parallel for weeks that need them
+    const schedulePromises = weeksToCheck
+        .filter(week => !NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0)
+        .map(week => {
+            console.log(`[Prefetch] Loading schedule for week ${week}...`);
+            return loadWeekSchedule(week);
+        });
+
+    if (schedulePromises.length > 0) {
+        await Promise.all(schedulePromises);
+    }
+
+    // Load spreads from Google Sheets in parallel for all weeks
+    console.log(`[Prefetch] Loading spreads from Google Sheets for weeks: ${weeksToCheck.join(', ')}...`);
+    const spreadResults = await Promise.all(
+        weeksToCheck.map(async (week) => {
+            const games = NFL_GAMES_BY_WEEK[week];
+            if (!games || games.length === 0) {
+                return { week, sheetResult: null, games: [] };
+            }
+            const sheetResult = await loadSpreadsFromGoogleSheets(week);
+            return { week, sheetResult, games };
+        })
+    );
+
+    // Apply saved spreads once after all loads complete
+    let saved = getSavedSpreads();
+    applySavedSpreads();
+
+    // Determine if we need Odds API refresh based on results
     let needsOddsApiRefresh = false;
 
-    for (const week of weeksToCheck) {
-        // Load schedule if not already loaded
-        if (!NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0) {
-            console.log(`[Prefetch] Loading schedule for week ${week}...`);
-            await loadWeekSchedule(week);
-        }
-
-        const games = NFL_GAMES_BY_WEEK[week];
+    for (const { week, sheetResult, games } of spreadResults) {
         if (!games || games.length === 0) continue;
 
-        // Load spreads from Google Sheets
         const weekNum = parseInt(week);
-        console.log(`[Prefetch] Week ${week} - loading spreads from Google Sheets...`);
-        const sheetResult = await loadSpreadsFromGoogleSheets(week);
-        saved = getSavedSpreads();
-        applySavedSpreads();
 
         // For current week: check if spreads need daily refresh
-        // First visitor of each day should call Odds API to get fresh spreads
         if (weekNum === CURRENT_NFL_WEEK && !needsOddsApiRefresh) {
             const lastUpdated = sheetResult?.lastUpdated;
             if (!isFromToday(lastUpdated)) {
@@ -1693,7 +1719,6 @@ async function prefetchAndSaveSpreads() {
         });
 
         // Only trigger API refresh for missing spreads in the CURRENT week
-        // Future weeks may not have matchups determined yet (e.g., Super Bowl before Conference Championships)
         if (missingSpreadGames.length > 0) {
             if (weekNum === CURRENT_NFL_WEEK) {
                 console.log(`[Prefetch] Week ${week} has ${missingSpreadGames.length} games missing spreads - will fetch from API`);
@@ -3589,6 +3614,7 @@ const weeklyPicksCache = {};
  */
 async function loadFromGoogleSheets() {
     console.log('Fetching from Google Sheets...');
+    const loadStart = performance.now();
     updateLoadingProgress(15, 'Connecting to data source...');
 
     try {
@@ -3601,8 +3627,10 @@ async function loadFromGoogleSheets() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+        let stepStart = performance.now();
         const response = await fetch(proxyUrl, { method: 'GET', signal: controller.signal });
         clearTimeout(timeoutId);
+        console.log(`[Timing] Main CSV fetch: ${(performance.now() - stepStart).toFixed(0)}ms`);
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -3617,16 +3645,16 @@ async function loadFromGoogleSheets() {
         }
 
         updateLoadingProgress(70, 'Preparing charts...');
-        console.log('Loaded data from Google Sheets via worker proxy');
+        stepStart = performance.now();
         loadCSVData(csvText);
+        console.log(`[Timing] CSV parsing: ${(performance.now() - stepStart).toFixed(0)}ms`);
 
-        // Also load weekly picks data from individual week tabs
-        updateLoadingProgress(85, 'Loading weekly picks...');
-        await loadAllWeeklyDataForBlazin();
-
-        // Load schedule from ESPN for current week
-        updateLoadingProgress(90, 'Loading game schedule...');
-        await loadWeekSchedule(currentWeek, true); // Force refresh to get latest status/scores
+        // Load only ESPN schedule on critical path (picks already loaded from localStorage)
+        // Skip spreads load for faster startup - will load in background
+        updateLoadingProgress(85, 'Loading schedule...');
+        stepStart = performance.now();
+        await loadWeekSchedule(currentWeek, true, true); // skipSpreadsLoad=true
+        console.log(`[Timing] ESPN schedule: ${(performance.now() - stepStart).toFixed(0)}ms`);
 
         // Check if all games in current week are complete and advance if needed
         const advanced = await checkAndAdvanceWeekIfNeeded();
@@ -3634,18 +3662,9 @@ async function loadFromGoogleSheets() {
             console.log(`[Init] Advanced to ${getWeekDisplayName(currentWeek)}`);
         }
 
-        // Load spreads from Google Sheets (primary source for all users)
-        updateLoadingProgress(95, 'Loading spreads...');
-        await prefetchAndSaveSpreads();
-
-        // Load picks from Google Sheets backup if localStorage is empty
-        await loadAllPicksFromBackup();
-
-        // Load results from Google Sheets backup
-        await loadAllResultsFromBackup();
-
         // Mark initial load as complete before rendering
         initialLoadComplete = true;
+        console.log(`[Timing] === TOTAL LOAD TIME: ${(performance.now() - loadStart).toFixed(0)}ms ===`);
 
         // Re-render games after schedule and odds are loaded
         renderGames();
@@ -3653,6 +3672,31 @@ async function loadFromGoogleSheets() {
 
         // Now hide loading state after all data is loaded
         hideLoadingState();
+
+        // Background load remaining data (non-blocking)
+        setTimeout(async () => {
+            const bgStart = performance.now();
+
+            // Load all background data in parallel
+            console.log('[Background] Syncing all background data...');
+            await Promise.all([
+                loadAllPicksFromBackup(),
+                loadAllResultsFromBackup(),
+                loadAllWeeklyDataForBlazin(),
+                prefetchAndSaveSpreads()
+            ]);
+
+            console.log(`[Background] All data synced: ${(performance.now() - bgStart).toFixed(0)}ms`);
+
+            // Mark spreads as loaded and re-render once
+            spreadsLoading = false;
+            renderGames();
+
+            // Re-render if user is on standings tab
+            if (currentCategory === 'standings') {
+                renderScoringSummary();
+            }
+        }, 100);
 
     } catch (err) {
         console.error('Failed to load data from Google Sheets:', err.message);
@@ -5747,7 +5791,7 @@ function formatCurrency(amount) {
  * Load all weekly data for Blazin' 5 analysis
  * Fetches each week's sheet to get the * markers
  */
-async function loadAllWeeklyDataForBlazin() {
+async function loadAllWeeklyDataForBlazin(weeksToLoad = null) {
     // Only use corsproxy.io which we know works
     const proxy = 'https://corsproxy.io/?';
 
@@ -5756,7 +5800,16 @@ async function loadAllWeeklyDataForBlazin() {
 
     // Build array of weeks that need fetching
     const weeksToFetch = [];
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+    const weekRange = weeksToLoad || [];
+
+    // If no specific weeks provided, load all weeks up to current
+    if (weekRange.length === 0) {
+        for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
+            weekRange.push(week);
+        }
+    }
+
+    for (const week of weekRange) {
         if (weeklyPicksCache[week]) {
             loadedWeeks++;
             continue; // Already cached
@@ -6771,8 +6824,14 @@ function renderGames() {
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
 
-        const awaySpreadDisplay = awaySpread > 0 ? `+${awaySpread}` : awaySpread;
-        const homeSpreadDisplay = homeSpread > 0 ? `+${homeSpread}` : homeSpread;
+        // Show loading indicator if spread is missing and still loading
+        const spreadMissing = !game.spread || game.spread === 0;
+        const awaySpreadDisplay = spreadMissing
+            ? (spreadsLoading ? '<span class="spread-loading"></span>' : '?')
+            : (awaySpread > 0 ? `+${awaySpread}` : awaySpread);
+        const homeSpreadDisplay = spreadMissing
+            ? (spreadsLoading ? '<span class="spread-loading"></span>' : '?')
+            : (homeSpread > 0 ? `+${homeSpread}` : homeSpread);
 
         // Calculate pick results for completed games
         const gameCompleted = isFinal || isHistoricalWeek;

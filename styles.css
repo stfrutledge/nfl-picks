@@ -6816,3 +6816,20 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 .picks-disabled .picks-actions .btn:hover {
     transform: none;
 }
+
+/* Spread loading indicator */
+.spread-loading {
+    display: inline-block;
+    width: 24px;
+    height: 12px;
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: spread-shimmer 1.5s infinite;
+    border-radius: 3px;
+    vertical-align: middle;
+}
+
+@keyframes spread-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
