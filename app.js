@@ -28,7 +28,7 @@ let initialLoadComplete = false; // Track whether initial data load is complete
 // Season configuration
 const CURRENT_SEASON = 2025;
 let currentSeason = CURRENT_SEASON;
-const AVAILABLE_SEASONS = [2025, 2024, 2023]; // Historical seasons available
+const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022]; // Historical seasons available
 
 // Season data storage - keyed by season year
 // 2025 (current) uses NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, allPicks directly
