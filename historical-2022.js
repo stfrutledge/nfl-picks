@@ -7030,6 +7030,12 @@ const SEASON_2022_DATA = {
   }
 };
 
+// Cowherd's 2022 Blazin' 5 aggregate results (week-by-week breakdown not available)
+const COWHERD_2022_RESULTS = {
+  aggregate: { wins: 44, losses: 37, pushes: 4 }
+};
+
 if (typeof window !== 'undefined') {
   window.SEASON_2022_DATA = SEASON_2022_DATA;
+  window.COWHERD_2022_RESULTS = COWHERD_2022_RESULTS;
 }
