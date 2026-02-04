@@ -28,7 +28,7 @@ let initialLoadComplete = false; // Track whether initial data load is complete
 // Season configuration
 const CURRENT_SEASON = 2025;
 let currentSeason = CURRENT_SEASON;
-const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022]; // Historical seasons available
+const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022, 2021]; // Historical seasons available
 
 // Get pickers available for a given season (Jason and Daniel started in 2023)
 function getPickersForSeason(season) {
@@ -2665,7 +2665,8 @@ function renderHistoryStandingsTable(season) {
     // Add Cowherd's aggregate data for seasons with Blazin' 5 data (no pick-by-pick data)
     const cowherdResults = season === 2024 ? window.COWHERD_2024_RESULTS :
                            season === 2023 ? window.COWHERD_2023_RESULTS :
-                           season === 2022 ? window.COWHERD_2022_RESULTS : null;
+                           season === 2022 ? window.COWHERD_2022_RESULTS :
+                           season === 2021 ? window.COWHERD_2021_RESULTS : null;
     if (cowherdResults) {
         let cowherdStats = {
             name: 'Cowherd',
