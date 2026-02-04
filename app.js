@@ -7354,6 +7354,13 @@ function handleOUSelect(e) {
 
     if (!gameId || btn.disabled) return;
 
+    // Look up the game to get matchup key (consistent with handlePickSelect)
+    const weekGames = getGamesForWeek(currentWeek);
+    const game = weekGames.find(g => String(g.id) === gameId);
+
+    // Use matchup key for storing picks (consistent with line/winner picks)
+    const pickKey = game ? getMatchupKey(game) : gameId;
+
     // Initialize picks structure
     if (!allPicks[currentWeek]) {
         allPicks[currentWeek] = {};
@@ -7361,25 +7368,23 @@ function handleOUSelect(e) {
     if (!allPicks[currentWeek][currentPicker]) {
         allPicks[currentWeek][currentPicker] = {};
     }
-    if (!allPicks[currentWeek][currentPicker][gameId]) {
-        allPicks[currentWeek][currentPicker][gameId] = {};
+    if (!allPicks[currentWeek][currentPicker][pickKey]) {
+        allPicks[currentWeek][currentPicker][pickKey] = {};
     }
 
     // Get current selection
-    const currentSelection = allPicks[currentWeek][currentPicker][gameId].overUnder;
+    const currentSelection = allPicks[currentWeek][currentPicker][pickKey].overUnder;
     const isDeselecting = currentSelection === value;
 
     // Toggle selection
     if (isDeselecting) {
-        delete allPicks[currentWeek][currentPicker][gameId].overUnder;
-        delete allPicks[currentWeek][currentPicker][gameId].totalLine;
+        delete allPicks[currentWeek][currentPicker][pickKey].overUnder;
+        delete allPicks[currentWeek][currentPicker][pickKey].totalLine;
     } else {
-        allPicks[currentWeek][currentPicker][gameId].overUnder = value;
+        allPicks[currentWeek][currentPicker][pickKey].overUnder = value;
         // Store the line at time of pick
-        const weekGames = getGamesForWeek(currentWeek);
-        const game = weekGames.find(g => String(g.id) === gameId);
         if (game && game.overUnder) {
-            allPicks[currentWeek][currentPicker][gameId].totalLine = game.overUnder;
+            allPicks[currentWeek][currentPicker][pickKey].totalLine = game.overUnder;
         }
     }
 
@@ -8594,8 +8599,14 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     const weekGames = getGamesForWeek(currentWeek);
     const formattedPicks = [];
 
-    for (const [gameId, pickData] of Object.entries(weekPicks)) {
-        const game = weekGames.find(g => String(g.id) === String(gameId));
+    for (const [pickKey, pickData] of Object.entries(weekPicks)) {
+        // Picks can be stored by game ID or matchup key (away_home)
+        // Try to find by game ID first, then by matchup key
+        let game = weekGames.find(g => String(g.id) === String(pickKey));
+        if (!game) {
+            // Try matchup key lookup
+            game = weekGames.find(g => getMatchupKey(g) === pickKey);
+        }
         if (!game) continue;
 
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
@@ -8606,7 +8617,7 @@ async function syncPicksToGoogleSheets(displayToast = true) {
         const winnerTeam = pickData?.winner ? (pickData.winner === 'away' ? game.away : game.home) : '';
 
         formattedPicks.push({
-            gameId: gameId,
+            gameId: pickKey,
             away: game.away,
             home: game.home,
             awaySpread: awaySpread,
