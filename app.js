@@ -30,6 +30,14 @@ const CURRENT_SEASON = 2025;
 let currentSeason = CURRENT_SEASON;
 const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022]; // Historical seasons available
 
+// Get pickers available for a given season (Jason and Daniel started in 2023)
+function getPickersForSeason(season) {
+    if (season <= 2022) {
+        return PICKERS.filter(p => p !== 'Jason' && p !== 'Daniel');
+    }
+    return PICKERS;
+}
+
 // Season data storage - keyed by season year
 // 2025 (current) uses NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, allPicks directly
 // Historical seasons loaded on-demand from historical-YYYY.js files
@@ -2362,6 +2370,34 @@ async function loadHistorySeason(season) {
         weekDropdown.innerHTML = optionsHtml;
     }
 
+    // Update picker dropdowns based on season (Jason/Daniel started in 2023)
+    const seasonPickers = getPickersForSeason(season);
+
+    const pickerDropdown = document.getElementById('history-picker-dropdown');
+    if (pickerDropdown) {
+        const currentSelection = pickerDropdown.value;
+        pickerDropdown.innerHTML = seasonPickers.map(p =>
+            `<option value="${p}"${p === currentSelection ? ' selected' : ''}>${p}</option>`
+        ).join('');
+        // If current selection is not available, select first picker
+        if (!seasonPickers.includes(currentSelection)) {
+            pickerDropdown.value = seasonPickers[0];
+        }
+    }
+
+    // Update Blazin' 5 records picker dropdown
+    const blazinPickerDropdown = document.getElementById('history-blazin-picker');
+    if (blazinPickerDropdown) {
+        const currentSelection = blazinPickerDropdown.value;
+        blazinPickerDropdown.innerHTML = seasonPickers.map(p =>
+            `<option value="${p}"${p === currentSelection ? ' selected' : ''}>${p}</option>`
+        ).join('');
+        // If current selection is not available, select first picker
+        if (!seasonPickers.includes(currentSelection)) {
+            blazinPickerDropdown.value = seasonPickers[0];
+        }
+    }
+
     // Render first week by default and update display
     renderHistoryWeek(1);
     updateHistoryWeekDisplay(1);
@@ -2551,9 +2587,12 @@ function renderHistoryStandingsTable(season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    // Get pickers for this season (Jason/Daniel started in 2023)
+    const seasonPickers = getPickersForSeason(season);
+
     // Calculate stats for each picker
     const pickerStats = {};
-    PICKERS.forEach(picker => {
+    seasonPickers.forEach(picker => {
         pickerStats[picker] = {
             name: picker,
             lineWins: 0, lineLosses: 0, linePushes: 0,
@@ -2579,7 +2618,7 @@ function renderHistoryStandingsTable(season) {
             // Calculate ATS winner
             const atsWinner = calculateATSWinner(game, gameResult);
 
-            PICKERS.forEach(picker => {
+            seasonPickers.forEach(picker => {
                 const pickerWeekPicks = weekPicks[picker] || {};
                 const gamePick = pickerWeekPicks[game.id] || pickerWeekPicks[String(game.id)] || {};
                 const stats = pickerStats[picker];
