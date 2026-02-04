@@ -2623,8 +2623,10 @@ function renderHistoryStandingsTable(season) {
         });
     });
 
-    // Add Cowherd's aggregate data for 2024 season (Blazin' 5 only, no pick-by-pick data)
-    if (season === 2024 && window.COWHERD_2024_RESULTS) {
+    // Add Cowherd's aggregate data for seasons with Blazin' 5 data (no pick-by-pick data)
+    const cowherdResults = season === 2024 ? window.COWHERD_2024_RESULTS :
+                           season === 2023 ? window.COWHERD_2023_RESULTS : null;
+    if (cowherdResults) {
         let cowherdStats = {
             name: 'Cowherd',
             lineWins: 0, lineLosses: 0, linePushes: 0,
@@ -2632,7 +2634,7 @@ function renderHistoryStandingsTable(season) {
             blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
             totalWins: 0, totalLosses: 0, totalPushes: 0
         };
-        Object.values(window.COWHERD_2024_RESULTS).forEach(weekData => {
+        Object.values(cowherdResults).forEach(weekData => {
             if (weekData) {
                 cowherdStats.blazinWins += weekData.wins;
                 cowherdStats.blazinLosses += weekData.losses;

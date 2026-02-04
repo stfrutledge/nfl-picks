@@ -9887,6 +9887,28 @@ const SEASON_2023_DATA = {
   }
 };
 
+const COWHERD_2023_RESULTS = {
+  "1": { wins: 0, losses: 5, pushes: 0 },
+  "2": { wins: 0, losses: 4, pushes: 1 },
+  "3": { wins: 3, losses: 1, pushes: 1 },
+  "4": { wins: 3, losses: 2, pushes: 0 },
+  "5": { wins: 5, losses: 0, pushes: 0 },
+  "6": { wins: 2, losses: 3, pushes: 0 },
+  "7": { wins: 3, losses: 2, pushes: 0 },
+  "8": { wins: 2, losses: 1, pushes: 2 },
+  "9": { wins: 2, losses: 3, pushes: 0 },
+  "10": { wins: 2, losses: 2, pushes: 1 },
+  "11": { wins: 3, losses: 1, pushes: 1 },
+  "12": { wins: 2, losses: 2, pushes: 1 },
+  "13": { wins: 3, losses: 2, pushes: 0 },
+  "14": { wins: 3, losses: 2, pushes: 0 },
+  "15": { wins: 4, losses: 1, pushes: 0 },
+  "16": { wins: 2, losses: 2, pushes: 1 },
+  "17": { wins: 3, losses: 2, pushes: 0 },
+  "18": { wins: 3, losses: 2, pushes: 0 }
+};
+
 if (typeof window !== 'undefined') {
   window.SEASON_2023_DATA = SEASON_2023_DATA;
+  window.COWHERD_2023_RESULTS = COWHERD_2023_RESULTS;
 }
