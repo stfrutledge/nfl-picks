@@ -2451,8 +2451,11 @@ function renderHistoryWeek(week) {
 
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
-        const awaySpreadDisplay = awaySpread > 0 ? `+${awaySpread}` : awaySpread;
-        const homeSpreadDisplay = homeSpread > 0 ? `+${homeSpread}` : homeSpread;
+        const spreadMissing = !game.spread || game.spread === 0;
+        const awaySpreadDisplay = spreadMissing ? '' : (awaySpread > 0 ? `+${awaySpread}` : awaySpread);
+        const homeSpreadDisplay = spreadMissing ? '' : (homeSpread > 0 ? `+${homeSpread}` : homeSpread);
+        const awaySpreadWithParens = spreadMissing ? '' : `(${awaySpreadDisplay})`;
+        const homeSpreadWithParens = spreadMissing ? '' : `(${homeSpreadDisplay})`;
 
         // Calculate pick results
         let lineAwayResult = '', lineHomeResult = '', winnerAwayResult = '', winnerHomeResult = '';
@@ -2517,12 +2520,12 @@ function renderHistoryWeek(week) {
                 <div class="game-matchup-line">
                     <span class="away-team">
                         <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo" onerror="handleLogoError(this, '${game.away}')">
-                        ${game.away} (${awaySpreadDisplay})
+                        ${game.away} ${awaySpreadWithParens}
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
                         <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo" onerror="handleLogoError(this, '${game.home}')">
-                        ${game.home} (${homeSpreadDisplay})
+                        ${game.home} ${homeSpreadWithParens}
                     </span>
                 </div>
 
@@ -6873,11 +6876,18 @@ function renderGames() {
         // Show loading indicator if spread is missing and still loading
         const spreadMissing = !game.spread || game.spread === 0;
         const awaySpreadDisplay = spreadMissing
-            ? (spreadsLoading ? '<span class="spread-loading"></span>' : '?')
+            ? ''
             : (awaySpread > 0 ? `+${awaySpread}` : awaySpread);
         const homeSpreadDisplay = spreadMissing
-            ? (spreadsLoading ? '<span class="spread-loading"></span>' : '?')
+            ? ''
             : (homeSpread > 0 ? `+${homeSpread}` : homeSpread);
+        // For game matchup line, show spread in parentheses only if available
+        const awaySpreadWithParens = spreadMissing
+            ? (spreadsLoading ? '<span class="spread-loading"></span>' : '')
+            : `(${awaySpreadDisplay})`;
+        const homeSpreadWithParens = spreadMissing
+            ? (spreadsLoading ? '<span class="spread-loading"></span>' : '')
+            : `(${homeSpreadDisplay})`;
 
         // Calculate pick results for completed games
         const gameCompleted = isFinal || isHistoricalWeek;
@@ -7001,12 +7011,12 @@ function renderGames() {
                 <div class="game-matchup-line">
                     <span class="away-team">
                         <img src="${getTeamLogo(game.away)}" alt="${game.away} logo" class="team-logo" onerror="handleLogoError(this, '${game.away}')">
-                        ${game.away} (${awaySpreadDisplay})
+                        ${game.away} ${awaySpreadWithParens}
                     </span>
                     <span class="at-symbol">@</span>
                     <span class="home-team">
                         <img src="${getTeamLogo(game.home)}" alt="${game.home} logo" class="team-logo" onerror="handleLogoError(this, '${game.home}')">
-                        ${game.home} (${homeSpreadDisplay})
+                        ${game.home} ${homeSpreadWithParens}
                     </span>
                 </div>
 
