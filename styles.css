@@ -1951,13 +1951,14 @@ footer a:hover {
     .insights-section,
     .streaks-section,
     .group-stats-section,
-    .make-picks-section,
     footer {
         padding-left: 16px;
         padding-right: 16px;
     }
 
     .make-picks-section {
+        padding-left: 8px;
+        padding-right: 8px;
         max-width: 100%;
         overflow-x: hidden;
     }
