@@ -2572,12 +2572,15 @@ footer a:hover {
     }
 
     .game-matchup-line {
-        flex-direction: column;
-        gap: 4px;
+        gap: 6px;
     }
 
-    .game-matchup-line .at-symbol {
-        display: none;
+    .game-matchup-line .away-team,
+    .game-matchup-line .home-team {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 45%;
     }
 
     .picks-row {
@@ -2820,7 +2823,6 @@ footer a:hover {
     font-size: 1rem;
     font-weight: 700;
     text-transform: uppercase;
-    flex-wrap: wrap;
     min-width: 0;
     max-width: 100%;
 }
