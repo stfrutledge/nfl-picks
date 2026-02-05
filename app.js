@@ -3765,6 +3765,9 @@ async function loadFromGoogleSheets() {
 async function setActiveCategory(category) {
     currentCategory = category;
 
+    // Reset scroll position to top when switching tabs to prevent rendering artifacts
+    window.scrollTo(0, 0);
+
     // Update tabs
     tabs.forEach(tab => {
         tab.classList.toggle('active', tab.dataset.category === category);
