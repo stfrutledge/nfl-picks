@@ -104,36 +104,78 @@ function getWeekTitle(week, suffix = 'Picks') {
 }
 
 /**
+ * Get Labor Day (first Monday of September) for a given year
+ */
+function getLaborDay(year) {
+    // Start at September 1st
+    const sept1 = new Date(year, 8, 1); // Month is 0-indexed, so 8 = September
+    // Find the first Monday (day 1)
+    const dayOfWeek = sept1.getDay();
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+    return new Date(year, 8, 1 + daysUntilMonday);
+}
+
+/**
+ * Calculate NFL season dates dynamically based on season year
+ * NFL season starts Thursday after Labor Day
+ * Week 1 Tuesday is 2 days before that Thursday
+ */
+function getSeasonDates(seasonYear) {
+    const laborDay = getLaborDay(seasonYear);
+
+    // Season starts Tuesday before Week 1 Thursday (Thursday after Labor Day)
+    // Labor Day (Monday) + 3 days = Thursday, so Tuesday = Labor Day + 1
+    const seasonStart = new Date(laborDay);
+    seasonStart.setDate(laborDay.getDate() + 1); // Tuesday before Week 1
+
+    // Regular season is 18 weeks, ends ~18 weeks after start
+    const regularSeasonEnd = new Date(seasonStart);
+    regularSeasonEnd.setDate(seasonStart.getDate() + (18 * 7) + 1);
+
+    // Playoff dates (approximate - typically 2nd weekend of January for Wild Card)
+    const nextYear = seasonYear + 1;
+    // Wild Card is typically the 2nd Saturday/Sunday of January
+    const wildCardStart = new Date(nextYear, 0, 10); // ~January 10
+    const divisionalStart = new Date(nextYear, 0, 17); // ~January 17
+    const conferenceStart = new Date(nextYear, 0, 25); // ~January 25
+    const superBowlStart = new Date(nextYear, 0, 26); // Day after Conference Championships
+    const superBowlEnd = new Date(nextYear, 1, 9); // ~February 9
+
+    return {
+        seasonStart,
+        regularSeasonEnd,
+        wildCardStart,
+        divisionalStart,
+        conferenceStart,
+        superBowlStart,
+        superBowlEnd
+    };
+}
+
+/**
  * Calculate current NFL week based on date
- * 2025 NFL Season: Week 1 started September 4, 2025
- * Playoffs: Wild Card (Jan 10), Divisional (Jan 17), Conference (Jan 25), Super Bowl (Feb 8)
+ * Dynamically calculates dates based on CURRENT_SEASON
  */
 function calculateCurrentNFLWeek() {
-    const SEASON_START = new Date('2025-09-02T00:00:00'); // Tuesday before Week 1
-    const REGULAR_SEASON_END = new Date('2026-01-06T00:00:00'); // Day after Week 18 games
-    const WILD_CARD_START = new Date('2026-01-10T00:00:00');
-    const DIVISIONAL_START = new Date('2026-01-17T00:00:00');
-    const CONFERENCE_START = new Date('2026-01-25T00:00:00');
-    const SUPER_BOWL_START = new Date('2026-01-26T00:00:00'); // Start showing Super Bowl after Conference Championship games
-    const SUPER_BOWL_END = new Date('2026-02-09T00:00:00');
+    const dates = getSeasonDates(CURRENT_SEASON);
     const now = new Date();
 
     // If before season start, return week 1
-    if (now < SEASON_START) return 1;
+    if (now < dates.seasonStart) return 1;
 
     // Playoff weeks
-    if (now >= SUPER_BOWL_END) return 23; // Season completely over
-    if (now >= SUPER_BOWL_START) return 22; // Super Bowl
-    if (now >= CONFERENCE_START) return 21; // Conference Championships
-    if (now >= DIVISIONAL_START) return 20; // Divisional
-    if (now >= WILD_CARD_START) return 19; // Wild Card
+    if (now >= dates.superBowlEnd) return 23; // Season completely over
+    if (now >= dates.superBowlStart) return 22; // Super Bowl
+    if (now >= dates.conferenceStart) return 21; // Conference Championships
+    if (now >= dates.divisionalStart) return 20; // Divisional
+    if (now >= dates.wildCardStart) return 19; // Wild Card
 
     // If after regular season but before Wild Card
-    if (now >= REGULAR_SEASON_END) return 19;
+    if (now >= dates.regularSeasonEnd) return 19;
 
     // Calculate weeks elapsed (each NFL week starts on Tuesday)
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-    const weeksElapsed = Math.floor((now - SEASON_START) / msPerWeek);
+    const weeksElapsed = Math.floor((now - dates.seasonStart) / msPerWeek);
 
     // Clamp to valid range (1-18)
     return Math.min(Math.max(weeksElapsed + 1, 1), TOTAL_WEEKS);
