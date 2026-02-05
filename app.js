@@ -26,9 +26,21 @@ let resultsSyncedGames = {}; // Track which games have had results synced to avo
 let initialLoadComplete = false; // Track whether initial data load is complete
 
 // Season configuration
-const CURRENT_SEASON = 2025;
+// Automatically determine current season based on date (switches on July 1st)
+function calculateCurrentSeason() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-indexed, so July = 6
+    // If July (6) or later, use current year; otherwise use previous year
+    return month >= 6 ? year : year - 1;
+}
+const CURRENT_SEASON = calculateCurrentSeason();
 let currentSeason = CURRENT_SEASON;
-const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022, 2021, 2020]; // Historical seasons available
+// Generate available seasons from current season back to 2020
+const AVAILABLE_SEASONS = Array.from(
+    { length: CURRENT_SEASON - 2020 + 1 },
+    (_, i) => CURRENT_SEASON - i
+);
 
 // Get pickers available for a given season (Jason and Daniel started in 2023)
 function getPickersForSeason(season) {
