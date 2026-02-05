@@ -1957,6 +1957,11 @@ footer a:hover {
         padding-right: 16px;
     }
 
+    .make-picks-section {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
     .standings-subtabs {
         gap: 6px;
         padding: 10px 16px;
@@ -2554,6 +2559,7 @@ footer a:hover {
     grid-template-columns: repeat(auto-fill, minmax(min(450px, 100%), 1fr));
     gap: 16px;
     margin-bottom: 24px;
+    max-width: 100%;
 }
 
 @media (max-width: 400px) {
@@ -2587,6 +2593,9 @@ footer a:hover {
     border: 1px solid var(--border-color);
     transition: all 0.2s ease;
     box-shadow: var(--shadow-sm);
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .game-card:hover {
@@ -2811,6 +2820,9 @@ footer a:hover {
     font-size: 1rem;
     font-weight: 700;
     text-transform: uppercase;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .game-matchup-line .away-team,
@@ -2819,6 +2831,7 @@ footer a:hover {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
 }
 
 .game-matchup-line .at-symbol {
@@ -2859,12 +2872,14 @@ footer a:hover {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
+    min-width: 0;
 }
 
 .pick-type {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
 }
 
 .pick-label {
@@ -2879,6 +2894,7 @@ footer a:hover {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
 }
 
 .pick-btn {
@@ -2892,6 +2908,8 @@ footer a:hover {
     cursor: pointer;
     transition: all 0.15s ease;
     text-align: center;
+    min-width: 0;
+    word-break: break-word;
 }
 
 .pick-btn:hover {
@@ -6837,6 +6855,12 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         padding: 14px;
         max-width: 100%;
         box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .games-list {
+        max-width: 100%;
+        overflow: hidden;
     }
 
     /* Ensure game card content doesn't overflow */
