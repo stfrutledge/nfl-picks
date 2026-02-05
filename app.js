@@ -6176,8 +6176,6 @@ function renderStandingsTable(stats) {
             <th>Total</th>
             <th>Last 3-Wk</th>
             <th>Best Week</th>
-            <th>High %</th>
-            <th>Low %</th>
             <th>Year Chg</th>
         </tr>
     `;
@@ -6196,8 +6194,6 @@ function renderStandingsTable(stats) {
         // Format percentages
         const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(2) + '%' : picker.percentage || '-';
         const last3Wk = typeof picker.last3WeekPct === 'number' ? picker.last3WeekPct.toFixed(2) + '%' : picker.last3WeekPct || '-';
-        const highPct = typeof picker.highestPct === 'number' ? picker.highestPct.toFixed(2) + '%' : picker.highestPct || '-';
-        const lowPct = typeof picker.lowestPct === 'number' ? picker.lowestPct.toFixed(2) + '%' : picker.lowestPct || '-';
 
         // Determine push/draw label based on category
         const pushOrDraw = currentSubcategory === 'winner' ? picker.draws || 0 : picker.pushes || 0;
@@ -6212,8 +6208,6 @@ function renderStandingsTable(stats) {
                 <td>${picker.totalPicks || 0}</td>
                 <td>${last3Wk}</td>
                 <td class="best-week">${picker.bestWeek || '-'}</td>
-                <td>${highPct}</td>
-                <td>${lowPct}</td>
                 <td class="year-change ${yearChangeClass}">${yearChangeDisplay || '-'}</td>
             </tr>
         `;

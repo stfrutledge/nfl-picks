@@ -3989,6 +3989,7 @@ footer a:hover {
 .standings-table .year-change {
     font-weight: 600;
     white-space: nowrap;
+    text-align: center;
 }
 
 .standings-table .year-change.positive {
