@@ -4282,6 +4282,25 @@ footer a:hover {
     .history-standings-section .consolidated-title {
         font-size: 1rem;
     }
+
+    .history-standings-section .standings-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -12px;
+        padding: 0 12px;
+    }
+
+    .standings-table.history-standings {
+        table-layout: auto;
+        min-width: 600px;
+    }
+
+    .standings-table.history-standings th,
+    .standings-table.history-standings td {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
 }
 
 /* ===== HISTORY BLAZIN' 5 RECORDS SECTION ===== */
@@ -4345,6 +4364,24 @@ footer a:hover {
 
     .history-blazin-section .consolidated-title {
         font-size: 1rem;
+    }
+
+    .history-blazin-section .team-records-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -12px;
+        padding: 0 12px;
+    }
+
+    .history-blazin-section .team-records-table {
+        min-width: 350px;
+    }
+
+    .history-blazin-section .team-records-table th,
+    .history-blazin-section .team-records-table td {
+        padding: 8px 10px;
+        font-size: 0.8rem;
+        white-space: nowrap;
     }
 }
 
