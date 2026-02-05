@@ -7394,6 +7394,12 @@ function handleOUSelect(e) {
         return;
     }
 
+    // Require a picker to be selected before making picks
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return;
+    }
+
     const btn = e.currentTarget;
     const gameId = btn.dataset.gameId;
     const value = btn.dataset.value; // 'over' or 'under'

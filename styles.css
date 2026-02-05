@@ -6667,18 +6667,18 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 .ou-btn {
     padding: 4px 12px;
     font-size: 0.75rem;
-    font-weight: 600;
-    border: 1px solid var(--border-color);
+    font-weight: 700;
+    border: 2px solid var(--border-color);
     border-radius: 4px;
-    background: var(--bg-card);
+    background: var(--bg-primary);
     color: var(--text-primary);
     cursor: pointer;
     transition: all 0.15s ease;
 }
 
 .ou-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
     border-color: var(--nfl-blue);
+    background: var(--bg-hover);
 }
 
 .ou-btn.selected {
