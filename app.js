@@ -28,7 +28,7 @@ let initialLoadComplete = false; // Track whether initial data load is complete
 // Season configuration
 const CURRENT_SEASON = 2025;
 let currentSeason = CURRENT_SEASON;
-const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022, 2021]; // Historical seasons available
+const AVAILABLE_SEASONS = [2025, 2024, 2023, 2022, 2021, 2020]; // Historical seasons available
 
 // Get pickers available for a given season (Jason and Daniel started in 2023)
 function getPickersForSeason(season) {
