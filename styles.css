@@ -4181,20 +4181,24 @@ footer a:hover {
 /* ===== HISTORY STANDINGS SECTION ===== */
 .history-standings-section {
     margin: 0 0 24px;
-}
-
-.history-standings-section .standings-panel {
     background: var(--bg-primary);
     border-radius: 12px;
     border: 1px solid var(--border-color);
     padding: 16px;
 }
 
-.history-standings-section .standings-panel h3 {
-    margin: 0 0 16px 0;
-    font-size: 1rem;
-    font-weight: 600;
+.history-standings-section .consolidated-header {
+    padding: 0 0 16px 0;
+}
+
+.history-standings-section .consolidated-title {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     color: var(--text-primary);
+    margin: 0;
 }
 
 /* Consistent column widths */
@@ -4267,6 +4271,16 @@ footer a:hover {
 @media (max-width: 768px) {
     .history-standings-section {
         margin: 0 0 16px;
+        padding: 12px;
+        border-radius: 8px;
+    }
+
+    .history-standings-section .consolidated-header {
+        padding: 0 0 12px 0;
+    }
+
+    .history-standings-section .consolidated-title {
+        font-size: 1rem;
     }
 }
 
@@ -4280,12 +4294,15 @@ footer a:hover {
 }
 
 .history-blazin-section .consolidated-header {
-    margin-bottom: 16px;
+    padding: 0 0 16px 0;
 }
 
 .history-blazin-section .consolidated-title {
-    font-size: 1rem;
-    font-weight: 600;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     color: var(--text-primary);
     margin: 0;
 }
@@ -4312,6 +4329,22 @@ footer a:hover {
 @media (max-width: 900px) {
     .history-blazin-section .blazin-records-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .history-blazin-section {
+        margin: 0 0 16px;
+        padding: 12px;
+        border-radius: 8px;
+    }
+
+    .history-blazin-section .consolidated-header {
+        padding: 0 0 12px 0;
+    }
+
+    .history-blazin-section .consolidated-title {
+        font-size: 1rem;
     }
 }
 
@@ -6717,9 +6750,13 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     /* Consistent dropdown styles for mobile */
     .week-dropdown,
     .picker-dropdown {
-        max-width: 160px;
+        width: 140px;
+        min-width: 140px;
+        max-width: 140px;
         font-size: 0.85rem;
         padding: 8px 10px;
+        text-align: center;
+        text-align-last: center;
         text-overflow: ellipsis;
         overflow: hidden;
         white-space: nowrap;
