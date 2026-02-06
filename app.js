@@ -3827,7 +3827,7 @@ async function setActiveCategory(category) {
         tab.classList.toggle('active', tab.dataset.category === category);
     });
 
-    // Show/hide sections based on category
+    // Get all content sections
     const makePicksSection = document.getElementById('make-picks-section');
     const performanceInsightsSection = document.getElementById('performance-insights-section');
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
@@ -3835,83 +3835,46 @@ async function setActiveCategory(category) {
     const historySection = document.getElementById('history-section');
     const playoffStandingsSection = document.getElementById('playoff-standings-section');
     const playoffComparisonSection = document.getElementById('playoff-comparison-section');
+    const tabLoading = document.getElementById('tab-loading');
 
+    // FIRST: Hide ALL sections to ensure clean slate
+    standingsSubtabs?.classList.add('hidden');
+    leaderboard?.classList.add('hidden');
+    makePicksSection?.classList.add('hidden');
+    performanceInsightsSection?.classList.add('hidden');
+    recordsAnalysisSection?.classList.add('hidden');
+    vsMarketSection?.classList.add('hidden');
+    historySection?.classList.add('hidden');
+    playoffStandingsSection?.classList.add('hidden');
+    playoffComparisonSection?.classList.add('hidden');
+    tabLoading?.classList.add('hidden');
+
+    // Destroy chart instances to prevent memory leaks (for any tab switch)
+    if (typeof destroyAllCharts === 'function') {
+        destroyAllCharts();
+    }
+
+    // Stop live scores refresh when leaving picks tab
+    if (category !== 'make-picks') {
+        stopLiveScoresRefresh();
+    }
+
+    // THEN: Show only sections needed for the selected category
     if (category === 'make-picks') {
-        // Destroy chart instances to prevent memory leaks
-        if (typeof destroyAllCharts === 'function') {
-            destroyAllCharts();
-        }
-
-        // Hide subtabs and dashboard sections
-        standingsSubtabs?.classList.add('hidden');
-        leaderboard.classList.add('hidden');
-        performanceInsightsSection?.classList.add('hidden');
-        recordsAnalysisSection?.classList.add('hidden');
-        vsMarketSection?.classList.add('hidden');
-        historySection?.classList.add('hidden');
-        playoffStandingsSection?.classList.add('hidden');
-        playoffComparisonSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
-
-        // Start live scores refresh and render the picks interface
         startLiveScoresRefresh();
         renderScoringSummary();
     } else if (category === 'standings') {
-        // Stop live scores refresh when leaving picks tab
-        stopLiveScoresRefresh();
-
-        // Show subtabs and dashboard sections
         standingsSubtabs?.classList.remove('hidden');
-        leaderboard.classList.remove('hidden');
+        leaderboard?.classList.remove('hidden');
         performanceInsightsSection?.classList.remove('hidden');
         recordsAnalysisSection?.classList.remove('hidden');
-        vsMarketSection?.classList.add('hidden');
-        historySection?.classList.add('hidden');
-        makePicksSection?.classList.add('hidden');
-
         renderDashboard();
     } else if (category === 'vs-market') {
-        // Stop live scores refresh when leaving picks tab
-        stopLiveScoresRefresh();
-
-        // Destroy chart instances to prevent memory leaks
-        if (typeof destroyAllCharts === 'function') {
-            destroyAllCharts();
-        }
-
-        // Hide other sections
-        standingsSubtabs?.classList.add('hidden');
-        leaderboard.classList.add('hidden');
-        performanceInsightsSection?.classList.add('hidden');
-        recordsAnalysisSection?.classList.add('hidden');
-        makePicksSection?.classList.add('hidden');
-        historySection?.classList.add('hidden');
-        playoffStandingsSection?.classList.add('hidden');
-        playoffComparisonSection?.classList.add('hidden');
         vsMarketSection?.classList.remove('hidden');
-
-        // Render the vs market section
         renderVsMarketSection();
     } else if (category === 'history') {
-        // Stop live scores refresh when leaving picks tab
-        stopLiveScoresRefresh();
-
-        // Destroy chart instances to prevent memory leaks
-        if (typeof destroyAllCharts === 'function') {
-            destroyAllCharts();
-        }
-
-        // Hide other sections
-        standingsSubtabs?.classList.add('hidden');
-        leaderboard.classList.add('hidden');
-        performanceInsightsSection?.classList.add('hidden');
-        recordsAnalysisSection?.classList.add('hidden');
-        makePicksSection?.classList.add('hidden');
-        vsMarketSection?.classList.add('hidden');
-        playoffStandingsSection?.classList.add('hidden');
-        playoffComparisonSection?.classList.add('hidden');
         historySection?.classList.remove('hidden');
-
         // Load the first historical season
         const historicalSeasons = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON);
         if (historicalSeasons.length > 0) {
