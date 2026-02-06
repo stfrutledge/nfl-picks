@@ -2124,7 +2124,6 @@ footer a:hover {
 /* Picker Colors */
 .color-stephen { background-color: #3b82f6; }
 .color-sean { background-color: var(--accent-green); }
-.color-drew { background-color: #ec4899; }
 .color-dylan { background-color: #8b5cf6; }
 .color-jason { background-color: #f97316; }
 .color-daniel { background-color: #06b6d4; }
@@ -2551,7 +2550,6 @@ footer a:hover {
 
 .picker-btn[data-picker="Stephen"].active { background: #3b82f6; border-color: #3b82f6; }
 .picker-btn[data-picker="Sean"].active { background: var(--accent-green); border-color: var(--accent-green); }
-.picker-btn[data-picker="Drew"].active { background: #ec4899; border-color: #ec4899; }
 .picker-btn[data-picker="Dylan"].active { background: #8b5cf6; border-color: #8b5cf6; }
 .picker-btn[data-picker="Jason"].active { background: #f97316; border-color: #f97316; }
 .picker-btn[data-picker="Daniel"].active { background: #06b6d4; border-color: #06b6d4; }
