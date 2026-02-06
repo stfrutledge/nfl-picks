@@ -1957,8 +1957,8 @@ footer a:hover {
     }
 
     .make-picks-section {
-        padding-left: 0;
-        padding-right: 0;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
         max-width: 100%;
         overflow-x: hidden;
     }
