@@ -2090,7 +2090,7 @@ footer a:hover {
 
     /* Card padding reductions */
     .game-card {
-        padding: 16px;
+        padding: 10px;
     }
 
     .picker-stats {
@@ -2569,7 +2569,7 @@ footer a:hover {
     }
 
     .game-card {
-        padding: 16px;
+        padding: 10px;
     }
 
     .game-matchup-line {
@@ -6855,7 +6855,7 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     }
 
     .game-card {
-        padding: 14px;
+        padding: 10px;
         max-width: 100%;
         box-sizing: border-box;
         overflow: hidden;
