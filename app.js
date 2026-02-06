@@ -3834,6 +3834,7 @@ async function setActiveCategory(category) {
     const vsMarketSection = document.getElementById('vs-market-section');
     const historySection = document.getElementById('history-section');
     const playoffStandingsSection = document.getElementById('playoff-standings-section');
+    const playoffComparisonSection = document.getElementById('playoff-comparison-section');
 
     if (category === 'make-picks') {
         // Destroy chart instances to prevent memory leaks
@@ -3849,6 +3850,7 @@ async function setActiveCategory(category) {
         vsMarketSection?.classList.add('hidden');
         historySection?.classList.add('hidden');
         playoffStandingsSection?.classList.add('hidden');
+        playoffComparisonSection?.classList.add('hidden');
         makePicksSection?.classList.remove('hidden');
 
         // Start live scores refresh and render the picks interface
@@ -3885,6 +3887,7 @@ async function setActiveCategory(category) {
         makePicksSection?.classList.add('hidden');
         historySection?.classList.add('hidden');
         playoffStandingsSection?.classList.add('hidden');
+        playoffComparisonSection?.classList.add('hidden');
         vsMarketSection?.classList.remove('hidden');
 
         // Render the vs market section
@@ -3906,6 +3909,7 @@ async function setActiveCategory(category) {
         makePicksSection?.classList.add('hidden');
         vsMarketSection?.classList.add('hidden');
         playoffStandingsSection?.classList.add('hidden');
+        playoffComparisonSection?.classList.add('hidden');
         historySection?.classList.remove('hidden');
 
         // Load the first historical season
