@@ -1993,11 +1993,6 @@ function getMaxWeekForSeason(season = currentSeason) {
  * @returns {Promise<object|null>} - Season data or null if load failed
  */
 async function loadSeasonData(season) {
-    // Current season uses live data, no need to load
-    if (season === CURRENT_SEASON) {
-        return { games: NFL_GAMES_BY_WEEK, results: NFL_RESULTS_BY_WEEK, picks: allPicks };
-    }
-
     // Already loaded into seasonData
     if (seasonData[season]) {
         return seasonData[season];
@@ -2274,7 +2269,7 @@ function setupWeekButtons() {
 function setupSeasonDropdown() {
     // Show/hide History tab based on available historical seasons
     const historyTab = document.getElementById('history-tab');
-    const hasHistoricalSeasons = AVAILABLE_SEASONS.some(s => s !== CURRENT_SEASON);
+    const hasHistoricalSeasons = AVAILABLE_SEASONS.length > 0;
 
     if (historyTab) {
         historyTab.style.display = hasHistoricalSeasons ? '' : 'none';
@@ -2283,10 +2278,9 @@ function setupSeasonDropdown() {
     // Setup history section dropdowns
     const historySeasonDropdown = document.getElementById('history-season-dropdown');
     if (historySeasonDropdown && hasHistoricalSeasons) {
-        // Only show historical seasons (not current)
-        const historicalSeasons = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON);
+        // Show all seasons including current (2025 season is complete)
         let optionsHtml = '';
-        historicalSeasons.forEach(season => {
+        AVAILABLE_SEASONS.forEach(season => {
             optionsHtml += `<option value="${season}">${season}</option>`;
         });
         historySeasonDropdown.innerHTML = optionsHtml;
@@ -3875,10 +3869,9 @@ async function setActiveCategory(category) {
         renderVsMarketSection();
     } else if (category === 'history') {
         historySection?.classList.remove('hidden');
-        // Load the first historical season
-        const historicalSeasons = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON);
-        if (historicalSeasons.length > 0) {
-            loadHistorySeason(historicalSeasons[0]);
+        // Load the first available season (includes current since 2025 is complete)
+        if (AVAILABLE_SEASONS.length > 0) {
+            loadHistorySeason(AVAILABLE_SEASONS[0]);
         }
     }
 }
