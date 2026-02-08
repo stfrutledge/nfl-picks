@@ -3814,8 +3814,8 @@ async function loadFromGoogleSheets() {
             spreadsLoading = false;
             renderGames();
 
-            // Re-render if user is on standings tab
-            if (currentCategory === 'standings') {
+            // Re-render scoring summary after picks are loaded (for Super Bowl picks summary)
+            if (currentCategory === 'make-picks' || currentCategory === 'standings') {
                 renderScoringSummary();
             }
         }, 100);
@@ -4923,18 +4923,296 @@ function calculateHistoryBlazinTeamRecords(picker, season) {
 }
 
 /**
+ * Calculate historical Blazin' 5 records when PICKING a specific team
+ */
+function calculateHistoryBlazinTeamPicked(picker, season) {
+    const teamRecords = {};
+
+    if (!seasonData[season]) return teamRecords;
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+        const pickerPicks = weekPicks[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+            const result = weekResults[game.id] || weekResults[gameIdStr];
+
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+
+            // Only record for the team that was PICKED
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const normalizedTeam = TEAM_NAME_MAP[pickedTeam] || pickedTeam;
+
+            if (!teamRecords[normalizedTeam]) {
+                teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+            }
+
+            teamRecords[normalizedTeam].games.push({
+                week: weekNum,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+            });
+
+            if (isPush) {
+                teamRecords[normalizedTeam].pushes++;
+            } else if (isWin) {
+                teamRecords[normalizedTeam].wins++;
+            } else {
+                teamRecords[normalizedTeam].losses++;
+            }
+        });
+    });
+
+    return teamRecords;
+}
+
+/**
+ * Calculate historical Blazin' 5 records when FADING (picking against) a specific team
+ */
+function calculateHistoryBlazinTeamFaded(picker, season) {
+    const teamRecords = {};
+
+    if (!seasonData[season]) return teamRecords;
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+        const pickerPicks = weekPicks[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+            const result = weekResults[game.id] || weekResults[gameIdStr];
+
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+
+            // Record for the team that was FADED (not picked)
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+            const fadedTeam = pick.line === 'away' ? game.home : game.away;
+            const normalizedTeam = TEAM_NAME_MAP[fadedTeam] || fadedTeam;
+
+            if (!teamRecords[normalizedTeam]) {
+                teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+            }
+
+            teamRecords[normalizedTeam].games.push({
+                week: weekNum,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+            });
+
+            if (isPush) {
+                teamRecords[normalizedTeam].pushes++;
+            } else if (isWin) {
+                teamRecords[normalizedTeam].wins++;
+            } else {
+                teamRecords[normalizedTeam].losses++;
+            }
+        });
+    });
+
+    return teamRecords;
+}
+
+/**
+ * Calculate historical Blazin' 5 records by Home vs Away picks
+ */
+function calculateHistoryBlazinHomeAway(picker, season) {
+    const records = {
+        'Home': { wins: 0, losses: 0, pushes: 0, games: [] },
+        'Away': { wins: 0, losses: 0, pushes: 0, games: [] }
+    };
+
+    if (!seasonData[season]) return records;
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+        const pickerPicks = weekPicks[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+            const result = weekResults[game.id] || weekResults[gameIdStr];
+
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+
+            const category = pick.line === 'home' ? 'Home' : 'Away';
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+
+            records[category].games.push({
+                week: weekNum,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+            });
+
+            if (isPush) {
+                records[category].pushes++;
+            } else if (isWin) {
+                records[category].wins++;
+            } else {
+                records[category].losses++;
+            }
+        });
+    });
+
+    return records;
+}
+
+/**
+ * Calculate historical Blazin' 5 records by Favorite vs Underdog picks
+ */
+function calculateHistoryBlazinFavDog(picker, season) {
+    const records = {
+        'Favorite': { wins: 0, losses: 0, pushes: 0, games: [] },
+        'Underdog': { wins: 0, losses: 0, pushes: 0, games: [] }
+    };
+
+    if (!seasonData[season]) return records;
+
+    const data = seasonData[season];
+    const games = data.games || {};
+    const results = data.results || {};
+    const picks = data.picks || {};
+
+    Object.keys(games).forEach(weekKey => {
+        const weekNum = parseInt(weekKey);
+        if (isNaN(weekNum)) return;
+
+        const weekGames = games[weekKey] || [];
+        const weekResults = results[weekKey] || results[String(weekKey)] || {};
+        const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+        const pickerPicks = weekPicks[picker] || {};
+
+        weekGames.forEach(game => {
+            const gameIdStr = String(game.id);
+            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+            const result = weekResults[game.id] || weekResults[gameIdStr];
+
+            if (!pick?.line || !pick?.blazin || !result) return;
+
+            const atsWinner = calculateATSWinner(game, result);
+            const isWin = pick.line === atsWinner;
+            const isPush = atsWinner === 'push';
+
+            const isFavorite = pick.line === game.favorite;
+            const category = isFavorite ? 'Favorite' : 'Underdog';
+            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+
+            records[category].games.push({
+                week: weekNum,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                spread: game.spread,
+                favorite: game.favorite,
+                picked: pickedTeam,
+                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+            });
+
+            if (isPush) {
+                records[category].pushes++;
+            } else if (isWin) {
+                records[category].wins++;
+            } else {
+                records[category].losses++;
+            }
+        });
+    });
+
+    return records;
+}
+
+/**
  * Render the historical Blazin' 5 team pick records table
  */
 function renderHistoryBlazinTeamRecords(picker = null) {
     const dropdown = document.getElementById('history-blazin-picker');
     const tbody = document.getElementById('history-blazin-team-body');
     const seasonDropdown = document.getElementById('history-season-dropdown');
+    const analysisTypeDropdown = document.getElementById('history-team-analysis-type');
 
     if (!tbody) return;
 
     const selectedPicker = picker || dropdown?.value || 'Stephen';
     const season = seasonDropdown ? parseInt(seasonDropdown.value) : 2024;
-    const teamRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season);
+    const analysisType = analysisTypeDropdown?.value || 'involved';
+
+    // Get records based on analysis type
+    let teamRecords;
+    switch (analysisType) {
+        case 'picked':
+            teamRecords = calculateHistoryBlazinTeamPicked(selectedPicker, season);
+            break;
+        case 'faded':
+            teamRecords = calculateHistoryBlazinTeamFaded(selectedPicker, season);
+            break;
+        case 'involved':
+        default:
+            teamRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season);
+            break;
+    }
 
     // Convert to array
     const teamsData = Object.entries(teamRecords)
@@ -5094,22 +5372,53 @@ function calculateHistoryBlazinSpreadRecords(picker, season) {
 function renderHistoryBlazinSpreadRecords(picker = null) {
     const dropdown = document.getElementById('history-blazin-picker');
     const tbody = document.getElementById('history-blazin-spread-body');
+    const thead = document.getElementById('history-blazin-spread-thead');
     const seasonDropdown = document.getElementById('history-season-dropdown');
+    const analysisTypeDropdown = document.getElementById('history-spread-analysis-type');
 
     if (!tbody) return;
 
     const selectedPicker = picker || dropdown?.value || 'Stephen';
     const season = seasonDropdown ? parseInt(seasonDropdown.value) : 2024;
-    const spreadRecords = calculateHistoryBlazinSpreadRecords(selectedPicker, season);
+    const analysisType = analysisTypeDropdown?.value || 'spread';
+
+    // Update table header based on analysis type
+    if (thead) {
+        const headerLabel = analysisType === 'spread' ? 'Spread' :
+                           analysisType === 'homeaway' ? 'Location' : 'Type';
+        thead.innerHTML = `
+            <tr>
+                <th class="sortable" data-sort="spread" data-table="history-spread">${headerLabel} <span class="sort-icon"></span></th>
+                <th class="sortable active desc" data-sort="record" data-table="history-spread">Record <span class="sort-icon">▼</span></th>
+                <th class="sortable" data-sort="picks" data-table="history-spread"># Picks <span class="sort-icon"></span></th>
+                <th class="sortable" data-sort="pct" data-table="history-spread">Win % <span class="sort-icon"></span></th>
+            </tr>
+        `;
+    }
+
+    // Get records based on analysis type
+    let records;
+    switch (analysisType) {
+        case 'homeaway':
+            records = calculateHistoryBlazinHomeAway(selectedPicker, season);
+            break;
+        case 'favdog':
+            records = calculateHistoryBlazinFavDog(selectedPicker, season);
+            break;
+        case 'spread':
+        default:
+            records = calculateHistoryBlazinSpreadRecords(selectedPicker, season);
+            break;
+    }
 
     // Convert to array
-    const spreadsData = Object.entries(spreadRecords)
+    const spreadsData = Object.entries(records)
         .map(([spread, record]) => {
             const total = record.wins + record.losses;
             const pct = total > 0 ? (record.wins / total) * 100 : 0;
             return {
                 spread,
-                spreadValue: record.spreadValue,
+                spreadValue: record.spreadValue || 0,
                 ...record,
                 total: total + record.pushes,
                 pct
@@ -5179,6 +5488,21 @@ function setupHistoryBlazinRecords() {
             const picker = e.target.value;
             renderHistoryBlazinTeamRecords(picker);
             renderHistoryBlazinSpreadRecords(picker);
+        });
+    }
+
+    // Setup analysis type dropdowns
+    const teamAnalysisDropdown = document.getElementById('history-team-analysis-type');
+    if (teamAnalysisDropdown) {
+        teamAnalysisDropdown.addEventListener('change', () => {
+            renderHistoryBlazinTeamRecords();
+        });
+    }
+
+    const spreadAnalysisDropdown = document.getElementById('history-spread-analysis-type');
+    if (spreadAnalysisDropdown) {
+        spreadAnalysisDropdown.addEventListener('change', () => {
+            renderHistoryBlazinSpreadRecords();
         });
     }
 

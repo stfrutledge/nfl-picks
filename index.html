@@ -593,7 +593,13 @@
                     </div>
                     <div class="blazin-records-grid">
                         <div class="blazin-records-column">
-                            <h4 class="records-column-title">By Team</h4>
+                            <div class="records-column-header">
+                                <select id="history-team-analysis-type" class="analysis-type-dropdown">
+                                    <option value="involved">Team Involved</option>
+                                    <option value="picked">Team Picked</option>
+                                    <option value="faded">Team Faded</option>
+                                </select>
+                            </div>
                             <div class="team-records-table-container">
                                 <table class="team-records-table" id="history-blazin-team-table">
                                     <thead>
@@ -609,10 +615,16 @@
                             </div>
                         </div>
                         <div class="blazin-records-column">
-                            <h4 class="records-column-title">By Spread Size</h4>
+                            <div class="records-column-header">
+                                <select id="history-spread-analysis-type" class="analysis-type-dropdown">
+                                    <option value="spread">By Spread</option>
+                                    <option value="homeaway">Home/Away</option>
+                                    <option value="favdog">Favorite/Underdog</option>
+                                </select>
+                            </div>
                             <div class="team-records-table-container">
                                 <table class="team-records-table" id="history-blazin-spread-table">
-                                    <thead>
+                                    <thead id="history-blazin-spread-thead">
                                         <tr>
                                             <th class="sortable" data-sort="spread" data-table="history-spread">Spread <span class="sort-icon"></span></th>
                                             <th class="sortable active desc" data-sort="record" data-table="history-spread">Record <span class="sort-icon">▼</span></th>
