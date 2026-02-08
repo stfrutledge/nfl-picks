@@ -3211,6 +3211,15 @@ async function setActiveSubcategory(subcategory) {
         // Load playoff data
         await loadAllPlayoffSchedules();
 
+        // Check if user switched away from standings tab during async load
+        if (currentCategory !== 'standings') {
+            // User navigated away, don't show standings content
+            if (tabLoadingEl) {
+                tabLoadingEl.classList.add('hidden');
+            }
+            return;
+        }
+
         // Hide loading message
         if (tabLoadingEl) {
             tabLoadingEl.classList.add('hidden');
@@ -3218,6 +3227,11 @@ async function setActiveSubcategory(subcategory) {
 
         // Show leaderboard again for the render
         leaderboard?.classList.remove('hidden');
+    }
+
+    // Check again before rendering (in case of fast tab switches)
+    if (currentCategory !== 'standings') {
+        return;
     }
 
     // Re-render dashboard with new subcategory
