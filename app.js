@@ -36,14 +36,17 @@ function calculateCurrentSeason() {
 }
 const CURRENT_SEASON = calculateCurrentSeason();
 let currentSeason = CURRENT_SEASON;
-// Generate available seasons from current season back to 2020
+// Generate available seasons from current season back to 2019
 const AVAILABLE_SEASONS = Array.from(
-    { length: CURRENT_SEASON - 2020 + 1 },
+    { length: CURRENT_SEASON - 2019 + 1 },
     (_, i) => CURRENT_SEASON - i
 );
 
-// Get pickers available for a given season (Jason and Daniel started in 2023)
+// Get pickers available for a given season (Jason and Daniel started in 2023, Dylan stopped after 2019)
 function getPickersForSeason(season) {
+    if (season === 2019) {
+        return ['Stephen', 'Sean', 'Dylan'];
+    }
     if (season <= 2022) {
         return PICKERS.filter(p => p !== 'Jason' && p !== 'Daniel');
     }
