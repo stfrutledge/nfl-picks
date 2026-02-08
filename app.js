@@ -2441,12 +2441,14 @@ async function loadHistorySeason(season) {
     const blazinPickerDropdown = document.getElementById('history-blazin-picker');
     if (blazinPickerDropdown) {
         const currentSelection = blazinPickerDropdown.value;
-        blazinPickerDropdown.innerHTML = seasonPickers.map(p =>
+        // Include "All" option at the beginning (excludes Cowherd in calculations)
+        const allOption = `<option value="All"${currentSelection === 'All' ? ' selected' : ''}>All</option>`;
+        blazinPickerDropdown.innerHTML = allOption + seasonPickers.map(p =>
             `<option value="${p}"${p === currentSelection ? ' selected' : ''}>${p}</option>`
         ).join('');
-        // If current selection is not available, select first picker
-        if (!seasonPickers.includes(currentSelection)) {
-            blazinPickerDropdown.value = seasonPickers[0];
+        // If current selection is not available, select "All"
+        if (currentSelection !== 'All' && !seasonPickers.includes(currentSelection)) {
+            blazinPickerDropdown.value = 'All';
         }
     }
 
@@ -4862,6 +4864,9 @@ function calculateHistoryBlazinTeamRecords(picker, season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    // Determine which pickers to include
+    const pickersToInclude = picker === 'All' ? PICKERS : [picker];
+
     // Loop through all weeks
     Object.keys(games).forEach(weekKey => {
         const weekNum = parseInt(weekKey);
@@ -4870,51 +4875,55 @@ function calculateHistoryBlazinTeamRecords(picker, season) {
         const weekGames = games[weekKey] || [];
         const weekResults = results[weekKey] || results[String(weekKey)] || {};
         const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-        const pickerPicks = weekPicks[picker] || {};
 
-        weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
-            const result = weekResults[game.id] || weekResults[gameIdStr];
+        pickersToInclude.forEach(currentPicker => {
+            const pickerPicks = weekPicks[currentPicker] || {};
 
-            // Only count Blazin' 5 picks
-            if (!pick?.line || !pick?.blazin || !result) return;
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const result = weekResults[game.id] || weekResults[gameIdStr];
 
-            const atsWinner = calculateATSWinner(game, result);
-            const isWin = pick.line === atsWinner;
-            const isPush = atsWinner === 'push';
-            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+                // Only count Blazin' 5 picks
+                if (!pick?.line || !pick?.blazin || !result) return;
 
-            const pickedTeam = pick.line === 'away' ? game.away : game.home;
-            const gameDetail = {
-                week: weekNum,
-                away: game.away,
-                home: game.home,
-                awayScore: result.awayScore,
-                homeScore: result.homeScore,
-                spread: game.spread,
-                favorite: game.favorite,
-                picked: pickedTeam,
-                outcome
-            };
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
+                const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
 
-            // Record result for BOTH teams involved in the game
-            [game.away, game.home].forEach(team => {
-                const normalizedTeam = TEAM_NAME_MAP[team] || team;
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const gameDetail = {
+                    week: weekNum,
+                    picker: currentPicker,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome
+                };
 
-                if (!teamRecords[normalizedTeam]) {
-                    teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
-                }
+                // Record result for BOTH teams involved in the game
+                [game.away, game.home].forEach(team => {
+                    const normalizedTeam = TEAM_NAME_MAP[team] || team;
 
-                teamRecords[normalizedTeam].games.push(gameDetail);
+                    if (!teamRecords[normalizedTeam]) {
+                        teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                    }
 
-                if (isPush) {
-                    teamRecords[normalizedTeam].pushes++;
-                } else if (isWin) {
-                    teamRecords[normalizedTeam].wins++;
-                } else {
-                    teamRecords[normalizedTeam].losses++;
-                }
+                    teamRecords[normalizedTeam].games.push(gameDetail);
+
+                    if (isPush) {
+                        teamRecords[normalizedTeam].pushes++;
+                    } else if (isWin) {
+                        teamRecords[normalizedTeam].wins++;
+                    } else {
+                        teamRecords[normalizedTeam].losses++;
+                    }
+                });
             });
         });
     });
@@ -4935,6 +4944,8 @@ function calculateHistoryBlazinTeamPicked(picker, season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    const pickersToInclude = picker === 'All' ? PICKERS : [picker];
+
     Object.keys(games).forEach(weekKey => {
         const weekNum = parseInt(weekKey);
         if (isNaN(weekNum)) return;
@@ -4942,46 +4953,50 @@ function calculateHistoryBlazinTeamPicked(picker, season) {
         const weekGames = games[weekKey] || [];
         const weekResults = results[weekKey] || results[String(weekKey)] || {};
         const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-        const pickerPicks = weekPicks[picker] || {};
 
-        weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
-            const result = weekResults[game.id] || weekResults[gameIdStr];
+        pickersToInclude.forEach(currentPicker => {
+            const pickerPicks = weekPicks[currentPicker] || {};
 
-            if (!pick?.line || !pick?.blazin || !result) return;
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const result = weekResults[game.id] || weekResults[gameIdStr];
 
-            const atsWinner = calculateATSWinner(game, result);
-            const isWin = pick.line === atsWinner;
-            const isPush = atsWinner === 'push';
+                if (!pick?.line || !pick?.blazin || !result) return;
 
-            // Only record for the team that was PICKED
-            const pickedTeam = pick.line === 'away' ? game.away : game.home;
-            const normalizedTeam = TEAM_NAME_MAP[pickedTeam] || pickedTeam;
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
 
-            if (!teamRecords[normalizedTeam]) {
-                teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
-            }
+                // Only record for the team that was PICKED
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const normalizedTeam = TEAM_NAME_MAP[pickedTeam] || pickedTeam;
 
-            teamRecords[normalizedTeam].games.push({
-                week: weekNum,
-                away: game.away,
-                home: game.home,
-                awayScore: result.awayScore,
-                homeScore: result.homeScore,
-                spread: game.spread,
-                favorite: game.favorite,
-                picked: pickedTeam,
-                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                if (!teamRecords[normalizedTeam]) {
+                    teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                }
+
+                teamRecords[normalizedTeam].games.push({
+                    week: weekNum,
+                    picker: currentPicker,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                });
+
+                if (isPush) {
+                    teamRecords[normalizedTeam].pushes++;
+                } else if (isWin) {
+                    teamRecords[normalizedTeam].wins++;
+                } else {
+                    teamRecords[normalizedTeam].losses++;
+                }
             });
-
-            if (isPush) {
-                teamRecords[normalizedTeam].pushes++;
-            } else if (isWin) {
-                teamRecords[normalizedTeam].wins++;
-            } else {
-                teamRecords[normalizedTeam].losses++;
-            }
         });
     });
 
@@ -5001,6 +5016,8 @@ function calculateHistoryBlazinTeamFaded(picker, season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    const pickersToInclude = picker === 'All' ? PICKERS : [picker];
+
     Object.keys(games).forEach(weekKey => {
         const weekNum = parseInt(weekKey);
         if (isNaN(weekNum)) return;
@@ -5008,47 +5025,51 @@ function calculateHistoryBlazinTeamFaded(picker, season) {
         const weekGames = games[weekKey] || [];
         const weekResults = results[weekKey] || results[String(weekKey)] || {};
         const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-        const pickerPicks = weekPicks[picker] || {};
 
-        weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
-            const result = weekResults[game.id] || weekResults[gameIdStr];
+        pickersToInclude.forEach(currentPicker => {
+            const pickerPicks = weekPicks[currentPicker] || {};
 
-            if (!pick?.line || !pick?.blazin || !result) return;
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const result = weekResults[game.id] || weekResults[gameIdStr];
 
-            const atsWinner = calculateATSWinner(game, result);
-            const isWin = pick.line === atsWinner;
-            const isPush = atsWinner === 'push';
+                if (!pick?.line || !pick?.blazin || !result) return;
 
-            // Record for the team that was FADED (not picked)
-            const pickedTeam = pick.line === 'away' ? game.away : game.home;
-            const fadedTeam = pick.line === 'away' ? game.home : game.away;
-            const normalizedTeam = TEAM_NAME_MAP[fadedTeam] || fadedTeam;
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
 
-            if (!teamRecords[normalizedTeam]) {
-                teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
-            }
+                // Record for the team that was FADED (not picked)
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const fadedTeam = pick.line === 'away' ? game.home : game.away;
+                const normalizedTeam = TEAM_NAME_MAP[fadedTeam] || fadedTeam;
 
-            teamRecords[normalizedTeam].games.push({
-                week: weekNum,
-                away: game.away,
-                home: game.home,
-                awayScore: result.awayScore,
-                homeScore: result.homeScore,
-                spread: game.spread,
-                favorite: game.favorite,
-                picked: pickedTeam,
-                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                if (!teamRecords[normalizedTeam]) {
+                    teamRecords[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
+                }
+
+                teamRecords[normalizedTeam].games.push({
+                    week: weekNum,
+                    picker: currentPicker,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                });
+
+                if (isPush) {
+                    teamRecords[normalizedTeam].pushes++;
+                } else if (isWin) {
+                    teamRecords[normalizedTeam].wins++;
+                } else {
+                    teamRecords[normalizedTeam].losses++;
+                }
             });
-
-            if (isPush) {
-                teamRecords[normalizedTeam].pushes++;
-            } else if (isWin) {
-                teamRecords[normalizedTeam].wins++;
-            } else {
-                teamRecords[normalizedTeam].losses++;
-            }
         });
     });
 
@@ -5071,6 +5092,8 @@ function calculateHistoryBlazinHomeAway(picker, season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    const pickersToInclude = picker === 'All' ? PICKERS : [picker];
+
     Object.keys(games).forEach(weekKey => {
         const weekNum = parseInt(weekKey);
         if (isNaN(weekNum)) return;
@@ -5078,41 +5101,45 @@ function calculateHistoryBlazinHomeAway(picker, season) {
         const weekGames = games[weekKey] || [];
         const weekResults = results[weekKey] || results[String(weekKey)] || {};
         const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-        const pickerPicks = weekPicks[picker] || {};
 
-        weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
-            const result = weekResults[game.id] || weekResults[gameIdStr];
+        pickersToInclude.forEach(currentPicker => {
+            const pickerPicks = weekPicks[currentPicker] || {};
 
-            if (!pick?.line || !pick?.blazin || !result) return;
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const result = weekResults[game.id] || weekResults[gameIdStr];
 
-            const atsWinner = calculateATSWinner(game, result);
-            const isWin = pick.line === atsWinner;
-            const isPush = atsWinner === 'push';
+                if (!pick?.line || !pick?.blazin || !result) return;
 
-            const category = pick.line === 'home' ? 'Home' : 'Away';
-            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
 
-            records[category].games.push({
-                week: weekNum,
-                away: game.away,
-                home: game.home,
-                awayScore: result.awayScore,
-                homeScore: result.homeScore,
-                spread: game.spread,
-                favorite: game.favorite,
-                picked: pickedTeam,
-                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                const category = pick.line === 'home' ? 'Home' : 'Away';
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+
+                records[category].games.push({
+                    week: weekNum,
+                    picker: currentPicker,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                });
+
+                if (isPush) {
+                    records[category].pushes++;
+                } else if (isWin) {
+                    records[category].wins++;
+                } else {
+                    records[category].losses++;
+                }
             });
-
-            if (isPush) {
-                records[category].pushes++;
-            } else if (isWin) {
-                records[category].wins++;
-            } else {
-                records[category].losses++;
-            }
         });
     });
 
@@ -5135,6 +5162,8 @@ function calculateHistoryBlazinFavDog(picker, season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    const pickersToInclude = picker === 'All' ? PICKERS : [picker];
+
     Object.keys(games).forEach(weekKey => {
         const weekNum = parseInt(weekKey);
         if (isNaN(weekNum)) return;
@@ -5142,42 +5171,46 @@ function calculateHistoryBlazinFavDog(picker, season) {
         const weekGames = games[weekKey] || [];
         const weekResults = results[weekKey] || results[String(weekKey)] || {};
         const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-        const pickerPicks = weekPicks[picker] || {};
 
-        weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
-            const result = weekResults[game.id] || weekResults[gameIdStr];
+        pickersToInclude.forEach(currentPicker => {
+            const pickerPicks = weekPicks[currentPicker] || {};
 
-            if (!pick?.line || !pick?.blazin || !result) return;
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const result = weekResults[game.id] || weekResults[gameIdStr];
 
-            const atsWinner = calculateATSWinner(game, result);
-            const isWin = pick.line === atsWinner;
-            const isPush = atsWinner === 'push';
+                if (!pick?.line || !pick?.blazin || !result) return;
 
-            const isFavorite = pick.line === game.favorite;
-            const category = isFavorite ? 'Favorite' : 'Underdog';
-            const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
 
-            records[category].games.push({
-                week: weekNum,
-                away: game.away,
-                home: game.home,
-                awayScore: result.awayScore,
-                homeScore: result.homeScore,
-                spread: game.spread,
-                favorite: game.favorite,
-                picked: pickedTeam,
-                outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                const isFavorite = pick.line === game.favorite;
+                const category = isFavorite ? 'Favorite' : 'Underdog';
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+
+                records[category].games.push({
+                    week: weekNum,
+                    picker: currentPicker,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    outcome: isPush ? 'push' : (isWin ? 'win' : 'loss')
+                });
+
+                if (isPush) {
+                    records[category].pushes++;
+                } else if (isWin) {
+                    records[category].wins++;
+                } else {
+                    records[category].losses++;
+                }
             });
-
-            if (isPush) {
-                records[category].pushes++;
-            } else if (isWin) {
-                records[category].wins++;
-            } else {
-                records[category].losses++;
-            }
         });
     });
 
@@ -5295,6 +5328,9 @@ function calculateHistoryBlazinSpreadRecords(picker, season) {
     const results = data.results || {};
     const picks = data.picks || {};
 
+    // Support "All" option - aggregate all pickers (excluding Cowherd)
+    const pickersToInclude = picker === 'All' ? PICKERS : [picker];
+
     // Loop through all weeks
     Object.keys(games).forEach(weekKey => {
         const weekNum = parseInt(weekKey);
@@ -5303,63 +5339,67 @@ function calculateHistoryBlazinSpreadRecords(picker, season) {
         const weekGames = games[weekKey] || [];
         const weekResults = results[weekKey] || results[String(weekKey)] || {};
         const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-        const pickerPicks = weekPicks[picker] || {};
 
-        weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
-            const result = weekResults[game.id] || weekResults[gameIdStr];
+        pickersToInclude.forEach(currentPicker => {
+            const pickerPicks = weekPicks[currentPicker] || {};
 
-            // Only count Blazin' 5 picks
-            if (!pick?.line || !pick?.blazin || !result) return;
+            weekGames.forEach(game => {
+                const gameIdStr = String(game.id);
+                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const result = weekResults[game.id] || weekResults[gameIdStr];
 
-            const atsWinner = calculateATSWinner(game, result);
-            const isWin = pick.line === atsWinner;
-            const isPush = atsWinner === 'push';
-            const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
+                // Only count Blazin' 5 picks
+                if (!pick?.line || !pick?.blazin || !result) return;
 
-            // Determine the spread for the picked team
-            const pickedTeam = pick.line === 'away' ? game.away : game.home;
-            const isFavorite = (game.favorite === 'away' && pick.line === 'away') ||
-                             (game.favorite === 'home' && pick.line === 'home');
+                const atsWinner = calculateATSWinner(game, result);
+                const isWin = pick.line === atsWinner;
+                const isPush = atsWinner === 'push';
+                const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
 
-            // Format spread: negative for favorites, positive for underdogs
-            const spreadValue = isFavorite ? -game.spread : game.spread;
-            const spreadKey = spreadValue === 0 ? 'PK' :
-                            (spreadValue > 0 ? `+${spreadValue}` : `${spreadValue}`);
+                // Determine the spread for the picked team
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                const isFavorite = (game.favorite === 'away' && pick.line === 'away') ||
+                                 (game.favorite === 'home' && pick.line === 'home');
 
-            const gameDetail = {
-                week: weekNum,
-                away: game.away,
-                home: game.home,
-                awayScore: result.awayScore,
-                homeScore: result.homeScore,
-                spread: game.spread,
-                favorite: game.favorite,
-                picked: pickedTeam,
-                pickedSpread: spreadKey,
-                outcome
-            };
+                // Format spread: negative for favorites, positive for underdogs
+                const spreadValue = isFavorite ? -game.spread : game.spread;
+                const spreadKey = spreadValue === 0 ? 'PK' :
+                                (spreadValue > 0 ? `+${spreadValue}` : `${spreadValue}`);
 
-            if (!spreadRecords[spreadKey]) {
-                spreadRecords[spreadKey] = {
-                    wins: 0,
-                    losses: 0,
-                    pushes: 0,
-                    games: [],
-                    spreadValue: spreadValue
+                const gameDetail = {
+                    week: weekNum,
+                    away: game.away,
+                    home: game.home,
+                    awayScore: result.awayScore,
+                    homeScore: result.homeScore,
+                    spread: game.spread,
+                    favorite: game.favorite,
+                    picked: pickedTeam,
+                    pickedSpread: spreadKey,
+                    outcome,
+                    picker: currentPicker
                 };
-            }
 
-            spreadRecords[spreadKey].games.push(gameDetail);
+                if (!spreadRecords[spreadKey]) {
+                    spreadRecords[spreadKey] = {
+                        wins: 0,
+                        losses: 0,
+                        pushes: 0,
+                        games: [],
+                        spreadValue: spreadValue
+                    };
+                }
 
-            if (isPush) {
-                spreadRecords[spreadKey].pushes++;
-            } else if (isWin) {
-                spreadRecords[spreadKey].wins++;
-            } else {
-                spreadRecords[spreadKey].losses++;
-            }
+                spreadRecords[spreadKey].games.push(gameDetail);
+
+                if (isPush) {
+                    spreadRecords[spreadKey].pushes++;
+                } else if (isWin) {
+                    spreadRecords[spreadKey].wins++;
+                } else {
+                    spreadRecords[spreadKey].losses++;
+                }
+            });
         });
     });
 
