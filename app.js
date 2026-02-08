@@ -3419,6 +3419,16 @@ function updateAdminButtons() {
             btn.classList.add('hidden');
         }
     });
+
+    // Hide/show Clear My Picks buttons based on picker selection
+    const clearPicksBtn = document.getElementById('clear-picks-btn');
+    const clearPicksBtnMobile = document.getElementById('clear-picks-btn-mobile');
+    if (clearPicksBtn) {
+        clearPicksBtn.style.display = currentPicker ? '' : 'none';
+    }
+    if (clearPicksBtnMobile) {
+        clearPicksBtnMobile.style.display = currentPicker ? '' : 'none';
+    }
 }
 
 /**

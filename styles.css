@@ -3795,7 +3795,7 @@ footer a:hover {
 }
 
 .collapsible-header h3 {
-    margin-bottom: 0;
+    margin: 0;
 }
 
 .collapse-toggle {
@@ -3856,7 +3856,8 @@ footer a:hover {
 }
 
 .scoring-summary .collapsible-header {
-    margin-bottom: 16px;
+    padding-top: 16px;
+    margin-bottom: 8px;
 }
 
 /* Section header title styling for collapsible sections */
@@ -3868,6 +3869,7 @@ footer a:hover {
     letter-spacing: 0.05em;
     color: var(--text-primary);
     margin: 0;
+    line-height: 28px; /* Match collapse-toggle height for vertical centering */
 }
 
 /* Charts grid specific - needs wrapper for grid content */
