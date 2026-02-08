@@ -15,7 +15,7 @@ const SYNC_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before syncin
 
 let dashboardData = null;
 let currentCategory = 'make-picks';
-let currentSubcategory = 'blazin'; // Default standings subcategory
+let currentSubcategory = null; // Will be set after CURRENT_NFL_WEEK is calculated
 let currentPicker = localStorage.getItem('selectedPicker') || null;
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
@@ -182,6 +182,10 @@ function calculateCurrentNFLWeek() {
 }
 
 const CURRENT_NFL_WEEK = calculateCurrentNFLWeek();
+
+// Set default standings subcategory based on whether playoffs have started
+// Wild Card is week 19, so if we're past that, default to playoffs view
+currentSubcategory = CURRENT_NFL_WEEK > 19 ? 'playoffs' : 'blazin';
 
 // Team name aliases (CSV name -> standard name)
 const TEAM_NAME_MAP = {
@@ -3860,10 +3864,8 @@ async function setActiveCategory(category) {
         renderScoringSummary();
     } else if (category === 'standings') {
         standingsSubtabs?.classList.remove('hidden');
-        leaderboard?.classList.remove('hidden');
-        performanceInsightsSection?.classList.remove('hidden');
-        recordsAnalysisSection?.classList.remove('hidden');
-        renderDashboard();
+        // Use the default subcategory (playoffs after Wild Card week is complete)
+        setActiveSubcategory(currentSubcategory);
     } else if (category === 'vs-market') {
         vsMarketSection?.classList.remove('hidden');
         renderVsMarketSection();
@@ -8024,6 +8026,7 @@ function renderLivePickStatus(game, liveData, pick) {
 
 /**
  * Render scoring summary table - Simple per-player summary
+ * For Super Bowl week (22), shows picks summary instead of scoring summary
  */
 function renderScoringSummary() {
     const scoringTable = document.getElementById('scoring-table');
@@ -8037,12 +8040,20 @@ function renderScoringSummary() {
 
     // Update the summary header
     const summaryHeader = document.querySelector('.scoring-summary h3');
+    const isSuperBowl = currentWeek === 22;
+
     if (summaryHeader) {
         const weekLabel = isPlayoffWeek(currentWeek) ? getWeekDisplayName(currentWeek) : `Week ${getWeekDisplayName(currentWeek)}`;
-        summaryHeader.textContent = `${weekLabel} Scoring Summary`;
+        summaryHeader.textContent = isSuperBowl ? `${weekLabel} Picks Summary` : `${weekLabel} Scoring Summary`;
     }
 
     const isPlayoff = isPlayoffWeek(currentWeek);
+
+    // Super Bowl week: Show picks summary instead of scoring summary
+    if (isSuperBowl) {
+        renderSuperBowlPicksSummary(scoringTable, weekGames, weekPicks, cachedWeek);
+        return;
+    }
 
     if (weekGames.length === 0) {
         scoringTable.innerHTML = '<tbody><tr><td colspan="4" class="no-games-message">No games data available for this week.</td></tr></tbody>';
@@ -8171,6 +8182,77 @@ function renderScoringSummary() {
                 <td class="stat-cell">${hasResults ? `${s.lineWins}-${s.lineLosses}${linePush}` : '-'}</td>
                 <td class="stat-cell">${hasResults ? `${s.suWins}-${s.suLosses}` : '-'}</td>
                 <td class="stat-cell">${fourthCol}</td>
+            </tr>
+        `;
+    });
+    bodyHtml += '</tbody>';
+
+    scoringTable.innerHTML = headerHtml + bodyHtml;
+}
+
+/**
+ * Render Super Bowl picks summary - Shows what each picker has selected
+ */
+function renderSuperBowlPicksSummary(scoringTable, weekGames, weekPicks, cachedWeek) {
+    if (weekGames.length === 0) {
+        scoringTable.innerHTML = '<tbody><tr><td colspan="4" class="no-games-message">No game data available yet.</td></tr></tbody>';
+        return;
+    }
+
+    const game = weekGames[0]; // Super Bowl is just one game
+    const spread = game.spread || 0;
+    const overUnder = game.overUnder || 0;
+
+    let headerHtml = `
+        <thead>
+            <tr>
+                <th>Picker</th>
+                <th>ATS Pick</th>
+                <th>Winner</th>
+                <th>Over/Under</th>
+            </tr>
+        </thead>
+    `;
+
+    let bodyHtml = '<tbody>';
+    PICKERS.forEach(picker => {
+        const pickerPicks = weekPicks[picker] || {};
+        const cachedPicks = cachedWeek?.picks?.[picker] || {};
+        const gamePicks = getPicksForGame(pickerPicks, game);
+        const cachedGamePicks = getPicksForGame(cachedPicks, game);
+
+        // Get line pick
+        const linePick = gamePicks.line || cachedGamePicks.line;
+        let atsDisplay = '-';
+        if (linePick) {
+            const pickedTeam = linePick === 'home' ? game.home : game.away;
+            const isPickedFavorite = (linePick === 'home' && game.favorite === 'home') ||
+                                     (linePick === 'away' && game.favorite === 'away');
+            const spreadDisplay = isPickedFavorite ? `-${spread}` : `+${spread}`;
+            atsDisplay = `${pickedTeam} (${spreadDisplay})`;
+        }
+
+        // Get winner pick
+        const winnerPick = gamePicks.winner || cachedGamePicks.winner;
+        let winnerDisplay = '-';
+        if (winnerPick) {
+            winnerDisplay = winnerPick === 'home' ? game.home : game.away;
+        }
+
+        // Get over/under pick
+        const ouPick = gamePicks.overUnder || cachedGamePicks.overUnder;
+        const ouLine = overUnder || gamePicks.totalLine || cachedGamePicks.totalLine || 0;
+        let ouDisplay = '-';
+        if (ouPick && ouLine > 0) {
+            ouDisplay = ouPick === 'over' ? `Over ${ouLine}` : `Under ${ouLine}`;
+        }
+
+        bodyHtml += `
+            <tr>
+                <td style="font-weight: 600;">${picker}</td>
+                <td style="font-weight: normal;">${atsDisplay}</td>
+                <td style="font-weight: normal;">${winnerDisplay}</td>
+                <td style="font-weight: normal;">${ouDisplay}</td>
             </tr>
         `;
     });
