@@ -10991,7 +10991,30 @@ const SEASON_2025_DATA = {
 }
 };
 
+// Cowherd's 2025 Blazin' 5 results (week-by-week aggregate, no pick-by-pick data)
+const COWHERD_2025_RESULTS = {
+  "1": { wins: 3, losses: 2, pushes: 0 },
+  "2": { wins: 2, losses: 3, pushes: 0 },
+  "3": { wins: 1, losses: 4, pushes: 0 },
+  "4": { wins: 3, losses: 2, pushes: 0 },
+  "5": { wins: 3, losses: 2, pushes: 0 },
+  "6": { wins: 4, losses: 1, pushes: 0 },
+  "7": { wins: 3, losses: 2, pushes: 0 },
+  "8": { wins: 4, losses: 1, pushes: 0 },
+  "9": { wins: 2, losses: 3, pushes: 0 },
+  "10": { wins: 3, losses: 2, pushes: 0 },
+  "11": { wins: 5, losses: 0, pushes: 0 },
+  "12": { wins: 2, losses: 3, pushes: 0 },
+  "13": { wins: 2, losses: 3, pushes: 0 },
+  "14": { wins: 3, losses: 2, pushes: 0 },
+  "15": { wins: 2, losses: 3, pushes: 0 },
+  "16": { wins: 4, losses: 1, pushes: 0 },
+  "17": { wins: 2, losses: 3, pushes: 0 },
+  "18": { wins: 2, losses: 3, pushes: 0 }
+};
+
 // Make available for dynamic loading
 if (typeof window !== 'undefined') {
     window.SEASON_2025_DATA = SEASON_2025_DATA;
+    window.COWHERD_2025_RESULTS = COWHERD_2025_RESULTS;
 }

@@ -2718,7 +2718,8 @@ function renderHistoryStandingsTable(season) {
     });
 
     // Add Cowherd's aggregate data for seasons with Blazin' 5 data (no pick-by-pick data)
-    const cowherdResults = season === 2024 ? window.COWHERD_2024_RESULTS :
+    const cowherdResults = season === 2025 ? window.COWHERD_2025_RESULTS :
+                           season === 2024 ? window.COWHERD_2024_RESULTS :
                            season === 2023 ? window.COWHERD_2023_RESULTS :
                            season === 2022 ? window.COWHERD_2022_RESULTS :
                            season === 2021 ? window.COWHERD_2021_RESULTS : null;
