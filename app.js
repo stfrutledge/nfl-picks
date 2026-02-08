@@ -36,9 +36,9 @@ function calculateCurrentSeason() {
 }
 const CURRENT_SEASON = calculateCurrentSeason();
 let currentSeason = CURRENT_SEASON;
-// Generate available seasons from current season back to 2018
+// Generate available seasons from current season back to 2017
 const AVAILABLE_SEASONS = Array.from(
-    { length: CURRENT_SEASON - 2018 + 1 },
+    { length: CURRENT_SEASON - 2017 + 1 },
     (_, i) => CURRENT_SEASON - i
 );
 
