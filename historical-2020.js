@@ -6777,7 +6777,7 @@ const SEASON_2020_DATA = {
 
 // Cowherd's 2020 Blazin' 5 aggregate results (week-by-week breakdown not available)
 const COWHERD_2020_RESULTS = {
-  aggregate: { wins: 40, losses: 42, pushes: 2 }
+  aggregate: { wins: 37, losses: 36, pushes: 2 }
 };
 
 if (typeof window !== 'undefined') {

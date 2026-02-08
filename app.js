@@ -36,15 +36,15 @@ function calculateCurrentSeason() {
 }
 const CURRENT_SEASON = calculateCurrentSeason();
 let currentSeason = CURRENT_SEASON;
-// Generate available seasons from current season back to 2019
+// Generate available seasons from current season back to 2018
 const AVAILABLE_SEASONS = Array.from(
-    { length: CURRENT_SEASON - 2019 + 1 },
+    { length: CURRENT_SEASON - 2018 + 1 },
     (_, i) => CURRENT_SEASON - i
 );
 
 // Get pickers available for a given season (Jason and Daniel started in 2023, Dylan stopped after 2019)
 function getPickersForSeason(season) {
-    if (season === 2019) {
+    if (season <= 2019) {
         return ['Stephen', 'Sean', 'Dylan'];
     }
     if (season <= 2022) {
@@ -2727,7 +2727,10 @@ function renderHistoryStandingsTable(season) {
                            season === 2024 ? window.COWHERD_2024_RESULTS :
                            season === 2023 ? window.COWHERD_2023_RESULTS :
                            season === 2022 ? window.COWHERD_2022_RESULTS :
-                           season === 2021 ? window.COWHERD_2021_RESULTS : null;
+                           season === 2021 ? window.COWHERD_2021_RESULTS :
+                           season === 2020 ? window.COWHERD_2020_RESULTS :
+                           season === 2019 ? window.COWHERD_2019_RESULTS :
+                           season === 2018 ? window.COWHERD_2018_RESULTS : null;
     if (cowherdResults) {
         let cowherdStats = {
             name: 'Cowherd',

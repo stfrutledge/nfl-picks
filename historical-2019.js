@@ -6346,3 +6346,11 @@ window.SEASON_2019_DATA = {
     }
   }
 };
+
+const COWHERD_2019_RESULTS = {
+  aggregate: { wins: 42, losses: 41, pushes: 3 }
+};
+
+if (typeof window !== 'undefined') {
+  window.COWHERD_2019_RESULTS = COWHERD_2019_RESULTS;
+}
