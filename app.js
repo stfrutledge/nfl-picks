@@ -167,7 +167,7 @@ function calculateCurrentNFLWeek() {
     if (now < dates.seasonStart) return 1;
 
     // Playoff weeks
-    if (now >= dates.superBowlEnd) return 23; // Season completely over
+    if (now >= dates.superBowlEnd) return 22; // Season completely over, stay on Super Bowl week
     if (now >= dates.superBowlStart) return 22; // Super Bowl
     if (now >= dates.conferenceStart) return 21; // Conference Championships
     if (now >= dates.divisionalStart) return 20; // Divisional
