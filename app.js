@@ -2286,15 +2286,22 @@ function setupSeasonDropdown() {
     const historySeasonDropdown = document.getElementById('history-season-dropdown');
     if (historySeasonDropdown && hasHistoricalSeasons) {
         // Show all seasons including current (2025 season is complete)
-        let optionsHtml = '';
-        AVAILABLE_SEASONS.forEach(season => {
-            optionsHtml += `<option value="${season}">${season}</option>`;
+        // Add "Lifetime" option, then seasons with most recent selected by default
+        let optionsHtml = '<option value="lifetime">Lifetime</option>';
+        AVAILABLE_SEASONS.forEach((season, index) => {
+            const isSelected = index === 0 ? ' selected' : '';
+            optionsHtml += `<option value="${season}"${isSelected}>${season}</option>`;
         });
         historySeasonDropdown.innerHTML = optionsHtml;
 
         historySeasonDropdown.addEventListener('change', async (e) => {
-            const season = parseInt(e.target.value);
-            await loadHistorySeason(season);
+            const value = e.target.value;
+            if (value === 'lifetime') {
+                await loadLifetimeHistory();
+            } else {
+                const season = parseInt(value);
+                await loadHistorySeason(season);
+            }
         });
     }
 
@@ -2395,6 +2402,17 @@ async function loadHistorySeason(season) {
         return;
     }
 
+    // Show week section (may have been hidden by Lifetime view)
+    const historySection = document.getElementById('history-section');
+    if (historySection) {
+        const picksHeader = historySection.querySelector('.picks-header');
+        const selectionRow = historySection.querySelector('.selection-row');
+        const historyContent = document.getElementById('history-content');
+        if (picksHeader) picksHeader.style.display = '';
+        if (selectionRow) selectionRow.style.display = '';
+        if (historyContent) historyContent.style.display = '';
+    }
+
     // Populate week dropdown
     const weekDropdown = document.getElementById('history-week-dropdown');
     if (weekDropdown && data.games) {
@@ -2465,6 +2483,250 @@ async function loadHistorySeason(season) {
     // Render Blazin' 5 records tables
     renderHistoryBlazinTeamRecords();
     renderHistoryBlazinSpreadRecords();
+}
+
+/**
+ * Load and display lifetime (all seasons combined) history
+ */
+async function loadLifetimeHistory() {
+    showLoadingState('Loading lifetime data...');
+
+    // Load all available season data
+    const loadPromises = AVAILABLE_SEASONS.map(season => loadSeasonData(season));
+    await Promise.all(loadPromises);
+
+    hideLoadingState();
+
+    // Hide week-by-week section for lifetime view
+    const historySection = document.getElementById('history-section');
+    if (historySection) {
+        const picksHeader = historySection.querySelector('.picks-header');
+        const selectionRow = historySection.querySelector('.selection-row');
+        const historyContent = document.getElementById('history-content');
+        if (picksHeader) picksHeader.style.display = 'none';
+        if (selectionRow) selectionRow.style.display = 'none';
+        if (historyContent) historyContent.style.display = 'none';
+    }
+
+    // Update picker dropdown to include all pickers across all seasons
+    const allPickers = new Set();
+    AVAILABLE_SEASONS.forEach(season => {
+        getPickersForSeason(season).forEach(p => allPickers.add(p));
+    });
+    const sortedPickers = Array.from(allPickers).sort();
+
+    // Update Blazin' 5 records picker dropdown
+    const blazinPickerDropdown = document.getElementById('history-blazin-picker');
+    if (blazinPickerDropdown) {
+        const currentSelection = blazinPickerDropdown.value;
+        const allOption = `<option value="All"${currentSelection === 'All' ? ' selected' : ''}>All</option>`;
+        blazinPickerDropdown.innerHTML = allOption + sortedPickers.map(p =>
+            `<option value="${p}"${p === currentSelection ? ' selected' : ''}>${p}</option>`
+        ).join('');
+        if (currentSelection !== 'All' && !sortedPickers.includes(currentSelection)) {
+            blazinPickerDropdown.value = 'All';
+        }
+    }
+
+    // Render lifetime standings table
+    renderLifetimeStandingsTable();
+
+    // Render Blazin' 5 records tables (they will detect lifetime mode from dropdown)
+    renderHistoryBlazinTeamRecords();
+    renderHistoryBlazinSpreadRecords();
+}
+
+/**
+ * Render standings table aggregated across all seasons (lifetime view)
+ */
+function renderLifetimeStandingsTable() {
+    const tbody = document.getElementById('history-standings-table-body');
+    const titleSpan = document.getElementById('history-standings-title');
+    if (!tbody) return;
+
+    if (titleSpan) {
+        titleSpan.textContent = 'Lifetime';
+    }
+
+    // Aggregate stats across all seasons
+    const pickerStats = {};
+
+    AVAILABLE_SEASONS.forEach(season => {
+        if (!seasonData[season]) return;
+
+        const data = seasonData[season];
+        const games = data.games || {};
+        const results = data.results || {};
+        const picks = data.picks || {};
+        const seasonPickers = getPickersForSeason(season);
+
+        // Initialize pickers if not already
+        seasonPickers.forEach(picker => {
+            if (!pickerStats[picker]) {
+                pickerStats[picker] = {
+                    name: picker,
+                    lineWins: 0, lineLosses: 0, linePushes: 0,
+                    suWins: 0, suLosses: 0,
+                    blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
+                    totalWins: 0, totalLosses: 0, totalPushes: 0
+                };
+            }
+        });
+
+        // Iterate through all weeks
+        Object.keys(games).forEach(weekKey => {
+            const weekNum = parseInt(weekKey);
+            if (isNaN(weekNum)) return;
+
+            const weekGames = games[weekKey] || [];
+            const weekResults = results[weekKey] || results[String(weekKey)] || {};
+            const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
+
+            weekGames.forEach(game => {
+                const gameResult = weekResults[game.id] || weekResults[String(game.id)];
+                if (!gameResult) return;
+
+                const atsWinner = calculateATSWinner(game, gameResult);
+
+                seasonPickers.forEach(picker => {
+                    const pickerWeekPicks = weekPicks[picker] || {};
+                    const gamePick = pickerWeekPicks[game.id] || pickerWeekPicks[String(game.id)] || {};
+                    const stats = pickerStats[picker];
+
+                    if (gamePick.line) {
+                        if (atsWinner === 'push') {
+                            stats.linePushes++;
+                            stats.totalPushes++;
+                        } else if (atsWinner === gamePick.line) {
+                            stats.lineWins++;
+                            stats.totalWins++;
+                        } else {
+                            stats.lineLosses++;
+                            stats.totalLosses++;
+                        }
+
+                        if (gamePick.blazin) {
+                            if (atsWinner === 'push') {
+                                stats.blazinPushes++;
+                            } else if (atsWinner === gamePick.line) {
+                                stats.blazinWins++;
+                            } else {
+                                stats.blazinLosses++;
+                            }
+                        }
+                    }
+
+                    if (gamePick.winner) {
+                        if (gameResult.winner === gamePick.winner) {
+                            stats.suWins++;
+                            stats.totalWins++;
+                        } else {
+                            stats.suLosses++;
+                            stats.totalLosses++;
+                        }
+                    }
+                });
+            });
+        });
+
+        // Add Cowherd's data for this season
+        const cowherdResults = season === 2025 ? window.COWHERD_2025_RESULTS :
+                               season === 2024 ? window.COWHERD_2024_RESULTS :
+                               season === 2023 ? window.COWHERD_2023_RESULTS :
+                               season === 2022 ? window.COWHERD_2022_RESULTS :
+                               season === 2021 ? window.COWHERD_2021_RESULTS :
+                               season === 2020 ? window.COWHERD_2020_RESULTS :
+                               season === 2019 ? window.COWHERD_2019_RESULTS :
+                               season === 2018 ? window.COWHERD_2018_RESULTS : null;
+        if (cowherdResults) {
+            if (!pickerStats['Cowherd']) {
+                pickerStats['Cowherd'] = {
+                    name: 'Cowherd',
+                    lineWins: 0, lineLosses: 0, linePushes: 0,
+                    suWins: 0, suLosses: 0,
+                    blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
+                    totalWins: 0, totalLosses: 0, totalPushes: 0
+                };
+            }
+            if (cowherdResults.aggregate) {
+                pickerStats['Cowherd'].blazinWins += cowherdResults.aggregate.wins;
+                pickerStats['Cowherd'].blazinLosses += cowherdResults.aggregate.losses;
+                pickerStats['Cowherd'].blazinPushes += cowherdResults.aggregate.pushes;
+            } else {
+                Object.values(cowherdResults).forEach(weekData => {
+                    if (weekData) {
+                        pickerStats['Cowherd'].blazinWins += weekData.wins;
+                        pickerStats['Cowherd'].blazinLosses += weekData.losses;
+                        pickerStats['Cowherd'].blazinPushes += weekData.pushes;
+                    }
+                });
+            }
+        }
+    });
+
+    // Sort by Blazin' 5 percentage descending
+    const sorted = Object.values(pickerStats).sort((a, b) => {
+        const aBlazinTotal = a.blazinWins + a.blazinLosses;
+        const bBlazinTotal = b.blazinWins + b.blazinLosses;
+        const aBlazinPct = aBlazinTotal > 0 ? a.blazinWins / aBlazinTotal : 0;
+        const bBlazinPct = bBlazinTotal > 0 ? b.blazinWins / bBlazinTotal : 0;
+        if (bBlazinPct !== aBlazinPct) return bBlazinPct - aBlazinPct;
+        return b.blazinWins - a.blazinWins;
+    });
+
+    tbody.innerHTML = sorted.map((stats, index) => {
+        const hasLineData = stats.lineWins + stats.lineLosses + stats.linePushes > 0;
+        const hasSuData = stats.suWins + stats.suLosses > 0;
+        const lineRecord = hasLineData ? `${stats.lineWins}-${stats.lineLosses}${stats.linePushes > 0 ? `-${stats.linePushes}` : ''}` : '-';
+        const suRecord = hasSuData ? `${stats.suWins}-${stats.suLosses}` : '-';
+        const blazinRecord = `${stats.blazinWins}-${stats.blazinLosses}${stats.blazinPushes > 0 ? `-${stats.blazinPushes}` : ''}`;
+
+        const lineTotal = stats.lineWins + stats.lineLosses;
+        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : 0;
+        const linePct = lineTotal > 0 ? linePctValue.toFixed(1) + '%' : '-';
+        let linePctClass = 'pct';
+        if (linePctValue > 50) linePctClass += ' pct-positive';
+        else if (linePctValue < 50) linePctClass += ' pct-negative';
+        else linePctClass += ' pct-neutral';
+
+        const suTotal = stats.suWins + stats.suLosses;
+        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : 0;
+        const suPct = suTotal > 0 ? suPctValue.toFixed(1) + '%' : '-';
+        let suPctClass = 'pct';
+        if (suPctValue > 50) suPctClass += ' pct-positive';
+        else if (suPctValue < 50) suPctClass += ' pct-negative';
+        else suPctClass += ' pct-neutral';
+
+        const blazinTotal = stats.blazinWins + stats.blazinLosses;
+        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : 0;
+        const blazinPct = blazinTotal > 0 ? blazinPctValue.toFixed(1) + '%' : '-';
+        let blazinPctClass = 'pct';
+        if (blazinPctValue > 50) blazinPctClass += ' pct-positive';
+        else if (blazinPctValue < 50) blazinPctClass += ' pct-negative';
+        else blazinPctClass += ' pct-neutral';
+
+        return `
+            <tr class="${index === 0 ? 'leader' : ''}" data-picker="${stats.name}">
+                <td class="picker-name">${stats.name}</td>
+                <td data-sort="${stats.lineWins}">${lineRecord}</td>
+                <td class="${linePctClass}" data-sort="${linePctValue}">${linePct}</td>
+                <td class="divider-left" data-sort="${stats.blazinWins}">${blazinRecord}</td>
+                <td class="${blazinPctClass}" data-sort="${blazinPctValue}">${blazinPct}</td>
+                <td class="divider-left" data-sort="${stats.suWins}">${suRecord}</td>
+                <td class="${suPctClass}" data-sort="${suPctValue}">${suPct}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // Reset sort indicators
+    const table = document.getElementById('history-standings-table');
+    if (table) {
+        const headers = table.querySelectorAll('thead th');
+        headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        if (headers[4]) {
+            headers[4].classList.add('sort-desc');
+        }
+    }
 }
 
 /**
@@ -3906,6 +4168,10 @@ async function setActiveCategory(category) {
         historySection?.classList.remove('hidden');
         // Load the first available season (includes current since 2025 is complete)
         if (AVAILABLE_SEASONS.length > 0) {
+            const historySeasonDropdown = document.getElementById('history-season-dropdown');
+            if (historySeasonDropdown) {
+                historySeasonDropdown.value = AVAILABLE_SEASONS[0];
+            }
             loadHistorySeason(AVAILABLE_SEASONS[0]);
         }
     }
@@ -5245,23 +5511,38 @@ function renderHistoryBlazinTeamRecords(picker = null) {
     if (!tbody) return;
 
     const selectedPicker = picker || dropdown?.value || 'Stephen';
-    const season = seasonDropdown ? parseInt(seasonDropdown.value) : 2024;
+    const seasonValue = seasonDropdown?.value;
+    const isLifetime = seasonValue === 'lifetime';
+    const seasons = isLifetime ? AVAILABLE_SEASONS : [parseInt(seasonValue) || 2024];
     const analysisType = analysisTypeDropdown?.value || 'involved';
 
-    // Get records based on analysis type
-    let teamRecords;
-    switch (analysisType) {
-        case 'picked':
-            teamRecords = calculateHistoryBlazinTeamPicked(selectedPicker, season);
-            break;
-        case 'faded':
-            teamRecords = calculateHistoryBlazinTeamFaded(selectedPicker, season);
-            break;
-        case 'involved':
-        default:
-            teamRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season);
-            break;
-    }
+    // Get records based on analysis type (aggregate across all seasons for lifetime)
+    let teamRecords = {};
+    seasons.forEach(season => {
+        let seasonRecords;
+        switch (analysisType) {
+            case 'picked':
+                seasonRecords = calculateHistoryBlazinTeamPicked(selectedPicker, season);
+                break;
+            case 'faded':
+                seasonRecords = calculateHistoryBlazinTeamFaded(selectedPicker, season);
+                break;
+            case 'involved':
+            default:
+                seasonRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season);
+                break;
+        }
+        // Merge season records into aggregate
+        Object.entries(seasonRecords).forEach(([team, record]) => {
+            if (!teamRecords[team]) {
+                teamRecords[team] = { wins: 0, losses: 0, pushes: 0, games: [] };
+            }
+            teamRecords[team].wins += record.wins;
+            teamRecords[team].losses += record.losses;
+            teamRecords[team].pushes += record.pushes;
+            teamRecords[team].games.push(...(record.games || []));
+        });
+    });
 
     // Convert to array
     const teamsData = Object.entries(teamRecords)
@@ -5435,7 +5716,9 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
     if (!tbody) return;
 
     const selectedPicker = picker || dropdown?.value || 'Stephen';
-    const season = seasonDropdown ? parseInt(seasonDropdown.value) : 2024;
+    const seasonValue = seasonDropdown?.value;
+    const isLifetime = seasonValue === 'lifetime';
+    const seasons = isLifetime ? AVAILABLE_SEASONS : [parseInt(seasonValue) || 2024];
     const analysisType = analysisTypeDropdown?.value || 'spread';
 
     // Update table header based on analysis type
@@ -5452,20 +5735,33 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
         `;
     }
 
-    // Get records based on analysis type
-    let records;
-    switch (analysisType) {
-        case 'homeaway':
-            records = calculateHistoryBlazinHomeAway(selectedPicker, season);
-            break;
-        case 'favdog':
-            records = calculateHistoryBlazinFavDog(selectedPicker, season);
-            break;
-        case 'spread':
-        default:
-            records = calculateHistoryBlazinSpreadRecords(selectedPicker, season);
-            break;
-    }
+    // Get records based on analysis type (aggregate across all seasons for lifetime)
+    let records = {};
+    seasons.forEach(season => {
+        let seasonRecords;
+        switch (analysisType) {
+            case 'homeaway':
+                seasonRecords = calculateHistoryBlazinHomeAway(selectedPicker, season);
+                break;
+            case 'favdog':
+                seasonRecords = calculateHistoryBlazinFavDog(selectedPicker, season);
+                break;
+            case 'spread':
+            default:
+                seasonRecords = calculateHistoryBlazinSpreadRecords(selectedPicker, season);
+                break;
+        }
+        // Merge season records into aggregate
+        Object.entries(seasonRecords).forEach(([key, record]) => {
+            if (!records[key]) {
+                records[key] = { wins: 0, losses: 0, pushes: 0, games: [], spreadValue: record.spreadValue };
+            }
+            records[key].wins += record.wins;
+            records[key].losses += record.losses;
+            records[key].pushes += record.pushes;
+            records[key].games.push(...(record.games || []));
+        });
+    });
 
     // Convert to array
     const spreadsData = Object.entries(records)
