@@ -534,7 +534,7 @@ function getLiveGameStatus(game) {
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 6; // Increment to invalidate all caches (v6 filters out non-game events)
+const SCHEDULE_CACHE_VERSION = 7; // Increment to invalidate all caches (v7 pins ESPN fetches to CURRENT_SEASON)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -731,10 +731,10 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
         let url;
         if (isPlayoffWeek(week)) {
             const playoffInfo = PLAYOFF_WEEKS[week];
-            url = `${ESPN_SCHEDULE_URL}?seasontype=3&week=${playoffInfo.espnWeek}`;
+            url = `${ESPN_SCHEDULE_URL}?seasontype=3&week=${playoffInfo.espnWeek}&dates=${CURRENT_SEASON}`;
             console.log(`[ESPN] Fetching playoff schedule for ${playoffInfo.name}...`);
         } else {
-            url = `${ESPN_SCHEDULE_URL}?seasontype=2&week=${week}`;
+            url = `${ESPN_SCHEDULE_URL}?seasontype=2&week=${week}&dates=${CURRENT_SEASON}`;
             console.log(`[ESPN] Fetching schedule for week ${week}...`);
         }
         const response = await fetch(url);
