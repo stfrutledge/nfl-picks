@@ -2118,6 +2118,14 @@ function init() {
     // Initialize currentWeek with calculated value
     currentWeek = CURRENT_NFL_WEEK;
 
+    // Show the current season in the header and tab title
+    // (index.html only has an empty placeholder, so the year can never go stale)
+    const seasonDisplay = document.getElementById('season-display');
+    if (seasonDisplay) {
+        seasonDisplay.textContent = CURRENT_SEASON;
+    }
+    document.title = `NFL Picks Dashboard - ${CURRENT_SEASON} Season`;
+
     // Note: Historical data (games, results, picks) is merged immediately when app.js loads
     // See the merge blocks after NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, and initializePicksStorage()
 
