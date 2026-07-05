@@ -19,7 +19,7 @@ let currentSubcategory = null; // Will be set after CURRENT_NFL_WEEK is calculat
 let currentPicker = localStorage.getItem('selectedPicker') || null;
 let currentWeek = null; // Will be set to CURRENT_NFL_WEEK after it's calculated
 let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: { line: 'away'|'home', winner: 'away'|'home' } } } }
-let clearedPicks = JSON.parse(localStorage.getItem('clearedPicks') || '{}'); // Track intentionally cleared picks: { week: { picker: true } }
+let clearedPicks = {}; // Track intentionally cleared picks: { week: { picker: true } } - loaded from season-scoped storage below
 let backupFetchedThisSession = false; // Only fetch all picks from backup once per session
 let resultsFetchedThisSession = false; // Only fetch results from backup once per session
 let resultsSyncedGames = {}; // Track which games have had results synced to avoid duplicates
@@ -42,6 +42,45 @@ const AVAILABLE_SEASONS = Array.from(
     (_, i) => CURRENT_SEASON - i
 );
 
+// --- Automatic offseason reset (rolls over every July 1st) -----------------
+// Everything below is scoped to CURRENT_SEASON, so a new season automatically
+// starts from a clean slate:
+// - localStorage keys change with the season, leaving old picks behind
+// - a historical-data.js snapshot from a previous season is emptied in place
+// - Google Sheet backup rows are season-prefixed, so old rows are ignored
+
+// Season-scoped localStorage keys
+const PICKS_STORAGE_KEY = `nflPicks_${CURRENT_SEASON}`;
+const CLEARED_PICKS_KEY = `clearedPicks_${CURRENT_SEASON}`;
+clearedPicks = JSON.parse(localStorage.getItem(CLEARED_PICKS_KEY) || '{}');
+
+// If historical-data.js holds a previous season's snapshot (or an untagged one),
+// empty it in place so stale games/results/picks never leak into a new season.
+if (typeof HISTORICAL_GAMES !== 'undefined' &&
+    (typeof HISTORICAL_DATA_SEASON === 'undefined' || HISTORICAL_DATA_SEASON !== CURRENT_SEASON)) {
+    console.log('[Season] Clearing stale historical-data.js snapshot from a previous season');
+    for (const week in HISTORICAL_GAMES) delete HISTORICAL_GAMES[week];
+    if (typeof HISTORICAL_RESULTS !== 'undefined') {
+        for (const week in HISTORICAL_RESULTS) delete HISTORICAL_RESULTS[week];
+    }
+    if (typeof HISTORICAL_PICKS !== 'undefined') {
+        for (const week in HISTORICAL_PICKS) delete HISTORICAL_PICKS[week];
+    }
+}
+
+// The Google Sheet backup keeps rows forever and has no season column, so week
+// keys written from 2026 on are prefixed with the season (e.g. "2026_5").
+// Un-prefixed numeric weeks in the sheet are 2025-season rows and are ignored.
+function toSheetWeek(week) {
+    return `${CURRENT_SEASON}_${week}`;
+}
+// Returns the local week number, or null if the row belongs to another season.
+function fromSheetWeek(sheetWeek) {
+    const match = String(sheetWeek).match(/^(\d{4})_(\d+)$/);
+    if (!match) return null;
+    return parseInt(match[1]) === CURRENT_SEASON ? parseInt(match[2]) : null;
+}
+
 // Get pickers available for a given season (Jason and Daniel started in 2023, Dylan stopped after 2019)
 function getPickersForSeason(season) {
     if (season <= 2019) {
@@ -54,7 +93,7 @@ function getPickersForSeason(season) {
 }
 
 // Season data storage - keyed by season year
-// 2025 (current) uses NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, allPicks directly
+// The current season uses NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, allPicks directly
 // Historical seasons loaded on-demand from historical-YYYY.js files
 let seasonData = {};
 let seasonDataLoading = {}; // Track which seasons are currently being loaded
@@ -336,85 +375,26 @@ const TEAM_LOGOS = {
     'Steelers': 'https://a.espncdn.com/i/teamlogos/nfl/500/pit.png'
 };
 
-// Fallback spreads for games - used when Odds API doesn't return data (e.g., completed games)
-// This is a separate constant that never gets overwritten
-const FALLBACK_SPREADS = {
-    15: { 'falcons_buccaneers': { spread: 4.5, favorite: 'home' }, 'jets_jaguars': { spread: 13.5, favorite: 'home' }, 'browns_bears': { spread: 7.5, favorite: 'home' }, 'bills_patriots': { spread: 1.5, favorite: 'away' }, 'ravens_bengals': { spread: 2.5, favorite: 'away' }, 'cardinals_texans': { spread: 9.5, favorite: 'home' }, 'raiders_eagles': { spread: 11.5, favorite: 'home' }, 'chargers_chiefs': { spread: 5.5, favorite: 'home' }, 'commanders_giants': { spread: 2.5, favorite: 'home' }, 'colts_seahawks': { spread: 13.5, favorite: 'home' }, 'titans_49ers': { spread: 12.5, favorite: 'home' }, 'packers_broncos': { spread: 2.5, favorite: 'away' }, 'lions_rams': { spread: 6, favorite: 'home' }, 'panthers_saints': { spread: 2.5, favorite: 'away' }, 'vikings_cowboys': { spread: 5.5, favorite: 'home' }, 'dolphins_steelers': { spread: 3, favorite: 'home' } },
-    16: { 'rams_seahawks': { spread: 1.5, favorite: 'home' }, 'eagles_commanders': { spread: 6.5, favorite: 'away' }, 'packers_bears': { spread: 1.5, favorite: 'away' }, 'bills_browns': { spread: 10, favorite: 'away' }, 'chargers_cowboys': { spread: 1.5, favorite: 'home' }, 'chiefs_titans': { spread: 3.5, favorite: 'away' }, 'bengals_dolphins': { spread: 1.5, favorite: 'away' }, 'jets_saints': { spread: 4.5, favorite: 'home' }, 'vikings_giants': { spread: 3, favorite: 'away' }, 'buccaneers_panthers': { spread: 3, favorite: 'away' }, 'jaguars_broncos': { spread: 3, favorite: 'home' }, 'falcons_cardinals': { spread: 2.5, favorite: 'away' }, 'steelers_lions': { spread: 7, favorite: 'home' }, 'raiders_texans': { spread: 14.5, favorite: 'home' }, 'patriots_ravens': { spread: 3, favorite: 'home' }, '49ers_colts': { spread: 5.5, favorite: 'away' } },
-    17: { 'cowboys_commanders': { spread: 4.5, favorite: 'home' }, 'lions_vikings': { spread: 3, favorite: 'away' }, 'broncos_chiefs': { spread: 10.5, favorite: 'home' }, 'texans_chargers': { spread: 1.5, favorite: 'home' }, 'ravens_packers': { spread: 4.5, favorite: 'home' }, 'cardinals_bengals': { spread: 7.5, favorite: 'home' }, 'steelers_browns': { spread: 3, favorite: 'away' }, 'jaguars_colts': { spread: 6, favorite: 'home' }, 'buccaneers_dolphins': { spread: 6, favorite: 'home' }, 'patriots_jets': { spread: 13.5, favorite: 'home' }, 'saints_titans': { spread: 2.5, favorite: 'home' }, 'giants_raiders': { spread: 1.5, favorite: 'home' }, 'eagles_bills': { spread: 1.5, favorite: 'home' }, 'seahawks_panthers': { spread: 7, favorite: 'away' }, 'bears_49ers': { spread: 3, favorite: 'home' }, 'rams_falcons': { spread: 7.5, favorite: 'away' } },
-    18: { 'panthers_buccaneers': { spread: 2.5, favorite: 'home' } },
-    // Wild Card Round (Week 19)
-    19: {
-        'rams_panthers': { spread: 10.5, favorite: 'away', overUnder: 46.5 },
-        'packers_bears': { spread: 1, favorite: 'home', overUnder: 46.5 },
-        'bills_jaguars': { spread: 1.5, favorite: 'away', overUnder: 51.5 },
-        '49ers_eagles': { spread: 5, favorite: 'home', overUnder: 44.5 },
-        'chargers_patriots': { spread: 3.5, favorite: 'home', overUnder: 43.5 },
-        'texans_steelers': { spread: 3, favorite: 'away', overUnder: 39.5 }
-    }
-};
+// Fallback spreads for games - used when the Odds API doesn't return data (e.g., completed games).
+// Weeks can be hardcoded here during the season; anything added belongs to
+// HARDCODED_DATA_SEASON (below) and is cleared automatically once the season
+// rolls over each July 1st.
+const FALLBACK_SPREADS = {};
 
-// NFL Games by Week - Full structure for all weeks
-// Week 15 has full data, other weeks are placeholders that can be populated
-// NFL Week 15 2025: Thu Dec 11, Sun Dec 14, Mon Dec 15
-const NFL_GAMES_BY_WEEK = {
-    15: [
-        { id: 1, away: 'Falcons', home: 'Buccaneers', spread: 4.5, favorite: 'home', day: 'Thursday', time: '8:15 PM ET', kickoff: '2025-12-11T20:15:00-05:00', location: 'Tampa, FL', stadium: 'Raymond James Stadium' },
-        { id: 2, away: 'Jets', home: 'Jaguars', spread: 13.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Jacksonville, FL', stadium: 'EverBank Stadium' },
-        { id: 3, away: 'Browns', home: 'Bears', spread: 7.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Chicago, IL', stadium: 'Soldier Field' },
-        { id: 4, away: 'Bills', home: 'Patriots', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Foxborough, MA', stadium: 'Gillette Stadium' },
-        { id: 5, away: 'Ravens', home: 'Bengals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Cincinnati, OH', stadium: 'Paycor Stadium' },
-        { id: 6, away: 'Cardinals', home: 'Texans', spread: 9.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
-        { id: 7, away: 'Raiders', home: 'Eagles', spread: 11.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Philadelphia, PA', stadium: 'Lincoln Financial Field' },
-        { id: 8, away: 'Chargers', home: 'Chiefs', spread: 5.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'Kansas City, MO', stadium: 'GEHA Field at Arrowhead Stadium' },
-        { id: 9, away: 'Commanders', home: 'Giants', spread: 2.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-14T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
-        { id: 10, away: 'Colts', home: 'Seahawks', spread: 13.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Seattle, WA', stadium: 'Lumen Field' },
-        { id: 11, away: 'Titans', home: '49ers', spread: 12.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Santa Clara, CA', stadium: 'Levi\'s Stadium' },
-        { id: 12, away: 'Packers', home: 'Broncos', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
-        { id: 13, away: 'Lions', home: 'Rams', spread: 6, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'Inglewood, CA', stadium: 'SoFi Stadium' },
-        { id: 14, away: 'Panthers', home: 'Saints', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-14T16:25:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
-        { id: 15, away: 'Vikings', home: 'Cowboys', spread: 5.5, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-14T20:20:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
-        { id: 16, away: 'Dolphins', home: 'Steelers', spread: 3, favorite: 'home', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-15T20:15:00-05:00', location: 'Pittsburgh, PA', stadium: 'Acrisure Stadium' }
-    ],
-    16: [
-        { id: 1, away: 'Rams', home: 'Seahawks', spread: 1.5, favorite: 'home', day: 'Thursday', time: '8:15 PM ET', kickoff: '2025-12-19T20:15:00-05:00', location: 'Seattle, WA', stadium: 'Lumen Field' },
-        { id: 2, away: 'Eagles', home: 'Commanders', spread: 6.5, favorite: 'away', day: 'Saturday', time: '5:00 PM ET', kickoff: '2025-12-20T17:00:00-05:00', location: 'Landover, MD', stadium: 'Northwest Stadium' },
-        { id: 3, away: 'Packers', home: 'Bears', spread: 1.5, favorite: 'away', day: 'Saturday', time: '8:20 PM ET', kickoff: '2025-12-20T20:20:00-05:00', location: 'Chicago, IL', stadium: 'Soldier Field' },
-        { id: 4, away: 'Bills', home: 'Browns', spread: 10, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Cleveland, OH', stadium: 'Huntington Bank Field' },
-        { id: 5, away: 'Chargers', home: 'Cowboys', spread: 1.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Arlington, TX', stadium: 'AT&T Stadium' },
-        { id: 6, away: 'Chiefs', home: 'Titans', spread: 3.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Nashville, TN', stadium: 'Nissan Stadium' },
-        { id: 7, away: 'Bengals', home: 'Dolphins', spread: 1.5, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Miami Gardens, FL', stadium: 'Hard Rock Stadium' },
-        { id: 8, away: 'Jets', home: 'Saints', spread: 4.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'New Orleans, LA', stadium: 'Caesars Superdome' },
-        { id: 9, away: 'Vikings', home: 'Giants', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
-        { id: 10, away: 'Buccaneers', home: 'Panthers', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-21T13:00:00-05:00', location: 'Charlotte, NC', stadium: 'Bank of America Stadium' },
-        { id: 11, away: 'Jaguars', home: 'Broncos', spread: 3, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-21T16:05:00-05:00', location: 'Denver, CO', stadium: 'Empower Field at Mile High' },
-        { id: 12, away: 'Falcons', home: 'Cardinals', spread: 2.5, favorite: 'away', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-21T16:05:00-05:00', location: 'Glendale, AZ', stadium: 'State Farm Stadium' },
-        { id: 13, away: 'Steelers', home: 'Lions', spread: 7, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-21T16:25:00-05:00', location: 'Detroit, MI', stadium: 'Ford Field' },
-        { id: 14, away: 'Raiders', home: 'Texans', spread: 14.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-21T16:25:00-05:00', location: 'Houston, TX', stadium: 'NRG Stadium' },
-        { id: 15, away: 'Patriots', home: 'Ravens', spread: 3, favorite: 'home', day: 'Sunday', time: '8:20 PM ET', kickoff: '2025-12-21T20:20:00-05:00', location: 'Baltimore, MD', stadium: 'M&T Bank Stadium' },
-        { id: 16, away: '49ers', home: 'Colts', spread: 5.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-22T20:15:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' }
-    ],
-    // Week 17 fallback spreads - updated from Odds API, will be overwritten by fresh API data on game days
-    17: [
-        { id: 1, away: 'Cowboys', home: 'Commanders', spread: 4.5, favorite: 'home', day: 'Wednesday', time: '1:00 PM ET', kickoff: '2025-12-25T13:00:00-05:00', location: 'Landover, MD', stadium: 'Northwest Stadium' },
-        { id: 2, away: 'Lions', home: 'Vikings', spread: 3, favorite: 'away', day: 'Wednesday', time: '4:30 PM ET', kickoff: '2025-12-25T16:30:00-05:00', location: 'Minneapolis, MN', stadium: 'U.S. Bank Stadium' },
-        { id: 3, away: 'Broncos', home: 'Chiefs', spread: 10.5, favorite: 'home', day: 'Thursday', time: '1:00 PM ET', kickoff: '2025-12-26T13:00:00-05:00', location: 'Kansas City, MO', stadium: 'GEHA Field at Arrowhead Stadium' },
-        { id: 4, away: 'Texans', home: 'Chargers', spread: 1.5, favorite: 'home', day: 'Friday', time: '8:15 PM ET', kickoff: '2025-12-27T20:15:00-05:00', location: 'Inglewood, CA', stadium: 'SoFi Stadium' },
-        { id: 5, away: 'Ravens', home: 'Packers', spread: 4.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Green Bay, WI', stadium: 'Lambeau Field' },
-        { id: 6, away: 'Cardinals', home: 'Bengals', spread: 7.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Cincinnati, OH', stadium: 'Paycor Stadium' },
-        { id: 7, away: 'Steelers', home: 'Browns', spread: 3, favorite: 'away', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Cleveland, OH', stadium: 'Huntington Bank Field' },
-        { id: 8, away: 'Jaguars', home: 'Colts', spread: 6, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Indianapolis, IN', stadium: 'Lucas Oil Stadium' },
-        { id: 9, away: 'Buccaneers', home: 'Dolphins', spread: 6, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Miami Gardens, FL', stadium: 'Hard Rock Stadium' },
-        { id: 10, away: 'Patriots', home: 'Jets', spread: 13.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'East Rutherford, NJ', stadium: 'MetLife Stadium' },
-        { id: 11, away: 'Saints', home: 'Titans', spread: 2.5, favorite: 'home', day: 'Sunday', time: '1:00 PM ET', kickoff: '2025-12-28T13:00:00-05:00', location: 'Nashville, TN', stadium: 'Nissan Stadium' },
-        { id: 12, away: 'Giants', home: 'Raiders', spread: 1.5, favorite: 'home', day: 'Sunday', time: '4:05 PM ET', kickoff: '2025-12-28T16:05:00-05:00', location: 'Las Vegas, NV', stadium: 'Allegiant Stadium' },
-        { id: 13, away: 'Eagles', home: 'Bills', spread: 1.5, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Orchard Park, NY', stadium: 'Highmark Stadium' },
-        { id: 14, away: 'Seahawks', home: 'Panthers', spread: 7, favorite: 'away', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Charlotte, NC', stadium: 'Bank of America Stadium' },
-        { id: 15, away: 'Bears', home: '49ers', spread: 3, favorite: 'home', day: 'Sunday', time: '4:25 PM ET', kickoff: '2025-12-28T16:25:00-05:00', location: 'Santa Clara, CA', stadium: 'Levi\'s Stadium' },
-        { id: 16, away: 'Rams', home: 'Falcons', spread: 7.5, favorite: 'away', day: 'Monday', time: '8:15 PM ET', kickoff: '2025-12-29T20:15:00-05:00', location: 'Atlanta, GA', stadium: 'Mercedes-Benz Stadium' }
-    ]
-    // Week 18 games fetched dynamically from ESPN API, spreads from FALLBACK_SPREADS
-};
+// NFL Games by Week - populated dynamically from the ESPN API.
+// Weeks can be hardcoded here as an in-season fallback; when adding games,
+// update HARDCODED_DATA_SEASON below to the season they belong to.
+const NFL_GAMES_BY_WEEK = {};
+
+// Season that any hardcoded FALLBACK_SPREADS / NFL_GAMES_BY_WEEK entries above
+// belong to. If it isn't the current season the entries are stale leftovers,
+// so they are cleared in place (part of the automatic July 1st offseason reset).
+const HARDCODED_DATA_SEASON = 2026;
+if (HARDCODED_DATA_SEASON !== CURRENT_SEASON) {
+    console.log('[Season] Clearing stale hardcoded games/spreads from a previous season');
+    for (const week in NFL_GAMES_BY_WEEK) delete NFL_GAMES_BY_WEEK[week];
+    for (const week in FALLBACK_SPREADS) delete FALLBACK_SPREADS[week];
+}
 
 // Immediately merge historical games if available (historical-data.js loads before app.js)
 if (typeof HISTORICAL_GAMES !== 'undefined') {
@@ -573,7 +553,7 @@ function isValidGameData(data) {
  */
 function getCachedSchedule(week) {
     try {
-        const cached = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+        const cached = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
         if (!cached) return null;
 
         const parsed = JSON.parse(cached);
@@ -582,7 +562,7 @@ function getCachedSchedule(week) {
         // Invalidate old cache versions
         if (version !== SCHEDULE_CACHE_VERSION) {
             console.log(`[ESPN] Cache version mismatch for week ${week}, invalidating`);
-            localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+            localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
             return null;
         }
         const age = Date.now() - timestamp;
@@ -594,7 +574,7 @@ function getCachedSchedule(week) {
             // Validate data structure - treat invalid data as cache miss
             if (!isValidGameData(data)) {
                 console.log(`[ESPN] Invalid/empty cache data for week ${week}, treating as cache miss`);
-                localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+                localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
                 return null;
             }
             const minsAgo = (age / (1000 * 60)).toFixed(0);
@@ -617,7 +597,7 @@ function getCachedSchedule(week) {
         }
 
         console.log(`[ESPN] Schedule cache expired for week ${week}`);
-        localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+        localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
         return null;
     } catch (e) {
         console.warn('[ESPN] Error reading schedule cache:', e);
@@ -635,7 +615,7 @@ function cacheSchedule(week, data) {
         return;
     }
     try {
-        localStorage.setItem(`${SCHEDULE_CACHE_KEY}_week${week}`, JSON.stringify({
+        localStorage.setItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`, JSON.stringify({
             version: SCHEDULE_CACHE_VERSION,
             timestamp: Date.now(),
             data: data
@@ -841,7 +821,7 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
     } catch (error) {
         console.error(`[ESPN] Error fetching schedule for week ${week}:`, error);
         // Try to return stale cache on error
-        const staleCache = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_week${week}`);
+        const staleCache = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
         if (staleCache) {
             console.log('[ESPN] Using stale cache due to fetch error');
             return JSON.parse(staleCache).data;
@@ -1173,7 +1153,7 @@ function migrateWeekPicksToMatchupKeys(week) {
  */
 const ODDS_CACHE_KEY = 'nfl_odds_cache';
 const ODDS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-const SAVED_SPREADS_KEY = 'nfl_saved_spreads'; // Permanent storage for spreads (used for completed games)
+const SAVED_SPREADS_KEY = `nfl_saved_spreads_${CURRENT_SEASON}`; // Permanent storage for spreads, season-scoped (used for completed games)
 
 /**
  * Get cached odds from localStorage
@@ -8003,7 +7983,7 @@ function handlePickSelect(e) {
     // This allows future backup restores
     if (clearedPicks[currentWeek]?.[currentPicker]) {
         delete clearedPicks[currentWeek][currentPicker];
-        localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+        localStorage.setItem(CLEARED_PICKS_KEY, JSON.stringify(clearedPicks));
     }
 
     // Save to localStorage (this will also sync cleared=false to Google Sheets)
@@ -9000,7 +8980,7 @@ function clearCurrentPickerPicks() {
                 clearedPicks[currentWeek] = {};
             }
             clearedPicks[currentWeek][currentPicker] = true;
-            localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+            localStorage.setItem(CLEARED_PICKS_KEY, JSON.stringify(clearedPicks));
 
             // Sync cleared status to Google Sheets
             syncClearedStatusToGoogleSheets(currentWeek, currentPicker, true);
@@ -9020,7 +9000,7 @@ function clearCurrentPickerPicks() {
                 // Remove the cleared flag since we're restoring
                 if (clearedPicks[savedWeek]) {
                     delete clearedPicks[savedWeek][savedPicker];
-                    localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+                    localStorage.setItem(CLEARED_PICKS_KEY, JSON.stringify(clearedPicks));
                     syncClearedStatusToGoogleSheets(savedWeek, savedPicker, false);
                 }
 
@@ -9053,7 +9033,7 @@ function resetAllPicks() {
 function clearAndReimportFromSheets() {
     if (confirm('Clear all local picks and reimport from Google Sheets? This will replace any picks you made locally.')) {
         // Clear localStorage
-        localStorage.removeItem('nflPicks');
+        localStorage.removeItem(PICKS_STORAGE_KEY);
         // Clear in-memory data
         allPicks = {};
         // Clear weekly cache to force re-fetch
@@ -9425,7 +9405,7 @@ function randomizePicks() {
  * @param {boolean} skipSync - If true, skip syncing to Google Sheets (used when loading from backup)
  */
 function savePicksToStorage(showSyncToast = false, skipSync = false) {
-    localStorage.setItem('nflPicks', JSON.stringify(allPicks));
+    localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
 
     // Debounce sync to Google Sheets (skip if we're just loading data)
     if (APPS_SCRIPT_URL && !skipSync) {
@@ -9491,7 +9471,7 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     }
 
     const payload = {
-        week: currentWeek,
+        week: toSheetWeek(currentWeek),
         picker: currentPicker,
         picks: formattedPicks,
         cleared: false  // Always reset cleared flag when syncing picks
@@ -9550,7 +9530,7 @@ async function syncClearedStatusToGoogleSheets(week, picker, cleared) {
     }
 
     const payload = {
-        week: week,
+        week: toSheetWeek(week),
         picker: picker,
         cleared: cleared
     };
@@ -9595,7 +9575,7 @@ async function syncSpreadsToGoogleSheets() {
         }
 
         const payload = {
-            week: week,
+            week: toSheetWeek(week),
             spreads: weekSpreads
         };
 
@@ -9625,7 +9605,7 @@ async function syncSpreadsToGoogleSheets() {
 async function loadSpreadsFromGoogleSheets(week) {
     try {
         console.log(`[Spreads Load] Fetching spreads for week ${week} from Google Sheets...`);
-        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=spreads&week=${week}`);
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=spreads&week=${toSheetWeek(week)}`);
         const result = await response.json();
 
         if (result.spreads && Object.keys(result.spreads).length > 0) {
@@ -9674,7 +9654,7 @@ async function loadPicksFromGoogleSheets(week, picker) {
 
     try {
         console.log(`[Picks Load] Attempting to load picks for ${picker} week ${week} from Google Sheets...`);
-        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=picks&week=${week}&picker=${encodeURIComponent(picker)}`);
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=picks&week=${toSheetWeek(week)}&picker=${encodeURIComponent(picker)}`);
         const result = await response.json();
 
         if (result.error) {
@@ -9690,7 +9670,7 @@ async function loadPicksFromGoogleSheets(week, picker) {
                 clearedPicks[week] = {};
             }
             clearedPicks[week][picker] = true;
-            localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+            localStorage.setItem(CLEARED_PICKS_KEY, JSON.stringify(clearedPicks));
             return null;
         }
 
@@ -9752,14 +9732,16 @@ async function loadAllPicksFromBackup() {
         // This ensures "No" entries on server remove local "Yes" entries
         clearedPicks = {};
         if (result.cleared) {
-            for (const week in result.cleared) {
+            for (const sheetWeek in result.cleared) {
+                const weekNum = fromSheetWeek(sheetWeek);
+                if (weekNum === null) continue; // row belongs to another season
+                const week = String(weekNum);
                 if (!clearedPicks[week]) {
                     clearedPicks[week] = {};
                 }
-                for (const picker in result.cleared[week]) {
+                for (const picker in result.cleared[sheetWeek]) {
                     clearedPicks[week][picker] = true;
                     // Also clear local picks to match server state
-                    const weekNum = parseInt(week);
                     if (allPicks[weekNum]?.[picker]) {
                         console.log(`[Picks Load] Clearing local picks for ${picker} week ${week} (server says cleared)`);
                         delete allPicks[weekNum][picker];
@@ -9770,21 +9752,23 @@ async function loadAllPicksFromBackup() {
                 }
             }
         }
-        localStorage.setItem('clearedPicks', JSON.stringify(clearedPicks));
+        localStorage.setItem(CLEARED_PICKS_KEY, JSON.stringify(clearedPicks));
         console.log('[Picks Load] Synced clearedPicks from server:', clearedPicks);
 
         // Merge picks from backup into allPicks
         if (result.picks) {
             let totalPicks = 0;
-            for (const week in result.picks) {
-                const weekNum = parseInt(week);
+            for (const sheetWeek in result.picks) {
+                const weekNum = fromSheetWeek(sheetWeek);
+                if (weekNum === null) continue; // row belongs to another season
+                const week = String(weekNum);
 
                 // Skip playoff weeks that have historical data - historical data is authoritative
                 if (weekNum >= 19 && typeof HISTORICAL_PICKS !== 'undefined' && HISTORICAL_PICKS[week]) {
                     continue;
                 }
 
-                for (const picker in result.picks[week]) {
+                for (const picker in result.picks[sheetWeek]) {
                     // Skip if user intentionally cleared picks for this week/picker
                     if (clearedPicks[week]?.[picker]) {
                         console.log(`[Picks Load] ${picker} week ${week} was cleared, skipping`);
@@ -9799,8 +9783,8 @@ async function loadAllPicksFromBackup() {
                     }
 
                     // Overwrite with backup data (backup is source of truth)
-                    for (const gameId in result.picks[week][picker]) {
-                        allPicks[weekNum][picker][gameId] = result.picks[week][picker][gameId];
+                    for (const gameId in result.picks[sheetWeek][picker]) {
+                        allPicks[weekNum][picker][gameId] = result.picks[sheetWeek][picker][gameId];
                         totalPicks++;
                     }
                 }
@@ -9843,21 +9827,16 @@ async function loadAllResultsFromBackup() {
 
         if (result.results && Object.keys(result.results).length > 0) {
             let totalResults = 0;
-            for (const week in result.results) {
-                const weekNum = parseInt(week);
-
-                // Skip if historical data already has complete results for this week
-                if (typeof HISTORICAL_RESULTS !== 'undefined' && HISTORICAL_RESULTS[week] &&
-                    Object.keys(HISTORICAL_RESULTS[week]).length > 0) {
-                    // Still merge - backup results might have more recent data
-                }
+            for (const sheetWeek in result.results) {
+                const weekNum = fromSheetWeek(sheetWeek);
+                if (weekNum === null) continue; // row belongs to another season
 
                 if (!NFL_RESULTS_BY_WEEK[weekNum]) {
                     NFL_RESULTS_BY_WEEK[weekNum] = {};
                 }
 
-                for (const gameKey in result.results[week]) {
-                    const resultData = result.results[week][gameKey];
+                for (const gameKey in result.results[sheetWeek]) {
+                    const resultData = result.results[sheetWeek][gameKey];
 
                     // Find the game by matchup key to get the game ID
                     const games = getGamesForWeek(weekNum);
@@ -9945,7 +9924,7 @@ async function syncResultsToGoogleSheets(week, source = 'ESPN') {
     console.log(`[Results Sync] Syncing ${newResults} new results for week ${week}...`);
 
     const payload = {
-        week: week,
+        week: toSheetWeek(week),
         results: resultsToSync,
         source: source
     };
@@ -9980,7 +9959,7 @@ async function syncResultsToGoogleSheets(week, source = 'ESPN') {
  * Load picks from localStorage
  */
 function loadPicksFromStorage() {
-    const saved = localStorage.getItem('nflPicks');
+    const saved = localStorage.getItem(PICKS_STORAGE_KEY);
     if (saved) {
         try {
             const parsed = JSON.parse(saved);
@@ -10030,7 +10009,7 @@ function loadPicksFromStorage() {
             }
         } catch (e) {
             console.error('Failed to load picks from storage, clearing...', e);
-            localStorage.removeItem('nflPicks');
+            localStorage.removeItem(PICKS_STORAGE_KEY);
         }
     }
 }
@@ -12182,8 +12161,11 @@ window.exportHistoricalData = function() {
     }
 
     // Generate JavaScript code
-    let jsCode = `// Historical NFL Picks Data - Weeks 1-18 (2024 Season)
-// Auto-generated from Google Sheets data on ${new Date().toISOString().split('T')[0]}
+    let jsCode = `// In-season snapshot of the ${CURRENT_SEASON} season's games/results/picks.
+// Auto-generated with exportHistoricalData() on ${new Date().toISOString().split('T')[0]}
+// HISTORICAL_DATA_SEASON lets app.js clear this data automatically once the season rolls over.
+
+const HISTORICAL_DATA_SEASON = ${CURRENT_SEASON};
 
 const HISTORICAL_GAMES = ${JSON.stringify(output.games, null, 4)};
 
