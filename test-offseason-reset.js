@@ -42,7 +42,8 @@ function makeEnv(prependSrc) {
         toSheetWeek, fromSheetWeek, NFL_GAMES_BY_WEEK, FALLBACK_SPREADS,
         HISTORICAL_GAMES, HISTORICAL_RESULTS, HISTORICAL_PICKS,
         allPicks, clearedPicks, NFL_RESULTS_BY_WEEK, CURRENT_NFL_WEEK,
-        loadAllPicksFromBackup, loadAllResultsFromBackup, getGamesForWeek
+        loadAllPicksFromBackup, loadAllResultsFromBackup, getGamesForWeek,
+        loadAllWeeklyDataForBlazin, weeklyPicksCache, LEGACY_SHEETS_SEASON, dashboardData
     });`;
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
@@ -99,6 +100,12 @@ function countPicks(allPicks) {
     for (const wk of Object.keys(a1.NFL_RESULTS_BY_WEEK)) {
         assert.deepStrictEqual(a1.NFL_RESULTS_BY_WEEK[wk], {}, '2025 sheet results must not leak into 2026');
     }
+    // Legacy 2025 stats workbook must not be fetched in 2026 (fetch throws if called)
+    e1.fetch = async url => { throw new Error('unexpected fetch: ' + url); };
+    assert.notStrictEqual(a1.LEGACY_SHEETS_SEASON, a1.CURRENT_SEASON, 'legacy workbook must be stale-tagged');
+    await a1.loadAllWeeklyDataForBlazin();
+    assert.deepStrictEqual(Object.keys(a1.weeklyPicksCache), [], 'legacy weekly tabs must not load');
+    assert.strictEqual(a1.dashboardData, null, 'legacy dashboard CSV must not populate dashboardData');
     console.log('Scenario 1 OK: clean 2026 slate, real 2025 sheet data ignored');
 
     // --- Scenario 2: stale snapshot from a previous season gets emptied in place ---

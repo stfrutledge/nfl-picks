@@ -3332,7 +3332,8 @@ async function setCurrentWeek(week) {
     }
 
     // Fetch week data if we have a GID for it and it's not cached
-    if (WEEK_SHEET_GIDS[week] && !weeklyPicksCache[week]) {
+    // (skipped when the workbook belongs to a previous season)
+    if (LEGACY_SHEETS_SEASON === CURRENT_SEASON && WEEK_SHEET_GIDS[week] && !weeklyPicksCache[week]) {
         const weekUrl = `${GOOGLE_SHEETS_BASE_URL}&gid=${WEEK_SHEET_GIDS[week]}`;
         const CORS_PROXIES = [
             '', // Try direct first
@@ -3971,6 +3972,11 @@ function loadCSVData(csvText) {
 
 // Google Sheets base URL and sheet IDs
 // The main sheet (gid=0) has overall stats, each week has its own tab
+// LEGACY_SHEETS_SEASON tags which season this workbook tracks. When it isn't the
+// current season, the workbook is not loaded (part of the automatic July 1st
+// offseason reset). When the new season's workbook is ready, update the URL,
+// the WEEK_SHEET_GIDS, and this tag together.
+const LEGACY_SHEETS_SEASON = 2025;
 const GOOGLE_SHEETS_BASE_URL = 'https://docs.google.com/spreadsheets/d/1JuftzmWWIlquN1oKrFqPNaGjMu9ysdnCHqCDj9lYzfE/export?format=csv';
 const GOOGLE_SHEETS_CSV_URL = GOOGLE_SHEETS_BASE_URL + '&gid=0';
 
@@ -4008,36 +4014,44 @@ async function loadFromGoogleSheets() {
     updateLoadingProgress(15, 'Connecting to data source...');
 
     try {
-        updateLoadingProgress(25, 'Fetching dashboard data...');
+        let stepStart;
+        if (LEGACY_SHEETS_SEASON === CURRENT_SEASON) {
+            updateLoadingProgress(25, 'Fetching dashboard data...');
 
-        // Use worker proxy to avoid CORS issues
-        const proxyUrl = `${WORKER_PROXY_URL}/sheets?url=${encodeURIComponent(GOOGLE_SHEETS_CSV_URL)}`;
+            // Use worker proxy to avoid CORS issues
+            const proxyUrl = `${WORKER_PROXY_URL}/sheets?url=${encodeURIComponent(GOOGLE_SHEETS_CSV_URL)}`;
 
-        // Add 15 second timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+            // Add 15 second timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        let stepStart = performance.now();
-        const response = await fetch(proxyUrl, { method: 'GET', signal: controller.signal });
-        clearTimeout(timeoutId);
-        console.log(`[Timing] Main CSV fetch: ${(performance.now() - stepStart).toFixed(0)}ms`);
+            stepStart = performance.now();
+            const response = await fetch(proxyUrl, { method: 'GET', signal: controller.signal });
+            clearTimeout(timeoutId);
+            console.log(`[Timing] Main CSV fetch: ${(performance.now() - stepStart).toFixed(0)}ms`);
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            updateLoadingProgress(50, 'Processing data...');
+            const csvText = await response.text();
+
+            // Validate we got actual CSV data (not an error page)
+            if (csvText.includes('<!DOCTYPE') || csvText.length < 100) {
+                throw new Error('Invalid response');
+            }
+
+            updateLoadingProgress(70, 'Preparing charts...');
+            stepStart = performance.now();
+            loadCSVData(csvText);
+            console.log(`[Timing] CSV parsing: ${(performance.now() - stepStart).toFixed(0)}ms`);
+        } else {
+            // The stats workbook belongs to a previous season - start the new season
+            // with empty dashboard data instead of last season's numbers.
+            console.log(`[Season] Skipping legacy stats workbook (tagged ${LEGACY_SHEETS_SEASON}, current season is ${CURRENT_SEASON})`);
+            updateLoadingProgress(70, 'Preparing charts...');
         }
-
-        updateLoadingProgress(50, 'Processing data...');
-        const csvText = await response.text();
-
-        // Validate we got actual CSV data (not an error page)
-        if (csvText.includes('<!DOCTYPE') || csvText.length < 100) {
-            throw new Error('Invalid response');
-        }
-
-        updateLoadingProgress(70, 'Preparing charts...');
-        stepStart = performance.now();
-        loadCSVData(csvText);
-        console.log(`[Timing] CSV parsing: ${(performance.now() - stepStart).toFixed(0)}ms`);
 
         // Load only ESPN schedule on critical path (picks already loaded from localStorage)
         // Skip spreads load for faster startup - will load in background
@@ -6549,6 +6563,13 @@ function formatCurrency(amount) {
  * Fetches each week's sheet to get the * markers
  */
 async function loadAllWeeklyDataForBlazin(weeksToLoad = null) {
+    // The weekly tabs belong to LEGACY_SHEETS_SEASON's workbook - don't load
+    // last season's picks into a new season.
+    if (LEGACY_SHEETS_SEASON !== CURRENT_SEASON) {
+        console.log('[Season] Skipping legacy weekly tabs (previous season workbook)');
+        return;
+    }
+
     // Only use corsproxy.io which we know works
     const proxy = 'https://corsproxy.io/?';
 
