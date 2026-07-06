@@ -2126,6 +2126,17 @@ function init() {
     }
     document.title = `NFL Picks Dashboard - ${CURRENT_SEASON} Season`;
 
+    // Fill the week headings ("Week 1 Picks" etc.) - index.html defaults them to "--"
+    // and loadCSVData no longer runs when the legacy stats workbook is stale.
+    const picksWeekNum = document.getElementById('picks-week-num');
+    if (picksWeekNum) {
+        picksWeekNum.textContent = getWeekTitle(currentWeek, 'Picks');
+    }
+    const scoringWeekNum = document.getElementById('scoring-week-num');
+    if (scoringWeekNum) {
+        scoringWeekNum.textContent = getWeekTitle(currentWeek, 'Scoring Summary');
+    }
+
     // Note: Historical data (games, results, picks) is merged immediately when app.js loads
     // See the merge blocks after NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, and initializePicksStorage()
 
