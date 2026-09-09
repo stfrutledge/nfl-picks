@@ -1992,6 +1992,37 @@ function rekeyPicksByMatchup(pickerPicks, weekGames) {
     return result;
 }
 
+/**
+ * The picks a picker has for a week as the UI sees them: the Google Sheets
+ * cache with local picks layered on top (local wins).
+ *
+ * renderGames and updateBlazinStarStates MUST read picks through this. When
+ * they read different views, a star renders enabled and then disables itself
+ * on the next click - the Blazin' 5 "works for a moment" bug.
+ */
+function getPickerPicksForWeek(week = currentWeek, picker = currentPicker) {
+    const weekStr = String(week);
+    const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
+    const localPicks = seasonPicks[picker] || {};
+    const cachedPicks = weeklyPicksCache[week]?.picks?.[picker]
+        || weeklyPicksCache[weekStr]?.picks?.[picker] || {};
+    return { ...cachedPicks, ...localPicks };
+}
+
+/**
+ * Count a picker's Blazin' 5 picks for a week, for the 5-pick cap.
+ *
+ * Counted over the week's full schedule rather than Object.values(picks): a
+ * stale orphan key would inflate the count and disable every star, and the
+ * card filter (all/upcoming/completed) must not change the cap either.
+ */
+function countBlazinPicks(week = currentWeek, picker = currentPicker) {
+    if (isPlayoffWeek(week)) return 0;
+    const picks = getPickerPicksForWeek(week, picker);
+    return getGamesForWeekAndSeason(week, currentSeason)
+        .reduce((n, game) => n + (getPicksForGame(picks, game).blazin ? 1 : 0), 0);
+}
+
 // Season-aware helper functions
 
 /**
@@ -7610,14 +7641,7 @@ function renderGames() {
     if (!gamesList) return;
 
     let weekGames = getGamesForWeekAndSeason(currentWeek, currentSeason);
-    const weekStr = String(currentWeek);
-    // Get picks from season-aware helper
-    const seasonPicks = getPicksForWeekAndSeason(currentWeek, currentSeason);
-    // Merge picks from both season data and weeklyPicksCache (Google Sheets data for current season)
-    const weekPicks = seasonPicks || {};
-    const localPicks = weekPicks[currentPicker] || {};
-    const cachedPicks = weeklyPicksCache[currentWeek]?.picks?.[currentPicker] || weeklyPicksCache[weekStr]?.picks?.[currentPicker] || {};
-    const pickerPicks = { ...cachedPicks, ...localPicks }; // Local picks override cached
+    const pickerPicks = getPickerPicksForWeek(currentWeek, currentPicker);
     // For historical seasons, all weeks are historical; for current season, check against CURRENT_NFL_WEEK
     const isHistoricalWeek = isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK;
 
@@ -7650,10 +7674,7 @@ function renderGames() {
 
     // Count current blazin picks for the week (only for regular season)
     const isPlayoff = isPlayoffWeek(currentWeek);
-    const blazinCount = isPlayoff ? 0 : weekGames.reduce((count, g) => {
-        const gPicks = getPicksForGame(pickerPicks, g);
-        return count + (gPicks.blazin ? 1 : 0);
-    }, 0);
+    const blazinCount = countBlazinPicks(currentWeek, currentPicker);
 
     gamesList.innerHTML = weekGames.map(game => {
         // The storage key travels with the markup (data-pick-key) so click
@@ -7663,8 +7684,11 @@ function renderGames() {
         const linePick = gamePicks.line;
         const winnerPick = gamePicks.winner;
         const isBlazin = gamePicks.blazin || false;
-        const hasLinePick = linePick !== undefined;
-        const hasWinnerPick = winnerPick !== undefined;
+        // Truthiness, not !== undefined: picks restored from the sheet backup
+        // carry every field as '' rather than omitting it, so an undefined
+        // check counts a blank as a real pick and enables the B5 star.
+        const hasLinePick = Boolean(linePick);
+        const hasWinnerPick = Boolean(winnerPick);
         const hasBothPicks = hasLinePick && hasWinnerPick;
 
         // Get live score data if available
@@ -8146,15 +8170,15 @@ function handlePickSelect(e) {
  * Reads picks by data-pick-key so it stays in step with how they are stored.
  */
 function updateBlazinStarStates() {
-    const pickerPicks = allPicks[currentWeek]?.[currentPicker] || {};
-    const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
+    const pickerPicks = getPickerPicksForWeek(currentWeek, currentPicker);
+    const blazinCount = countBlazinPicks(currentWeek, currentPicker);
 
     document.querySelectorAll('.blazin-star').forEach(starBtn => {
         const isActive = starBtn.classList.contains('active');
         const gameCard = starBtn.closest('.game-card');
         const isLocked = gameCard && gameCard.classList.contains('game-locked');
         const starGamePicks = pickerPicks[starBtn.dataset.pickKey] || {};
-        const hasStarLinePick = starGamePicks.line !== undefined;
+        const hasStarLinePick = Boolean(starGamePicks.line);
 
         if (isLocked) {
             starBtn.disabled = true;
