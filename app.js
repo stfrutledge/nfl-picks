@@ -22,7 +22,6 @@ let allPicks = {}; // Store picks for all pickers: { week: { picker: { gameId: {
 let clearedPicks = {}; // Track intentionally cleared picks: { week: { picker: true } } - loaded from season-scoped storage below
 let backupFetchedThisSession = false; // Only fetch all picks from backup once per session
 let resultsFetchedThisSession = false; // Only fetch results from backup once per session
-let resultsSyncedGames = {}; // Track which games have had results synced to avoid duplicates
 let initialLoadComplete = false; // Track whether initial data load is complete
 
 // Season configuration
@@ -4203,6 +4202,18 @@ async function loadFromGoogleSheets() {
                 loadAllPicksFromBackup(),
                 loadAllResultsFromBackup(),
                 loadAllWeeklyDataForBlazin(),
+                // Season standings are computed from picks + results once the
+                // legacy stats workbook is out of date, which needs every
+                // played week's schedule, not just the one on screen.
+                LEGACY_SHEETS_SEASON !== CURRENT_SEASON
+                    ? preloadSeasonSchedules()
+                        // Write down anything ESPN knows and the sheet does not,
+                        // before rendering standings off it.
+                        .then(() => backfillResults())
+                        .then(() => {
+                            if (currentCategory === 'standings') renderDashboard();
+                        })
+                    : Promise.resolve(),
                 prefetchAndSaveSpreads()
             ]);
 
@@ -4322,120 +4333,359 @@ function setupConsolidatedTabs() {
  * Calculate combined playoff stats (Line + SU + O/U) for weeks 19-22
  * Uses the same calculation logic as renderScoringSummary for consistency
  */
-function calculatePlayoffStats() {
-    const stats = {};
+/**
+ * Final results for a week that ESPN knows about but the backup sheet does not.
+ *
+ * Keyed by matchup, which is how the Results sheet stores them.
+ */
+function unstoredResultsForWeek(week) {
+    const games = getGamesForWeekAndSeason(week, currentSeason);
+    if (!games || games.length === 0) return {};
 
-    // Initialize stats for all pickers
+    const stored = getResultsForWeekAndSeason(week, currentSeason) || {};
+    const pending = {};
+
+    for (const game of games) {
+        if (stored[game.id] || stored[String(game.id)]) continue; // already durable
+        // Pass no stored results: we are looking for what ESPN has and the
+        // sheet is still missing.
+        const result = getGameResult(game, null);
+        if (!result) continue;
+        pending[pickKey(game)] = {
+            awayScore: result.awayScore,
+            homeScore: result.homeScore
+        };
+    }
+
+    return pending;
+}
+
+/**
+ * Write one week's results to the backup sheet, and mirror them into
+ * NFL_RESULTS_BY_WEEK so the rest of the session treats them as stored.
+ *
+ * @returns {number} how many results were persisted
+ */
+async function postResultsToSheet(week, results, source) {
+    const count = Object.keys(results).length;
+    if (count === 0) return 0;
+
+    const payload = { week: toSheetWeek(week), results: results, source: source };
+
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+            console.error(`[Results] Week ${week} save failed:`, result.error);
+            return 0;
+        }
+
+        // Mirror locally so this session stops treating them as missing. On a
+        // failure we deliberately do NOT mirror, so the next pass retries.
+        if (!NFL_RESULTS_BY_WEEK[week]) NFL_RESULTS_BY_WEEK[week] = {};
+        const games = getGamesForWeekAndSeason(week, currentSeason) || [];
+        for (const [gameKey, data] of Object.entries(results)) {
+            const game = games.find(g => pickKey(g) === gameKey);
+            if (!game) continue;
+            NFL_RESULTS_BY_WEEK[week][game.id] = {
+                winner: data.awayScore > data.homeScore ? 'away' : 'home',
+                awayScore: data.awayScore,
+                homeScore: data.homeScore
+            };
+        }
+
+        console.log(`[Results] Week ${week}: persisted ${count} result(s)`);
+        return count;
+    } catch (error) {
+        console.error(`[Results] Week ${week} save failed:`, error);
+        return 0;
+    }
+}
+
+/**
+ * Persist every final result the sheet is missing, across the whole season.
+ *
+ * The sheet is the record we keep; ESPN is just where scores arrive. Syncing
+ * only the current week (the old behaviour) meant a week nobody had open while
+ * its games finished was never written down at all, and the data was then gone
+ * for good the moment ESPN stopped serving it.
+ *
+ * saveResults() upserts on week + matchup, so re-running this is harmless and
+ * the Results sheet stays at one row per game.
+ */
+async function backfillResults(source = 'ESPN') {
+    if (!APPS_SCRIPT_URL) return 0;
+
+    // Every week, not a range derived from CURRENT_NFL_WEEK: if that is ever
+    // wrong or lagging, a finished week would be skipped and its scores lost
+    // when ESPN stops serving them. A week with no loaded schedule, or no
+    // finished games, yields nothing and costs nothing.
+    let persisted = 0;
+    for (let week = 1; week <= LAST_PLAYOFF_WEEK; week++) {
+        persisted += await postResultsToSheet(week, unstoredResultsForWeek(week), source);
+    }
+
+    if (persisted > 0) {
+        console.log(`[Results] Backfilled ${persisted} result(s) to the backup sheet`);
+    }
+    return persisted;
+}
+
+/**
+ * The result for a game, from the best source available.
+ *
+ * The Results sheet is the source of truth. ESPN is an upstream we do not
+ * control - it can go down, rate-limit us, or drop past seasons - so a score
+ * seen there is only real once it has been written to the sheet. backfillResults()
+ * does that writing; this function reads:
+ *   1. a stored result (the Results sheet, loaded into NFL_RESULTS_BY_WEEK)
+ *   2. the live-scores cache - current week, a game that just went final
+ *   3. the ESPN fields loadWeekSchedule merges onto the game itself
+ *
+ * (2) and (3) exist only to cover the gap between a game going final and the
+ * backfill persisting it. They are never the long-term record: anything they
+ * surface is written to the sheet on the same pass.
+ *
+ * @returns {{winner: string, awayScore: number, homeScore: number}|null}
+ */
+function getGameResult(game, weekResults) {
+    const stored = weekResults && (weekResults[game.id] || weekResults[String(game.id)]);
+    if (stored) return stored;
+
+    const live = getLiveGameStatus(game);
+    if (live && (live.status === 'STATUS_FINAL' || live.completed)) {
+        return {
+            winner: live.homeScore > live.awayScore ? 'home' : 'away',
+            awayScore: live.awayScore,
+            homeScore: live.homeScore
+        };
+    }
+
+    const finished = game.completed || game.status === 'STATUS_FINAL' || game.status === 'final';
+    if (finished && (game.awayScore > 0 || game.homeScore > 0)) {
+        return {
+            winner: game.homeScore > game.awayScore ? 'home' : 'away',
+            awayScore: game.awayScore,
+            homeScore: game.homeScore
+        };
+    }
+
+    return null;
+}
+
+function emptyRecord() {
+    return { wins: 0, losses: 0, pushes: 0 };
+}
+
+/**
+ * Score every pick a picker made between two weeks, from picks + results.
+ *
+ * This is the engine the dashboard runs on instead of the hand-maintained
+ * stats workbook. It returns per-category totals and a per-week breakdown, so
+ * the standings table, the trend chart, last-3-week form and best week all
+ * come out of one pass.
+ *
+ * Blazin' 5 is scored on the ATS outcome of the starred line pick - a B5 pick
+ * is a line pick, not a separate kind of pick.
+ */
+function calculateStatsForWeeks(firstWeek, lastWeek) {
+    const stats = {};
     PICKERS.forEach(picker => {
         stats[picker] = {
             name: picker,
-            // Line (ATS) totals
-            lineWins: 0, lineLosses: 0, linePushes: 0,
-            // Straight Up totals
-            suWins: 0, suLosses: 0,
-            // Over/Under totals
-            ouWins: 0, ouLosses: 0, ouPushes: 0
+            line: emptyRecord(), blazin: emptyRecord(),
+            winner: emptyRecord(), ou: emptyRecord(),
+            byWeek: []
         };
     });
 
-    // Loop through playoff weeks (19-22)
-    for (let week = FIRST_PLAYOFF_WEEK; week <= LAST_PLAYOFF_WEEK; week++) {
+    for (let week = firstWeek; week <= lastWeek; week++) {
         const weekStr = String(week);
         const weekGames = getGamesForWeekAndSeason(week, currentSeason);
-        const weekResults = getResultsForWeekAndSeason(week, currentSeason);
-        // Get picks from season-aware helper
-        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason);
-        const weekPicks = seasonPicks || {};
-        const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
-
         if (!weekGames || weekGames.length === 0) continue;
 
+        const weekResults = getResultsForWeekAndSeason(week, currentSeason);
+        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
+        const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
+
         PICKERS.forEach(picker => {
-            const pickerPicks = weekPicks[picker] || {};
+            const weekly = {
+                week: week,
+                line: emptyRecord(), blazin: emptyRecord(),
+                winner: emptyRecord(), ou: emptyRecord()
+            };
+            const localPicks = seasonPicks[picker] || {};
             const cachedPicks = cachedWeek?.picks?.[picker] || {};
 
             weekGames.forEach(game => {
-                const gamePicks = getPicksForGame(pickerPicks, game);
-                const cachedGamePicks = getPicksForGame(cachedPicks, game);
-
-                // Get result - try both string and number keys
-                const gameIdStr = String(game.id);
-                let result = weekResults[game.id] || weekResults[gameIdStr];
-                if (!result) {
-                    const liveData = getLiveGameStatus(game);
-                    if (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) {
-                        result = {
-                            winner: liveData.homeScore > liveData.awayScore ? 'home' : 'away',
-                            homeScore: liveData.homeScore,
-                            awayScore: liveData.awayScore
-                        };
-                    }
-                }
-
+                const pick = {
+                    ...getPicksForGame(cachedPicks, game),
+                    ...getPicksForGame(localPicks, game)
+                };
+                const result = getGameResult(game, weekResults);
                 if (!result) return;
 
                 const atsWinner = calculateATSWinner(game, result);
 
-                // Line pick result (same logic as renderScoringSummary)
-                const linePick = gamePicks.line || cachedGamePicks.line;
-                if (linePick) {
-                    if (atsWinner === 'push') {
-                        stats[picker].linePushes++;
-                    } else if (linePick === atsWinner) {
-                        stats[picker].lineWins++;
-                    } else {
-                        stats[picker].lineLosses++;
-                    }
+                if (pick.line) {
+                    const bucket = atsWinner === 'push' ? 'pushes'
+                        : (pick.line === atsWinner ? 'wins' : 'losses');
+                    weekly.line[bucket]++;
+                    // A starred pick is scored again in its own column.
+                    if (pick.blazin) weekly.blazin[bucket]++;
                 }
 
-                // Straight up result (same logic as renderScoringSummary)
-                const winnerPick = gamePicks.winner || cachedGamePicks.winner;
-                if (winnerPick) {
-                    if (winnerPick === result.winner) {
-                        stats[picker].suWins++;
-                    } else {
-                        stats[picker].suLosses++;
-                    }
+                if (pick.winner) {
+                    weekly.winner[pick.winner === result.winner ? 'wins' : 'losses']++;
                 }
 
-                // Over/Under result (same logic as renderScoringSummary)
-                const ouPick = gamePicks.overUnder || cachedGamePicks.overUnder;
-                const ouLine = game.overUnder || gamePicks.totalLine || cachedGamePicks.totalLine;
-                if (ouPick && ouLine > 0) {
-                    const totalScore = (result.awayScore || 0) + (result.homeScore || 0);
-                    const ouResult = totalScore > ouLine ? 'over' : (totalScore < ouLine ? 'under' : 'push');
-                    if (ouResult === 'push') {
-                        stats[picker].ouPushes++;
-                    } else if (ouPick === ouResult) {
-                        stats[picker].ouWins++;
-                    } else {
-                        stats[picker].ouLosses++;
-                    }
+                const ouLine = game.overUnder || pick.totalLine;
+                if (pick.overUnder && ouLine > 0) {
+                    const total = (result.awayScore || 0) + (result.homeScore || 0);
+                    const ouResult = total > ouLine ? 'over' : (total < ouLine ? 'under' : 'push');
+                    weekly.ou[ouResult === 'push' ? 'pushes'
+                        : (pick.overUnder === ouResult ? 'wins' : 'losses')]++;
                 }
             });
+
+            const s = stats[picker];
+            ['line', 'blazin', 'winner', 'ou'].forEach(cat => {
+                s[cat].wins += weekly[cat].wins;
+                s[cat].losses += weekly[cat].losses;
+                s[cat].pushes += weekly[cat].pushes;
+            });
+            // Only keep weeks the picker actually played, so an unplayed week
+            // is a gap in the trend line rather than a 0%.
+            const played = ['line', 'blazin', 'winner', 'ou'].some(cat =>
+                weekly[cat].wins + weekly[cat].losses + weekly[cat].pushes > 0);
+            if (played) s.byWeek.push(weekly);
         });
     }
 
-    // Calculate combined totals and percentage for ranking
-    PICKERS.forEach(picker => {
-        const s = stats[picker];
+    return stats;
+}
 
-        // Combined wins/losses across all three categories
+/** Win percentage over decided picks; pushes are excluded, not counted as losses. */
+function recordPercentage(record) {
+    const decided = record.wins + record.losses;
+    return decided > 0 ? (record.wins / decided) * 100 : null;
+}
+
+/**
+ * Shape one category of calculateStatsForWeeks output for renderStandingsTable.
+ * category is 'line', 'blazin', 'winner' or 'ou'.
+ */
+function standingsFromComputed(computed, category) {
+    const out = {};
+    Object.keys(computed).forEach(picker => {
+        const s = computed[picker];
+        const rec = s[category];
+        const weekly = s.byWeek
+            .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
+            .filter(w => w.pct !== null);
+
+        const last3 = weekly.slice(-3);
+        const last3Pct = last3.length
+            ? last3.reduce((n, w) => n + w.pct, 0) / last3.length
+            : null;
+        const best = weekly.reduce((b, w) => (b === null || w.pct > b.pct ? w : b), null);
+
+        out[picker] = {
+            name: picker,
+            wins: rec.wins,
+            losses: rec.losses,
+            pushes: rec.pushes,
+            draws: 0,
+            percentage: recordPercentage(rec),
+            totalPicks: rec.wins + rec.losses + rec.pushes,
+            last3WeekPct: last3Pct,
+            bestWeek: best ? String(best.week) : '',
+            // Year-over-year needs the previous season loaded; left blank until
+            // there is a prior computed season to compare against.
+            yearChange: ''
+        };
+    });
+    return out;
+}
+
+/** { picker: [{week, pct}] } - the shape renderTrendChart expects. */
+function weeklySeriesFromComputed(computed, category) {
+    const out = {};
+    Object.keys(computed).forEach(picker => {
+        out[picker] = computed[picker].byWeek
+            .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
+            .filter(w => w.pct !== null);
+    });
+    return out;
+}
+
+/**
+ * Load every regular-season schedule up to the current week, in parallel.
+ *
+ * calculateStatsForWeeks can only score a week whose games are loaded, and
+ * schedules are otherwise fetched lazily as you navigate - so without this the
+ * season standings would only count the weeks you happened to visit. Weeks
+ * already in NFL_GAMES_BY_WEEK are skipped, and loadWeekSchedule serves from
+ * its own per-week localStorage cache, so this is cheap after the first run.
+ */
+async function preloadSeasonSchedules() {
+    const { first, last } = regularSeasonWeekRange();
+    const missing = [];
+
+    for (let week = first; week <= last; week++) {
+        const games = NFL_GAMES_BY_WEEK[week];
+        if (!games || games.length === 0) missing.push(week);
+    }
+
+    if (missing.length === 0) return;
+
+    console.log(`[Standings] Loading ${missing.length} week schedule(s) for season stats...`);
+    await Promise.all(missing.map(week => loadWeekSchedule(week, false, true)));
+}
+
+/** The regular-season week range that currently has games to score. */
+function regularSeasonWeekRange() {
+    const lastRegular = FIRST_PLAYOFF_WEEK - 1;
+    return { first: 1, last: Math.min(CURRENT_NFL_WEEK || lastRegular, lastRegular) };
+}
+
+/**
+ * Playoff standings: the same engine over weeks 19-22, flattened into the
+ * combined Line + Straight Up + Over/Under record the playoff table shows.
+ */
+function calculatePlayoffStats() {
+    const computed = calculateStatsForWeeks(FIRST_PLAYOFF_WEEK, LAST_PLAYOFF_WEEK);
+    const stats = {};
+
+    PICKERS.forEach(picker => {
+        const c = computed[picker];
+        const s = {
+            name: picker,
+            lineWins: c.line.wins, lineLosses: c.line.losses, linePushes: c.line.pushes,
+            suWins: c.winner.wins, suLosses: c.winner.losses,
+            ouWins: c.ou.wins, ouLosses: c.ou.losses, ouPushes: c.ou.pushes
+        };
+
         s.wins = s.lineWins + s.suWins + s.ouWins;
         s.losses = s.lineLosses + s.suLosses + s.ouLosses;
         s.pushes = s.linePushes + s.ouPushes;
         s.totalPicks = s.wins + s.losses + s.pushes;
 
-        // Percentage based on combined record
-        const total = s.wins + s.losses;
-        s.percentage = total > 0 ? (s.wins / total * 100) : 0;
+        const decided = s.wins + s.losses;
+        s.percentage = decided > 0 ? (s.wins / decided) * 100 : 0;
 
-        // Format breakdown records for display
-        const linePushStr = s.linePushes > 0 ? `-${s.linePushes}` : '';
-        const ouPushStr = s.ouPushes > 0 ? `-${s.ouPushes}` : '';
-        s.lineRecord = `${s.lineWins}-${s.lineLosses}${linePushStr}`;
+        const linePush = s.linePushes > 0 ? `-${s.linePushes}` : '';
+        const ouPush = s.ouPushes > 0 ? `-${s.ouPushes}` : '';
+        s.lineRecord = `${s.lineWins}-${s.lineLosses}${linePush}`;
         s.suRecord = `${s.suWins}-${s.suLosses}`;
-        s.ouRecord = `${s.ouWins}-${s.ouLosses}${ouPushStr}`;
+        s.ouRecord = `${s.ouWins}-${s.ouLosses}${ouPush}`;
+
+        stats[picker] = s;
     });
 
     return stats;
@@ -4450,16 +4700,30 @@ function renderDashboard() {
     let stats, weeklyData;
 
     // Use subcategory to determine which stats to show
+    // The stats workbook only exists for LEGACY_SHEETS_SEASON. From the season
+    // after that, the same numbers are computed from picks + results instead,
+    // so nobody has to hand-maintain a spreadsheet for the standings to work.
+    const computeLocally = LEGACY_SHEETS_SEASON !== CURRENT_SEASON;
+    const range = regularSeasonWeekRange();
+    const computed = computeLocally ? calculateStatsForWeeks(range.first, range.last) : null;
+    const useComputed = category => {
+        stats = standingsFromComputed(computed, category);
+        weeklyData = weeklySeriesFromComputed(computed, category);
+    };
+
     switch (currentSubcategory) {
         case 'line':
+            if (computeLocally) { useComputed('line'); break; }
             stats = dashboardData.linePicks;
             weeklyData = dashboardData.weeklyLinePicks;
             break;
         case 'blazin':
+            if (computeLocally) { useComputed('blazin'); break; }
             stats = dashboardData.blazin5;
             weeklyData = dashboardData.weeklyBlazin5;
             break;
         case 'winner':
+            if (computeLocally) { useComputed('winner'); break; }
             stats = dashboardData.winnerPicks;
             weeklyData = dashboardData.weeklyWinnerPicks;
             break;
@@ -10004,89 +10268,13 @@ async function loadAllResultsFromBackup() {
  * @param {number} week - The week number
  * @param {string} source - Source of the results (e.g., 'ESPN')
  */
+/**
+ * Persist any newly final results for one week. Called as live scores refresh,
+ * so a game is written to the sheet within a poll of going final.
+ */
 async function syncResultsToGoogleSheets(week, source = 'ESPN') {
-    if (!APPS_SCRIPT_URL) {
-        return;
-    }
-
-    const games = getGamesForWeek(week);
-    if (!games || games.length === 0) {
-        return;
-    }
-
-    const resultsToSync = {};
-    let newResults = 0;
-
-    for (const game of games) {
-        // Get live status for the game
-        const liveData = getLiveGameStatus(game);
-
-        // Check if game is final
-        const isFinal = (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) ||
-                        (game.status === 'STATUS_FINAL' || game.completed);
-
-        if (!isFinal) continue;
-
-        // Get the game key for tracking
-        const gameKey = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-        const syncKey = `${week}_${gameKey}`;
-
-        // Skip if already synced
-        if (resultsSyncedGames[syncKey]) continue;
-
-        // Get scores
-        const awayScore = liveData?.awayScore ?? game.awayScore ?? 0;
-        const homeScore = liveData?.homeScore ?? game.homeScore ?? 0;
-
-        // Skip if no scores available
-        if (awayScore === 0 && homeScore === 0) continue;
-
-        resultsToSync[gameKey] = {
-            awayScore: awayScore,
-            homeScore: homeScore
-        };
-
-        // Mark as synced to prevent duplicate syncs
-        resultsSyncedGames[syncKey] = true;
-        newResults++;
-    }
-
-    if (newResults === 0) {
-        return;
-    }
-
-    console.log(`[Results Sync] Syncing ${newResults} new results for week ${week}...`);
-
-    const payload = {
-        week: toSheetWeek(week),
-        results: resultsToSync,
-        source: source
-    };
-
-    try {
-        const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-        if (result.success) {
-            console.log(`[Results Sync] Synced ${newResults} results for week ${week}:`, result.results?.results?.message);
-        } else {
-            console.error('[Results Sync] Sync failed:', result.error);
-            // Reset synced status on failure so we can retry
-            for (const gameKey in resultsToSync) {
-                delete resultsSyncedGames[`${week}_${gameKey}`];
-            }
-        }
-    } catch (error) {
-        console.error('[Results Sync] Failed to sync results:', error);
-        // Reset synced status on failure so we can retry
-        for (const gameKey in resultsToSync) {
-            delete resultsSyncedGames[`${week}_${gameKey}`];
-        }
-    }
+    if (!APPS_SCRIPT_URL) return 0;
+    return postResultsToSheet(week, unstoredResultsForWeek(week), source);
 }
 
 /**
