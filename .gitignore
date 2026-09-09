@@ -1,0 +1,31 @@
+# Windows artifacts
+# "nul" is the reserved device name - a stray `> nul` redirect in Git Bash
+# creates a real 0-byte file here instead of discarding the output.
+nul
+Thumbs.db
+desktop.ini
+
+# macOS
+.DS_Store
+
+# Node (test scripts run against a bare checkout; no deps are committed)
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Cloudflare Workers local state
+.wrangler/
+
+# Secrets - the Apps Script and proxy URLs are config, but never commit keys
+.env
+.env.*
+
+# Editor / OS scratch
+*.swp
+*~
+.vscode/
+.idea/
+
+# One-off local debug scripts (kept on disk, not part of the app).
+# The committed suites are test-offseason-reset.js and test-pick-keys.js.
+check-dylan-*.js
