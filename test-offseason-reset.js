@@ -56,6 +56,16 @@ function makeEnv(prependSrc) {
     return { api, env, store };
 }
 
+// Use a real captured sheet response if one happens to be sitting in TEMP,
+// otherwise fall back to the inline fixture so the suite is self-contained.
+function readFixture(name, fallback) {
+    try {
+        return fs.readFileSync(path.join(process.env.TEMP || '/tmp', name), 'utf8');
+    } catch {
+        return fallback;
+    }
+}
+
 function countPicks(allPicks) {
     let n = 0;
     for (const week of Object.keys(allPicks)) {
@@ -86,9 +96,26 @@ function countPicks(allPicks) {
     assert.strictEqual(countPicks(a1.allPicks), 0, 'no picks at season start');
     assert.deepStrictEqual(a1.getGamesForWeek(17), [], 'no 2025 week 17 games in 2026 view');
 
-    // Replay the real 2025 sheet backup (downloaded earlier) - none of it may leak in
-    const allpicks = fs.readFileSync(path.join(process.env.TEMP, 'nfl-allpicks.json'), 'utf8');
-    const allresults = fs.readFileSync(path.join(process.env.TEMP, 'nfl-allresults.json'), 'utf8');
+    // Replay a 2025 sheet backup - none of it may leak in. Prefers a real
+    // capture in TEMP if one is present, otherwise uses an equivalent inline
+    // fixture so this suite runs on a clean machine.
+    const allpicks = readFixture('nfl-allpicks.json', JSON.stringify({
+        // 2025 rows are un-prefixed numeric weeks; 2026 rows would be "2026_5"
+        picks: {
+            '17': { Stephen: { rams_seahawks: { line: 'home', winner: 'home', blazin: true } },
+                    Sean: { bills_chiefs: { line: 'away', winner: 'away' } } },
+            '18': { Stephen: { jets_dolphins: { line: 'away', winner: 'home' } } }
+        },
+        cleared: { '18': { Sean: true } },
+        weekCount: 2
+    }));
+    const allresults = readFixture('nfl-allresults.json', JSON.stringify({
+        results: {
+            '17': { rams_seahawks: { awayScore: 20, homeScore: 24, winner: 'home' } },
+            '18': { jets_dolphins: { awayScore: 13, homeScore: 10, winner: 'away' } }
+        },
+        weekCount: 2
+    }));
     e1.fetch = async url => ({
         json: async () => JSON.parse(url.includes('allpicks') ? allpicks : allresults),
         text: async () => (url.includes('allpicks') ? allpicks : allresults)

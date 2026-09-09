@@ -1111,38 +1111,29 @@ function migrateWeekPicksToMatchupKeys(week) {
     const weekGames = NFL_GAMES_BY_WEEK[week];
     if (!weekGames || weekGames.length === 0) return;
 
-    // Build ID to matchup key mapping
-    const idToMatchupKey = {};
-    weekGames.forEach(game => {
-        const matchupKey = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-        idToMatchupKey[String(game.id)] = matchupKey;
-    });
-
-    let migrated = false;
     const weekPicks = allPicks[week];
     if (!weekPicks) return;
 
+    let converted = 0;
+    const orphans = [];
+
     for (const picker in weekPicks) {
-        const pickerPicks = weekPicks[picker];
-        const newPickerPicks = {};
-
-        for (const gameId in pickerPicks) {
-            // Check if this looks like a numeric ID that should be converted
-            if (idToMatchupKey[gameId]) {
-                // Convert to matchup key
-                newPickerPicks[idToMatchupKey[gameId]] = pickerPicks[gameId];
-                migrated = true;
-            } else {
-                // Already a matchup key or unknown, keep as-is
-                newPickerPicks[gameId] = pickerPicks[gameId];
-            }
+        const rekeyed = rekeyPicksByMatchup(weekPicks[picker], weekGames);
+        if (rekeyed.converted > 0) {
+            allPicks[week][picker] = rekeyed.picks;
+            converted += rekeyed.converted;
         }
-
-        allPicks[week][picker] = newPickerPicks;
+        rekeyed.orphans.forEach(key => orphans.push(`${picker}:${key}`));
     }
 
-    if (migrated) {
-        console.log(`[Migration] Converted week ${week} picks to matchup keys`);
+    // Orphans are kept, not dropped - but they are a symptom (a stale key, or a
+    // schedule that changed under stored picks), so make them visible.
+    if (orphans.length > 0) {
+        console.warn(`[Picks] Week ${week}: ${orphans.length} pick key(s) match no game this week:`, orphans);
+    }
+
+    if (converted > 0) {
+        console.warn(`[Picks] Week ${week}: converted ${converted} legacy game-id pick key(s) to matchup keys`);
         savePicksToStorage(false, true); // Save without toast, skip sync
     }
 }
@@ -1892,17 +1883,113 @@ function getPicksForWeek(week) {
     return allPicks[week] || allPicks[String(week)] || {};
 }
 
-// Helper function to get matchup key for a game (used for pick lookups)
-function getMatchupKey(game) {
-    return `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
+// --- Pick keys -------------------------------------------------------------
+// Picks are keyed by matchup ("away_home") rather than by game.id, because game
+// ids are positional: loadWeekSchedule reassigns them (id = index + 1) after
+// sorting by kickoff, and they differ between the ESPN, Google Sheets and
+// historical-YYYY.js sources. A matchup key means the same thing everywhere.
+//
+// The season is deliberately NOT part of the key. Every store that holds picks
+// is already season-scoped one level up, so 2025 and 2026 keys can never meet:
+//   - localStorage:  nflPicks_<season> / clearedPicks_<season>
+//   - Google Sheet:  the Week column is season-prefixed ("2026_5", see toSheetWeek)
+//   - historical:    seasonData[season], loaded from a per-season file
+// Within a season the week is part of the path, and division rematches flip
+// home/away, so a repeated matchup still gets a distinct key.
+
+// TEAM_NAME_MAP re-keyed by lowercase alias, so a name that has already been
+// lowercased (e.g. read back out of a stored key) still normalizes.
+const TEAM_ALIAS_LOWER = Object.fromEntries(
+    Object.entries(TEAM_NAME_MAP).map(([alias, name]) => [alias.toLowerCase(), name.toLowerCase()])
+);
+
+// Normalize a team name so aliases and relocations map to one canonical form
+// ("Buccs"/"Bucs"/"TB" -> "buccaneers"). Without this a rename would orphan
+// every pick on that team.
+function normalizeTeamName(name) {
+    if (!name) return '';
+    const trimmed = String(name).trim();
+    const canonical = TEAM_NAME_MAP[trimmed] || TEAM_ALIAS_LOWER[trimmed.toLowerCase()] || trimmed;
+    return canonical.toLowerCase();
 }
 
-// Helper function to look up picks for a game (tries matchup key first, then game ID)
+// Re-normalize a key that was built elsewhere. The Apps Script backup composes
+// "away_home" from the raw team-name columns without going through
+// TEAM_NAME_MAP, so keys coming back from the sheet are normalized on ingest to
+// stop the client and server drifting apart on aliases.
+// Keys that are not "a_b" (e.g. a legacy numeric id) are returned untouched and
+// converted later by rekeyPicksByMatchup().
+function normalizePickKey(rawKey) {
+    const parts = String(rawKey).split('_');
+    if (parts.length !== 2) return String(rawKey);
+    return `${normalizeTeamName(parts[0])}_${normalizeTeamName(parts[1])}`;
+}
+
+// The one place a pick key is constructed. Everything that reads or writes a
+// pick must go through this.
+function pickKey(game) {
+    if (!game) return '';
+    return `${normalizeTeamName(game.away)}_${normalizeTeamName(game.home)}`;
+}
+
+// Look up a picker's picks for a game. Matchup key only - no game-id fallback,
+// since a positional id would silently attribute picks to whichever game landed
+// in that slot. Legacy id-keyed data is converted up front by
+// rekeyPicksByMatchup(), not tolerated here.
 function getPicksForGame(pickerPicks, game) {
-    const matchupKey = getMatchupKey(game);
-    const gameIdStr = String(game.id);
-    // Try matchup key first (more reliable), then fall back to game ID
-    return pickerPicks[matchupKey] || pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+    if (!pickerPicks) return {};
+    return pickerPicks[pickKey(game)] || {};
+}
+
+/**
+ * Convert one picker's picks for a week from game-id keys to matchup keys.
+ *
+ * Idempotent: keys that are already valid matchup keys for this week pass
+ * through untouched. Fields are merged rather than overwritten, so a game that
+ * ended up split across two keys (e.g. {line,winner} under "rams_seahawks" and
+ * {blazin:true} under "1") is reunited instead of losing one half.
+ *
+ * Keys that match neither a game id nor a matchup in this week are kept as-is
+ * and reported as orphans - dropping them would lose picks silently.
+ *
+ * @returns {{picks: object, converted: number, orphans: string[]}}
+ */
+function rekeyPicksByMatchup(pickerPicks, weekGames) {
+    const result = { picks: {}, converted: 0, orphans: [] };
+    if (!pickerPicks) return result;
+    if (!weekGames || weekGames.length === 0) {
+        result.picks = pickerPicks;
+        return result;
+    }
+
+    const idToKey = {};
+    const validKeys = new Set();
+    weekGames.forEach(game => {
+        const key = pickKey(game);
+        idToKey[String(game.id)] = key;
+        validKeys.add(key);
+    });
+
+    // Integer-like keys iterate first in JS, so legacy id-keyed entries are
+    // merged in before the matchup-keyed ones and lose any field conflict.
+    for (const storedKey of Object.keys(pickerPicks)) {
+        const pick = pickerPicks[storedKey];
+        let target;
+
+        if (validKeys.has(storedKey)) {
+            target = storedKey;
+        } else if (idToKey[storedKey]) {
+            target = idToKey[storedKey];
+            result.converted++;
+        } else {
+            target = storedKey;
+            result.orphans.push(storedKey);
+        }
+
+        result.picks[target] = { ...(result.picks[target] || {}), ...pick };
+    }
+
+    return result;
 }
 
 // Season-aware helper functions
@@ -1975,6 +2062,39 @@ function getMaxWeekForSeason(season = currentSeason) {
 }
 
 /**
+ * Historical season files (historical-YYYY.js) key their picks by game id.
+ * Convert them to matchup keys once, at load time, so that every consumer can
+ * read picks the same way regardless of which season is being viewed.
+ * Results stay id-keyed - they are always read alongside the same games array
+ * they were generated with.
+ */
+function normalizeSeasonPicks(data, season) {
+    if (!data || !data.picks || !data.games || data.__pickKeysNormalized) return data;
+
+    let converted = 0;
+    const orphans = [];
+
+    for (const weekKey of Object.keys(data.picks)) {
+        const weekGames = data.games[weekKey] || data.games[String(weekKey)] || [];
+        if (weekGames.length === 0) continue;
+
+        for (const picker of Object.keys(data.picks[weekKey])) {
+            const rekeyed = rekeyPicksByMatchup(data.picks[weekKey][picker], weekGames);
+            data.picks[weekKey][picker] = rekeyed.picks;
+            converted += rekeyed.converted;
+            rekeyed.orphans.forEach(key => orphans.push(`wk${weekKey} ${picker}:${key}`));
+        }
+    }
+
+    data.__pickKeysNormalized = true;
+    if (orphans.length > 0) {
+        console.warn(`[Picks] ${season}: ${orphans.length} pick key(s) match no game that week:`, orphans.slice(0, 20));
+    }
+    console.log(`[Picks] ${season}: converted ${converted} pick key(s) to matchup keys`);
+    return data;
+}
+
+/**
  * Load season data (lazy loading for historical seasons)
  * @param {number} season - Season year to load
  * @returns {Promise<object|null>} - Season data or null if load failed
@@ -1988,7 +2108,7 @@ async function loadSeasonData(season) {
     // Check if data is already available on window (from historical-data.js loaded at startup)
     const dataKey = `SEASON_${season}_DATA`;
     if (window[dataKey]) {
-        seasonData[season] = window[dataKey];
+        seasonData[season] = normalizeSeasonPicks(window[dataKey], season);
         console.log(`Using pre-loaded ${season} season data`);
         return seasonData[season];
     }
@@ -2010,7 +2130,7 @@ async function loadSeasonData(season) {
             // Access the loaded data (file sets window.SEASON_XXXX_DATA)
             const dataKey = `SEASON_${season}_DATA`;
             if (window[dataKey]) {
-                seasonData[season] = window[dataKey];
+                seasonData[season] = normalizeSeasonPicks(window[dataKey], season);
                 console.log(`Loaded ${season} season data`);
                 hideLoadingState();
                 resolve(seasonData[season]);
@@ -2062,31 +2182,7 @@ function initializePicksStorage() {
 }
 initializePicksStorage();
 
-// Helper function to convert numeric game IDs to matchup keys
-// This makes picks portable across data sources (historical vs ESPN)
-function migratePicksToMatchupKeys(weekPicks, weekGames) {
-    if (!weekGames || !weekPicks) return weekPicks;
-
-    // Build a map of numeric ID to matchup key
-    const idToMatchupKey = {};
-    weekGames.forEach(game => {
-        const matchupKey = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-        idToMatchupKey[String(game.id)] = matchupKey;
-    });
-
-    // Convert picks from numeric IDs to matchup keys
-    const migratedPicks = {};
-    for (const gameId in weekPicks) {
-        // If this looks like a numeric ID and we have a mapping, convert it
-        if (idToMatchupKey[gameId]) {
-            migratedPicks[idToMatchupKey[gameId]] = weekPicks[gameId];
-        } else {
-            // Already a matchup key or no mapping available, keep as-is
-            migratedPicks[gameId] = weekPicks[gameId];
-        }
-    }
-    return migratedPicks;
-}
+// (game-id -> matchup key conversion now lives in rekeyPicksByMatchup, above)
 
 // Merge historical picks if available (from historical-data.js)
 if (typeof HISTORICAL_PICKS !== 'undefined') {
@@ -2104,7 +2200,7 @@ if (typeof HISTORICAL_PICKS !== 'undefined') {
             const weekNum = parseInt(week);
             if (weekNum >= 19 || !allPicks[week][picker] || Object.keys(allPicks[week][picker]).length === 0) {
                 // Migrate numeric IDs to matchup keys for portability
-                allPicks[week][picker] = migratePicksToMatchupKeys(HISTORICAL_PICKS[week][picker], weekGames);
+                allPicks[week][picker] = rekeyPicksByMatchup(HISTORICAL_PICKS[week][picker], weekGames).picks;
             }
         }
     }
@@ -2166,30 +2262,6 @@ function init() {
 
     // Load data from Google Sheets
     loadFromGoogleSheets();
-}
-
-/**
- * One-time fix: Restore Stephen's week 16 Seahawks pick that was accidentally cleared
- * Week 16 Game 1: Rams @ Seahawks, Seahawks -1.5 (home favorite)
- */
-function restoreStephenWeek16Pick() {
-    // Initialize week 16 picks if needed
-    if (!allPicks[16]) {
-        allPicks[16] = {};
-    }
-    if (!allPicks[16]['Stephen']) {
-        allPicks[16]['Stephen'] = {};
-    }
-
-    // Week 16, Game ID 1 is Rams @ Seahawks, Seahawks are home and favored (-1.5)
-    // Stephen picked Seahawks -1.5
-    allPicks[16]['Stephen']['1'] = {
-        line: 'home',    // Seahawks are home
-        winner: 'home'   // Seahawks to win
-    };
-
-    savePicksToStorage(false, true); // No toast, skip sync for automated restore
-    console.log('Restored Stephen\'s week 16 Seahawks pick (Game 1, home)');
 }
 
 /**
@@ -2589,7 +2661,7 @@ function renderLifetimeStandingsTable() {
 
                 seasonPickers.forEach(picker => {
                     const pickerWeekPicks = weekPicks[picker] || {};
-                    const gamePick = pickerWeekPicks[game.id] || pickerWeekPicks[String(game.id)] || {};
+                    const gamePick = getPicksForGame(pickerWeekPicks, game);
                     const stats = pickerStats[picker];
 
                     if (gamePick.line) {
@@ -2759,7 +2831,7 @@ function renderHistoryWeek(week) {
     // Render game cards matching the Make Picks layout exactly
     content.innerHTML = games.map(game => {
         const gameIdStr = String(game.id);
-        const gamePick = pickerPicks[game.id] || pickerPicks[gameIdStr] || {};
+        const gamePick = getPicksForGame(pickerPicks, game);
         const linePick = gamePick.line;
         const winnerPick = gamePick.winner;
         const isBlazin = gamePick.blazin || false;
@@ -2941,7 +3013,7 @@ function renderHistoryStandingsTable(season) {
 
             seasonPickers.forEach(picker => {
                 const pickerWeekPicks = weekPicks[picker] || {};
-                const gamePick = pickerWeekPicks[game.id] || pickerWeekPicks[String(game.id)] || {};
+                const gamePick = getPicksForGame(pickerWeekPicks, game);
                 const stats = pickerStats[picker];
 
                 // Line pick (ATS)
@@ -3804,13 +3876,14 @@ function pickAllFavorites() {
 
     let pickedCount = 0;
     weekGames.forEach(game => {
-        const gameIdStr = String(game.id);
+        const key = pickKey(game);
 
         // Skip locked games
         if (isGameLocked(game)) return;
 
-        // Pick the favorite for both line and winner
-        allPicks[currentWeek][currentPicker][gameIdStr] = {
+        // Pick the favorite for both line and winner, keeping any Blazin' 5 star
+        allPicks[currentWeek][currentPicker][key] = {
+            ...(allPicks[currentWeek][currentPicker][key] || {}),
             line: game.favorite,
             winner: game.favorite
         };
@@ -3855,7 +3928,7 @@ function pickAllUnderdogs() {
 
     let pickedCount = 0;
     weekGames.forEach(game => {
-        const gameIdStr = String(game.id);
+        const key = pickKey(game);
 
         // Skip locked games
         if (isGameLocked(game)) return;
@@ -3865,7 +3938,8 @@ function pickAllUnderdogs() {
 
         // For line pick, pick underdog
         // For winner, random (underdogs often lose straight up)
-        allPicks[currentWeek][currentPicker][gameIdStr] = {
+        allPicks[currentWeek][currentPicker][key] = {
+            ...(allPicks[currentWeek][currentPicker][key] || {}),
             line: underdog,
             winner: Math.random() < 0.5 ? 'away' : 'home'
         };
@@ -4484,7 +4558,7 @@ function calculateTeamPickRecords(picker) {
             // Try both string and number keys for compatibility
             const gameId = game.id;
             // Check both allPicks and weeklyPicksCache for the pick
-            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
             const result = results[gameId] || results[String(gameId)];
 
             if (!pick?.line || !result) return;
@@ -4755,7 +4829,7 @@ function calculateWorstBlazinWeeks() {
 
             games.forEach(game => {
                 const gameId = game.id;
-                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+                const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
                 const result = results[gameId] || results[String(gameId)];
 
                 // Only count Blazin' 5 picks
@@ -4820,7 +4894,7 @@ function calculateBlazinTeamPickRecords(picker) {
 
         games.forEach(game => {
             const gameId = game.id;
-            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
             const result = results[gameId] || results[String(gameId)];
 
             // Only count Blazin' 5 picks
@@ -5008,7 +5082,7 @@ function calculateBlazinSpreadRecords(picker) {
 
         games.forEach(game => {
             const gameId = game.id;
-            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] || cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
             const result = results[gameId] || results[String(gameId)];
 
             // Only count Blazin' 5 picks
@@ -5176,7 +5250,7 @@ function calculateHistoryBlazinTeamRecords(picker, season) {
 
             weekGames.forEach(game => {
                 const gameIdStr = String(game.id);
-                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const pick = getPicksForGame(pickerPicks, game);
                 const result = weekResults[game.id] || weekResults[gameIdStr];
 
                 // Only count Blazin' 5 picks
@@ -5254,7 +5328,7 @@ function calculateHistoryBlazinTeamPicked(picker, season) {
 
             weekGames.forEach(game => {
                 const gameIdStr = String(game.id);
-                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const pick = getPicksForGame(pickerPicks, game);
                 const result = weekResults[game.id] || weekResults[gameIdStr];
 
                 if (!pick?.line || !pick?.blazin || !result) return;
@@ -5326,7 +5400,7 @@ function calculateHistoryBlazinTeamFaded(picker, season) {
 
             weekGames.forEach(game => {
                 const gameIdStr = String(game.id);
-                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const pick = getPicksForGame(pickerPicks, game);
                 const result = weekResults[game.id] || weekResults[gameIdStr];
 
                 if (!pick?.line || !pick?.blazin || !result) return;
@@ -5402,7 +5476,7 @@ function calculateHistoryBlazinHomeAway(picker, season) {
 
             weekGames.forEach(game => {
                 const gameIdStr = String(game.id);
-                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const pick = getPicksForGame(pickerPicks, game);
                 const result = weekResults[game.id] || weekResults[gameIdStr];
 
                 if (!pick?.line || !pick?.blazin || !result) return;
@@ -5472,7 +5546,7 @@ function calculateHistoryBlazinFavDog(picker, season) {
 
             weekGames.forEach(game => {
                 const gameIdStr = String(game.id);
-                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const pick = getPicksForGame(pickerPicks, game);
                 const result = weekResults[game.id] || weekResults[gameIdStr];
 
                 if (!pick?.line || !pick?.blazin || !result) return;
@@ -5655,7 +5729,7 @@ function calculateHistoryBlazinSpreadRecords(picker, season) {
 
             weekGames.forEach(game => {
                 const gameIdStr = String(game.id);
-                const pick = pickerPicks[game.id] || pickerPicks[gameIdStr];
+                const pick = getPicksForGame(pickerPicks, game);
                 const result = weekResults[game.id] || weekResults[gameIdStr];
 
                 // Only count Blazin' 5 picks
@@ -5958,8 +6032,7 @@ function calculateLoneWolfPicksWithDetails() {
             PICKERS.forEach(picker => {
                 const pickerPicks = weekPicks[picker] || {};
                 const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
-                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+                const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
 
                 if (pick?.line) {
                     picksByChoice[pick.line].push(picker);
@@ -6051,8 +6124,7 @@ function calculateStraightUpLoneWolfPicks() {
             PICKERS.forEach(picker => {
                 const pickerPicks = allPicks[week]?.[picker] || {};
                 const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
-                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+                const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
 
                 if (pick?.winner) {
                     picksByChoice[pick.winner].push(picker);
@@ -6143,8 +6215,7 @@ function calculateBlazinLoneWolfPicks() {
             PICKERS.forEach(picker => {
                 const pickerPicks = allPicks[week]?.[picker] || {};
                 const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
-                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+                const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
 
                 if (pick?.line) {
                     picksByChoice[pick.line].push(picker);
@@ -6520,8 +6591,7 @@ function calculateAllPickersPnL(betAmount) {
             PICKERS.forEach(picker => {
                 const pickerPicks = allPicks[week]?.[picker] || {};
                 const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-                const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
-                           cachedPicks[gameId] || cachedPicks[String(gameId)];
+                const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
 
                 if (!pick) return;
 
@@ -7586,7 +7656,9 @@ function renderGames() {
     }, 0);
 
     gamesList.innerHTML = weekGames.map(game => {
-        const gameIdStr = String(game.id);
+        // The storage key travels with the markup (data-pick-key) so click
+        // handlers never have to re-derive it from the positional game id.
+        const key = pickKey(game);
         const gamePicks = getPicksForGame(pickerPicks, game);
         const linePick = gamePicks.line;
         const winnerPick = gamePicks.winner;
@@ -7759,12 +7831,12 @@ function renderGames() {
                         <span class="pick-label">Line Pick (ATS)</span>
                         <div class="pick-options">
                             <button class="pick-btn ${linePick === 'away' ? 'selected' : ''} ${lineAwayResult}"
-                                    data-game-id="${game.id}" data-pick-type="line" data-team="away"
+                                    data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="away"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.away} ${awaySpreadDisplay}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}"
-                                    data-game-id="${game.id}" data-pick-type="line" data-team="home"
+                                    data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="home"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.home} ${homeSpreadDisplay}
                             </button>
@@ -7774,12 +7846,12 @@ function renderGames() {
                         <span class="pick-label">Straight Up (Winner)</span>
                         <div class="pick-options">
                             <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''} ${winnerAwayResult}"
-                                    data-game-id="${game.id}" data-pick-type="winner" data-team="away"
+                                    data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="winner" data-team="away"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.away}
                             </button>
                             <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''} ${winnerHomeResult}"
-                                    data-game-id="${game.id}" data-pick-type="winner" data-team="home"
+                                    data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="winner" data-team="home"
                                     ${locked ? 'disabled' : ''}>
                                 ${game.home}
                             </button>
@@ -7799,12 +7871,12 @@ function renderGames() {
                             <span class="ou-label">O/U ${ouLine > 0 ? ouLine : 'TBD'}</span>
                             ${ouLine > 0 ? `
                                 <button class="ou-btn ${ouPick === 'over' ? 'selected' : ''} ${ouOverResult}"
-                                        data-game-id="${game.id}" data-pick-type="overUnder" data-value="over"
+                                        data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="overUnder" data-value="over"
                                         ${locked ? 'disabled' : ''}>
                                     Over
                                 </button>
                                 <button class="ou-btn ${ouPick === 'under' ? 'selected' : ''} ${ouUnderResult}"
-                                        data-game-id="${game.id}" data-pick-type="overUnder" data-value="under"
+                                        data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="overUnder" data-value="under"
                                         ${locked ? 'disabled' : ''}>
                                     Under
                                 </button>
@@ -7812,7 +7884,7 @@ function renderGames() {
                         </div>
                     ` : `
                         <button class="blazin-star ${isBlazin ? 'active' : ''}"
-                                data-game-id="${game.id}"
+                                data-game-id="${game.id}" data-pick-key="${key}"
                                 ${blazinDisabled ? 'disabled' : ''}
                                 title="${blazinTitle}">
                             <span class="blazin-label">B5</span>${isBlazin ? '★' : '☆'}
@@ -7968,17 +8040,16 @@ function handlePickSelect(e) {
     }
 
     const btn = e.currentTarget;
-    const gameId = btn.dataset.gameId; // Keep as string for consistent object keys
+    const gameId = btn.dataset.gameId;   // DOM addressing only - never a storage key
+    const key = btn.dataset.pickKey;     // storage key, rendered onto the card
     const pickType = btn.dataset.pickType; // 'line' or 'winner'
     const team = btn.dataset.team; // 'away' or 'home'
 
-    // Look up the game to get matchup key (more reliable than game ID across data sources)
+    if (!key) return;
+
+    // The game object is still needed for the "picked the favorite" auto-winner rule
     const weekGames = getGamesForWeek(currentWeek);
     const game = weekGames.find(g => String(g.id) === gameId);
-
-    // Use matchup key for storing picks (portable across ESPN/historical data sources)
-    // Fall back to gameId if game not found (shouldn't happen)
-    const pickKey = game ? getMatchupKey(game) : gameId;
 
     // Ensure week and picker structure exists
     if (!allPicks[currentWeek]) {
@@ -7989,31 +8060,31 @@ function handlePickSelect(e) {
     }
 
     // Initialize game picks object if needed
-    if (!allPicks[currentWeek][currentPicker][pickKey]) {
-        allPicks[currentWeek][currentPicker][pickKey] = {};
+    if (!allPicks[currentWeek][currentPicker][key]) {
+        allPicks[currentWeek][currentPicker][key] = {};
     }
 
     // Get current selection state
-    const currentSelection = allPicks[currentWeek][currentPicker][pickKey][pickType];
+    const currentSelection = allPicks[currentWeek][currentPicker][key][pickType];
     const isDeselecting = currentSelection === team;
     const otherTeam = team === 'home' ? 'away' : 'home';
     let autoSelectWinner = false;
 
     // Toggle selection
     if (isDeselecting) {
-        delete allPicks[currentWeek][currentPicker][pickKey][pickType];
+        delete allPicks[currentWeek][currentPicker][key][pickType];
         // Clean up empty game object
-        if (Object.keys(allPicks[currentWeek][currentPicker][pickKey]).length === 0) {
-            delete allPicks[currentWeek][currentPicker][pickKey];
+        if (Object.keys(allPicks[currentWeek][currentPicker][key]).length === 0) {
+            delete allPicks[currentWeek][currentPicker][key];
         }
     } else {
-        allPicks[currentWeek][currentPicker][pickKey][pickType] = team;
+        allPicks[currentWeek][currentPicker][key][pickType] = team;
 
         // If picking a favorite on the line, automatically pick them to win
         if (pickType === 'line') {
             if (game && game.favorite === team) {
                 // Picked the favorite to cover, auto-select them as winner
-                allPicks[currentWeek][currentPicker][pickKey].winner = team;
+                allPicks[currentWeek][currentPicker][key].winner = team;
                 autoSelectWinner = true;
             }
         }
@@ -8063,30 +8134,42 @@ function handlePickSelect(e) {
     }
 
     // Update Blazin' 5 star buttons (enable/disable based on line picks)
-    const pickerPicks = allPicks[currentWeek][currentPicker] || {};
+    updateBlazinStarStates();
+
+    // Update scoring summary
+    renderScoringSummary();
+}
+
+/**
+ * Enable/disable every Blazin' 5 star for the current picker, based on the
+ * 5-pick cap, whether the game has a line pick, and whether it is locked.
+ * Reads picks by data-pick-key so it stays in step with how they are stored.
+ */
+function updateBlazinStarStates() {
+    const pickerPicks = allPicks[currentWeek]?.[currentPicker] || {};
     const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
+
     document.querySelectorAll('.blazin-star').forEach(starBtn => {
         const isActive = starBtn.classList.contains('active');
         const gameCard = starBtn.closest('.game-card');
         const isLocked = gameCard && gameCard.classList.contains('game-locked');
-        const starGameId = starBtn.dataset.gameId;
-        const starGamePicks = pickerPicks[starGameId] || {};
+        const starGamePicks = pickerPicks[starBtn.dataset.pickKey] || {};
         const hasStarLinePick = starGamePicks.line !== undefined;
 
         if (isLocked) {
             starBtn.disabled = true;
+            starBtn.title = 'Game is locked';
         } else if (!hasStarLinePick && !isActive) {
             starBtn.disabled = true;
             starBtn.title = 'Make a line pick first';
         } else if (isActive) {
             starBtn.disabled = false;
+            starBtn.title = 'Remove from Blazin 5';
         } else {
             starBtn.disabled = blazinCount >= 5;
+            starBtn.title = blazinCount >= 5 ? 'Maximum 5 Blazin picks reached' : 'Add to Blazin 5';
         }
     });
-
-    // Update scoring summary
-    renderScoringSummary();
 }
 
 // Track if we've already shown the "all picks complete" message for this week/picker
@@ -8105,9 +8188,8 @@ function checkAllPicksComplete() {
     // Count games with complete picks (both line and winner)
     let completeCount = 0;
     for (const game of weekGames) {
-        const gameId = String(game.id);
-        const gamePicks = pickerPicks[gameId];
-        if (gamePicks?.line && gamePicks?.winner) {
+        const gamePicks = getPicksForGame(pickerPicks, game);
+        if (gamePicks.line && gamePicks.winner) {
             completeCount++;
         }
     }
@@ -8145,17 +8227,15 @@ function handleOUSelect(e) {
     }
 
     const btn = e.currentTarget;
-    const gameId = btn.dataset.gameId;
+    const gameId = btn.dataset.gameId;   // DOM addressing only
+    const key = btn.dataset.pickKey;     // storage key, rendered onto the card
     const value = btn.dataset.value; // 'over' or 'under'
 
-    if (!gameId || btn.disabled) return;
+    if (!key || btn.disabled) return;
 
-    // Look up the game to get matchup key (consistent with handlePickSelect)
+    // The game object is still needed to record the O/U line at time of pick
     const weekGames = getGamesForWeek(currentWeek);
     const game = weekGames.find(g => String(g.id) === gameId);
-
-    // Use matchup key for storing picks (consistent with line/winner picks)
-    const pickKey = game ? getMatchupKey(game) : gameId;
 
     // Initialize picks structure
     if (!allPicks[currentWeek]) {
@@ -8164,23 +8244,23 @@ function handleOUSelect(e) {
     if (!allPicks[currentWeek][currentPicker]) {
         allPicks[currentWeek][currentPicker] = {};
     }
-    if (!allPicks[currentWeek][currentPicker][pickKey]) {
-        allPicks[currentWeek][currentPicker][pickKey] = {};
+    if (!allPicks[currentWeek][currentPicker][key]) {
+        allPicks[currentWeek][currentPicker][key] = {};
     }
 
     // Get current selection
-    const currentSelection = allPicks[currentWeek][currentPicker][pickKey].overUnder;
+    const currentSelection = allPicks[currentWeek][currentPicker][key].overUnder;
     const isDeselecting = currentSelection === value;
 
     // Toggle selection
     if (isDeselecting) {
-        delete allPicks[currentWeek][currentPicker][pickKey].overUnder;
-        delete allPicks[currentWeek][currentPicker][pickKey].totalLine;
+        delete allPicks[currentWeek][currentPicker][key].overUnder;
+        delete allPicks[currentWeek][currentPicker][key].totalLine;
     } else {
-        allPicks[currentWeek][currentPicker][pickKey].overUnder = value;
+        allPicks[currentWeek][currentPicker][key].overUnder = value;
         // Store the line at time of pick
         if (game && game.overUnder) {
-            allPicks[currentWeek][currentPicker][pickKey].totalLine = game.overUnder;
+            allPicks[currentWeek][currentPicker][key].totalLine = game.overUnder;
         }
     }
 
@@ -8226,9 +8306,11 @@ function handleBlazinToggle(e) {
     }
 
     const btn = e.currentTarget;
-    const gameId = btn.dataset.gameId;
+    // Must be the same key handlePickSelect writes the line pick under, or the
+    // star lands on a separate entry and is lost on the next render.
+    const key = btn.dataset.pickKey;
 
-    if (!gameId || btn.disabled) return;
+    if (!key || btn.disabled) return;
 
     // Initialize picks structure
     if (!allPicks[currentWeek]) {
@@ -8237,47 +8319,22 @@ function handleBlazinToggle(e) {
     if (!allPicks[currentWeek][currentPicker]) {
         allPicks[currentWeek][currentPicker] = {};
     }
-    if (!allPicks[currentWeek][currentPicker][gameId]) {
-        allPicks[currentWeek][currentPicker][gameId] = {};
+    if (!allPicks[currentWeek][currentPicker][key]) {
+        allPicks[currentWeek][currentPicker][key] = {};
     }
 
     // Toggle blazin status
-    const currentBlazin = allPicks[currentWeek][currentPicker][gameId].blazin || false;
+    const currentBlazin = allPicks[currentWeek][currentPicker][key].blazin || false;
     const newBlazin = !currentBlazin;
-    allPicks[currentWeek][currentPicker][gameId].blazin = newBlazin;
+    allPicks[currentWeek][currentPicker][key].blazin = newBlazin;
 
     // Update just this button
     btn.classList.toggle('active', newBlazin);
     btn.innerHTML = `<span class="blazin-label">B5</span>${newBlazin ? '★' : '☆'}`;
     btn.title = newBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5';
 
-    // Count current blazin picks and update other star buttons
-    const pickerPicks = allPicks[currentWeek][currentPicker] || {};
-    const blazinCount = Object.values(pickerPicks).filter(p => p.blazin).length;
-
-    // Enable/disable other star buttons based on count and line picks
-    document.querySelectorAll('.blazin-star').forEach(starBtn => {
-        const isActive = starBtn.classList.contains('active');
-        const gameCard = starBtn.closest('.game-card');
-        const isLocked = gameCard && gameCard.classList.contains('game-locked');
-        const starGameId = starBtn.dataset.gameId;
-        const starGamePicks = pickerPicks[starGameId] || {};
-        const hasStarLinePick = starGamePicks.line !== undefined;
-
-        if (isLocked) {
-            starBtn.disabled = true;
-            starBtn.title = 'Game is locked';
-        } else if (!hasStarLinePick && !isActive) {
-            starBtn.disabled = true;
-            starBtn.title = 'Make a line pick first';
-        } else if (isActive) {
-            starBtn.disabled = false;
-            starBtn.title = 'Remove from Blazin 5';
-        } else {
-            starBtn.disabled = blazinCount >= 5;
-            starBtn.title = blazinCount >= 5 ? 'Maximum 5 Blazin picks reached' : 'Add to Blazin 5';
-        }
-    });
+    // Enable/disable the other star buttons based on the new count
+    updateBlazinStarStates();
 
     // Save to localStorage
     savePicksToStorage();
@@ -8345,7 +8402,7 @@ const PatternEngine = {
             if (!games || !results || !weekPicks) continue;
 
             games.forEach(game => {
-                const pick = weekPicks[game.id];
+                const pick = getPicksForGame(weekPicks, game);
                 if (!pick || !pick.line) return;
 
                 const result = results[game.id];
@@ -8443,7 +8500,7 @@ const PatternEngine = {
             weekGames.forEach(game => {
                 if (!isPrimetimeGame(game)) return;
 
-                const pick = weekPicks[game.id];
+                const pick = getPicksForGame(weekPicks, game);
                 if (!pick || !pick.line) return;
 
                 const result = results[game.id];
@@ -9004,11 +9061,11 @@ function clearCurrentPickerPicks() {
 
                 // Preserve picks for locked games
                 games.forEach(game => {
-                    const gameIdStr = String(game.id);
-                    const existingPick = allPicks[currentWeek][currentPicker][gameIdStr];
+                    const key = pickKey(game);
+                    const existingPick = allPicks[currentWeek][currentPicker][key];
 
                     if (existingPick && isGameLocked(game)) {
-                        preservedPicks[gameIdStr] = existingPick;
+                        preservedPicks[key] = existingPick;
                     }
                 });
 
@@ -9106,8 +9163,7 @@ function exportAllPicks() {
             let winnerPicks = 0;
 
             weekGames.forEach(game => {
-                const gameIdStr = String(game.id);
-                const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+                const gamePicks = getPicksForGame(pickerPicks, game);
                 const linePick = gamePicks.line;
                 const winnerPick = gamePicks.winner;
 
@@ -9168,8 +9224,7 @@ function copyPicksToClipboard() {
     text += '━'.repeat(30) + '\n\n';
 
     weekGames.forEach(game => {
-        const gameIdStr = String(game.id);
-        const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+        const gamePicks = getPicksForGame(pickerPicks, game);
 
         if (gamePicks.line || gamePicks.winner) {
             pickCount++;
@@ -9233,8 +9288,7 @@ function exportAllPicksToClipboard() {
         const gameLines = [];
 
         weekGames.forEach(game => {
-            const gameIdStr = String(game.id);
-            const gamePicks = pickerPicks[gameIdStr] || pickerPicks[game.id] || {};
+            const gamePicks = getPicksForGame(pickerPicks, game);
 
             // Only include if there's at least a line pick
             if (gamePicks.line) {
@@ -9407,8 +9461,8 @@ function randomizePicks() {
 
     // Randomize each game
     weekGames.forEach(game => {
-        const gameIdStr = String(game.id);
-        
+        const key = pickKey(game);
+
         // Skip locked games
         if (isGameLocked(game)) return;
 
@@ -9427,7 +9481,8 @@ function randomizePicks() {
             winnerPick = Math.random() < 0.5 ? 'away' : 'home';
         }
 
-        allPicks[currentWeek][currentPicker][gameIdStr] = {
+        allPicks[currentWeek][currentPicker][key] = {
+            ...(allPicks[currentWeek][currentPicker][key] || {}),
             line: linePick,
             winner: winnerPick
         };
@@ -9475,15 +9530,12 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     const weekGames = getGamesForWeek(currentWeek);
     const formattedPicks = [];
 
-    for (const [pickKey, pickData] of Object.entries(weekPicks)) {
-        // Picks can be stored by game ID or matchup key (away_home)
-        // Try to find by game ID first, then by matchup key
-        let game = weekGames.find(g => String(g.id) === String(pickKey));
+    for (const [storedKey, pickData] of Object.entries(weekPicks)) {
+        const game = weekGames.find(g => pickKey(g) === storedKey);
         if (!game) {
-            // Try matchup key lookup
-            game = weekGames.find(g => getMatchupKey(g) === pickKey);
+            console.warn(`[Sync] Skipping pick key with no matching game in week ${currentWeek}: ${storedKey}`);
+            continue;
         }
-        if (!game) continue;
 
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
@@ -9493,7 +9545,7 @@ async function syncPicksToGoogleSheets(displayToast = true) {
         const winnerTeam = pickData?.winner ? (pickData.winner === 'away' ? game.away : game.home) : '';
 
         formattedPicks.push({
-            gameId: pickKey,
+            gameId: storedKey,
             away: game.away,
             home: game.home,
             awaySpread: awaySpread,
@@ -9725,9 +9777,9 @@ async function loadPicksFromGoogleSheets(week, picker) {
                 allPicks[week][picker] = {};
             }
 
-            for (const [gameId, pickData] of Object.entries(result.picks)) {
+            for (const [rawKey, pickData] of Object.entries(result.picks)) {
                 // Overwrite with backup data (backup is source of truth)
-                allPicks[week][picker][gameId] = pickData;
+                allPicks[week][picker][normalizePickKey(rawKey)] = pickData;
             }
 
             // Save to localStorage for future loads (skip sync - we just loaded from backup)
@@ -9822,9 +9874,12 @@ async function loadAllPicksFromBackup() {
                         allPicks[weekNum][picker] = {};
                     }
 
-                    // Overwrite with backup data (backup is source of truth)
-                    for (const gameId in result.picks[sheetWeek][picker]) {
-                        allPicks[weekNum][picker][gameId] = result.picks[sheetWeek][picker][gameId];
+                    // Overwrite with backup data (backup is source of truth).
+                    // Keys are re-normalized because the sheet builds them from
+                    // raw team names without going through TEAM_NAME_MAP.
+                    for (const rawKey in result.picks[sheetWeek][picker]) {
+                        const key = normalizePickKey(rawKey);
+                        allPicks[weekNum][picker][key] = result.picks[sheetWeek][picker][rawKey];
                         totalPicks++;
                     }
                 }
@@ -10867,8 +10922,7 @@ function calculatePickerWeeklyBankroll(picker) {
 
             const pickerPicks = allPicks[week]?.[picker] || {};
             const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-            const pick = pickerPicks[gameId] || pickerPicks[String(gameId)] ||
-                       cachedPicks[gameId] || cachedPicks[String(gameId)];
+            const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
 
             if (!pick || !pick.line) return;
 
