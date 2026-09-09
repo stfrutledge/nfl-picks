@@ -12,6 +12,8 @@
  * - GET ?action=spreads&week=19 - Get saved spreads for a week
  * - GET ?action=picks&week=19&picker=Steve - Get saved picks for a week and picker
  * - GET ?action=allpicks - Get all picks for all weeks and pickers
+ * - GET ?action=allpicks&season=2026 - Only that season's rows (much smaller)
+ * - GET ?action=diagnose - Row counts + split-key rows, for troubleshooting
  * - GET ?action=results&week=19 - Get results for a week
  * - GET ?action=allresults - Get all results
  * - POST { week, picker, picks, spreads } - Save picks and/or spreads
@@ -42,9 +44,19 @@ function doGet(e) {
       return jsonResponse(getPicksForWeek(week, picker));
     }
 
-    // Get ALL picks for all weeks and all pickers in one call
+    // Get ALL picks for all weeks and all pickers in one call.
+    // Pass season=YYYY to get only that season's rows - the client discards
+    // other seasons anyway, and the sheet is never pruned, so without this the
+    // payload grows by a whole season every year.
     if (action === 'allpicks') {
-      return jsonResponse(getAllPicks());
+      const season = e.parameter.season ? Number(e.parameter.season) : null;
+      return jsonResponse(getAllPicks(season));
+    }
+
+    // Raw-row diagnostics: how big the Backup sheet actually is, and whether
+    // any legacy split-key rows are still in it. See diagnoseBackup().
+    if (action === 'diagnose') {
+      return jsonResponse(diagnoseBackup());
     }
 
     // Get results for a specific week
@@ -69,6 +81,8 @@ function doGet(e) {
         'GET ?action=spreads&week=N': 'Get spreads for week N',
         'GET ?action=picks&week=N&picker=X': 'Get picks for week N and picker X',
         'GET ?action=allpicks': 'Get all picks for all weeks and pickers',
+        'GET ?action=allpicks&season=YYYY': 'Only that season\'s rows',
+        'GET ?action=diagnose': 'Backup sheet row counts and split-key rows',
         'GET ?action=results&week=N': 'Get results for week N',
         'GET ?action=allresults': 'Get all results',
         'POST': 'Save picks, spreads, or results'
@@ -118,6 +132,123 @@ function doPost(e) {
   } catch (error) {
     return jsonResponse({ error: error.toString() });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Reading the Backup sheet
+//
+// The sheet is an append-only log: savePicks() never updates or deletes, so a
+// game accumulates one row per sync, and reading means collapsing those rows
+// back down to one pick per game.
+//
+// Two rows can collapse onto the same game even within a single sync. Before
+// the client stored every field under one matchup key, a game's line pick and
+// its Blazin' 5 star were held under different keys and synced as two rows:
+//
+//   Game "1"              Rams Seahawks   Line Pick ""          Blazin "Yes"
+//   Game "rams_seahawks"  Rams Seahawks   Line Pick "Seahawks"  Blazin ""
+//
+// Both rebuild to the key "rams_seahawks". Collapsing by overwrite silently
+// dropped whichever half lost, and since savePicks() stamps ONE timestamp per
+// sync, a newest-wins rule cannot separate them either - they are the same age.
+// So rows are grouped into sync batches by timestamp: within a batch the rows
+// are complementary halves and merge, and a later batch supersedes an earlier
+// one wholesale (a blank in the newest batch is a real deselection, not a gap).
+// ---------------------------------------------------------------------------
+
+// Rows written before the 2026 season-prefix convention are bare week numbers
+// and all belong to this season. Must match fromSheetWeek() in app.js.
+const SHEET_LEGACY_SEASON = 2025;
+
+/**
+ * Which season a value in the Week column belongs to.
+ * "2026_1" -> 2026, "18" -> SHEET_LEGACY_SEASON.
+ */
+function seasonOfSheetWeek(sheetWeek) {
+  const match = String(sheetWeek).match(/^(\d{4})_/);
+  return match ? Number(match[1]) : SHEET_LEGACY_SEASON;
+}
+
+/** A cell that carries no pick. */
+function isBlankCell(value) {
+  return value === '' || value === null || value === undefined;
+}
+
+/**
+ * Fold one Backup row into the accumulating pick for its game.
+ *
+ * Same batch  -> merge: a non-blank cell fills a blank one, Blazin sticks.
+ * Newer batch -> replace: the newest sync is the client's full state.
+ */
+function foldPickRow(existing, row) {
+  if (!existing || row.timestamp > existing.timestamp) {
+    return row;
+  }
+  if (row.timestamp < existing.timestamp) {
+    return existing;
+  }
+  // Same sync batch: complementary halves of one game.
+  const merged = existing;
+  if (isBlankCell(merged.linePick)) merged.linePick = row.linePick;
+  if (isBlankCell(merged.winnerPick)) merged.winnerPick = row.winnerPick;
+  if (isBlankCell(merged.overUnder)) merged.overUnder = row.overUnder;
+  if (isBlankCell(merged.totalLine)) merged.totalLine = row.totalLine;
+  if (isBlankCell(merged.lineOutcome)) merged.lineOutcome = row.lineOutcome;
+  if (isBlankCell(merged.winnerOutcome)) merged.winnerOutcome = row.winnerOutcome;
+  if (isBlankCell(merged.ouOutcome)) merged.ouOutcome = row.ouOutcome;
+  merged.blazin = merged.blazin || row.blazin;
+  return merged;
+}
+
+/** Read one Backup row into a plain object. Column order is the header row. */
+function readPickRow(row) {
+  return {
+    timestamp: new Date(row[0]).getTime(),
+    week: String(row[1]),
+    picker: String(row[2]),
+    gameId: String(row[3]),
+    away: row[4],
+    home: row[5],
+    awaySpread: row[6],
+    homeSpread: row[7],
+    linePick: row[8],
+    winnerPick: row[9],
+    blazin: row[10] === 'Yes',
+    overUnder: row[11],
+    totalLine: row[12],
+    lineOutcome: row[13] || '',
+    winnerOutcome: row[14] || '',
+    ouOutcome: row[15] || ''
+  };
+}
+
+/**
+ * The key a row's pick is stored under: built from the team-name columns, so
+ * it is stable no matter what the Game column happens to hold.
+ */
+function matchupKeyForRow(row) {
+  return String(row.away).toLowerCase() + '_' + String(row.home).toLowerCase();
+}
+
+/** Convert a stored team name back to the 'away'/'home' the client expects. */
+function sideOf(pickValue, away, home) {
+  if (pickValue === away) return 'away';
+  if (pickValue === home) return 'home';
+  return pickValue || '';
+}
+
+/** The client-facing shape of one collapsed pick. */
+function pickPayload(row) {
+  return {
+    line: sideOf(row.linePick, row.away, row.home),
+    winner: sideOf(row.winnerPick, row.away, row.home),
+    blazin: row.blazin || false,
+    overUnder: row.overUnder || '',
+    totalLine: row.totalLine || '',
+    lineOutcome: row.lineOutcome || '',
+    winnerOutcome: row.winnerOutcome || '',
+    ouOutcome: row.ouOutcome || ''
+  };
 }
 
 /**
@@ -359,86 +490,26 @@ function getPicksForWeek(week, picker) {
   }
 
   const data = sheet.getDataRange().getValues();
-  // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
-  //         Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
-  // Index:  0          1     2       3     4          5          6            7
-  //         8          9            10      11        12         13            14              15
-
-  // Collect all picks for this week/picker, keyed by gameId with timestamp
-  const picksWithTimestamp = {};
+  const collapsed = {};
 
   for (let i = 1; i < data.length; i++) {
-    const rowWeek = String(data[i][1]);
-    const rowPicker = String(data[i][2]);
-
-    if (rowWeek === String(week) && rowPicker === picker) {
-      const timestamp = new Date(data[i][0]).getTime();
-      const gameId = data[i][3];
-
-      // Only keep if this is a newer timestamp than what we have
-      if (!picksWithTimestamp[gameId] || timestamp > picksWithTimestamp[gameId].timestamp) {
-        picksWithTimestamp[gameId] = {
-          timestamp: timestamp,
-          away: data[i][4],
-          home: data[i][5],
-          awaySpread: data[i][6],
-          homeSpread: data[i][7],
-          linePick: data[i][8],
-          winnerPick: data[i][9],
-          blazin: data[i][10] === 'Yes',
-          overUnder: data[i][11],
-          totalLine: data[i][12],
-          lineOutcome: data[i][13] || '',
-          winnerOutcome: data[i][14] || '',
-          ouOutcome: data[i][15] || ''
-        };
-      }
-    }
+    const row = readPickRow(data[i]);
+    if (row.week !== String(week) || row.picker !== picker) continue;
+    const key = matchupKeyForRow(row);
+    collapsed[key] = foldPickRow(collapsed[key], row);
   }
 
-  // Convert to the format app.js expects, keyed by matchup (away_home) instead of gameId
-  // This ensures picks are applied to the correct game regardless of game order
   const picks = {};
-  for (const [gameId, pickData] of Object.entries(picksWithTimestamp)) {
-    // Create matchup key from team names
-    const matchupKey = `${pickData.away.toLowerCase()}_${pickData.home.toLowerCase()}`;
-
-    // Convert team names back to 'home'/'away' format
-    let linePick = pickData.linePick;
-    if (linePick === pickData.away) {
-      linePick = 'away';
-    } else if (linePick === pickData.home) {
-      linePick = 'home';
-    }
-
-    let winnerPick = pickData.winnerPick;
-    if (winnerPick === pickData.away) {
-      winnerPick = 'away';
-    } else if (winnerPick === pickData.home) {
-      winnerPick = 'home';
-    }
-
-    picks[matchupKey] = {
-      line: linePick || '',
-      winner: winnerPick || '',
-      blazin: pickData.blazin || false,
-      overUnder: pickData.overUnder || '',
-      totalLine: pickData.totalLine || '',
-      lineOutcome: pickData.lineOutcome || '',
-      winnerOutcome: pickData.winnerOutcome || '',
-      ouOutcome: pickData.ouOutcome || ''
-    };
+  for (const key in collapsed) {
+    picks[key] = pickPayload(collapsed[key]);
   }
-
-  // Check if picks were intentionally cleared
-  const cleared = isClearedForWeek(week, picker);
 
   return {
     week: week,
     picker: picker,
     picks: picks,
     count: Object.keys(picks).length,
-    cleared: cleared
+    cleared: isClearedForWeek(week, picker)
   };
 }
 
@@ -446,89 +517,39 @@ function getPicksForWeek(week, picker) {
  * Get ALL picks for all weeks and all pickers in one call
  * Returns: { picks: { week: { picker: { gameId: pickData } } }, cleared: { week: { picker: true } } }
  */
-function getAllPicks() {
+function getAllPicks(season) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Backup');
 
   const allPicks = {};
   const allCleared = {};
+  let rowsScanned = 0;
+  let rowsUsed = 0;
 
   if (sheet) {
     const data = sheet.getDataRange().getValues();
-    // Header: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
-    //         Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
-
-    // Collect all picks with timestamps to get the latest for each game
-    const picksWithTimestamp = {};
+    const collapsed = {};
 
     for (let i = 1; i < data.length; i++) {
-      const timestamp = new Date(data[i][0]).getTime();
-      const week = String(data[i][1]);
-      const picker = String(data[i][2]);
-      const gameId = String(data[i][3]);
+      rowsScanned++;
+      const row = readPickRow(data[i]);
+      if (season && seasonOfSheetWeek(row.week) !== season) continue;
+      rowsUsed++;
 
-      if (!picksWithTimestamp[week]) {
-        picksWithTimestamp[week] = {};
-      }
-      if (!picksWithTimestamp[week][picker]) {
-        picksWithTimestamp[week][picker] = {};
-      }
+      if (!collapsed[row.week]) collapsed[row.week] = {};
+      if (!collapsed[row.week][row.picker]) collapsed[row.week][row.picker] = {};
 
-      // Only keep if this is a newer timestamp than what we have
-      if (!picksWithTimestamp[week][picker][gameId] || timestamp > picksWithTimestamp[week][picker][gameId].timestamp) {
-        picksWithTimestamp[week][picker][gameId] = {
-          timestamp: timestamp,
-          away: data[i][4],
-          home: data[i][5],
-          linePick: data[i][8],
-          winnerPick: data[i][9],
-          blazin: data[i][10] === 'Yes',
-          overUnder: data[i][11],
-          totalLine: data[i][12],
-          lineOutcome: data[i][13] || '',
-          winnerOutcome: data[i][14] || '',
-          ouOutcome: data[i][15] || ''
-        };
-      }
+      const key = matchupKeyForRow(row);
+      const bucket = collapsed[row.week][row.picker];
+      bucket[key] = foldPickRow(bucket[key], row);
     }
 
-    // Convert to final format, keyed by matchup (away_home) instead of gameId
-    // This ensures picks are applied to the correct game regardless of game order
-    for (const week in picksWithTimestamp) {
+    for (const week in collapsed) {
       allPicks[week] = {};
-      for (const picker in picksWithTimestamp[week]) {
+      for (const picker in collapsed[week]) {
         allPicks[week][picker] = {};
-        for (const gameId in picksWithTimestamp[week][picker]) {
-          const pickData = picksWithTimestamp[week][picker][gameId];
-
-          // Create matchup key from team names
-          const matchupKey = `${pickData.away.toLowerCase()}_${pickData.home.toLowerCase()}`;
-
-          // Convert team names back to 'home'/'away' format
-          let linePick = pickData.linePick;
-          if (linePick === pickData.away) {
-            linePick = 'away';
-          } else if (linePick === pickData.home) {
-            linePick = 'home';
-          }
-
-          let winnerPick = pickData.winnerPick;
-          if (winnerPick === pickData.away) {
-            winnerPick = 'away';
-          } else if (winnerPick === pickData.home) {
-            winnerPick = 'home';
-          }
-
-          allPicks[week][picker][matchupKey] = {
-            line: linePick || '',
-            winner: winnerPick || '',
-            blazin: pickData.blazin || false,
-            overUnder: pickData.overUnder || '',
-            totalLine: pickData.totalLine || '',
-            lineOutcome: pickData.lineOutcome || '',
-            winnerOutcome: pickData.winnerOutcome || '',
-            ouOutcome: pickData.ouOutcome || ''
-          };
+        for (const key in collapsed[week][picker]) {
+          allPicks[week][picker][key] = pickPayload(collapsed[week][picker][key]);
         }
       }
     }
@@ -542,11 +563,9 @@ function getAllPicks() {
       const week = String(clearedData[i][0]);
       const picker = String(clearedData[i][1]);
       const cleared = clearedData[i][2] === 'Yes';
-
+      if (season && seasonOfSheetWeek(week) !== season) continue;
       if (cleared) {
-        if (!allCleared[week]) {
-          allCleared[week] = {};
-        }
+        if (!allCleared[week]) allCleared[week] = {};
         allCleared[week][picker] = true;
       }
     }
@@ -555,7 +574,10 @@ function getAllPicks() {
   return {
     picks: allPicks,
     cleared: allCleared,
-    weekCount: Object.keys(allPicks).length
+    weekCount: Object.keys(allPicks).length,
+    season: season || 'all',
+    rowsScanned: rowsScanned,
+    rowsUsed: rowsUsed
   };
 }
 
@@ -881,4 +903,58 @@ function getPickSide(pick, awayTeam, homeTeam) {
 function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Backup sheet diagnostics. Read-only - changes nothing.
+ *
+ * Answers two questions the collapsed read cannot:
+ *   1. How big is the sheet really? getDataRange() pulls all of it on every
+ *      read, so this is the number that decides when to split by season.
+ *   2. Are there legacy split-key rows - a numeric Game value carrying a
+ *      Blazin' flag, whose partner row holds the line pick? Those are the
+ *      rows whose stars used to be dropped on read.
+ */
+function diagnoseBackup() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Backup');
+  if (!sheet) return { error: 'No Backup sheet' };
+
+  const data = sheet.getDataRange().getValues();
+  const bySeason = {};
+  const splitKeyBlazin = [];
+  let numericGameRows = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const row = readPickRow(data[i]);
+    const season = seasonOfSheetWeek(row.week);
+    bySeason[season] = (bySeason[season] || 0) + 1;
+
+    // A Game column holding a bare number is a pre-matchup-key row.
+    if (/^\d+$/.test(row.gameId)) {
+      numericGameRows++;
+      if (row.blazin) {
+        splitKeyBlazin.push({
+          week: row.week,
+          picker: row.picker,
+          game: row.gameId,
+          matchup: matchupKeyForRow(row),
+          hadLinePick: !isBlankCell(row.linePick),
+          timestamp: data[i][0]
+        });
+      }
+    }
+  }
+
+  return {
+    totalRows: data.length - 1,
+    columns: data[0] ? data[0].length : 0,
+    cellsUsed: (data.length - 1) * (data[0] ? data[0].length : 0),
+    rowsBySeason: bySeason,
+    numericGameRows: numericGameRows,
+    // Rows whose Blazin flag was being dropped: a numeric Game value, a star,
+    // and no line pick of their own (the partner row has it).
+    orphanedBlazinRows: splitKeyBlazin.filter(function (r) { return !r.hadLinePick; }),
+    orphanedBlazinCount: splitKeyBlazin.filter(function (r) { return !r.hadLinePick; }).length
+  };
 }

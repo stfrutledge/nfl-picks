@@ -9834,7 +9834,12 @@ async function loadAllPicksFromBackup() {
     console.log('[Picks Load] Starting backup fetch from Google Sheets...');
 
     try {
-        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=allpicks`);
+        // Ask for this season only. The sheet is never pruned, so without the
+        // filter every load also downloads and parses every past season, which
+        // the merge loop below then discards. An older Apps Script deployment
+        // ignores the parameter and returns everything, which still works.
+        const response = await fetch(
+            `${WORKER_PROXY_URL}/sync?action=allpicks&season=${CURRENT_SEASON}`);
         console.log('[Picks Load] Got response, parsing JSON...');
         const result = await response.json();
         console.log('[Picks Load] Response:', result);
