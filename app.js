@@ -9545,46 +9545,56 @@ async function syncPicksToGoogleSheets(displayToast = true) {
         return;
     }
 
-    const weekPicks = allPicks[currentWeek]?.[currentPicker];
-    if (!weekPicks || Object.keys(weekPicks).length === 0) {
+    const weekPicks = allPicks[currentWeek]?.[currentPicker] || {};
+    const weekGames = getGamesForWeek(currentWeek);
+
+    // A sync writes a SNAPSHOT of the whole week, one row per game, blank
+    // where there is no pick - not just the games that currently have one.
+    //
+    // The Backup sheet is append-only and the reader takes the newest sync
+    // batch as the client's full state. A game left out of the batch has no
+    // newest row, so the reader falls back to an older one and the pick comes
+    // back from the dead on the next load. Deselecting a game clears its entry
+    // entirely, which is exactly the case that used to go unsent.
+    //
+    // So the week's schedule, not the picks object, drives the payload. Bail if
+    // the schedule has not loaded: writing blanks for games we cannot see would
+    // tombstone real picks.
+    if (weekGames.length === 0) {
+        console.warn(`[Sync] No schedule for week ${currentWeek}, skipping sync`);
         return;
     }
 
-    // Convert picks to the format expected by Google Apps Script
-    const weekGames = getGamesForWeek(currentWeek);
-    const formattedPicks = [];
-
-    for (const [storedKey, pickData] of Object.entries(weekPicks)) {
-        const game = weekGames.find(g => pickKey(g) === storedKey);
-        if (!game) {
-            console.warn(`[Sync] Skipping pick key with no matching game in week ${currentWeek}: ${storedKey}`);
-            continue;
+    const knownKeys = new Set(weekGames.map(g => pickKey(g)));
+    for (const storedKey of Object.keys(weekPicks)) {
+        if (!knownKeys.has(storedKey)) {
+            console.warn(`[Sync] Pick key with no matching game in week ${currentWeek}, not synced: ${storedKey}`);
         }
+    }
 
+    const formattedPicks = weekGames.map(game => {
+        const pickData = weekPicks[pickKey(game)] || {};
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
 
-        // Convert 'away'/'home' to actual team names
-        const lineTeam = pickData?.line ? (pickData.line === 'away' ? game.away : game.home) : '';
-        const winnerTeam = pickData?.winner ? (pickData.winner === 'away' ? game.away : game.home) : '';
+        // Convert 'away'/'home' to actual team names; blank means "no pick",
+        // which is what makes this row a tombstone.
+        const lineTeam = pickData.line ? (pickData.line === 'away' ? game.away : game.home) : '';
+        const winnerTeam = pickData.winner ? (pickData.winner === 'away' ? game.away : game.home) : '';
 
-        formattedPicks.push({
-            gameId: storedKey,
+        return {
+            gameId: pickKey(game),
             away: game.away,
             home: game.home,
             awaySpread: awaySpread,
             homeSpread: homeSpread,
             linePick: lineTeam,
             winnerPick: winnerTeam,
-            blazin: pickData?.blazin || false,
-            overUnder: pickData?.overUnder || '',
-            totalLine: pickData?.totalLine || ''
-        });
-    }
-
-    if (formattedPicks.length === 0) {
-        return;
-    }
+            blazin: pickData.blazin || false,
+            overUnder: pickData.overUnder || '',
+            totalLine: pickData.totalLine || ''
+        };
+    });
 
     const payload = {
         week: toSheetWeek(currentWeek),
