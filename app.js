@@ -4706,21 +4706,22 @@ function freezeGameByKey(key) {
     const line = describeLine(game);
     const remaining = blazinRemaining();
     const starWarning = remaining > 0
-        ? `\n\nYou still have ${remaining} Blazin' 5 pick${remaining === 1 ? '' : 's'} to make. Locking this game locks its star too.`
+        ? ` You still have ${remaining} Blazin' 5 pick${remaining === 1 ? '' : 's'} to make,`
+          + ' and locking this game locks its star too.'
         : '';
 
-    const proceed = confirm(
-        `Lock ${game.away} @ ${game.home} at ${line}?\n\n` +
-        'This game becomes final: you will not be able to change these picks, ' +
-        'and you will be graded at this line however it moves.' + starWarning);
-    if (!proceed) return false;
-
-    applyFreeze(game);
-    savePicksToStorage(true);
-    renderGames();
-    renderScoringSummary();
-    showToast(`Locked at ${line}`);
-    return true;
+    return requestConfirmation(
+        `Lock ${game.away} @ ${game.home} at ${line}?`,
+        'These picks become final: you will not be able to change them, and you ' +
+        'will be graded at this line however it moves.' + starWarning,
+        { confirmLabel: 'Lock Pick', dontShowKey: 'lockPick' },
+        () => {
+            applyFreeze(game);
+            savePicksToStorage(true);
+            renderGames();
+            renderScoringSummary();
+            showToast(`Locked at ${line}`);
+        });
 }
 
 /**
@@ -4767,19 +4768,21 @@ function freezeAllCompleteGames() {
           `${notReady} game${notReady === 1 ? ' is' : 's are'} incomplete and will keep riding the line.`
         : `Lock all ${ready.length} pick${ready.length === 1 ? '' : 's'} at their current lines?`;
 
-    if (!confirm(`${summary}\n\nLocked picks become final and cannot be changed.`)) {
-        return false;
-    }
-
-    ready.forEach(game => applyFreeze(game, week, currentPicker));
-    savePicksToStorage(true);
-    renderGames();
-    renderScoringSummary();
-
-    showToast(notReady > 0
-        ? `Locked ${ready.length} picks. ${notReady} incomplete and still riding the line.`
-        : `Locked all ${ready.length} picks.`);
-    return true;
+    // Deliberately NOT suppressible: this finalises the whole week at once, so
+    // it should always ask.
+    return requestConfirmation(
+        summary,
+        'Locked picks become final and cannot be changed.',
+        { confirmLabel: `Lock ${ready.length} Pick${ready.length === 1 ? '' : 's'}` },
+        () => {
+            ready.forEach(game => applyFreeze(game, week, currentPicker));
+            savePicksToStorage(true);
+            renderGames();
+            renderScoringSummary();
+            showToast(notReady > 0
+                ? `Locked ${ready.length} picks. ${notReady} incomplete and still riding the line.`
+                : `Locked all ${ready.length} picks.`);
+        });
 }
 
 function emptyRecord() {
@@ -10936,18 +10939,87 @@ function updateWeekUI() {
  * Show confirmation modal
  */
 let modalConfirmCallback = null;
+let modalDontShowKey = null;
 
-function showConfirmModal(title, message, onConfirm) {
+/**
+ * @param {object} [options]
+ * @param {string} [options.confirmLabel] text for the confirm button
+ * @param {string} [options.dontShowKey] localStorage key for a
+ *        "Don't show this again" checkbox. Omit it and the checkbox is hidden.
+ */
+function showConfirmModal(title, message, onConfirm, options = {}) {
     const modal = document.getElementById('confirm-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalMessage = document.getElementById('modal-message');
+    if (!modal || !modalTitle || !modalMessage) return false;
 
-    if (modal && modalTitle && modalMessage) {
-        modalTitle.textContent = title;
-        modalMessage.textContent = message;
-        modalConfirmCallback = onConfirm;
-        modal.classList.add('show');
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+
+    const confirmBtn = document.getElementById('modal-confirm-btn');
+    if (confirmBtn) confirmBtn.textContent = options.confirmLabel || 'Confirm';
+
+    // The checkbox is shared, so it has to be reset every time or a previous
+    // dialog's tick would silently apply to this one.
+    const row = document.getElementById('modal-dont-show-row');
+    const box = document.getElementById('modal-dont-show');
+    modalDontShowKey = options.dontShowKey || null;
+    if (box) box.checked = false;
+    if (row) row.classList.toggle('hidden', !modalDontShowKey);
+
+    modalConfirmCallback = onConfirm;
+    modal.classList.add('show');
+    return true;
+}
+
+const SUPPRESSED_CONFIRMS_KEY = 'nfl_suppressed_confirms';
+
+/** Has the user ticked "don't show this again" for this dialog? */
+function isConfirmSuppressed(key) {
+    if (!key) return false;
+    try {
+        const raw = localStorage.getItem(SUPPRESSED_CONFIRMS_KEY);
+        return Boolean(raw && JSON.parse(raw)[key]);
+    } catch (e) {
+        return false;
     }
+}
+
+function suppressConfirm(key) {
+    if (!key) return;
+    try {
+        const raw = localStorage.getItem(SUPPRESSED_CONFIRMS_KEY);
+        const map = raw ? JSON.parse(raw) : {};
+        map[key] = true;
+        localStorage.setItem(SUPPRESSED_CONFIRMS_KEY, JSON.stringify(map));
+    } catch (e) {
+        console.warn('[Confirm] Could not save preference:', e);
+    }
+}
+
+/**
+ * Ask the user to confirm something, then run onConfirm.
+ *
+ * Uses the in-page modal, which is what carries the "don't show this again"
+ * checkbox. Falls back to the native confirm() when the modal markup is not
+ * present, so the flow still works if the dialog is missing.
+ *
+ * Returns true if onConfirm ran synchronously, false if it was deferred to the
+ * modal or declined.
+ */
+function requestConfirmation(title, message, options, onConfirm) {
+    if (options && options.dontShowKey && isConfirmSuppressed(options.dontShowKey)) {
+        onConfirm();
+        return true;
+    }
+    if (showConfirmModal(title, message, onConfirm, options)) {
+        return false;
+    }
+    if (confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+        return true;
+    }
+    return false;
 }
 
 function hideConfirmModal() {
@@ -10956,11 +11028,18 @@ function hideConfirmModal() {
         modal.classList.remove('show');
     }
     modalConfirmCallback = null;
+    modalDontShowKey = null;
 }
 
 function setupConfirmModal() {
     document.getElementById('modal-cancel-btn')?.addEventListener('click', hideConfirmModal);
     document.getElementById('modal-confirm-btn')?.addEventListener('click', () => {
+        // Only remember the preference when the action is actually confirmed -
+        // ticking the box and then cancelling should not suppress anything.
+        const box = document.getElementById('modal-dont-show');
+        if (modalDontShowKey && box?.checked) {
+            suppressConfirm(modalDontShowKey);
+        }
         if (modalConfirmCallback) {
             modalConfirmCallback();
         }

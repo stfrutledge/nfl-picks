@@ -7054,3 +7054,29 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         font-size: 0.63rem;
     }
 }
+
+/* "Don't show this again" row in the confirm modal. Hidden unless the caller
+   passes a dontShowKey, so most dialogs are unaffected. */
+.modal-dont-show {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 18px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.modal-dont-show input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.modal-dont-show:hover {
+    color: var(--text-primary);
+}

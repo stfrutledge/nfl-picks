@@ -94,6 +94,7 @@ function makeAppEnv({ confirms = true, withDom = false } = {}) {
         applyFreeze, freezeGameByKey, freezeAllCompleteGames, describeLine,
         calculateStatsForWeeks, standingsFromComputed, pickKey, countBlazinPicks,
         renderGames, renderScoringSummary,
+        isConfirmSuppressed, suppressConfirm, requestConfirmation,
         syncPicksToGoogleSheets,
         exportHistoricalData: window.exportHistoricalData,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
@@ -393,6 +394,66 @@ await check('the archive keeps the frozen fields', async () => {
     const text = typeof dump === 'string' ? dump : JSON.stringify(dump);
     assert.match(text, /frozenAt/, 'frozenAt survives archiving');
     assert.match(text, /frozenSpread/);
+});
+
+section("Don't show this again");
+
+// With no DOM the modal is absent and requestConfirmation falls back to the
+// native confirm(), which the harness drives via `confirms`. That is what
+// makes suppression observable here.
+
+await check('nothing is suppressed by default', async () => {
+    const h = setup({ games: sixGames() });
+    assert.strictEqual(h.api.isConfirmSuppressed('lockPick'), false);
+});
+
+await check('a suppressed dialog runs its action without asking', async () => {
+    const h = setup({
+        games: sixGames(),
+        picks: { rams_seahawks: complete() },
+        confirms: false        // would decline if it were asked
+    });
+    h.api.suppressConfirm('lockPick');
+
+    h.api.freezeGameByKey('rams_seahawks');
+    assert.strictEqual(
+        h.api.isPickFrozen(h.api.__state().allPicks[WEEK].Stephen.rams_seahawks), true,
+        'locked without a prompt');
+});
+
+await check('an unsuppressed dialog still asks', async () => {
+    const h = setup({
+        games: sixGames(),
+        picks: { rams_seahawks: complete() },
+        confirms: false
+    });
+    h.api.freezeGameByKey('rams_seahawks');
+    assert.strictEqual(
+        h.api.isPickFrozen(h.api.__state().allPicks[WEEK].Stephen.rams_seahawks), false,
+        'declined, so nothing was locked');
+});
+
+await check('suppression is per dialog, not global', async () => {
+    const h = setup({ games: sixGames() });
+    h.api.suppressConfirm('lockPick');
+    assert.strictEqual(h.api.isConfirmSuppressed('lockPick'), true);
+    assert.strictEqual(h.api.isConfirmSuppressed('somethingElse'), false);
+});
+
+await check('locking the whole week is never suppressible', async () => {
+    // It finalises everything at once, so it should always ask.
+    const games = sixGames();
+    const picks = {};
+    games.forEach((g, i) => {
+        picks[`${g.away.toLowerCase()}_${g.home.toLowerCase()}`] = complete(i < 5 ? { blazin: true } : {});
+    });
+    const h = setup({ games, picks, confirms: false });
+    h.api.suppressConfirm('lockPick');
+
+    h.api.freezeAllCompleteGames();
+    assert.strictEqual(
+        h.api.isPickFrozen(h.api.__state().allPicks[WEEK].Stephen.rams_seahawks), false,
+        'still asked, and was declined');
 });
 
 section('The card renders');

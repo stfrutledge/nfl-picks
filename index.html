@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFL Picks Dashboard</title>
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=51dc388c">
+    <link rel="stylesheet" href="styles.css?v=4e2f8b50">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -743,6 +743,10 @@
         <div class="modal-content">
             <h3 class="modal-title" id="modal-title">Confirm Action</h3>
             <p class="modal-message" id="modal-message">Are you sure you want to proceed?</p>
+            <label class="modal-dont-show hidden" id="modal-dont-show-row">
+                <input type="checkbox" id="modal-dont-show">
+                <span>Don't show this again</span>
+            </label>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
                 <button class="btn btn-danger" id="modal-confirm-btn">Confirm</button>
@@ -757,6 +761,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=8fa2d629"></script>
+    <script src="app.js?v=de49fb53"></script>
 </body>
 </html>
