@@ -3806,6 +3806,7 @@ function updateAdminButtons() {
  */
 function setupPicksActions() {
     document.getElementById('clear-picks-btn')?.addEventListener('click', clearCurrentPickerPicks);
+    document.getElementById('freeze-all-btn')?.addEventListener('click', freezeAllCompleteGames);
     document.getElementById('clear-picks-btn-mobile')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
     document.getElementById('randomize-picks-btn')?.addEventListener('click', () => {
@@ -4493,12 +4494,292 @@ function getGameResult(game, weekResults) {
  * "the maths is broken" rather than "the data has not arrived".
  */
 function hasUsableSpread(game) {
-    const raw = game?.spread;
-    // Empty string must not slip through: Number('') is 0, which would be
-    // scored as a pick em. A real 0 spread IS valid, so this cannot just test
-    // truthiness either.
+    return hasUsableLine(game?.spread);
+}
+
+/**
+ * Whether a spread value can actually be scored against.
+ *
+ * Empty string must not slip through: Number('') is 0, which would be scored
+ * as a pick em. A real 0 spread IS valid, so this cannot just test truthiness
+ * either.
+ */
+function hasUsableLine(raw) {
     if (raw === null || raw === undefined || raw === '') return false;
     return Number.isFinite(Number(raw));
+}
+
+// --- Frozen lines ----------------------------------------------------------
+// A pick rides the line by default: it stores a side ('home'/'away'), never a
+// number, so it is graded against whatever the spread is when it is scored. A
+// player may instead FREEZE a game, which snapshots the current line onto the
+// pick and makes that game final - see freezeGame().
+//
+// "Frozen" is not "locked": locked means the game has kicked off and nobody can
+// edit it (isGameLocked). Frozen is a choice made before kickoff.
+
+/**
+ * The line a pick is graded against: its own frozen number if it has one,
+ * otherwise the game's current line.
+ */
+function lineForPick(game, pick) {
+    if (pick && pick.frozenAt) {
+        return {
+            spread: pick.frozenSpread,
+            favorite: pick.frozenFavorite,
+            overUnder: pick.frozenOverUnder,
+            frozen: true
+        };
+    }
+    return {
+        spread: game?.spread,
+        favorite: game?.favorite,
+        overUnder: game?.overUnder,
+        frozen: false
+    };
+}
+
+/**
+ * Which side covered for one picker, honouring a frozen line. Returns null when
+ * the line cannot be scored yet, so callers skip rather than record a false push.
+ */
+function atsWinnerForPick(game, pick, result) {
+    const line = lineForPick(game, pick);
+    if (!hasUsableLine(line.spread)) return null;
+    return calculateATSWinnerFrom(Number(line.spread), line.favorite, result);
+}
+
+/** True when a pick has been frozen at its own line. */
+function isPickFrozen(pick) {
+    return Boolean(pick && pick.frozenAt);
+}
+
+const MAX_BLAZIN_PICKS = 5;
+
+/**
+ * Whether a card carries every pick it needs before it can be frozen.
+ *
+ * Same definition as checkAllPicksComplete - line + winner - plus the O/U pick,
+ * which only exists in the playoffs (the card renders the O/U picker when
+ * isPlayoff, and the Blazin' star otherwise).
+ *
+ * The Blazin' star is deliberately NOT required: it is capped at five a week, so
+ * most cards will never carry one. The star is protected by
+ * blazinReachableAfterFreezing() instead.
+ */
+function isCardComplete(game, pick, week = currentWeek) {
+    if (!pick || !pick.line || !pick.winner) return false;
+    if (isPlayoffWeek(week) && hasUsableLine(game?.overUnder) && !pick.overUnder) return false;
+    return true;
+}
+
+/**
+ * How many Blazin' picks a picker could still end the week with, if the games
+ * in `alsoFreezing` were frozen right now.
+ *
+ * Freezing a card freezes its star along with everything else, so freezing an
+ * unstarred game permanently removes it as a candidate. Without this check a
+ * picker could freeze their way down to two of five and only find out later.
+ * Games are counted as candidates whether or not they currently hold a line
+ * pick, since one can still be added before kickoff.
+ */
+function blazinReachableAfterFreezing(alsoFreezing = [], week = currentWeek, picker = currentPicker) {
+    if (isPlayoffWeek(week)) return MAX_BLAZIN_PICKS; // no Blazin' 5 in the playoffs
+
+    const picks = getPickerPicksForWeek(week, picker);
+    const freezing = new Set(alsoFreezing);
+    const used = countBlazinPicks(week, picker);
+
+    const openCandidates = getGamesForWeekAndSeason(week, currentSeason).filter(game => {
+        const pick = getPicksForGame(picks, game);
+        if (pick.blazin) return false;            // already counted in `used`
+        if (isPickFrozen(pick)) return false;     // frozen, so can never be starred
+        if (freezing.has(pickKey(game))) return false; // about to be frozen
+        if (isGameLocked(game, week)) return false;
+        return true;
+    }).length;
+
+    return used + openCandidates;
+}
+
+/**
+ * Whether one game can be frozen right now, and why not if it cannot.
+ *
+ * @returns {{canFreeze: boolean, reason: string}}
+ */
+function freezeEligibility(game, week = currentWeek, picker = currentPicker) {
+    const pick = getPicksForGame(getPickerPicksForWeek(week, picker), game);
+
+    if (isPickFrozen(pick)) {
+        return { canFreeze: false, reason: 'Already frozen' };
+    }
+    if (isGameLocked(game, week)) {
+        return { canFreeze: false, reason: 'Game has already started' };
+    }
+    if (!isCardComplete(game, pick, week)) {
+        return { canFreeze: false, reason: 'Make all picks for this game first' };
+    }
+    // Freezing at a missing spread would store undefined and score as a push
+    // for ever - the failure mode fixed in 5a31244.
+    if (!hasUsableSpread(game)) {
+        return { canFreeze: false, reason: 'No line available to freeze yet' };
+    }
+    if (blazinReachableAfterFreezing([pickKey(game)], week, picker) < MAX_BLAZIN_PICKS) {
+        return {
+            canFreeze: false,
+            reason: `Freezing this would leave you unable to make ${MAX_BLAZIN_PICKS} Blazin' picks`
+        };
+    }
+    return { canFreeze: true, reason: '' };
+}
+
+/** Every game this picker could freeze right now. */
+function freezableGames(week = currentWeek, picker = currentPicker) {
+    return getGamesForWeekAndSeason(week, currentSeason)
+        .filter(game => freezeEligibility(game, week, picker).canFreeze);
+}
+
+/** A line as a player reads it: "Seahawks -3", "Pick'em". */
+function describeLine(game) {
+    const spread = Number(game?.spread);
+    if (!hasUsableSpread(game)) return 'no line';
+    if (spread === 0) return "Pick'em";
+    const favourite = game.favorite === 'home' ? game.home : game.away;
+    return `${favourite} -${spread}`;
+}
+
+/**
+ * Write the current line onto a pick, making it frozen.
+ *
+ * Reads through the merged view (sheet cache + local) so a pick that only
+ * exists in the backup is materialised into allPicks rather than lost, then
+ * writes the whole object back to allPicks, which is what gets synced.
+ */
+function applyFreeze(game, week = currentWeek, picker = currentPicker) {
+    const frozen = { ...getPicksForGame(getPickerPicksForWeek(week, picker), game) };
+
+    frozen.frozenSpread = Number(game.spread);
+    frozen.frozenFavorite = game.favorite;
+    if (hasUsableLine(game.overUnder)) {
+        frozen.frozenOverUnder = Number(game.overUnder);
+        // totalLine is the field that actually reaches the backup sheet, so
+        // write the frozen total there too or it is lost on the next reload.
+        frozen.totalLine = Number(game.overUnder);
+    }
+    frozen.frozenAt = new Date().toISOString();
+
+    if (!allPicks[week]) allPicks[week] = {};
+    if (!allPicks[week][picker]) allPicks[week][picker] = {};
+    allPicks[week][picker][pickKey(game)] = frozen;
+
+    return frozen;
+}
+
+/** Blazin' picks still to be allocated this week. */
+function blazinRemaining(week = currentWeek, picker = currentPicker) {
+    if (isPlayoffWeek(week)) return 0;
+    return Math.max(0, MAX_BLAZIN_PICKS - countBlazinPicks(week, picker));
+}
+
+/**
+ * Freeze one game at its current line, after confirming. Irreversible.
+ */
+function freezeGameByKey(key) {
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return false;
+    }
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return false;
+    }
+
+    const game = getGamesForWeek(currentWeek).find(g => pickKey(g) === key);
+    if (!game) return false;
+
+    const { canFreeze, reason } = freezeEligibility(game);
+    if (!canFreeze) {
+        showToast(reason, 'warning');
+        return false;
+    }
+
+    const line = describeLine(game);
+    const remaining = blazinRemaining();
+    const starWarning = remaining > 0
+        ? `\n\nYou still have ${remaining} Blazin' 5 pick${remaining === 1 ? '' : 's'} to make. Freezing this game freezes its star too.`
+        : '';
+
+    const proceed = confirm(
+        `Freeze ${game.away} @ ${game.home} at ${line}?\n\n` +
+        'This game becomes final: you will not be able to change these picks, ' +
+        'and you will be graded at this line however it moves.' + starWarning);
+    if (!proceed) return false;
+
+    applyFreeze(game);
+    savePicksToStorage(true);
+    renderGames();
+    renderScoringSummary();
+    showToast(`Frozen at ${line}`);
+    return true;
+}
+
+/**
+ * Freeze every complete game for the week, leaving incomplete ones riding.
+ *
+ * Blocked until all five Blazin' picks are allocated: this is the action most
+ * likely to strand a picker at two of five, since it freezes everything at once.
+ */
+function freezeAllCompleteGames() {
+    if (isHistoricalSeason()) {
+        showToast('Cannot edit picks for historical seasons', 'warning');
+        return false;
+    }
+    if (!currentPicker) {
+        showToast('Please select a picker first', 'warning');
+        return false;
+    }
+
+    const week = currentWeek;
+    const remaining = blazinRemaining(week, currentPicker);
+    if (remaining > 0) {
+        const used = countBlazinPicks(week, currentPicker);
+        showToast(
+            `Make all ${MAX_BLAZIN_PICKS} Blazin' picks first - you have ${used}. ` +
+            'Freezing the week would freeze the stars too.', 'warning');
+        return false;
+    }
+
+    const picks = getPickerPicksForWeek(week, currentPicker);
+    const open = getGamesForWeekAndSeason(week, currentSeason).filter(game =>
+        !isGameLocked(game, week) && !isPickFrozen(getPicksForGame(picks, game)));
+    const ready = open.filter(game => freezeEligibility(game, week, currentPicker).canFreeze);
+    const notReady = open.length - ready.length;
+
+    if (ready.length === 0) {
+        showToast(notReady > 0
+            ? `No complete games to freeze - ${notReady} still need picks`
+            : 'Nothing left to freeze', 'warning');
+        return false;
+    }
+
+    const summary = notReady > 0
+        ? `Freeze ${ready.length} completed game${ready.length === 1 ? '' : 's'}? ` +
+          `${notReady} game${notReady === 1 ? ' is' : 's are'} incomplete and will keep riding the line.`
+        : `Freeze all ${ready.length} game${ready.length === 1 ? '' : 's'} at their current lines?`;
+
+    if (!confirm(`${summary}\n\nFrozen games become final and cannot be changed.`)) {
+        return false;
+    }
+
+    ready.forEach(game => applyFreeze(game, week, currentPicker));
+    savePicksToStorage(true);
+    renderGames();
+    renderScoringSummary();
+
+    showToast(notReady > 0
+        ? `Froze ${ready.length} games. ${notReady} incomplete and still riding the line.`
+        : `Froze all ${ready.length} games.`);
+    return true;
 }
 
 function emptyRecord() {
@@ -4553,11 +4834,13 @@ function calculateStatsForWeeks(firstWeek, lastWeek) {
                 const result = getGameResult(game, weekResults);
                 if (!result) return;
 
-                const atsWinner = hasUsableSpread(game)
-                    ? calculateATSWinner(game, result) : null;
+                // Scored against this picker's own line: a frozen pick keeps
+                // the number it was frozen at, whatever the game has moved to.
+                // Null means no usable line yet - unscored, not a push, which
+                // would otherwise show every line pick as a push until spreads
+                // load.
+                const atsWinner = atsWinnerForPick(game, pick, result);
 
-                // No spread yet means unscored, not a push. Counting it would
-                // show every line pick as a push until spreads load.
                 if (pick.line && atsWinner) {
                     const bucket = atsWinner === 'push' ? 'pushes'
                         : (pick.line === atsWinner ? 'wins' : 'losses');
@@ -4570,7 +4853,7 @@ function calculateStatsForWeeks(firstWeek, lastWeek) {
                     weekly.winner[pick.winner === result.winner ? 'wins' : 'losses']++;
                 }
 
-                const ouLine = game.overUnder || pick.totalLine;
+                const ouLine = lineForPick(game, pick).overUnder || pick.totalLine;
                 if (pick.overUnder && ouLine > 0) {
                     const total = (result.awayScore || 0) + (result.homeScore || 0);
                     const ouResult = total > ouLine ? 'over' : (total < ouLine ? 'under' : 'push');
@@ -8044,10 +8327,10 @@ function renderGames() {
                 };
             }
             if (result) {
-                const atsWinner = hasUsableSpread(game)
-                    ? calculateATSWinner(game, result) : null;
-                // Line pick results - left blank while the spread is missing,
-                // rather than marked as a push.
+                // The current picker's own line, so a frozen card shows the
+                // outcome it was actually graded at. Left blank while there is
+                // no usable line, rather than marked as a push.
+                const atsWinner = atsWinnerForPick(game, gamePicks, result);
                 if (linePick === 'away' && atsWinner) {
                     lineAwayResult = atsWinner === 'push' ? 'push' : (atsWinner === 'away' ? 'correct' : 'incorrect');
                 }
@@ -8089,6 +8372,7 @@ function renderGames() {
             'game-card',
             hasBothPicks ? 'has-pick' : (hasLinePick || hasWinnerPick ? 'has-partial-pick' : ''),
             locked ? 'game-locked' : '',
+            frozen ? 'pick-frozen' : '',
             isFinal ? 'game-final' : '',
             isInProgress ? 'game-in-progress' : ''
         ].filter(Boolean).join(' ');
@@ -8134,11 +8418,33 @@ function renderGames() {
                 </div>`;
         }
 
+        // Frozen state. "Frozen" is a pre-kickoff choice by the picker; "locked"
+        // is the game having started. A frozen card is read-only either way.
+        const frozen = isPickFrozen(gamePicks);
+        const readOnly = locked || frozen;
+        const frozenLineLabel = frozen
+            ? describeLine({ ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite })
+            : '';
+        const freezeState = (locked || frozen || isHistoricalWeek || isHistoricalSeason())
+            ? null
+            : freezeEligibility(game, currentWeek, currentPicker);
+
+        // Line drift, for a riding pick whose line has moved since it was made.
+        const ridingDrift = (!frozen && !locked && hasLinePick
+                && hasUsableLine(gamePicks.pickedSpread) && hasUsableSpread(game)
+                && (Number(gamePicks.pickedSpread) !== Number(game.spread)
+                    || gamePicks.pickedFavorite !== game.favorite))
+            ? describeLine({ ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite })
+            : '';
+
         // Blazin star button - disabled if locked, no line pick, or already at 5 and not already selected
-        const canToggleBlazin = !locked && hasLinePick && (isBlazin || blazinCount < 5);
-        const blazinDisabled = locked || !hasLinePick || (!isBlazin && blazinCount >= 5);
+        const canToggleBlazin = !readOnly && hasLinePick && (isBlazin || blazinCount < MAX_BLAZIN_PICKS);
+        const blazinDisabled = readOnly || !hasLinePick || (!isBlazin && blazinCount >= MAX_BLAZIN_PICKS);
         const blazinTitle = blazinDisabled
-            ? (locked ? 'Game is locked' : (!hasLinePick ? 'Make a line pick first' : 'Maximum 5 Blazin picks reached'))
+            ? (frozen ? 'Pick is frozen'
+                : locked ? 'Game is locked'
+                : !hasLinePick ? 'Make a line pick first'
+                : `Maximum ${MAX_BLAZIN_PICKS} Blazin picks reached`)
             : (isBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5');
 
         return `
@@ -8168,12 +8474,12 @@ function renderGames() {
                         <div class="pick-options">
                             <button class="pick-btn ${linePick === 'away' ? 'selected' : ''} ${lineAwayResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="away"
-                                    ${locked ? 'disabled' : ''}>
+                                    ${readOnly ? 'disabled' : ''}>
                                 ${game.away} ${awaySpreadDisplay}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="home"
-                                    ${locked ? 'disabled' : ''}>
+                                    ${readOnly ? 'disabled' : ''}>
                                 ${game.home} ${homeSpreadDisplay}
                             </button>
                         </div>
@@ -8183,12 +8489,12 @@ function renderGames() {
                         <div class="pick-options">
                             <button class="pick-btn ${winnerPick === 'away' ? 'selected' : ''} ${winnerAwayResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="winner" data-team="away"
-                                    ${locked ? 'disabled' : ''}>
+                                    ${readOnly ? 'disabled' : ''}>
                                 ${game.away}
                             </button>
                             <button class="pick-btn ${winnerPick === 'home' ? 'selected' : ''} ${winnerHomeResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="winner" data-team="home"
-                                    ${locked ? 'disabled' : ''}>
+                                    ${readOnly ? 'disabled' : ''}>
                                 ${game.home}
                             </button>
                         </div>
@@ -8202,18 +8508,34 @@ function renderGames() {
                         <span class="location-city">${game.location}</span>
                         <span class="location-stadium">${game.stadium}</span>
                     </div>
+                    ${frozen ? `
+                        <span class="freeze-state frozen" title="Frozen ${gamePicks.frozenAt}">
+                            &#10052; Frozen at ${frozenLineLabel}
+                        </span>
+                    ` : (ridingDrift ? `
+                        <span class="freeze-state drifted" title="You picked ${ridingDrift}; the line has since moved">
+                            Picked at ${ridingDrift} &rarr; now ${describeLine(game)}
+                        </span>
+                    ` : '')}
+                    ${freezeState ? `
+                        <button class="freeze-btn" data-game-id="${game.id}" data-pick-key="${key}"
+                                ${freezeState.canFreeze ? '' : 'disabled'}
+                                title="${freezeState.canFreeze ? 'Lock in this line - the game becomes final' : freezeState.reason}">
+                            Freeze at ${describeLine(game)}
+                        </button>
+                    ` : ''}
                     ${isPlayoff ? `
                         <div class="ou-picker" data-game-id="${game.id}">
                             <span class="ou-label">O/U ${ouLine > 0 ? ouLine : 'TBD'}</span>
                             ${ouLine > 0 ? `
                                 <button class="ou-btn ${ouPick === 'over' ? 'selected' : ''} ${ouOverResult}"
                                         data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="overUnder" data-value="over"
-                                        ${locked ? 'disabled' : ''}>
+                                        ${readOnly ? 'disabled' : ''}>
                                     Over
                                 </button>
                                 <button class="ou-btn ${ouPick === 'under' ? 'selected' : ''} ${ouUnderResult}"
                                         data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="overUnder" data-value="under"
-                                        ${locked ? 'disabled' : ''}>
+                                        ${readOnly ? 'disabled' : ''}>
                                     Under
                                 </button>
                             ` : '<span class="ou-unavailable">Line TBD</span>'}
@@ -8237,6 +8559,10 @@ function renderGames() {
     });
 
     // Add click handlers for blazin star buttons
+    document.querySelectorAll('.freeze-btn').forEach(btn => {
+        btn.addEventListener('click', handleFreezeClick);
+    });
+
     document.querySelectorAll('.blazin-star').forEach(btn => {
         btn.addEventListener('click', handleBlazinToggle);
     });
@@ -8415,6 +8741,14 @@ function handlePickSelect(e) {
         }
     } else {
         allPicks[currentWeek][currentPicker][key][pickType] = team;
+
+        // Remember the line this pick was made at. Display only - a riding pick
+        // is still graded against the current line - but without it there is no
+        // way to show a player that the line has moved under them.
+        if (pickType === 'line' && hasUsableSpread(game)) {
+            allPicks[currentWeek][currentPicker][key].pickedSpread = Number(game.spread);
+            allPicks[currentWeek][currentPicker][key].pickedFavorite = game.favorite;
+        }
 
         // If picking a favorite on the line, automatically pick them to win
         if (pickType === 'line') {
@@ -8625,6 +8959,18 @@ function handleOUSelect(e) {
 /**
  * Handle Blazin' 5 star toggle
  */
+/** Freeze button on a game card. */
+function handleFreezeClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const btn = e.currentTarget;
+    if (btn.disabled) return;
+
+    const key = btn.dataset.pickKey;
+    if (key) freezeGameByKey(key);
+}
+
 function handleBlazinToggle(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -9039,24 +9385,39 @@ const InsightsManager = {
 /**
  * Calculate ATS winner based on score and spread
  */
-function calculateATSWinner(game, result) {
+/**
+ * Which side covered, against an explicitly supplied line.
+ *
+ * Separate from calculateATSWinner(game, result) because a pick can be frozen
+ * at its own number: two players can be graded on different spreads for the
+ * same game, so the line cannot always be read off the game.
+ *
+ * NOTE: with a missing or non-numeric spread both comparisons are NaN and this
+ * returns 'push' - a silent wrong answer, not an error. Callers must check
+ * hasUsableSpread() / hasUsableLine() first on live data, where spreads arrive
+ * asynchronously and may not have landed yet.
+ */
+function calculateATSWinnerFrom(spread, favorite, result) {
     if (!result) return null;
 
-    // NOTE: with a missing or non-numeric game.spread both comparisons below
-    // are NaN and this returns 'push' - a silent wrong answer, not an error.
-    // Check hasUsableSpread(game) before scoring a line pick on live data,
-    // where spreads arrive asynchronously and may not have landed yet.
-
-    const awayScoreAdjusted = result.awayScore + (game.favorite === 'home' ? game.spread : -game.spread);
-    const homeScoreAdjusted = result.homeScore + (game.favorite === 'away' ? game.spread : -game.spread);
-
-    // Actually simpler: away team gets points if home is favorite, vice versa
-    const awayWithSpread = result.awayScore + (game.favorite === 'away' ? 0 : game.spread);
-    const homeWithSpread = result.homeScore + (game.favorite === 'home' ? 0 : game.spread);
+    // The underdog gets the points; the favourite gives them.
+    const awayWithSpread = result.awayScore + (favorite === 'away' ? 0 : spread);
+    const homeWithSpread = result.homeScore + (favorite === 'home' ? 0 : spread);
 
     if (awayWithSpread > homeWithSpread) return 'away';
     if (homeWithSpread > awayWithSpread) return 'home';
     return 'push';
+}
+
+/**
+ * Which side covered, against the game's current line. Used by the historical
+ * and records paths, where the archived spread is the only one there is.
+ * Current-season scoring goes through lineForPick() instead, so a frozen pick
+ * keeps its own number.
+ */
+function calculateATSWinner(game, result) {
+    if (!result) return null;
+    return calculateATSWinnerFrom(game.spread, game.favorite, result);
 }
 
 /**
@@ -9202,7 +9563,9 @@ function renderScoringSummary() {
 
             if (!result) return;
 
-            const atsWinner = calculateATSWinner(game, result);
+            // Honour a frozen line, same as the standings and the card.
+            const summaryPick = { ...cachedGamePicks, ...gamePicks };
+            const atsWinner = atsWinnerForPick(game, summaryPick, result);
             const isBlazin = gamePicks.blazin || cachedGamePicks.blazin;
 
             // Line pick result
@@ -9233,7 +9596,8 @@ function renderScoringSummary() {
             // Over/Under result (playoffs only)
             if (isPlayoff) {
                 const ouPick = gamePicks.overUnder || cachedGamePicks.overUnder;
-                const ouLine = game.overUnder || gamePicks.totalLine || cachedGamePicks.totalLine;
+                const ouLine = lineForPick(game, summaryPick).overUnder
+                    || gamePicks.totalLine || cachedGamePicks.totalLine;
                 if (ouPick && ouLine > 0) {
                     const totalScore = (result.awayScore || 0) + (result.homeScore || 0);
                     const ouResult = totalScore > ouLine ? 'over' : (totalScore < ouLine ? 'under' : 'push');
@@ -9400,12 +9764,13 @@ function clearCurrentPickerPicks() {
                 const games = getGamesForWeek(currentWeek);
                 const preservedPicks = {};
 
-                // Preserve picks for locked games
+                // Preserve picks for locked games, and for frozen ones - a
+                // freeze is final, so Clear Picks must not undo it.
                 games.forEach(game => {
                     const key = pickKey(game);
                     const existingPick = allPicks[currentWeek][currentPicker][key];
 
-                    if (existingPick && isGameLocked(game)) {
+                    if (existingPick && (isGameLocked(game) || isPickFrozen(existingPick))) {
                         preservedPicks[key] = existingPick;
                     }
                 });
@@ -9891,8 +10256,13 @@ async function syncPicksToGoogleSheets(displayToast = true) {
 
     const formattedPicks = weekGames.map(game => {
         const pickData = weekPicks[pickKey(game)] || {};
-        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
-        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
+
+        // The spread columns record the line this pick is GRADED against, not
+        // whatever the game currently shows - so a frozen pick carries its own
+        // number into the sheet and the row stays a faithful record of it.
+        const line = lineForPick(game, pickData);
+        const awaySpread = line.favorite === 'away' ? -line.spread : line.spread;
+        const homeSpread = line.favorite === 'home' ? -line.spread : line.spread;
 
         // Convert 'away'/'home' to actual team names; blank means "no pick",
         // which is what makes this row a tombstone.
@@ -9909,7 +10279,8 @@ async function syncPicksToGoogleSheets(displayToast = true) {
             winnerPick: winnerTeam,
             blazin: pickData.blazin || false,
             overUnder: pickData.overUnder || '',
-            totalLine: pickData.totalLine || ''
+            totalLine: pickData.totalLine || '',
+            frozenAt: pickData.frozenAt || ''
         };
     });
 
@@ -12507,6 +12878,18 @@ window.exportHistoricalData = function() {
                     line: pick.line,
                     winner: pick.winner
                 };
+                // This export is a field whitelist, so anything not copied here
+                // is lost when the season is archived.
+                if (pick.overUnder) mergedPicks[gameId].overUnder = pick.overUnder;
+                if (pick.totalLine) mergedPicks[gameId].totalLine = pick.totalLine;
+                if (pick.frozenAt) {
+                    mergedPicks[gameId].frozenAt = pick.frozenAt;
+                    mergedPicks[gameId].frozenSpread = pick.frozenSpread;
+                    mergedPicks[gameId].frozenFavorite = pick.frozenFavorite;
+                    if (pick.frozenOverUnder !== undefined) {
+                        mergedPicks[gameId].frozenOverUnder = pick.frozenOverUnder;
+                    }
+                }
                 if (pick.blazin) {
                     mergedPicks[gameId].blazin = true;
                     if (pick.blazinTeam) mergedPicks[gameId].blazinTeam = pick.blazinTeam;

@@ -6977,3 +6977,80 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
+
+/* --- Frozen lines ---------------------------------------------------------
+   A "frozen" pick is a pre-kickoff choice by the picker: the line is locked in
+   and the game is final for them. Deliberately styled apart from .game-locked,
+   which means the game itself has kicked off. Teal reads as a decision made;
+   red stays reserved for "you can no longer act". */
+
+.game-card.pick-frozen {
+    border-color: var(--accent-teal);
+    background: var(--bg-card);
+}
+
+.game-card.pick-frozen .picks-row {
+    pointer-events: none;
+    opacity: 0.85;
+}
+
+/* Frozen and locked at once: locked wins, since it is the harder stop. */
+.game-card.pick-frozen.game-locked {
+    border-color: var(--border-color);
+}
+
+.freeze-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.freeze-state.frozen {
+    background: var(--accent-teal);
+    color: #fff;
+}
+
+/* The line has moved under a riding pick - informational, not a warning. */
+.freeze-state.drifted {
+    background: transparent;
+    border: 1px dashed var(--accent-amber);
+    color: var(--accent-amber);
+    font-weight: 600;
+}
+
+.freeze-btn {
+    padding: 5px 11px;
+    border: 1px solid var(--accent-teal);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--accent-teal);
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.freeze-btn:hover:not(:disabled) {
+    background: var(--accent-teal);
+    color: #fff;
+}
+
+.freeze-btn:disabled {
+    border-color: var(--border-color);
+    color: var(--text-light);
+    cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+    .freeze-state,
+    .freeze-btn {
+        font-size: 0.63rem;
+    }
+}

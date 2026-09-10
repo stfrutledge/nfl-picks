@@ -181,7 +181,17 @@ function isBlankCell(value) {
  * Newer batch -> replace: the newest sync is the client's full state.
  */
 function foldPickRow(existing, row) {
-  if (!existing || row.timestamp > existing.timestamp) {
+  if (!existing) return row;
+
+  // A freeze is final. Once a row records one, a later row that does not carry
+  // it cannot undo it - which is what stops a second device or a stale tab
+  // re-syncing an unfrozen snapshot over a frozen pick.
+  const existingFrozen = !isBlankCell(existing.frozenAt);
+  const rowFrozen = !isBlankCell(row.frozenAt);
+  if (existingFrozen && !rowFrozen) return existing;
+  if (rowFrozen && !existingFrozen) return row;
+
+  if (row.timestamp > existing.timestamp) {
     return row;
   }
   if (row.timestamp < existing.timestamp) {
@@ -197,6 +207,7 @@ function foldPickRow(existing, row) {
   if (isBlankCell(merged.winnerOutcome)) merged.winnerOutcome = row.winnerOutcome;
   if (isBlankCell(merged.ouOutcome)) merged.ouOutcome = row.ouOutcome;
   merged.blazin = merged.blazin || row.blazin;
+  if (isBlankCell(merged.frozenAt)) merged.frozenAt = row.frozenAt;
   return merged;
 }
 
@@ -218,8 +229,22 @@ function readPickRow(row) {
     totalLine: row[12],
     lineOutcome: row[13] || '',
     winnerOutcome: row[14] || '',
-    ouOutcome: row[15] || ''
+    ouOutcome: row[15] || '',
+    frozenAt: row[16] || ''
   };
+}
+
+/**
+ * The line a row was graded against, recovered from its signed spread columns:
+ * the favourite is whichever side is laying the points.
+ */
+function lineFromRow(row) {
+  const away = Number(row.awaySpread);
+  const home = Number(row.homeSpread);
+  if (!isFinite(away) || !isFinite(home)) return null;
+  return home <= away
+    ? { spread: Math.abs(home), favorite: 'home' }
+    : { spread: Math.abs(away), favorite: 'away' };
 }
 
 /**
@@ -239,7 +264,7 @@ function sideOf(pickValue, away, home) {
 
 /** The client-facing shape of one collapsed pick. */
 function pickPayload(row) {
-  return {
+  const payload = {
     line: sideOf(row.linePick, row.away, row.home),
     winner: sideOf(row.winnerPick, row.away, row.home),
     blazin: row.blazin || false,
@@ -249,6 +274,19 @@ function pickPayload(row) {
     winnerOutcome: row.winnerOutcome || '',
     ouOutcome: row.ouOutcome || ''
   };
+
+  // A frozen pick carries the line it was frozen at, rebuilt from the spread
+  // columns, so the client keeps grading it at that number after a reload.
+  if (!isBlankCell(row.frozenAt)) {
+    const line = lineFromRow(row);
+    payload.frozenAt = row.frozenAt;
+    if (line) {
+      payload.frozenSpread = line.spread;
+      payload.frozenFavorite = line.favorite;
+    }
+  }
+
+  return payload;
 }
 
 /**
@@ -265,11 +303,17 @@ function savePicks(week, picker, picks) {
   let sheet = ss.getSheetByName('Backup');
   if (!sheet) {
     sheet = ss.insertSheet('Backup');
-    sheet.appendRow(['Timestamp', 'Week', 'Picker', 'Game', 'Away Team', 'Home Team', 'Away Spread', 'Home Spread', 'Line Pick', 'Winner Pick', 'Blazin', 'O/U Pick', 'O/U Line', 'Line Outcome', 'Winner Outcome', 'O/U Outcome']);
-    sheet.getRange(1, 1, 1, 16).setFontWeight('bold');
+    sheet.appendRow(['Timestamp', 'Week', 'Picker', 'Game', 'Away Team', 'Home Team', 'Away Spread', 'Home Spread', 'Line Pick', 'Winner Pick', 'Blazin', 'O/U Pick', 'O/U Line', 'Line Outcome', 'Winner Outcome', 'O/U Outcome', 'Frozen At']);
+    sheet.getRange(1, 1, 1, 17).setFontWeight('bold');
   } else {
-    // Check if sheet needs migration (add outcome columns if missing)
-    const headers = sheet.getRange(1, 1, 1, 16).getValues()[0];
+    // Check if sheet needs migration (add columns if missing)
+    const headers = sheet.getRange(1, 1, 1, 17).getValues()[0];
+    if (headers[16] !== 'Frozen At') {
+      // Column 17: the timestamp at which the picker froze this game's line.
+      // Blank means the pick rides the line, which is the default.
+      sheet.getRange(1, 17).setValue('Frozen At');
+      sheet.getRange(1, 17).setFontWeight('bold');
+    }
     if (headers[13] !== 'Line Outcome') {
       // Add the three new outcome columns
       sheet.getRange(1, 14).setValue('Line Outcome');
@@ -299,7 +343,8 @@ function savePicks(week, picker, picks) {
       pick.totalLine || '',
       '', // Line Outcome - populated when results come in
       '', // Winner Outcome - populated when results come in
-      ''  // O/U Outcome - populated when results come in
+      '', // O/U Outcome - populated when results come in
+      pick.frozenAt || ''
     ]);
     rowsAdded++;
   }
@@ -794,13 +839,25 @@ function calculateAndSaveOutcomes(week, gameKey, result) {
       const ouPick = backupData[i][11];
       const pickOULine = backupData[i][12] || overUnder;
 
+      // A frozen row was graded at its own line, not the game's current one, so
+      // score it against the spread stored on the row itself.
+      let rowSpread = spread;
+      let rowFavorite = favorite;
+      if (!isBlankCell(backupData[i][16])) {
+        const frozenLine = lineFromRow(readPickRow(backupData[i]));
+        if (frozenLine) {
+          rowSpread = frozenLine.spread;
+          rowFavorite = frozenLine.favorite;
+        }
+      }
+
       let lineOutcome = '';
       let winnerOutcome = '';
       let ouOutcome = '';
 
       // Calculate Line (ATS) outcome
-      if (linePick && spread) {
-        const atsWinner = calculateATSWinner(spread, favorite, result, awayTeam, homeTeam);
+      if (linePick && rowSpread) {
+        const atsWinner = calculateATSWinner(rowSpread, rowFavorite, result, awayTeam, homeTeam);
         if (atsWinner === 'push') {
           lineOutcome = 'push';
         } else {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFL Picks Dashboard</title>
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=82587afa">
+    <link rel="stylesheet" href="styles.css?v=51dc388c">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -491,6 +491,7 @@
                 <!-- Actions -->
                 <div class="picks-actions">
                     <button class="btn btn-secondary" id="clear-picks-btn">Clear My Picks</button>
+                    <button class="btn btn-secondary" id="freeze-all-btn" title="Lock in the current lines for every completed game">Freeze All Lines</button>
                     <div class="dropdown" id="quick-picks-dropdown">
                         <button class="btn btn-primary dropdown-toggle" id="quick-picks-btn">
                             Quick Picks <span class="dropdown-arrow">▼</span>
@@ -756,6 +757,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=78bb7458"></script>
+    <script src="app.js?v=5248dece"></script>
 </body>
 </html>

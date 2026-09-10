@@ -44,6 +44,28 @@ Endpoints beyond the originals:
 - **Google Sheet backup** rows are never deleted and have no season column, so from 2026 on the client writes/reads season-prefixed week keys (`2026_5`). Plain numeric week rows are 2025-season data and are ignored.
 - **Legacy stats workbook** (`GOOGLE_SHEETS_BASE_URL` + `WEEK_SHEET_GIDS`) is tagged with `LEGACY_SHEETS_SEASON` and isn't loaded when stale. It is not replaced each season — see "Standings" below. It stays only so past seasons up to `LEGACY_SHEETS_SEASON` can still be read.
 
+## Frozen lines
+
+A pick stores a **side** (`line: 'home'`), never a number, so by default it is graded against whatever the spread is at scoring time — take Seahawks -3 on Tuesday, and if the line moves to -6.5 by Sunday you are graded at -6.5. That is called **riding the line** and remains the default.
+
+A player may instead **freeze** a game, which snapshots the current line onto the pick (`frozenSpread`, `frozenFavorite`, `frozenAt`) and makes that game final. `lineForPick(game, pick)` resolves which line applies, and `atsWinnerForPick()` is what current-season scoring calls — the standings engine, the game cards and the scoring summary all go through it.
+
+**"Frozen" is not "locked."** Locked means the game has kicked off and nobody can edit it (`isGameLocked`, `.locked-badge`, "LOCKED"). Frozen is a choice the picker made beforehand. Keep the two words distinct in code and UI.
+
+Rules, all enforced in `freezeEligibility()`:
+
+- **Only a complete card can be frozen** — line + winner, matching `checkAllPicksComplete`, plus the over/under in the playoffs (the O/U picker only renders when `isPlayoff`; the Blazin' star occupies that slot otherwise).
+- **A freeze may happen any time before kickoff.** This deliberately rewards watching the lines.
+- **Freezing covers the whole card**, including the Blazin' star.
+- **A freeze must never strand the Blazin' allocation.** Because the star freezes too, `blazinReachableAfterFreezing()` refuses a freeze that would make five stars unreachable, and `freezeAllCompleteGames()` is blocked until all five are placed. Freeze-all otherwise freezes every complete game and reports how many were left riding.
+- **Never freeze without a usable spread** — that would store `undefined` and score as a push for ever (the bug fixed in `5a31244`).
+
+Persistence: the Backup sheet's `Away Spread`/`Home Spread` columns record **the line the pick is graded against**, so a frozen row carries its own number, plus a `Frozen At` column. `foldPickRow` in the Apps Script gives a frozen row precedence over any later row that lacks the freeze — the whole-week snapshot sync means a second device or stale tab could otherwise thaw a pick by accident. This stops accidents and casual reversal; it is **not tamper-proof**.
+
+`pickedSpread`/`pickedFavorite` are recorded on a riding pick for display only, so the card can show that the line has moved. They never affect scoring.
+
+Run `node test-line-freezing.js`.
+
 ## Standings
 
 Standings, the trend chart, last-3-week form and best week are **computed from picks + results** by `calculateStatsForWeeks(firstWeek, lastWeek)`, not read from a spreadsheet. `renderDashboard` switches to the computed path whenever `LEGACY_SHEETS_SEASON !== CURRENT_SEASON`, which is every season after 2025.
