@@ -4611,7 +4611,7 @@ function freezeEligibility(game, week = currentWeek, picker = currentPicker) {
     const pick = getPicksForGame(getPickerPicksForWeek(week, picker), game);
 
     if (isPickFrozen(pick)) {
-        return { canFreeze: false, reason: 'Already frozen' };
+        return { canFreeze: false, reason: 'Pick is already locked' };
     }
     if (isGameLocked(game, week)) {
         return { canFreeze: false, reason: 'Game has already started' };
@@ -4622,12 +4622,12 @@ function freezeEligibility(game, week = currentWeek, picker = currentPicker) {
     // Freezing at a missing spread would store undefined and score as a push
     // for ever - the failure mode fixed in 5a31244.
     if (!hasUsableSpread(game)) {
-        return { canFreeze: false, reason: 'No line available to freeze yet' };
+        return { canFreeze: false, reason: 'No line available to lock yet' };
     }
     if (blazinReachableAfterFreezing([pickKey(game)], week, picker) < MAX_BLAZIN_PICKS) {
         return {
             canFreeze: false,
-            reason: `Freezing this would leave you unable to make ${MAX_BLAZIN_PICKS} Blazin' picks`
+            reason: `Locking this would leave you unable to make ${MAX_BLAZIN_PICKS} Blazin' picks`
         };
     }
     return { canFreeze: true, reason: '' };
@@ -4706,11 +4706,11 @@ function freezeGameByKey(key) {
     const line = describeLine(game);
     const remaining = blazinRemaining();
     const starWarning = remaining > 0
-        ? `\n\nYou still have ${remaining} Blazin' 5 pick${remaining === 1 ? '' : 's'} to make. Freezing this game freezes its star too.`
+        ? `\n\nYou still have ${remaining} Blazin' 5 pick${remaining === 1 ? '' : 's'} to make. Locking this game locks its star too.`
         : '';
 
     const proceed = confirm(
-        `Freeze ${game.away} @ ${game.home} at ${line}?\n\n` +
+        `Lock ${game.away} @ ${game.home} at ${line}?\n\n` +
         'This game becomes final: you will not be able to change these picks, ' +
         'and you will be graded at this line however it moves.' + starWarning);
     if (!proceed) return false;
@@ -4719,7 +4719,7 @@ function freezeGameByKey(key) {
     savePicksToStorage(true);
     renderGames();
     renderScoringSummary();
-    showToast(`Frozen at ${line}`);
+    showToast(`Locked at ${line}`);
     return true;
 }
 
@@ -4745,7 +4745,7 @@ function freezeAllCompleteGames() {
         const used = countBlazinPicks(week, currentPicker);
         showToast(
             `Make all ${MAX_BLAZIN_PICKS} Blazin' picks first - you have ${used}. ` +
-            'Freezing the week would freeze the stars too.', 'warning');
+            'Locking the week would lock the stars too.', 'warning');
         return false;
     }
 
@@ -4757,17 +4757,17 @@ function freezeAllCompleteGames() {
 
     if (ready.length === 0) {
         showToast(notReady > 0
-            ? `No complete games to freeze - ${notReady} still need picks`
-            : 'Nothing left to freeze', 'warning');
+            ? `No complete games to lock - ${notReady} still need picks`
+            : 'Nothing left to lock', 'warning');
         return false;
     }
 
     const summary = notReady > 0
-        ? `Freeze ${ready.length} completed game${ready.length === 1 ? '' : 's'}? ` +
+        ? `Lock ${ready.length} completed pick${ready.length === 1 ? '' : 's'}? ` +
           `${notReady} game${notReady === 1 ? ' is' : 's are'} incomplete and will keep riding the line.`
-        : `Freeze all ${ready.length} game${ready.length === 1 ? '' : 's'} at their current lines?`;
+        : `Lock all ${ready.length} pick${ready.length === 1 ? '' : 's'} at their current lines?`;
 
-    if (!confirm(`${summary}\n\nFrozen games become final and cannot be changed.`)) {
+    if (!confirm(`${summary}\n\nLocked picks become final and cannot be changed.`)) {
         return false;
     }
 
@@ -4777,8 +4777,8 @@ function freezeAllCompleteGames() {
     renderScoringSummary();
 
     showToast(notReady > 0
-        ? `Froze ${ready.length} games. ${notReady} incomplete and still riding the line.`
-        : `Froze all ${ready.length} games.`);
+        ? `Locked ${ready.length} picks. ${notReady} incomplete and still riding the line.`
+        : `Locked all ${ready.length} picks.`);
     return true;
 }
 
@@ -8509,8 +8509,8 @@ function renderGames() {
                         <span class="location-stadium">${game.stadium}</span>
                     </div>
                     ${frozen ? `
-                        <span class="freeze-state frozen" title="Frozen ${gamePicks.frozenAt}">
-                            &#10052; Frozen at ${frozenLineLabel}
+                        <span class="freeze-state frozen" title="Locked ${gamePicks.frozenAt}">
+                            &#128274; Locked at ${frozenLineLabel}
                         </span>
                     ` : (ridingDrift ? `
                         <span class="freeze-state drifted" title="You picked ${ridingDrift}; the line has since moved">
@@ -8520,8 +8520,8 @@ function renderGames() {
                     ${freezeState ? `
                         <button class="freeze-btn" data-game-id="${game.id}" data-pick-key="${key}"
                                 ${freezeState.canFreeze ? '' : 'disabled'}
-                                title="${freezeState.canFreeze ? 'Lock in this line - the game becomes final' : freezeState.reason}">
-                            Freeze at ${describeLine(game)}
+                                title="${freezeState.canFreeze ? `Lock this pick at ${describeLine(game)} - the game becomes final` : freezeState.reason}">
+                            Lock Pick
                         </button>
                     ` : ''}
                     ${isPlayoff ? `

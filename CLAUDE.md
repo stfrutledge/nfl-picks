@@ -50,7 +50,7 @@ A pick stores a **side** (`line: 'home'`), never a number, so by default it is g
 
 A player may instead **freeze** a game, which snapshots the current line onto the pick (`frozenSpread`, `frozenFavorite`, `frozenAt`) and makes that game final. `lineForPick(game, pick)` resolves which line applies, and `atsWinnerForPick()` is what current-season scoring calls — the standings engine, the game cards and the scoring summary all go through it.
 
-**"Frozen" is not "locked."** Locked means the game has kicked off and nobody can edit it (`isGameLocked`, `.locked-badge`, "LOCKED"). Frozen is a choice the picker made beforehand. Keep the two words distinct in code and UI.
+**Naming: the UI says "lock", the code says "frozen".** Players see `Lock Pick`, `Locked at -3` and `Lock All Picks`, because that is the group's own word for it. Internally everything stays `frozen*` — `frozenAt`, `applyFreeze`, `freezeEligibility`, `.pick-frozen`, and the sheet's `Frozen At` column — which also keeps it distinct from `isGameLocked`, the unrelated "game has kicked off" state that owns `.locked-badge` and the "LOCKED" header badge. Don't rename the internals to match the labels; the two concepts are genuinely different and the code names are what keep them apart.
 
 Rules, all enforced in `freezeEligibility()`:
 

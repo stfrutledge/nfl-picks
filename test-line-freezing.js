@@ -353,7 +353,7 @@ await check('freezes the complete games and reports the incomplete ones', async 
     const state = h.api.__state().allPicks[WEEK].Stephen;
     assert.strictEqual(h.api.isPickFrozen(state.rams_seahawks), true);
     assert.strictEqual(h.api.isPickFrozen(state.saints_falcons), false, 'incomplete, still riding');
-    assert.match(h.toasts().pop().message, /5 games\. 1 incomplete/);
+    assert.match(h.toasts().pop().message, /Locked 5 picks. 1 incomplete/);
 });
 
 await check('does nothing when the user declines the confirm', async () => {
