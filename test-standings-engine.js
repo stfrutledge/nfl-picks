@@ -312,6 +312,47 @@ check('pushes show in the record strings and are excluded from the percentage', 
     assert.strictEqual(s.percentage, 100, 'one win from one decided pick');
 });
 
+section('Live regression: 2026 week 1, Patriots 10 @ Seahawks 13, Seahawks -3');
+
+// The real first game of 2026. Seahawks favoured by exactly 3 and won by
+// exactly 3, so every line pick pushes whichever side it took - which is why
+// the Line Picks tab legitimately shows no wins or losses for it.
+const WEEK1_REAL = [game(1, 'Patriots', 'Seahawks',
+    { completed: true, awayScore: 10, homeScore: 13, overUnder: 44.5 })];
+const WEEK1_PICKS = { 1: {
+    Stephen: { patriots_seahawks: { line: 'home', winner: 'home' } },
+    Dylan: { patriots_seahawks: { line: 'home', winner: 'home' } },
+    Sean: { patriots_seahawks: { line: 'away', winner: 'away' } },
+    Jason: { patriots_seahawks: { line: 'away', winner: 'away' } }
+} };
+
+check('winning by exactly the spread pushes both sides', () => {
+    const api = setup({ weeks: { 1: WEEK1_REAL }, picks: WEEK1_PICKS });
+    const computed = api.calculateStatsForWeeks(1, 1);
+    ['Stephen', 'Dylan', 'Sean', 'Jason'].forEach(p => {
+        assert.deepStrictEqual(computed[p].line, { wins: 0, losses: 0, pushes: 1 },
+            p + ' should push');
+    });
+});
+
+check('straight up still separates the pickers', () => {
+    const api = setup({ weeks: { 1: WEEK1_REAL }, picks: WEEK1_PICKS });
+    const rows = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'winner');
+    assert.strictEqual(rows.Stephen.wins, 1, 'took the Seahawks, who won');
+    assert.strictEqual(rows.Dylan.wins, 1);
+    assert.strictEqual(rows.Sean.losses, 1, 'took the Patriots');
+    assert.strictEqual(rows.Jason.losses, 1);
+    assert.strictEqual(rows.Stephen.percentage, 100);
+});
+
+check('a game nobody starred leaves the Blazin tab genuinely empty', () => {
+    // Not a bug: no B5 star on this game, so there is nothing to score.
+    const api = setup({ weeks: { 1: WEEK1_REAL }, picks: WEEK1_PICKS });
+    const rows = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'blazin');
+    assert.strictEqual(rows.Stephen.totalPicks, 0);
+    assert.strictEqual(rows.Stephen.percentage, null);
+});
+
 section('The week range the season standings cover');
 
 check('the range stops at the end of the regular season', () => {

@@ -2324,7 +2324,7 @@ function setupDarkMode() {
         showToast(newTheme === 'dark' ? 'Dark mode enabled' : 'Light mode enabled');
 
         // Re-render charts with new colors
-        if (dashboardData && currentCategory !== 'make-picks') {
+        if ((dashboardData || usingComputedStandings()) && currentCategory !== 'make-picks') {
             renderDashboard();
         }
     });
@@ -4648,6 +4648,17 @@ async function preloadSeasonSchedules() {
     await Promise.all(missing.map(week => loadWeekSchedule(week, false, true)));
 }
 
+/**
+ * True when standings are computed from picks + results rather than read from
+ * the legacy stats workbook - i.e. every season after LEGACY_SHEETS_SEASON.
+ *
+ * Guards must ask this rather than testing dashboardData, which is only ever
+ * populated by the workbook CSV and is null for a computed season.
+ */
+function usingComputedStandings() {
+    return LEGACY_SHEETS_SEASON !== CURRENT_SEASON;
+}
+
 /** The regular-season week range that currently has games to score. */
 function regularSeasonWeekRange() {
     const lastRegular = FIRST_PLAYOFF_WEEK - 1;
@@ -4695,7 +4706,9 @@ function calculatePlayoffStats() {
  * Render the full dashboard
  */
 function renderDashboard() {
-    if (!dashboardData) return;
+    // dashboardData only exists when the legacy workbook was loaded. A computed
+    // season has none and must still render, so bail only when there is neither.
+    if (!dashboardData && !usingComputedStandings()) return;
 
     let stats, weeklyData;
 
@@ -4703,7 +4716,7 @@ function renderDashboard() {
     // The stats workbook only exists for LEGACY_SHEETS_SEASON. From the season
     // after that, the same numbers are computed from picks + results instead,
     // so nobody has to hand-maintain a spreadsheet for the standings to work.
-    const computeLocally = LEGACY_SHEETS_SEASON !== CURRENT_SEASON;
+    const computeLocally = usingComputedStandings();
     const range = regularSeasonWeekRange();
     const computed = computeLocally ? calculateStatsForWeeks(range.first, range.last) : null;
     const useComputed = category => {
@@ -4782,9 +4795,14 @@ function renderDashboard() {
     // SECONDARY: Performance & Insights - render all panels
     renderStandingsTable(stats);
     renderTrendChart(weeklyData, currentSubcategory);
-    renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
+    // Lone wolf, universal agreement, group stats and favourites-vs-underdogs
+    // still come from the workbook, so they stay blank on a computed season
+    // until they get the same treatment as the standings table.
+    if (dashboardData) {
+        renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
+    }
     renderPatternsPanel();
-    if (dashboardData.groupOverall) {
+    if (dashboardData?.groupOverall) {
         renderGroupStats(dashboardData.groupOverall);
     }
 
@@ -4793,7 +4811,7 @@ function renderDashboard() {
     if (standingsChartContainer) {
         if (currentSubcategory === 'line') {
             standingsChartContainer.classList.remove('hidden');
-            renderFavUnderdogChart(dashboardData.favoritesVsUnderdogs);
+            renderFavUnderdogChart(dashboardData?.favoritesVsUnderdogs);
         } else {
             standingsChartContainer.classList.add('hidden');
         }
