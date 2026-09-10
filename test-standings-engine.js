@@ -312,6 +312,48 @@ check('pushes show in the record strings and are excluded from the percentage', 
     assert.strictEqual(s.percentage, 100, 'one win from one decided pick');
 });
 
+section('A missing spread is unscored, never a push');
+
+// calculateATSWinner returns 'push' when game.spread is missing, because both
+// NaN comparisons fail. Spreads load asynchronously, so scoring without one
+// turned every line pick into a push and read as broken maths.
+check('line picks are not scored while the spread is missing', () => {
+    const noSpread = { id: 1, away: 'Rams', home: 'Seahawks', favorite: 'home',
+        completed: true, awayScore: 10, homeScore: 20 }; // no spread field
+    const api = setup({
+        weeks: { 1: [noSpread] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home', winner: 'home' } } } }
+    });
+    const s = api.calculateStatsForWeeks(1, 1).Stephen;
+    assert.deepStrictEqual(s.line, { wins: 0, losses: 0, pushes: 0 },
+        'unscored, not a push');
+    assert.deepStrictEqual(s.winner, { wins: 1, losses: 0, pushes: 0 },
+        'straight up needs no spread and must still score');
+});
+
+check('a non-numeric spread is also treated as missing', () => {
+    const bad = { id: 1, away: 'Rams', home: 'Seahawks', favorite: 'home', spread: '',
+        completed: true, awayScore: 10, homeScore: 20 };
+    const api = setup({
+        weeks: { 1: [bad] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home' } } } }
+    });
+    assert.deepStrictEqual(api.calculateStatsForWeeks(1, 1).Stephen.line,
+        { wins: 0, losses: 0, pushes: 0 });
+});
+
+check('a zero spread is real and still scores', () => {
+    // A pick em is spread 0, which is falsy - it must not be mistaken for missing.
+    const pickem = { id: 1, away: 'Rams', home: 'Seahawks', favorite: 'home', spread: 0,
+        completed: true, awayScore: 10, homeScore: 20 };
+    const api = setup({
+        weeks: { 1: [pickem] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home' } } } }
+    });
+    assert.deepStrictEqual(api.calculateStatsForWeeks(1, 1).Stephen.line,
+        { wins: 1, losses: 0, pushes: 0 });
+});
+
 section('Live regression: 2026 week 1, Patriots 10 @ Seahawks 13, Seahawks -3');
 
 // The real first game of 2026. Seahawks favoured by exactly 3 and won by

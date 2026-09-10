@@ -4223,6 +4223,12 @@ async function loadFromGoogleSheets() {
             spreadsLoading = false;
             renderGames();
 
+            // Line picks cannot be scored without spreads, so the standings
+            // have to be recomputed now that they are in.
+            if (currentCategory === 'standings') {
+                renderDashboard();
+            }
+
             // Re-render scoring summary after picks are loaded (for Super Bowl picks summary)
             if (currentCategory === 'make-picks' || currentCategory === 'standings') {
                 renderScoringSummary();
@@ -4478,6 +4484,23 @@ function getGameResult(game, weekResults) {
     return null;
 }
 
+/**
+ * Whether a game carries a spread we can actually score a line pick against.
+ *
+ * Spreads load asynchronously (prefetchAndSaveSpreads, and the Spreads sheet),
+ * so a current-season game can be rendered before its spread exists. Scoring
+ * anyway makes calculateATSWinner return 'push' for every game, which reads as
+ * "the maths is broken" rather than "the data has not arrived".
+ */
+function hasUsableSpread(game) {
+    const raw = game?.spread;
+    // Empty string must not slip through: Number('') is 0, which would be
+    // scored as a pick em. A real 0 spread IS valid, so this cannot just test
+    // truthiness either.
+    if (raw === null || raw === undefined || raw === '') return false;
+    return Number.isFinite(Number(raw));
+}
+
 function emptyRecord() {
     return { wins: 0, losses: 0, pushes: 0 };
 }
@@ -4530,9 +4553,12 @@ function calculateStatsForWeeks(firstWeek, lastWeek) {
                 const result = getGameResult(game, weekResults);
                 if (!result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = hasUsableSpread(game)
+                    ? calculateATSWinner(game, result) : null;
 
-                if (pick.line) {
+                // No spread yet means unscored, not a push. Counting it would
+                // show every line pick as a push until spreads load.
+                if (pick.line && atsWinner) {
                     const bucket = atsWinner === 'push' ? 'pushes'
                         : (pick.line === atsWinner ? 'wins' : 'losses');
                     weekly.line[bucket]++;
@@ -4645,7 +4671,9 @@ async function preloadSeasonSchedules() {
     if (missing.length === 0) return;
 
     console.log(`[Standings] Loading ${missing.length} week schedule(s) for season stats...`);
-    await Promise.all(missing.map(week => loadWeekSchedule(week, false, true)));
+    // Spreads included: without them calculateATSWinner scores every line pick
+    // as a push, so skipping the spread load here silently broke ATS standings.
+    await Promise.all(missing.map(week => loadWeekSchedule(week, false)));
 }
 
 /**
@@ -8016,12 +8044,14 @@ function renderGames() {
                 };
             }
             if (result) {
-                const atsWinner = calculateATSWinner(game, result);
-                // Line pick results
-                if (linePick === 'away') {
+                const atsWinner = hasUsableSpread(game)
+                    ? calculateATSWinner(game, result) : null;
+                // Line pick results - left blank while the spread is missing,
+                // rather than marked as a push.
+                if (linePick === 'away' && atsWinner) {
                     lineAwayResult = atsWinner === 'push' ? 'push' : (atsWinner === 'away' ? 'correct' : 'incorrect');
                 }
-                if (linePick === 'home') {
+                if (linePick === 'home' && atsWinner) {
                     lineHomeResult = atsWinner === 'push' ? 'push' : (atsWinner === 'home' ? 'correct' : 'incorrect');
                 }
                 // Winner pick results
@@ -9011,6 +9041,11 @@ const InsightsManager = {
  */
 function calculateATSWinner(game, result) {
     if (!result) return null;
+
+    // NOTE: with a missing or non-numeric game.spread both comparisons below
+    // are NaN and this returns 'push' - a silent wrong answer, not an error.
+    // Check hasUsableSpread(game) before scoring a line pick on live data,
+    // where spreads arrive asynchronously and may not have landed yet.
 
     const awayScoreAdjusted = result.awayScore + (game.favorite === 'home' ? game.spread : -game.spread);
     const homeScoreAdjusted = result.homeScore + (game.favorite === 'away' ? game.spread : -game.spread);
