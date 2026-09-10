@@ -15,6 +15,41 @@ const HEADER = ['Timestamp', 'Week', 'Picker', 'Game', 'Away Team', 'Home Team',
     'Away Spread', 'Home Spread', 'Line Pick', 'Winner Pick', 'Blazin',
     'O/U Pick', 'O/U Line', 'Line Outcome', 'Winner Outcome', 'O/U Outcome'];
 
+/**
+ * A sheet stub that records writes, so savePicks can be observed.
+ * Rows are shared with the caller, so an upsert is visible in place.
+ */
+function writableSheet(rows) {
+    return {
+        getDataRange: () => ({ getValues: () => rows }),
+        getRange: (row, col, numRows, numCols) => ({
+            setValues: vals => {
+                // 1-indexed row, and only whole-row writes are used here.
+                if (col === 1 && numCols >= 17) rows[row - 1] = vals[0].slice();
+            },
+            setValue() {},
+            setFontWeight() {},
+            getValues: () => [rows[row - 1] ? rows[row - 1].slice(col - 1, col - 1 + numCols) : []]
+        }),
+        appendRow: vals => rows.push(vals.slice())
+    };
+}
+
+function loadWritable(rows) {
+    const sheet = writableSheet(rows);
+    const SpreadsheetApp = {
+        getActiveSpreadsheet: () => ({
+            getSheetByName: name => (name === 'Backup' ? sheet : null),
+            insertSheet: () => sheet
+        })
+    };
+    const src = fs.readFileSync(path.join(__dirname, 'google-apps-script-simple.js'), 'utf8');
+    return new Function('SpreadsheetApp', 'ContentService', 'Logger',
+        src + ';return { savePicks, getAllPicks };')(SpreadsheetApp,
+        { createTextOutput: () => ({ setMimeType: () => ({}) }), MimeType: { JSON: 'json' } },
+        { log() {} });
+}
+
 function load(sheets) {
     const SpreadsheetApp = {
         getActiveSpreadsheet: () => ({
@@ -175,6 +210,70 @@ check('cleared flags are filtered by season too', () => {
             ['2026_1', 'Dylan', 'Yes', BATCH_1]]
     });
     assert.deepStrictEqual(api.getAllPicks(2026).cleared, { '2026_1': { Dylan: true } });
+});
+
+section('savePicks keeps one row per pick');
+
+// It used to append, so the whole-week snapshot added 16 rows per edit and
+// every read pulled the lot through getDataRange(). Upserting bounds the
+// sheet at one row per week/picker/game.
+
+check('a repeated sync updates in place instead of appending', () => {
+    const rows = [HEADER.slice()];
+    const api = loadWritable(rows);
+    const pick = {
+        gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
+        awaySpread: 3, homeSpread: -3, linePick: 'Seahawks', winnerPick: 'Seahawks'
+    };
+
+    api.savePicks('2026_5', 'Stephen', [pick]);
+    assert.strictEqual(rows.length, 2, 'header plus one pick');
+
+    api.savePicks('2026_5', 'Stephen', [pick]);
+    assert.strictEqual(rows.length, 2, 'still one row, updated in place');
+});
+
+check('a changed pick overwrites its own row', () => {
+    const rows = [HEADER.slice()];
+    const api = loadWritable(rows);
+
+    api.savePicks('2026_5', 'Stephen', [{
+        gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
+        awaySpread: 3, homeSpread: -3, linePick: 'Seahawks', winnerPick: 'Seahawks'
+    }]);
+    api.savePicks('2026_5', 'Stephen', [{
+        gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
+        awaySpread: 3, homeSpread: -3, linePick: 'Rams', winnerPick: 'Rams'
+    }]);
+
+    assert.strictEqual(rows.length, 2);
+    assert.strictEqual(rows[1][8], 'Rams', 'the row now holds the new pick');
+});
+
+check('different pickers and games get their own rows', () => {
+    const rows = [HEADER.slice()];
+    const api = loadWritable(rows);
+    const mk = id => ({ gameId: id, away: 'A', home: 'B', awaySpread: 1, homeSpread: -1 });
+
+    api.savePicks('2026_5', 'Stephen', [mk('a_b'), mk('c_d')]);
+    api.savePicks('2026_5', 'Dylan', [mk('a_b')]);
+    api.savePicks('2026_6', 'Stephen', [mk('a_b')]);
+
+    assert.strictEqual(rows.length, 5, 'header + 4 distinct picks');
+});
+
+check('outcomes already written are not wiped by a re-sync', () => {
+    // calculateAndSaveOutcomes fills columns 14-16 separately.
+    const rows = [HEADER.slice()];
+    const api = loadWritable(rows);
+    const pick = { gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
+        awaySpread: 3, homeSpread: -3, linePick: 'Seahawks' };
+
+    api.savePicks('2026_5', 'Stephen', [pick]);
+    rows[1][13] = 'push';   // Line Outcome, set by the results pass
+    api.savePicks('2026_5', 'Stephen', [pick]);
+
+    assert.strictEqual(rows[1][13], 'push', 'the outcome survived');
 });
 
 section('Diagnostics report the raw rows');

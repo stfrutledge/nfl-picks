@@ -11,7 +11,11 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCHuKNnwrPzu1n
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
-const SYNC_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before syncing
+// Wait this long after the last change before syncing. Long enough that
+// clicking through a slate is one write rather than one per pick; short enough
+// that little is outstanding at any moment. flushPendingSync() covers the tab
+// being closed or backgrounded inside the window.
+const SYNC_DEBOUNCE_MS = 5000;
 
 let dashboardData = null;
 let currentCategory = 'make-picks';
@@ -3807,6 +3811,16 @@ function updateAdminButtons() {
 function setupPicksActions() {
     document.getElementById('clear-picks-btn')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('freeze-all-btn')?.addEventListener('click', freezeAllCompleteGames);
+
+    // A longer debounce means more can be outstanding when someone closes the
+    // tab or switches away, and unsynced picks would be overwritten by the
+    // backup on the next load. visibilitychange is the reliable hook for this;
+    // beforeunload cannot be trusted to complete a fetch.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            flushPendingSync();
+        }
+    });
     document.getElementById('clear-picks-btn-mobile')?.addEventListener('click', clearCurrentPickerPicks);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
     document.getElementById('randomize-picks-btn')?.addEventListener('click', () => {
@@ -10251,6 +10265,19 @@ function randomizePicks() {
  * @param {boolean} showSyncToast - Whether to show a toast on successful sync
  * @param {boolean} skipSync - If true, skip syncing to Google Sheets (used when loading from backup)
  */
+// Signature of the last payload successfully sent, per week and picker, so an
+// unchanged slate is not written again. Re-renders, picker switches and
+// background loads can all trigger a save without anything having changed.
+const lastSyncedSignature = {};
+
+/** Send any pending sync now instead of waiting out the debounce. */
+function flushPendingSync() {
+    if (!pendingSyncTimeout) return;
+    clearTimeout(pendingSyncTimeout);
+    pendingSyncTimeout = null;
+    syncPicksToGoogleSheets(false);
+}
+
 function savePicksToStorage(showSyncToast = false, skipSync = false) {
     localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
 
@@ -10330,6 +10357,15 @@ async function syncPicksToGoogleSheets(displayToast = true) {
         };
     });
 
+    // Nothing to do if this is byte-for-byte what was last written. Without
+    // this, a couple of clicks a few seconds apart write the whole week twice.
+    const signature = JSON.stringify(formattedPicks);
+    const signatureKey = `${currentWeek}|${currentPicker}`;
+    if (lastSyncedSignature[signatureKey] === signature) {
+        console.log(`[Sync] Week ${currentWeek} unchanged since last sync, skipping`);
+        return;
+    }
+
     const payload = {
         week: toSheetWeek(currentWeek),
         picker: currentPicker,
@@ -10362,6 +10398,9 @@ async function syncPicksToGoogleSheets(displayToast = true) {
         }
 
         if (result.success) {
+            // Only remember it once the write actually landed, so a failure
+            // retries rather than being skipped as a duplicate.
+            lastSyncedSignature[signatureKey] = signature;
             console.log('[Sync] Picks synced to Google Sheets');
             if (displayToast) {
                 showToast('Picks saved to Google Sheets');

@@ -178,6 +178,38 @@ await check('a pick key matching no game is left out of the payload', async () =
     assert.ok(!body.picks.some(p => p.gameId === '1'), 'the orphan key is not written');
 });
 
+section('An unchanged slate is not written again');
+
+// The whole-week snapshot means every sync writes a row per game. Without a
+// guard, two clicks a few seconds apart write the entire week twice, and the
+// sheet grows for no informational gain.
+
+await check('a second sync with the same picks is skipped', async () => {
+    const t = setup({ picks: { rams_seahawks: { line: 'home', winner: 'home' } } });
+    await t.api.syncPicksToGoogleSheets(false);
+    const first = t.sent.filter(r => r.body && r.body.picks).length;
+    assert.strictEqual(first, 1);
+
+    await t.api.syncPicksToGoogleSheets(false);
+    assert.strictEqual(
+        t.sent.filter(r => r.body && r.body.picks).length, first,
+        'nothing changed, so nothing was written');
+});
+
+await check('a real change still syncs', async () => {
+    const t = setup({ picks: { rams_seahawks: { line: 'home', winner: 'home' } } });
+    await t.api.syncPicksToGoogleSheets(false);
+
+    t.api.__setState({ allPicks: { 5: { Stephen: {
+        rams_seahawks: { line: 'away', winner: 'away' } } } } });
+    await t.api.syncPicksToGoogleSheets(false);
+
+    const bodies = t.sent.filter(r => r.body && r.body.picks);
+    assert.strictEqual(bodies.length, 2, 'the changed slate was written');
+    const row = bodies[1].body.picks.find(p => p.gameId === 'rams_seahawks');
+    assert.strictEqual(row.linePick, 'Rams');
+});
+
 section('The week key stays season-scoped');
 
 await check('the sheet week is season-prefixed', async () => {
