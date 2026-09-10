@@ -8738,8 +8738,15 @@ function handlePickSelect(e) {
     // Toggle selection
     if (isDeselecting) {
         delete allPicks[currentWeek][currentPicker][key][pickType];
-        // Clean up empty game object
-        if (Object.keys(allPicks[currentWeek][currentPicker][key]).length === 0) {
+
+        // Clean up a game object that holds no actual picks any more. Checking
+        // for real pick fields rather than an empty object matters because
+        // pickedSpread/pickedFavorite are bookkeeping, not picks - left behind
+        // they would keep a fully deselected game looking like a picked one.
+        const remaining = allPicks[currentWeek][currentPicker][key];
+        const stillPicked = remaining.line || remaining.winner
+            || remaining.overUnder || remaining.blazin;
+        if (!stillPicked) {
             delete allPicks[currentWeek][currentPicker][key];
         }
     } else {
@@ -8808,9 +8815,39 @@ function handlePickSelect(e) {
 
     // Update Blazin' 5 star buttons (enable/disable based on line picks)
     updateBlazinStarStates();
+    updateFreezeControls();
 
     // Update scoring summary
     renderScoringSummary();
+}
+
+/**
+ * Refresh the Lock Pick buttons in place.
+ *
+ * renderGames works out each button's state once, when the card is drawn, and
+ * handlePickSelect deliberately does NOT re-render - it updates the individual
+ * buttons it touched. So without this a Lock button keeps whatever state it had
+ * at draw time: completing a card leaves it stuck disabled, and emptying one
+ * leaves it stuck enabled.
+ *
+ * Starring a game can change OTHER cards' eligibility too, via the Blazin'
+ * allocation guard, so every button is recomputed rather than just one.
+ */
+function updateFreezeControls() {
+    const buttons = document.querySelectorAll('.freeze-btn');
+    if (buttons.length === 0) return;
+
+    const weekGames = getGamesForWeek(currentWeek);
+    buttons.forEach(btn => {
+        const game = weekGames.find(g => pickKey(g) === btn.dataset.pickKey);
+        if (!game) return;
+
+        const { canFreeze, reason } = freezeEligibility(game, currentWeek, currentPicker);
+        btn.disabled = !canFreeze;
+        btn.title = canFreeze
+            ? `Lock this pick at ${describeLine(game)} - the game becomes final`
+            : reason;
+    });
 }
 
 /**
@@ -8955,6 +8992,10 @@ function handleOUSelect(e) {
         setTimeout(() => btn.classList.remove('just-selected'), 400);
     }
 
+    // An O/U pick is part of a complete card in the playoffs, so it can change
+    // whether this game may be locked.
+    updateFreezeControls();
+
     // Update scoring summary
     renderScoringSummary();
 }
@@ -9020,6 +9061,8 @@ function handleBlazinToggle(e) {
 
     // Enable/disable the other star buttons based on the new count
     updateBlazinStarStates();
+    // A star can make another card ineligible via the Blazin' allocation guard.
+    updateFreezeControls();
 
     // Save to localStorage
     savePicksToStorage();

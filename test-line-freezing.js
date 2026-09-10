@@ -31,7 +31,7 @@ function node() {
     };
 }
 
-function makeAppEnv({ confirms = true, withDom = false } = {}) {
+function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {}) {
     const store = new Map();
     const toasts = [];
     const posts = [];
@@ -47,7 +47,7 @@ function makeAppEnv({ confirms = true, withDom = false } = {}) {
             addEventListener: () => {},
             getElementById: () => (withDom ? node() : null),
             querySelector: () => (withDom ? node() : null),
-            querySelectorAll: () => [],
+            querySelectorAll: sel => (sel === '.freeze-btn' ? freezeButtons : []),
             createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {}, remove() {} }),
             head: { appendChild: () => {} },
             body: { appendChild: () => {}, classList: { add() {}, remove() {}, toggle() {} } },
@@ -95,6 +95,7 @@ function makeAppEnv({ confirms = true, withDom = false } = {}) {
         calculateStatsForWeeks, standingsFromComputed, pickKey, countBlazinPicks,
         renderGames, renderScoringSummary,
         isConfirmSuppressed, suppressConfirm, requestConfirmation,
+        handlePickSelect, updateFreezeControls,
         syncPicksToGoogleSheets,
         exportHistoricalData: window.exportHistoricalData,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
@@ -125,8 +126,8 @@ function game(id, away, home, extra = {}) {
 
 const WEEK = 5;
 
-function setup({ games, picks = {}, week = WEEK, confirms = true, withDom = false } = {}) {
-    const h = makeAppEnv({ confirms, withDom });
+function setup({ games, picks = {}, week = WEEK, confirms = true, withDom = false, freezeButtons = [] } = {}) {
+    const h = makeAppEnv({ confirms, withDom, freezeButtons });
     h.api.NFL_GAMES_BY_WEEK[week] = games;
     h.api.__setState({
         currentWeek: week, currentPicker: 'Stephen',
@@ -394,6 +395,74 @@ await check('the archive keeps the frozen fields', async () => {
     const text = typeof dump === 'string' ? dump : JSON.stringify(dump);
     assert.match(text, /frozenAt/, 'frozenAt survives archiving');
     assert.match(text, /frozenSpread/);
+});
+
+section('The Lock button tracks the picks');
+
+// The bug this exists for: renderGames computes each Lock button once, and
+// handlePickSelect updates individual buttons rather than re-rendering, so
+// the Lock button kept its draw-time state. Picking, deselecting and picking
+// again left it stuck.
+
+function clickPick(api, game, pickType, team) {
+    api.handlePickSelect({
+        preventDefault() {}, stopPropagation() {},
+        currentTarget: {
+            dataset: {
+                gameId: String(game.id),
+                pickKey: `${game.away.toLowerCase()}_${game.home.toLowerCase()}`,
+                pickType, team
+            },
+            classList: { add() {}, remove() {}, contains: () => false }
+        }
+    });
+}
+
+await check('eligibility recovers after pick, deselect, pick again', async () => {
+    const games = sixGames();
+    const h = setup({ games });
+    const game = games[0];
+
+    // Home is the favourite, so this auto-picks the winner too - clicking the
+    // winner as well would toggle it straight back off.
+    clickPick(h.api, game, 'line', 'home');
+    assert.strictEqual(h.api.freezeEligibility(game).canFreeze, true, 'after picking');
+
+    clickPick(h.api, game, 'line', 'home');    // deselect
+    assert.strictEqual(h.api.freezeEligibility(game).canFreeze, false, 'while incomplete');
+
+    clickPick(h.api, game, 'line', 'home');    // pick again
+    assert.strictEqual(h.api.freezeEligibility(game).canFreeze, true,
+        'must be lockable again');
+});
+
+await check('a fully deselected game leaves no phantom pick behind', async () => {
+    // pickedSpread/pickedFavorite are bookkeeping, not picks; if they linger
+    // the game still looks picked to everything downstream.
+    const games = sixGames();
+    const h = setup({ games });
+
+    clickPick(h.api, games[0], 'line', 'away');   // away is the underdog: no auto-winner
+    assert.ok(h.api.__state().allPicks[WEEK].Stephen.rams_seahawks, 'pick exists');
+
+    clickPick(h.api, games[0], 'line', 'away');   // deselect it again
+    assert.strictEqual(
+        h.api.__state().allPicks[WEEK].Stephen.rams_seahawks, undefined,
+        'the entry is gone, not left holding pickedSpread');
+});
+
+await check('updateFreezeControls refreshes button state in place', async () => {
+    const games = sixGames();
+    const btn = { dataset: { pickKey: 'rams_seahawks' }, disabled: true, title: '' };
+    const h = setup({ games, freezeButtons: [btn] });
+
+    // No manual refresh: handlePickSelect must update the buttons itself.
+    clickPick(h.api, games[0], 'line', 'home');   // auto-picks the winner too
+    assert.strictEqual(btn.disabled, false, 'enabled once the card is complete');
+
+    clickPick(h.api, games[0], 'line', 'home');   // deselect
+    assert.strictEqual(btn.disabled, true, 'disabled again once incomplete');
+    assert.match(btn.title, /Make all picks/);
 });
 
 section("Don't show this again");
