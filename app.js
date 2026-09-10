@@ -8293,6 +8293,25 @@ function renderGames() {
         // Game is locked if: isGameLocked returns true OR game is final from live data
         const locked = isGameLocked(game) || isFinal;
 
+        // Frozen state. "Frozen" is a pre-kickoff choice by the picker; "locked"
+        // is the game having started. A frozen card is read-only either way.
+        const frozen = isPickFrozen(gamePicks);
+        const readOnly = locked || frozen;
+        const frozenLineLabel = frozen
+            ? describeLine({ ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite })
+            : '';
+        const freezeState = (locked || frozen || isHistoricalWeek || isHistoricalSeason())
+            ? null
+            : freezeEligibility(game, currentWeek, currentPicker);
+
+        // Line drift, for a riding pick whose line has moved since it was made.
+        const ridingDrift = (!frozen && !locked && hasLinePick
+                && hasUsableLine(gamePicks.pickedSpread) && hasUsableSpread(game)
+                && (Number(gamePicks.pickedSpread) !== Number(game.spread)
+                    || gamePicks.pickedFavorite !== game.favorite))
+            ? describeLine({ ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite })
+            : '';
+
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
         const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
 
@@ -8417,25 +8436,6 @@ function renderGames() {
                     </span>
                 </div>`;
         }
-
-        // Frozen state. "Frozen" is a pre-kickoff choice by the picker; "locked"
-        // is the game having started. A frozen card is read-only either way.
-        const frozen = isPickFrozen(gamePicks);
-        const readOnly = locked || frozen;
-        const frozenLineLabel = frozen
-            ? describeLine({ ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite })
-            : '';
-        const freezeState = (locked || frozen || isHistoricalWeek || isHistoricalSeason())
-            ? null
-            : freezeEligibility(game, currentWeek, currentPicker);
-
-        // Line drift, for a riding pick whose line has moved since it was made.
-        const ridingDrift = (!frozen && !locked && hasLinePick
-                && hasUsableLine(gamePicks.pickedSpread) && hasUsableSpread(game)
-                && (Number(gamePicks.pickedSpread) !== Number(game.spread)
-                    || gamePicks.pickedFavorite !== game.favorite))
-            ? describeLine({ ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite })
-            : '';
 
         // Blazin star button - disabled if locked, no line pick, or already at 5 and not already selected
         const canToggleBlazin = !readOnly && hasLinePick && (isBlazin || blazinCount < MAX_BLAZIN_PICKS);

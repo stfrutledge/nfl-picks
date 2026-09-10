@@ -20,7 +20,18 @@ const SHEET = fs.readFileSync(path.join(__dirname, 'google-apps-script-simple.js
 
 /* ------------------------------------------------------------------ app.js */
 
-function makeAppEnv({ confirms = true } = {}) {
+/** A node stub complete enough for renderGames to run against. */
+function node() {
+    return {
+        innerHTML: '', textContent: '', className: '', style: {}, disabled: false, title: '',
+        dataset: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        appendChild() {}, remove() {}, setAttribute() {}, removeAttribute() {},
+        addEventListener() {}, closest: () => null, querySelector: () => null,
+        querySelectorAll: () => [], getAttribute: () => null, focus() {}, click() {}
+    };
+}
+
+function makeAppEnv({ confirms = true, withDom = false } = {}) {
     const store = new Map();
     const toasts = [];
     const posts = [];
@@ -33,8 +44,10 @@ function makeAppEnv({ confirms = true } = {}) {
             get length() { return store.size; }
         },
         document: {
-            addEventListener: () => {}, getElementById: () => null,
-            querySelector: () => null, querySelectorAll: () => [],
+            addEventListener: () => {},
+            getElementById: () => (withDom ? node() : null),
+            querySelector: () => (withDom ? node() : null),
+            querySelectorAll: () => [],
             createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {}, remove() {} }),
             head: { appendChild: () => {} },
             body: { appendChild: () => {}, classList: { add() {}, remove() {}, toggle() {} } },
@@ -46,7 +59,12 @@ function makeAppEnv({ confirms = true } = {}) {
             if (body) posts.push(body);
             return { ok: true, json: async () => ({ success: true }), text: async () => '{"success":true}' };
         },
-        setTimeout, clearTimeout, setInterval, clearInterval,
+        setTimeout,
+        clearTimeout,
+        // renderGames starts the per-game countdown timers; a live interval
+        // would keep the process alive for ever once a card has rendered.
+        setInterval: () => 0,
+        clearInterval: () => {},
         console: { log() {}, warn() {}, error() {}, info() {} },
         performance: { now: () => 0 },
         alert() {},
@@ -75,6 +93,7 @@ function makeAppEnv({ confirms = true } = {}) {
         blazinReachableAfterFreezing, freezeEligibility, freezableGames,
         applyFreeze, freezeGameByKey, freezeAllCompleteGames, describeLine,
         calculateStatsForWeeks, standingsFromComputed, pickKey, countBlazinPicks,
+        renderGames, renderScoringSummary,
         syncPicksToGoogleSheets,
         exportHistoricalData: window.exportHistoricalData,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
@@ -105,8 +124,8 @@ function game(id, away, home, extra = {}) {
 
 const WEEK = 5;
 
-function setup({ games, picks = {}, week = WEEK, confirms = true } = {}) {
-    const h = makeAppEnv({ confirms });
+function setup({ games, picks = {}, week = WEEK, confirms = true, withDom = false } = {}) {
+    const h = makeAppEnv({ confirms, withDom });
     h.api.NFL_GAMES_BY_WEEK[week] = games;
     h.api.__setState({
         currentWeek: week, currentPicker: 'Stephen',
@@ -376,6 +395,48 @@ await check('the archive keeps the frozen fields', async () => {
     assert.match(text, /frozenSpread/);
 });
 
+section('The card renders');
+
+// The bug this exists for: the frozen-state consts were declared BELOW the
+// card-class list that reads them, so renderGames threw 'Cannot access
+// frozen before initialization' on every render and the app showed
+// "Failed to Load Data". Every other test exercised the scoring engine
+// directly and never rendered a card, so nothing caught it.
+
+await check('renderGames does not throw with a riding pick', async () => {
+    const h = setup({
+        games: sixGames(),
+        picks: { rams_seahawks: complete() },
+        withDom: true
+    });
+    h.api.renderGames();
+});
+
+await check('renderGames does not throw with a frozen pick', async () => {
+    const games = sixGames();
+    const h = setup({ games, picks: { rams_seahawks: complete() }, withDom: true });
+    h.api.applyFreeze(games[0]);
+    h.api.renderGames();
+});
+
+await check('renderGames does not throw when the line has drifted', async () => {
+    const games = sixGames();
+    const h = setup({
+        games,
+        picks: { rams_seahawks: complete({ pickedSpread: 3, pickedFavorite: 'home' }) },
+        withDom: true
+    });
+    games[0].spread = 7;   // moved since the pick
+    h.api.renderGames();
+});
+
+await check('renderScoringSummary does not throw with a frozen pick', async () => {
+    const games = sixGames();
+    const h = setup({ games, picks: { rams_seahawks: complete() }, withDom: true });
+    h.api.applyFreeze(games[0]);
+    h.api.renderScoringSummary();
+});
+
 section('The sheet reader treats a freeze as final');
 
 await check('a frozen row outranks a later unfrozen one', async () => {
@@ -415,5 +476,8 @@ if (failures > 0) {
     process.exit(1);
 }
 console.log(`\nALL ${total} CHECKS PASSED\n`);
+// Rendering a card schedules timers inside app.js, which would otherwise keep
+// the process alive after the suite has finished. Exit explicitly.
+process.exit(0);
 
 })();
