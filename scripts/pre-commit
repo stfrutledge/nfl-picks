@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Keeps index.html's asset stamps in step with whatever is being committed, so
+# a deploy can never ship a changed app.js behind an unchanged URL.
+#
+# Install (git hooks are not version controlled, so this has to be copied):
+#     cp scripts/pre-commit .git/hooks/pre-commit
+#     chmod +x .git/hooks/pre-commit
+#
+# The stamper is idempotent - it only rewrites index.html when an asset's
+# content hash actually changed - so this is a no-op on most commits.
+#
+# If it fails, the commit is blocked rather than silently shipping stale
+# stamps. Bypass with `git commit --no-verify` if you really need to.
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "pre-commit: node not found, skipping asset stamping" >&2
+    exit 0
+fi
+
+node scripts/stamp-assets.js || exit 1
+
+# Only stage index.html if the stamper actually changed it.
+if ! git diff --quiet -- index.html; then
+    git add index.html
+    echo "pre-commit: index.html asset stamps updated and staged"
+fi
+
+exit 0

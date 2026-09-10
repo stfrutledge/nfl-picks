@@ -4,6 +4,21 @@
 
 - **Google Sheet (Picks Backup)**: https://docs.google.com/spreadsheets/d/1fq_L7OJJOk3EE7gHFq_MJgjDTwxgyQy_Ac_jRoJr21A/edit?gid=1468882431#gid=1468882431
 
+## Cache busting (do this once per clone)
+
+`index.html` references its local assets with a content hash — `app.js?v=78bb7458` — so a deploy changes the URL and browsers fetch the new file instead of running a cached copy. Without it, GitHub Pages serves `app.js` under one unchanging URL and every fix needs a manual hard refresh to reach anyone.
+
+`scripts/stamp-assets.js` rewrites those stamps from the files' own SHA-256, so re-running it changes nothing unless an asset actually changed. A pre-commit hook keeps them in step, and **git hooks are not version controlled, so a fresh clone has to install it**:
+
+```sh
+cp scripts/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+Without the hook nothing breaks — the site keeps serving the last stamped versions — but a changed asset can ship behind an unchanged URL, which is the exact problem this removes. `node scripts/stamp-assets.js --check` exits non-zero when a stamp is stale, so it also works as a verification step.
+
+Not stamped: the lazily loaded `historical-<year>.js` archives, which app.js injects at runtime where no hash is available. They are effectively immutable once a season is archived. If one is ever regenerated mid-season, expect cached copies to lag.
+
 ## Google Apps Script
 
 The deployed Apps Script URL for syncing picks to Google Sheets is configured in `app.js` as `APPS_SCRIPT_URL`. The script source code is in `google-apps-script-simple.js`.
