@@ -294,6 +294,26 @@ function pickPayload(row) {
  * Columns: Timestamp, Week, Picker, Game, Away Team, Home Team, Away Spread, Home Spread,
  *          Line Pick, Winner Pick, Blazin, O/U Pick, O/U Line, Line Outcome, Winner Outcome, O/U Outcome
  */
+/**
+ * Append one row per pick.
+ *
+ * This is deliberately an append-only log, not an upsert. It was briefly
+ * changed to upsert on week/picker/game to stop the sheet growing, then
+ * reverted once the cost was actually measured: a 32-row read and a
+ * 2,172-row read are indistinguishable through this API, because Google-side
+ * variance (2.5s to 32s on the identical request) swamps anything the row
+ * count contributes, on top of a ~2s fixed floor. Row count is not the
+ * bottleneck at any size this sheet will reach for years.
+ *
+ * What the history buys, and the reason to keep paying for it: recovery from
+ * a bad client write, visibility of two devices fighting over one week, and
+ * forensics on pick-storage bugs - it is how three failed Blazin' attempts
+ * were traced in September 2026.
+ *
+ * Growth is controlled on the client instead: an unchanged slate is not
+ * re-sent, and the sync debounce collapses a burst of clicking into one
+ * write. See CLAUDE.md.
+ */
 function savePicks(week, picker, picks) {
   if (!week || !picker) {
     return { error: 'Missing week or picker' };
@@ -324,31 +344,10 @@ function savePicks(week, picker, picks) {
   }
 
   const timestamp = new Date().toISOString();
-
-  // One row per week/picker/game, updated in place - the same shape
-  // saveResults and saveSpreads already use.
-  //
-  // This used to append, which made the sheet an audit log. The client sends a
-  // whole-week snapshot on every change (so a deselected pick is recorded,
-  // rather than merely absent), and every read pulls the entire tab through
-  // getDataRange(), so appending meant 16 new rows per edit and a read cost
-  // that grew for ever. Upserting keeps it at one row per pick per picker per
-  // week - about 1,440 rows for a full season - at the cost of the change
-  // history.
-  const data = sheet.getDataRange().getValues();
-  const rowByKey = {};
-  for (let i = 1; i < data.length; i++) {
-    const key = `${String(data[i][1])}|${String(data[i][2])}|${String(data[i][3])}`;
-    // Later rows win, so a sheet still holding appended history collapses to
-    // its most recent row for each pick.
-    rowByKey[key] = i + 1; // 1-indexed
-  }
-
   let rowsAdded = 0;
-  let rowsUpdated = 0;
 
   for (const pick of picks) {
-    const values = [
+    sheet.appendRow([
       timestamp,
       week,
       picker,
@@ -366,29 +365,13 @@ function savePicks(week, picker, picks) {
       '', // Winner Outcome - populated when results come in
       '', // O/U Outcome - populated when results come in
       pick.frozenAt || ''
-    ];
-
-    const existingRow = rowByKey[`${String(week)}|${String(picker)}|${String(pick.gameId)}`];
-
-    if (existingRow) {
-      // Preserve any outcomes already calculated for this pick - they are
-      // written separately by calculateAndSaveOutcomes.
-      const existing = data[existingRow - 1];
-      values[13] = existing[13] || '';
-      values[14] = existing[14] || '';
-      values[15] = existing[15] || '';
-      sheet.getRange(existingRow, 1, 1, 17).setValues([values]);
-      rowsUpdated++;
-    } else {
-      sheet.appendRow(values);
-      rowsAdded++;
-    }
+    ]);
+    rowsAdded++;
   }
 
   return {
-    message: `Week ${week} ${picker}: ${rowsAdded} new, ${rowsUpdated} updated`,
-    rowsAdded: rowsAdded,
-    rowsUpdated: rowsUpdated
+    message: `Backed up ${rowsAdded} picks for ${picker} Week ${week}`,
+    rowsAdded: rowsAdded
   };
 }
 

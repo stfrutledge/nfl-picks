@@ -212,13 +212,16 @@ check('cleared flags are filtered by season too', () => {
     assert.deepStrictEqual(api.getAllPicks(2026).cleared, { '2026_1': { Dylan: true } });
 });
 
-section('savePicks keeps one row per pick');
+section('savePicks appends, deliberately');
 
-// It used to append, so the whole-week snapshot added 16 rows per edit and
-// every read pulled the lot through getDataRange(). Upserting bounds the
-// sheet at one row per week/picker/game.
+// It was briefly changed to upsert on week/picker/game to stop the sheet
+// growing, then reverted once measured: a 32-row read and a 2,172-row read are
+// indistinguishable through this API, so row count is not the bottleneck. The
+// history buys bad-write recovery and forensics. Growth is controlled on the
+// client instead - see test-sync-tombstones.js. Do not "optimise" this to an
+// upsert without measuring first.
 
-check('a repeated sync updates in place instead of appending', () => {
+check('a repeated sync appends rather than overwriting', () => {
     const rows = [HEADER.slice()];
     const api = loadWritable(rows);
     const pick = {
@@ -227,53 +230,27 @@ check('a repeated sync updates in place instead of appending', () => {
     };
 
     api.savePicks('2026_5', 'Stephen', [pick]);
-    assert.strictEqual(rows.length, 2, 'header plus one pick');
-
     api.savePicks('2026_5', 'Stephen', [pick]);
-    assert.strictEqual(rows.length, 2, 'still one row, updated in place');
+    assert.strictEqual(rows.length, 3, 'header plus both writes - the history is kept');
 });
 
-check('a changed pick overwrites its own row', () => {
+check('the reader collapses appended rows to the latest pick', () => {
+    // This is what makes appending safe: the history is on the sheet, but a
+    // read still yields one current answer per game.
     const rows = [HEADER.slice()];
     const api = loadWritable(rows);
+    const mk = line => ({ gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
+        awaySpread: 3, homeSpread: -3, linePick: line, winnerPick: line });
 
-    api.savePicks('2026_5', 'Stephen', [{
-        gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
-        awaySpread: 3, homeSpread: -3, linePick: 'Seahawks', winnerPick: 'Seahawks'
-    }]);
-    api.savePicks('2026_5', 'Stephen', [{
-        gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
-        awaySpread: 3, homeSpread: -3, linePick: 'Rams', winnerPick: 'Rams'
-    }]);
+    api.savePicks('2026_5', 'Stephen', [mk('Seahawks')]);
+    // Force a later timestamp so the collapse has something to order by.
+    rows[rows.length - 1][0] = '2026-09-08T10:00:00.000Z';
+    api.savePicks('2026_5', 'Stephen', [mk('Rams')]);
+    rows[rows.length - 1][0] = '2026-09-09T10:00:00.000Z';
 
-    assert.strictEqual(rows.length, 2);
-    assert.strictEqual(rows[1][8], 'Rams', 'the row now holds the new pick');
-});
-
-check('different pickers and games get their own rows', () => {
-    const rows = [HEADER.slice()];
-    const api = loadWritable(rows);
-    const mk = id => ({ gameId: id, away: 'A', home: 'B', awaySpread: 1, homeSpread: -1 });
-
-    api.savePicks('2026_5', 'Stephen', [mk('a_b'), mk('c_d')]);
-    api.savePicks('2026_5', 'Dylan', [mk('a_b')]);
-    api.savePicks('2026_6', 'Stephen', [mk('a_b')]);
-
-    assert.strictEqual(rows.length, 5, 'header + 4 distinct picks');
-});
-
-check('outcomes already written are not wiped by a re-sync', () => {
-    // calculateAndSaveOutcomes fills columns 14-16 separately.
-    const rows = [HEADER.slice()];
-    const api = loadWritable(rows);
-    const pick = { gameId: 'rams_seahawks', away: 'Rams', home: 'Seahawks',
-        awaySpread: 3, homeSpread: -3, linePick: 'Seahawks' };
-
-    api.savePicks('2026_5', 'Stephen', [pick]);
-    rows[1][13] = 'push';   // Line Outcome, set by the results pass
-    api.savePicks('2026_5', 'Stephen', [pick]);
-
-    assert.strictEqual(rows[1][13], 'push', 'the outcome survived');
+    const pick = api.getAllPicks().picks['2026_5'].Stephen.rams_seahawks;
+    assert.strictEqual(pick.line, 'away', 'the newest row wins');
+    assert.strictEqual(rows.length, 3, 'and both rows are still there');
 });
 
 section('Diagnostics report the raw rows');
