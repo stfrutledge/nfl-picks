@@ -2080,6 +2080,7 @@ function isHistoricalSeason() {
  * @param {number} season - Season year (defaults to currentSeason)
  */
 function getGamesForWeekAndSeason(week, season = currentSeason) {
+    season = Number(season);
     if (season === CURRENT_SEASON) {
         return getGamesForWeek(week);
     }
@@ -2094,6 +2095,7 @@ function getGamesForWeekAndSeason(week, season = currentSeason) {
  * @param {number} season - Season year (defaults to currentSeason)
  */
 function getResultsForWeekAndSeason(week, season = currentSeason) {
+    season = Number(season);
     if (season === CURRENT_SEASON) {
         return getResultsForWeek(week);
     }
@@ -2108,6 +2110,7 @@ function getResultsForWeekAndSeason(week, season = currentSeason) {
  * @param {number} season - Season year (defaults to currentSeason)
  */
 function getPicksForWeekAndSeason(week, season = currentSeason) {
+    season = Number(season);
     if (season === CURRENT_SEASON) {
         return allPicks[week] || allPicks[String(week)] || {};
     }
@@ -2206,7 +2209,18 @@ function buildCurrentSeasonView() {
     return { games, results, picks, season: CURRENT_SEASON, isLive: true };
 }
 
-async function loadSeasonData(season) {
+async function loadSeasonData(rawSeason) {
+    // Season values come off <select> elements, so they arrive as strings as
+    // often as numbers, and '2026' === 2026 is false. Coerce once here rather
+    // than trust every caller: getting this wrong sent the current season to
+    // the archive loader, which 404ed on a historical-<year>.js that will not
+    // exist until the season is over.
+    const season = Number(rawSeason);
+    if (!Number.isFinite(season)) {
+        console.error(`[Season] Not a season: ${rawSeason}`);
+        return null;
+    }
+
     // The season in progress has no archive file - assemble it from the live
     // data instead. Deliberately before the seasonData cache check, so it is
     // never served stale.
@@ -2257,7 +2271,7 @@ async function loadSeasonData(season) {
         };
 
         script.onerror = () => {
-            console.error(`Failed to load historical-${season}.js`);
+            console.error(`Failed to load historical-${season}.js - the season is not archived yet`);
             hideLoadingState();
             showToast(`Failed to load ${season} season data`, 'error');
             delete seasonDataLoading[season];

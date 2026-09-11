@@ -555,6 +555,19 @@ await check('loadSeasonData resolves for the current season', async () => {
     assert.strictEqual(data.isLive, true);
 });
 
+await check('a season arriving as a string still resolves', async () => {
+    // <select> values are strings, and '2026' === 2026 is false. That sent the
+    // current season past its branch into the archive loader, which 404s on a
+    // historical-<year>.js that does not exist until the season is over.
+    const games = sixGames();
+    const h = setup({ games });
+    const data = await withTimeout(
+        h.api.loadSeasonData(String(h.api.CURRENT_SEASON)), 3000, 'loadSeasonData(string)');
+
+    assert.ok(data, 'a string season must resolve the same as a number');
+    assert.strictEqual(data.isLive, true);
+});
+
 section('The card renders');
 
 // The bug this exists for: the frozen-state consts were declared BELOW the
