@@ -19,6 +19,29 @@ Without the hook nothing breaks — the site keeps serving the last stamped vers
 
 Not stamped: the lazily loaded `historical-<year>.js` archives, which app.js injects at runtime where no hash is available. They are effectively immutable once a season is archived. If one is ever regenerated mid-season, expect cached copies to lag.
 
+## Odds API budget
+
+The Odds API free tier is **500 credits a month**, billed **per market per region** — so the worker's `spreads,h2h,totals` request costs **3 credits**, not 1. That is the single most misread thing here: 30 credits used is 10 calls, not 30.
+
+The worker does not use a fixed cache window. `pacedCacheDuration()` in `cloudflare-worker/nfl-picks-proxy.js` spreads the remaining balance over the days left in the month, divides by the per-fetch cost, and sets the cache lifetime to the gap between affordable refreshes:
+
+```
+budget/day  = remaining / days left in month
+fetches/day = budget/day / (markets x regions)
+TTL         = 24h / fetches/day    clamped [2h, 24h], x2 on non-game days
+```
+
+It needs no storage: the decision is made at the one moment both the balance and the cost are known — when caching a fresh response — and `creditsPerFetch` is derived from the actual `markets`/`regions` strings so it stays right if those change. Flush early in the month it refreshes often; nearly out it stretches to the reset; on the 1st the balance jumps back and it speeds up on its own. If the `x-requests-remaining` header ever disappears it falls back to the old fixed 4h/12h windows.
+
+On a cache hit, `X-Cache-Duration` is passed through as stored rather than recomputed — it records the window that entry was actually given.
+
+Two things worth knowing:
+
+- **`h2h` is fetched but never displayed.** `formatMoneyline()` exists and is called from nowhere. It is a third of the cost, kept deliberately because the moneylines are the input a straight-up winnings feature would need.
+- **`totals` is only usable in the playoffs** — the O/U picker renders solely in the `isPlayoff` branch. Making markets conditional on the week would cut the regular season to one credit a fetch.
+
+`node test-odds-pacing.js` covers the pacing. Avoid calling `/odds` by hand to test things: a cache miss spends real credits.
+
 ## Google Apps Script
 
 The deployed Apps Script URL for syncing picks to Google Sheets is configured in `app.js` as `APPS_SCRIPT_URL`. The script source code is in `google-apps-script-simple.js`.

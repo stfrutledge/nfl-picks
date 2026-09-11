@@ -29,18 +29,81 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400',
 };
 
+// Fallback cache windows, used only when the Odds API does not tell us how much
+// quota is left. Normally the pacer below decides.
 const GAME_DAY_CACHE_HOURS = 4;      // Fresher odds on game days
 const NON_GAME_DAY_CACHE_HOURS = 12; // Longer cache when no games
 
-function isGameDay() {
-  const day = new Date().getUTCDay();
+// Bounds on the paced window. The floor stops it hammering the API just because
+// there is budget spare; the ceiling stops odds going stale for more than a day
+// even when budget is nearly gone.
+const MIN_CACHE_HOURS = 2;
+const MAX_CACHE_HOURS = 24;
+
+// Non-game days get a longer window, so spare budget is spent on Sunday rather
+// than Tuesday.
+const QUIET_DAY_MULTIPLIER = 2;
+
+function isGameDay(now = new Date()) {
+  const day = now.getUTCDay();
   // 0=Sun, 1=Mon, 4=Thu, 5=Fri, 6=Sat
   return day === 0 || day === 1 || day === 4 || day === 5 || day === 6;
 }
 
-function getCacheDurationMs() {
-  const hours = isGameDay() ? GAME_DAY_CACHE_HOURS : NON_GAME_DAY_CACHE_HOURS;
-  return hours * 60 * 60 * 1000;
+/** Whole days left in the current UTC month, including today. Never below 1. */
+function daysLeftInMonth(now = new Date()) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return Math.max(1, daysInMonth - now.getUTCDate() + 1);
+}
+
+/**
+ * How long to cache the odds, paced against the quota that is actually left.
+ *
+ * The Odds API bills per market per region, and returns the remaining balance on
+ * every response - so at the moment we cache a result we know both what it cost
+ * and what is left. Spreading the remainder evenly over the days left in the
+ * month gives a daily budget, and dividing that by the per-fetch cost gives how
+ * many refreshes a day we can afford. The cache window is simply the gap between
+ * them.
+ *
+ * Self-correcting, and needs no storage: flush early in the month it refreshes
+ * often, nearly out it stretches to the reset, and when the quota resets on the
+ * 1st the next fetch sees the new balance and speeds up again.
+ *
+ * @param {string|null} remainingHeader x-requests-remaining from the API
+ * @param {number} creditsPerFetch markets x regions for the request we make
+ * @param {Date} [now] injectable clock, for tests
+ * @returns {{ms: number, reason: string}}
+ */
+function pacedCacheDuration(remainingHeader, creditsPerFetch, now = new Date()) {
+  const remaining = Number(remainingHeader);
+
+  // No usable reading: fall back to the fixed windows rather than guess.
+  if (!remainingHeader || !isFinite(remaining) || remaining < 0) {
+    const hours = isGameDay(now) ? GAME_DAY_CACHE_HOURS : NON_GAME_DAY_CACHE_HOURS;
+    return { ms: hours * 3600 * 1000, reason: `${hours}h (fixed - no quota header)` };
+  }
+
+  const days = daysLeftInMonth(now);
+  const cost = Math.max(1, creditsPerFetch);
+  const fetchesPerDay = (remaining / days) / cost;
+
+  // Out of budget entirely - sit on what we have until the reset.
+  if (fetchesPerDay <= 0) {
+    return { ms: MAX_CACHE_HOURS * 3600 * 1000, reason: `${MAX_CACHE_HOURS}h (quota exhausted)` };
+  }
+
+  let hours = 24 / fetchesPerDay;
+  if (!isGameDay(now)) hours *= QUIET_DAY_MULTIPLIER;
+  hours = Math.min(MAX_CACHE_HOURS, Math.max(MIN_CACHE_HOURS, hours));
+
+  const rounded = Math.round(hours * 10) / 10;
+  return {
+    ms: hours * 3600 * 1000,
+    reason: `${rounded}h (paced: ${remaining} credits over ${days}d at ${cost}/fetch)`
+  };
 }
 
 export default {
@@ -96,10 +159,12 @@ async function handleOdds(request, env, ctx) {
   if (!forceRefresh) {
     const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse) {
-      // Add header to indicate cache hit
+      // Add header to indicate cache hit. X-Cache-Duration is left as stored:
+      // it records the window this entry was actually given, which is what the
+      // pacer decided at fetch time. Recomputing it here would report a window
+      // that never applied.
       const headers = new Headers(cachedResponse.headers);
       headers.set('X-Cache', 'HIT');
-      headers.set('X-Cache-Duration', isGameDay() ? `${GAME_DAY_CACHE_HOURS}h (game day)` : `${NON_GAME_DAY_CACHE_HOURS}h (non-game day)`);
       return new Response(cachedResponse.body, {
         status: cachedResponse.status,
         headers,
@@ -109,33 +174,44 @@ async function handleOdds(request, env, ctx) {
 
   const oddsApiUrl = new URL('https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/');
   oddsApiUrl.searchParams.set('apiKey', apiKey);
-  oddsApiUrl.searchParams.set('regions', 'us');
-  oddsApiUrl.searchParams.set('markets', 'spreads,h2h,totals');
+  // The Odds API bills per market per region, so the cost of a call is simply
+  // how many of each we ask for. Derived rather than hardcoded, so the pacer
+  // stays correct if these ever change.
+  const regions = 'us';
+  const markets = 'spreads,h2h,totals';
+  const creditsPerFetch = markets.split(',').length * regions.split(',').length;
+
+  oddsApiUrl.searchParams.set('regions', regions);
+  oddsApiUrl.searchParams.set('markets', markets);
   oddsApiUrl.searchParams.set('oddsFormat', 'american');
   oddsApiUrl.searchParams.set('bookmakers', 'draftkings,fanduel');
 
   const response = await fetch(oddsApiUrl.toString());
   const data = await response.text();
 
+  // Pass through the quota headers, and use them to decide how long this result
+  // should live. This is the one moment we know both the balance and the cost.
+  const remaining = response.headers.get('x-requests-remaining');
+  const used = response.headers.get('x-requests-used');
+  const paced = pacedCacheDuration(remaining, creditsPerFetch);
+
   const headers = new Headers({
     'Content-Type': 'application/json',
     ...CORS_HEADERS,
     'X-Cache': 'MISS',
-    'X-Cache-Duration': isGameDay() ? `${GAME_DAY_CACHE_HOURS}h (game day)` : `${NON_GAME_DAY_CACHE_HOURS}h (non-game day)`,
+    'X-Cache-Duration': paced.reason,
   });
 
-  // Pass through rate limit headers
-  const remaining = response.headers.get('x-requests-remaining');
-  const used = response.headers.get('x-requests-used');
   if (remaining) headers.set('x-requests-remaining', remaining);
   if (used) headers.set('x-requests-used', used);
+  headers.set('x-credits-per-fetch', String(creditsPerFetch));
 
   // Create the response
   const newResponse = new Response(data, { status: response.status, headers });
 
   // Cache the response (only cache successful responses)
   if (response.status === 200) {
-    const cacheSeconds = getCacheDurationMs() / 1000;
+    const cacheSeconds = Math.round(paced.ms / 1000);
     const responseToCache = new Response(data, {
       status: response.status,
       headers: {

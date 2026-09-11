@@ -1149,6 +1149,31 @@ const ODDS_CACHE_KEY = 'nfl_odds_cache';
 const ODDS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 const SAVED_SPREADS_KEY = `nfl_saved_spreads_${CURRENT_SEASON}`; // Permanent storage for spreads, season-scoped (used for completed games)
 
+// Last seen Odds API quota, for the admin readout. The worker paces its own
+// cache against this, so the display is a window onto that rather than
+// something anyone needs to act on.
+let apiQuota = { remaining: null, used: null, window: null };
+
+function recordApiQuota(remaining, used, cacheWindow) {
+    if (remaining !== null && remaining !== undefined) apiQuota.remaining = Number(remaining);
+    if (used !== null && used !== undefined) apiQuota.used = Number(used);
+    if (cacheWindow) apiQuota.window = cacheWindow;
+    renderApiQuota();
+}
+
+function renderApiQuota() {
+    const el = document.getElementById('api-quota');
+    if (!el || apiQuota.remaining === null) return;
+
+    const total = apiQuota.remaining + (apiQuota.used || 0);
+    const low = apiQuota.remaining < 100;
+    el.textContent = `Odds API: ${apiQuota.remaining} left${total ? ` of ${total}` : ''}`;
+    el.title = apiQuota.window
+        ? `Refreshing every ${apiQuota.window}`
+        : 'Odds API credits left this month';
+    el.classList.toggle('low', low);
+}
+
 /**
  * Get cached odds from localStorage
  */
@@ -1301,6 +1326,9 @@ async function fetchNFLOdds(forceRefresh = false) {
         if (remaining) {
             console.log(`[Odds API] Requests used: ${used}, remaining: ${remaining}`);
         }
+        // The worker forwards these on cache hits too, so this stays current
+        // without costing a call. It also reports the window its pacer chose.
+        recordApiQuota(remaining, used, response.headers.get('X-Cache-Duration'));
 
         console.log(`[Odds API] Fetched odds for ${games.length} games`);
 

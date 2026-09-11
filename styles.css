@@ -7080,3 +7080,17 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 .modal-dont-show:hover {
     color: var(--text-primary);
 }
+
+/* Odds API credit readout, admin only. Informational: the worker paces its own
+   cache against this figure, so nobody has to act on it. */
+.api-quota {
+    font-size: 0.72rem;
+    color: var(--text-light);
+    align-self: center;
+    white-space: nowrap;
+}
+
+.api-quota.low {
+    color: var(--accent-amber);
+    font-weight: 600;
+}
