@@ -228,9 +228,20 @@ function calculateCurrentNFLWeek() {
 
 const CURRENT_NFL_WEEK = calculateCurrentNFLWeek();
 
-// Set default standings subcategory based on whether playoffs have started
-// Wild Card is week 19, so if we're past that, default to playoffs view
-currentSubcategory = CURRENT_NFL_WEEK > 19 ? 'playoffs' : 'blazin';
+/**
+ * Whether the playoffs have started, which is what gates the Playoffs tab.
+ *
+ * Out of season CURRENT_NFL_WEEK is week 1 of the coming season, so this is
+ * false all summer rather than lingering true from last January.
+ */
+function isPlayoffsUnderway() {
+    return CURRENT_NFL_WEEK >= FIRST_PLAYOFF_WEEK && CURRENT_NFL_WEEK <= LAST_PLAYOFF_WEEK;
+}
+
+// Default standings view. Note > rather than >=: Wild Card week still opens on
+// the season standings, and only the divisional round onwards defaults to the
+// playoff view. isPlayoffsUnderway() is the wider test, used for the tab itself.
+currentSubcategory = CURRENT_NFL_WEEK > FIRST_PLAYOFF_WEEK ? 'playoffs' : 'blazin';
 
 // Team name aliases (CSV name -> standard name)
 const TEAM_NAME_MAP = {
@@ -2413,6 +2424,13 @@ function setupSeasonDropdown() {
 
     if (historyTab) {
         historyTab.style.display = hasHistoricalSeasons ? '' : 'none';
+    }
+
+    // The Playoffs standings tab only means anything once there are playoff
+    // games to score, so it stays hidden for the regular season.
+    const playoffsSubtab = document.getElementById('playoffs-subtab');
+    if (playoffsSubtab) {
+        playoffsSubtab.style.display = isPlayoffsUnderway() ? '' : 'none';
     }
 
     // Setup history section dropdowns
