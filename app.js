@@ -1935,7 +1935,7 @@ function getPicksForWeek(week) {
 // is already season-scoped one level up, so 2025 and 2026 keys can never meet:
 //   - localStorage:  nflPicks_<season> / clearedPicks_<season>
 //   - Google Sheet:  the Week column is season-prefixed ("2026_5", see toSheetWeek)
-//   - historical:    seasonData[season], loaded from a per-season file
+//   - historical:    getSeasonData(season), loaded from a per-season file
 // Within a season the week is part of the path, and division rematches flip
 // home/away, so a repeated matchup still gets a distinct key.
 
@@ -2084,7 +2084,7 @@ function getGamesForWeekAndSeason(week, season = currentSeason) {
     if (season === CURRENT_SEASON) {
         return getGamesForWeek(week);
     }
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     if (!data || !data.games) return [];
     return data.games[week] || data.games[String(week)] || [];
 }
@@ -2099,7 +2099,7 @@ function getResultsForWeekAndSeason(week, season = currentSeason) {
     if (season === CURRENT_SEASON) {
         return getResultsForWeek(week);
     }
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     if (!data || !data.results) return {};
     return data.results[week] || data.results[String(week)] || {};
 }
@@ -2114,7 +2114,7 @@ function getPicksForWeekAndSeason(week, season = currentSeason) {
     if (season === CURRENT_SEASON) {
         return allPicks[week] || allPicks[String(week)] || {};
     }
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     if (!data || !data.picks) return {};
     return data.picks[week] || data.picks[String(week)] || {};
 }
@@ -2129,7 +2129,7 @@ function getMaxWeekForSeason(season = currentSeason) {
         return CURRENT_NFL_WEEK;
     }
     // Historical seasons are complete - return 22 (includes playoffs) or check actual data
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     if (data && data.games) {
         const weeks = Object.keys(data.games).map(Number).filter(n => !isNaN(n));
         return weeks.length > 0 ? Math.max(...weeks) : LAST_PLAYOFF_WEEK;
@@ -2192,6 +2192,24 @@ function normalizeSeasonPicks(data, season) {
  * Built fresh each call rather than cached: it changes as picks and results
  * come in, and a cached copy would quietly go stale mid-season.
  */
+/**
+ * Season data for reading, whichever season it is.
+ *
+ * seasonData only ever holds ARCHIVED seasons - loadSeasonData fills it from
+ * historical-<year>.js. The season in progress has no archive, so anything
+ * that reached into seasonData directly found nothing for it and rendered an
+ * empty state: that is why History showed "No data available" for the current
+ * season even once it loaded.
+ *
+ * Read through this rather than getSeasonData(season). The only place that should
+ * touch the map directly is loadSeasonData, which owns it.
+ */
+function getSeasonData(season) {
+    const year = Number(season);
+    if (year === CURRENT_SEASON) return buildCurrentSeasonView();
+    return seasonData[year];
+}
+
 function buildCurrentSeasonView() {
     const games = {};
     const results = {};
@@ -2758,9 +2776,9 @@ function renderLifetimeStandingsTable() {
     const pickerStats = {};
 
     AVAILABLE_SEASONS.forEach(season => {
-        if (!seasonData[season]) return;
+        if (!getSeasonData(season)) return;
 
-        const data = seasonData[season];
+        const data = getSeasonData(season);
         const games = data.games || {};
         const results = data.results || {};
         const picks = data.picks || {};
@@ -2947,12 +2965,12 @@ function renderHistoryWeek(week) {
     const season = seasonDropdown ? parseInt(seasonDropdown.value) : null;
     const selectedPicker = pickerDropdown ? pickerDropdown.value : PICKERS[0];
 
-    if (!season || !seasonData[season]) {
+    if (!season || !getSeasonData(season)) {
         content.innerHTML = '<p class="no-data-message">No historical data available.</p>';
         return;
     }
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games[week] || data.games[String(week)] || [];
     const results = data.results[week] || data.results[String(week)] || {};
     const allPicks = data.picks[week] || data.picks[String(week)] || {};
@@ -3105,12 +3123,12 @@ function renderHistoryStandingsTable(season) {
         titleSpan.textContent = season;
     }
 
-    if (!seasonData[season]) {
+    if (!getSeasonData(season)) {
         tbody.innerHTML = '<tr><td colspan="8" class="no-data">No data available</td></tr>';
         return;
     }
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -5968,9 +5986,9 @@ function renderBlazinSpreadRecords(picker = null) {
 function calculateHistoryBlazinTeamRecords(picker, season) {
     const teamRecords = {};
 
-    if (!seasonData[season]) return teamRecords;
+    if (!getSeasonData(season)) return teamRecords;
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -6048,9 +6066,9 @@ function calculateHistoryBlazinTeamRecords(picker, season) {
 function calculateHistoryBlazinTeamPicked(picker, season) {
     const teamRecords = {};
 
-    if (!seasonData[season]) return teamRecords;
+    if (!getSeasonData(season)) return teamRecords;
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -6120,9 +6138,9 @@ function calculateHistoryBlazinTeamPicked(picker, season) {
 function calculateHistoryBlazinTeamFaded(picker, season) {
     const teamRecords = {};
 
-    if (!seasonData[season]) return teamRecords;
+    if (!getSeasonData(season)) return teamRecords;
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -6196,9 +6214,9 @@ function calculateHistoryBlazinHomeAway(picker, season) {
         'Away': { wins: 0, losses: 0, pushes: 0, games: [] }
     };
 
-    if (!seasonData[season]) return records;
+    if (!getSeasonData(season)) return records;
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -6266,9 +6284,9 @@ function calculateHistoryBlazinFavDog(picker, season) {
         'Underdog': { wins: 0, losses: 0, pushes: 0, games: [] }
     };
 
-    if (!seasonData[season]) return records;
+    if (!getSeasonData(season)) return records;
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -6447,9 +6465,9 @@ function renderHistoryBlazinTeamRecords(picker = null) {
 function calculateHistoryBlazinSpreadRecords(picker, season) {
     const spreadRecords = {};
 
-    if (!seasonData[season]) return spreadRecords;
+    if (!getSeasonData(season)) return spreadRecords;
 
-    const data = seasonData[season];
+    const data = getSeasonData(season);
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};

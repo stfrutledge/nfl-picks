@@ -56,6 +56,7 @@ function makeEnv() {
         getGameResult, calculateStatsForWeeks, calculatePlayoffStats,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         regularSeasonWeekRange, buildCurrentSeasonView, CURRENT_SEASON,
+        getSeasonData, seasonData,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, weeklyPicksCache,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -421,6 +422,39 @@ check('weeks with no schedule loaded are left out of the week list', () => {
     const api = setup({ weeks: { 1: WEEK_1 }, picks: {} });
     const view = api.buildCurrentSeasonView();
     assert.ok(!('7' in view.games), "unloaded weeks are absent");
+});
+
+check('getSeasonData serves the live season, not an empty archive slot', () => {
+    // seasonData only ever holds ARCHIVED seasons. Everything that read it
+    // directly found nothing for the season in progress and rendered an empty
+    // state - History said "No data available" even after loading fine.
+    const api = setup({
+        weeks: { 1: WEEK_1 },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home', winner: 'home' } } } }
+    });
+
+    assert.strictEqual(api.seasonData[api.CURRENT_SEASON], undefined,
+        "the live season is deliberately not in the archive map");
+
+    const data = api.getSeasonData(api.CURRENT_SEASON);
+    assert.ok(data, "but reading through the accessor finds it");
+    assert.ok(data.games[1], "with its games");
+    assert.ok(data.picks[1].Stephen.rams_seahawks, "and its picks");
+});
+
+check('getSeasonData accepts a season as a string', () => {
+    const api = setup({ weeks: { 1: WEEK_1 }, picks: {} });
+    assert.ok(api.getSeasonData(String(api.CURRENT_SEASON)),
+        "<select> values arrive as strings");
+});
+
+check('getSeasonData still returns archived seasons from the map', () => {
+    const api = setup({ weeks: { 1: WEEK_1 }, picks: {} });
+    const archived = { games: { 3: [] }, results: {}, picks: {} };
+    api.seasonData[2024] = archived;
+
+    assert.strictEqual(api.getSeasonData(2024), archived, "past seasons are unchanged");
+    assert.strictEqual(api.getSeasonData(2019), undefined, "and a missing one is still missing");
 });
 
 check('it reflects later changes rather than caching the first read', () => {
