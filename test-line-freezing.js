@@ -95,7 +95,7 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
         calculateStatsForWeeks, standingsFromComputed, pickKey, countBlazinPicks,
         renderGames, renderScoringSummary,
         isConfirmSuppressed, suppressConfirm, requestConfirmation,
-        handlePickSelect, updateFreezeControls,
+        handlePickSelect, updateFreezeControls, loadSeasonData, CURRENT_SEASON,
         syncPicksToGoogleSheets,
         exportHistoricalData: window.exportHistoricalData,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
@@ -179,6 +179,21 @@ function sheetRow(ts, week, picker, key, away, home, awaySpread, homeSpread, lin
 }
 
 /* ----------------------------------------------------------------- runner */
+
+/**
+ * Fail rather than hang. An await that never settles does not throw: node just
+ * runs out of work and exits 0, skipping every check after it and reporting
+ * success. That is how a broken loadSeasonData looked like a passing suite.
+ */
+function withTimeout(promise, ms, what) {
+    let timer;
+    return Promise.race([
+        promise.finally(() => clearTimeout(timer)),
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${what} did not settle within ${ms}ms`)), ms);
+        })
+    ]);
+}
 
 let failures = 0, total = 0;
 async function check(name, fn) {
@@ -523,6 +538,21 @@ await check('locking the whole week is never suppressible', async () => {
     assert.strictEqual(
         h.api.isPickFrozen(h.api.__state().allPicks[WEEK].Stephen.rams_seahawks), false,
         'still asked, and was declined');
+});
+
+section('History can load the season in progress');
+
+await check('loadSeasonData resolves for the current season', async () => {
+    // It used to return null here, because it looked for an archive file that
+    // does not exist until the season is over - so History showed an error.
+    const games = sixGames();
+    const h = setup({ games });
+    const data = await withTimeout(
+        h.api.loadSeasonData(h.api.CURRENT_SEASON), 3000, 'loadSeasonData');
+
+    assert.ok(data, 'must not be null - History reports a failure if it is');
+    assert.ok(data.games && data.games[WEEK], 'and must carry the week list');
+    assert.strictEqual(data.isLive, true);
 });
 
 section('The card renders');

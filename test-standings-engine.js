@@ -55,7 +55,7 @@ function makeEnv() {
         PICKERS, FIRST_PLAYOFF_WEEK, LAST_PLAYOFF_WEEK,
         getGameResult, calculateStatsForWeeks, calculatePlayoffStats,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
-        regularSeasonWeekRange,
+        regularSeasonWeekRange, buildCurrentSeasonView, CURRENT_SEASON,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, weeklyPicksCache,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -393,6 +393,44 @@ check('a game nobody starred leaves the Blazin tab genuinely empty', () => {
     const rows = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'blazin');
     assert.strictEqual(rows.Stephen.totalPicks, 0);
     assert.strictEqual(rows.Stephen.percentage, null);
+});
+
+section('History can show the season in progress');
+
+// There is no historical-<year>.js for the live season - it lives in
+// NFL_GAMES_BY_WEEK / NFL_RESULTS_BY_WEEK / allPicks until it is archived at the
+// end of the year. History offered the current season in its dropdown and then
+// failed to load it, because loadSeasonData went looking for an archive file.
+
+check('the live season is assembled from in-memory data', () => {
+    const api = setup({
+        weeks: { 1: WEEK_1 },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home', winner: 'home' } } } }
+    });
+    const view = api.buildCurrentSeasonView();
+
+    assert.deepStrictEqual(Object.keys(view.games), ['1'], "week 1 is present");
+    assert.strictEqual(view.games[1].length, WEEK_1.length);
+    assert.ok(view.picks[1].Stephen.rams_seahawks, "picks come along too");
+    assert.strictEqual(view.season, api.CURRENT_SEASON);
+    assert.strictEqual(view.isLive, true);
+});
+
+check('weeks with no schedule loaded are left out of the week list', () => {
+    // Otherwise History would offer weeks it cannot show anything for.
+    const api = setup({ weeks: { 1: WEEK_1 }, picks: {} });
+    const view = api.buildCurrentSeasonView();
+    assert.ok(!('7' in view.games), "unloaded weeks are absent");
+});
+
+check('it reflects later changes rather than caching the first read', () => {
+    // Picks keep arriving all season; a cached view would go stale.
+    const api = setup({ weeks: { 1: WEEK_1 }, picks: {} });
+    assert.ok(!api.buildCurrentSeasonView().picks[1], "nothing yet");
+
+    api.__setState({ allPicks: { 1: { Stephen: { rams_seahawks: { line: 'home' } } } } });
+    assert.ok(api.buildCurrentSeasonView().picks[1].Stephen.rams_seahawks,
+        "the new pick shows up");
 });
 
 section('The week range the season standings cover');

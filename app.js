@@ -2172,7 +2172,48 @@ function normalizeSeasonPicks(data, season) {
  * @param {number} season - Season year to load
  * @returns {Promise<object|null>} - Season data or null if load failed
  */
+/**
+ * The current season, presented in the same shape as a historical archive.
+ *
+ * There is no historical-<CURRENT_SEASON>.js: the live season lives in
+ * NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK and allPicks until it is archived at
+ * the end of the year. Without this, History offered the current season in its
+ * dropdown and then failed to load it, because loadSeasonData went looking for
+ * an archive file that will not exist until the season is over.
+ *
+ * Only `games` is really needed - it builds the week list - since every read
+ * after that goes through the season-aware getters, which already return live
+ * data for CURRENT_SEASON. The rest is included so the object is honest about
+ * what it represents.
+ *
+ * Built fresh each call rather than cached: it changes as picks and results
+ * come in, and a cached copy would quietly go stale mid-season.
+ */
+function buildCurrentSeasonView() {
+    const games = {};
+    const results = {};
+    const picks = {};
+
+    for (let week = 1; week <= LAST_PLAYOFF_WEEK; week++) {
+        const weekGames = NFL_GAMES_BY_WEEK[week];
+        if (!weekGames || weekGames.length === 0) continue;
+
+        games[week] = weekGames;
+        if (NFL_RESULTS_BY_WEEK[week]) results[week] = NFL_RESULTS_BY_WEEK[week];
+        if (allPicks[week]) picks[week] = allPicks[week];
+    }
+
+    return { games, results, picks, season: CURRENT_SEASON, isLive: true };
+}
+
 async function loadSeasonData(season) {
+    // The season in progress has no archive file - assemble it from the live
+    // data instead. Deliberately before the seasonData cache check, so it is
+    // never served stale.
+    if (season === CURRENT_SEASON) {
+        return buildCurrentSeasonView();
+    }
+
     // Already loaded into seasonData
     if (seasonData[season]) {
         return seasonData[season];
