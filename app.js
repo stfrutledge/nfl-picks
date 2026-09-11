@@ -8554,8 +8554,8 @@ function renderGames() {
                         <span class="location-stadium">${game.stadium}</span>
                     </div>
                     ${frozen ? `
-                        <span class="freeze-state frozen" title="Locked ${gamePicks.frozenAt}">
-                            &#128274; Locked at ${frozenLineLabel}
+                        <span class="freeze-state frozen" title="Locked at ${frozenLineLabel}">
+                            &#128274; Locked
                         </span>
                     ` : (ridingDrift ? `
                         <span class="freeze-state drifted" title="You picked ${ridingDrift}; the line has since moved">
