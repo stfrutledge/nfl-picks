@@ -5361,12 +5361,72 @@ function renderLiveTab() {
 }
 
 /**
+ * A position change as a cell: up, down, or nothing to say.
+ *
+ * A dash for both "level" and "no last week to compare against" - the
+ * difference between them is not worth a second symbol, and in week 1 every
+ * row is the second case.
+ */
+function formatPositionMove(move) {
+    if (!move) return '<span class="move-none">&ndash;</span>';
+    return `<span class="move-${move > 0 ? 'up' : 'down'}">`
+        + `${move > 0 ? '&#9650;' : '&#9660;'}${Math.abs(move)}</span>`;
+}
+
+/**
+ * Places in a standings map, in the order the table draws them.
+ *
+ * Equal records share a place. Without that, five pickers level on 0-0 get
+ * five arbitrary places and the first result of the season reads as a
+ * four-place climb.
+ */
+function rankStandings(rows) {
+    const order = getSortedPickers(rows);
+    const places = {};
+    let place = 0;
+    order.forEach((row, i) => {
+        const same = i > 0 && (row.percentage ?? 0) === (order[i - 1].percentage ?? 0);
+        if (!same) place = i + 1;
+        places[row.name] = place;
+    });
+    return places;
+}
+
+/**
+ * How far each picker has moved since the end of last week.
+ *
+ * Now - live games counted as they stand - against the table as it finished
+ * last week. Positive is a climb. Null where there is nothing to compare
+ * against: week 1 has no last week, and a picker with nothing scored before
+ * now has not moved, they have arrived.
+ */
+function asIsPositionChange({ first, last } = regularSeasonWeekRange()) {
+    const now = rankStandings(standingsFromComputed(
+        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD, { includeLive: true }),
+        COWHERD_CATEGORY));
+
+    if (last <= first) return {};
+
+    // Last week is settled, so no live results belong in it.
+    const before = rankStandings(standingsFromComputed(
+        calculateStatsForWeeks(first, last - 1, PICKERS_WITH_COWHERD),
+        COWHERD_CATEGORY));
+
+    const moves = {};
+    Object.keys(now).forEach(name => {
+        moves[name] = before[name] ? before[name] - now[name] : null;
+    });
+    return moves;
+}
+
+/**
  * The "as is" table: the Blazin' 5 season standings with games in progress
  * counted at the score they are standing at.
  *
- * Drawn by renderStandingsTable so it is the Standings tab's table exactly -
- * same columns, same styling, same sort - with one thing changed, which is
- * the only thing that should differ between them.
+ * Drawn by renderStandingsTable so it keeps the Standings tab's styling and
+ * sort, with its own narrower column set - the per-week shape of a season,
+ * which is what Last 3-Wk, Best Week and Year Chg describe, says nothing
+ * about where an afternoon is heading.
  */
 function renderAsIsStandings() {
     const { first, last } = regularSeasonWeekRange();
@@ -5376,7 +5436,9 @@ function renderAsIsStandings() {
         tableId: 'as-is-standings-table',
         tbodyId: 'as-is-standings-body',
         category: COWHERD_CATEGORY,
-        setTitle: false
+        setTitle: false,
+        columns: 'as-is',
+        positionChange: asIsPositionChange()
     });
 }
 
@@ -8352,13 +8414,50 @@ function renderStandingsTable(stats, {
     tableId = 'standings-table',
     tbodyId = 'standings-table-body',
     category = currentSubcategory,
-    setTitle = true
+    setTitle = true,
+    columns = 'season',
+    positionChange = null
 } = {}) {
     const tbody = document.getElementById(tbodyId);
     const thead = document.querySelector(`#${tableId} thead`);
     if (!tbody || !thead) return;
 
     const sorted = getSortedPickers(stats);
+
+    // The Live tab's table: the record, and how far it has moved since last
+    // week. No Last 3-Wk, Best Week or Year Chg - they describe the shape of a
+    // season, which is not what is being watched on a Sunday afternoon.
+    if (columns === 'as-is') {
+        thead.innerHTML = `
+            <tr>
+                <th>Picker</th>
+                <th>Win</th>
+                <th>Loss</th>
+                <th>Push</th>
+                <th>%</th>
+                <th>Total</th>
+                <th title="Position change since the end of last week">Move</th>
+            </tr>
+        `;
+
+        tbody.innerHTML = sorted.map((picker, index) => {
+            const pct = typeof picker.percentage === 'number'
+                ? picker.percentage.toFixed(2) + '%' : '-';
+            const move = positionChange ? positionChange[picker.name] : null;
+            return `
+                <tr class="${index === 0 ? 'leader' : ''}">
+                    <td class="picker-name">${picker.name}</td>
+                    <td>${picker.wins || 0}</td>
+                    <td>${picker.losses || 0}</td>
+                    <td>${picker.pushes || 0}</td>
+                    <td class="${pctCellClass(picker.percentage)}">${pct}</td>
+                    <td>${picker.totalPicks || 0}</td>
+                    <td class="position-move">${formatPositionMove(move)}</td>
+                </tr>
+            `;
+        }).join('');
+        return;
+    }
 
     // Playoffs uses a different table layout showing Line/SU/O/U breakdown
     if (category === 'playoffs') {

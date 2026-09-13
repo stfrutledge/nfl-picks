@@ -139,7 +139,11 @@ What the group watches on a Sunday: every game somebody starred this week, who i
 
 **"As is" is not a second scoring path, and not a second table either.** It is `calculateStatsForWeeks` with `includeLive`, which adds one source of results: `liveProvisionalResult(game)` hands back the current score of a game *in progress*, shaped like a real result. A scheduled game and a finished one both return null — a finished game already has a real result through `getGameResult()`, and taking a provisional one for either is how an "as is" table starts disagreeing with the real one.
 
-It is then drawn by `renderStandingsTable`, which takes `tableId`/`tbodyId`/`category`/`setTitle` so the Live tab gets the Standings tab's table exactly — same columns, same styling, same sort — with the one intended difference and nothing else. `category` matters because the as-is table is always the Blazin' 5 one whatever the Standings tab happens to be showing.
+It is then drawn by `renderStandingsTable`, which takes `tableId`/`tbodyId`/`category`/`setTitle`/`columns`/`positionChange`, so the Live tab keeps the Standings tab's styling and sort while carrying its own narrower column set. `category` matters because the as-is table is always the Blazin' 5 one whatever the Standings tab happens to be showing.
+
+**The as-is column set is the record plus a Move.** Last 3-Wk, Best Week and Year Chg describe the shape of a season, which says nothing about where an afternoon is heading. Move is the position now — live games counted as they stand — against the table as it finished **last week**, from `asIsPositionChange()`. Equal records share a place (`rankStandings`), or five pickers level on 0-0 get five arbitrary places and the season's first result reads as a four-place climb. A dash covers both "level" and "nothing to compare against", which is every row in week 1.
+
+`asIsPositionChange()` takes its week range as a parameter, defaulting to `regularSeasonWeekRange()`. That is the only reason a later week can be tested at all: `CURRENT_NFL_WEEK` comes off the clock, and week 1 is the one week where this column does nothing.
 
 Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()` runs only when neither is on screen, and the refresh loop goes through `refreshLiveViews()` rather than calling `renderGames()` directly. A stale score is the whole problem on this tab.
 

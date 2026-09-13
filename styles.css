@@ -6835,6 +6835,16 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--text-secondary);
 }
 
+.standings-table .position-move {
+    text-align: center;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.move-up { color: var(--accent-green); }
+.move-down { color: var(--accent-red); }
+.move-none { color: var(--text-light); font-weight: 400; }
+
 .live-games-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

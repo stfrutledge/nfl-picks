@@ -85,6 +85,8 @@ function makeAppEnv({ withDom = false } = {}) {
         renderLiveTab, renderActiveTab, refreshLiveViews,
         pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
         liveEntryFromEvent, liveCacheEntry,
+        rankStandings, asIsPositionChange, formatPositionMove,
+        renderAsIsStandings, CURRENT_NFL_WEEK,
         __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
@@ -498,6 +500,118 @@ check('the rendered chips follow the same rule', () => {
     const html = api.__written['live-games-list'] || '';
     assert.ok(html.includes('Cowherd <em>+7</em>'), 'his own number is printed');
     assert.ok(!html.includes('Cowherd <em>-3</em>'), 'the board\u2019s is not repeated');
+});
+
+section('The as-is table carries a position change, and little else');
+
+check('the column set is the record and the move', () => {
+    const games = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    const api = setup({
+        games, withDom: true,
+        picks: { Stephen: { rams_seahawks: b5('home') } },
+        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    });
+    api.renderAsIsStandings();
+    const head = api.__written['#as-is-standings-table thead'] || '';
+    ['Picker', 'Win', 'Loss', 'Push', '%', 'Total', 'Move'].forEach(col =>
+        assert.ok(head.includes(`>${col}<`), `${col} is a column`));
+    ['Last 3-Wk', 'Best Week', 'Year Chg'].forEach(col =>
+        assert.ok(!head.includes(col), `${col} is not`));
+});
+
+check('ties share a place', () => {
+    const api = makeAppEnv();
+    const places = api.rankStandings({
+        A: { name: 'A', percentage: 75 },
+        B: { name: 'B', percentage: 50 },
+        C: { name: 'C', percentage: 50 },
+        D: { name: 'D', percentage: 25 }
+    });
+    assert.deepStrictEqual(places, { A: 1, B: 2, C: 2, D: 4 },
+        'two on 50% share second, and the next is fourth');
+});
+
+check('a picker with nothing scored does not rank above one who has lost', () => {
+    const api = makeAppEnv();
+    const places = api.rankStandings({
+        A: { name: 'A', percentage: 0 },
+        B: { name: 'B', percentage: null }
+    });
+    assert.strictEqual(places.A, places.B, 'both read as nothing to show');
+});
+
+check('week 1 has no last week, so nothing moves', () => {
+    const games = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    const api = setup({
+        games,
+        picks: { Stephen: { rams_seahawks: b5('home') } },
+        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    });
+    assert.deepStrictEqual(api.asIsPositionChange(), {},
+        'no week to compare against');
+});
+
+check('a later week moves against where last week finished', () => {
+    // Week 1: Sean covers, Stephen does not. Sean leads.
+    // Week 2: Stephen covers twice, Sean misses. Stephen goes past him.
+    const api = makeAppEnv();
+    api.NFL_GAMES_BY_WEEK[1] = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    api.NFL_GAMES_BY_WEEK[2] = [
+        finalGame(2, 'Bills', 'Chiefs', 30, 20),
+        finalGame(3, 'Jets', 'Dolphins', 28, 14)
+    ];
+    api.NFL_RESULTS_BY_WEEK[1] = { 1: { awayScore: 20, homeScore: 24, winner: 'home' } };
+    api.NFL_RESULTS_BY_WEEK[2] = {
+        2: { awayScore: 30, homeScore: 20, winner: 'away' },
+        3: { awayScore: 28, homeScore: 14, winner: 'away' }
+    };
+    api.__setState({
+        currentWeek: 2, currentPicker: 'Stephen',
+        allPicks: {
+            1: {
+                Sean: { rams_seahawks: b5('home') },        // covers
+                Stephen: { rams_seahawks: b5('away') }      // does not
+            },
+            2: {
+                Sean: { bills_chiefs: b5('home') },         // misses
+                Stephen: { bills_chiefs: b5('away'), jets_dolphins: b5('away') }
+            }
+        }
+    });
+
+    const after1 = api.rankStandings(api.standingsFromComputed(
+        api.calculateStatsForWeeks(1, 1, api.PICKERS_WITH_COWHERD), api.COWHERD_CATEGORY));
+    assert.strictEqual(after1.Sean, 1, 'Sean led after week 1');
+    assert.ok(after1.Stephen > 1, 'and Stephen did not');
+
+    const moves = api.asIsPositionChange({ first: 1, last: 2 });
+    assert.ok(moves.Stephen > 0, `Stephen climbed (got ${moves.Stephen})`);
+    assert.ok(moves.Sean < 0, `Sean dropped (got ${moves.Sean})`);
+});
+
+check('standing still is no move at all', () => {
+    const api = makeAppEnv();
+    api.NFL_GAMES_BY_WEEK[1] = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    api.NFL_GAMES_BY_WEEK[2] = [finalGame(2, 'Bills', 'Chiefs', 30, 20)];
+    api.NFL_RESULTS_BY_WEEK[1] = { 1: { awayScore: 20, homeScore: 24, winner: 'home' } };
+    api.NFL_RESULTS_BY_WEEK[2] = { 2: { awayScore: 30, homeScore: 20, winner: 'away' } };
+    api.__setState({
+        currentWeek: 2, currentPicker: 'Stephen',
+        allPicks: {
+            1: { Sean: { rams_seahawks: b5('home') } },
+            2: { Sean: { bills_chiefs: b5('away') } }     // covers again
+        }
+    });
+    const moves = api.asIsPositionChange({ first: 1, last: 2 });
+    assert.strictEqual(moves.Sean, 0, 'still top, so no move');
+});
+
+check('a move is drawn only when there is one', () => {
+    const api = makeAppEnv();
+    assert.ok(api.formatPositionMove(2).includes('move-up'), 'a climb');
+    assert.ok(api.formatPositionMove(-1).includes('move-down'), 'a drop');
+    assert.ok(api.formatPositionMove(0).includes('move-none'), 'level');
+    assert.ok(api.formatPositionMove(null).includes('move-none'), 'nothing to compare');
 });
 
 section('The tab is redrawn when its data arrives');
