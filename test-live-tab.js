@@ -84,6 +84,8 @@ function makeAppEnv({ withDom = false } = {}) {
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
         renderLiveTab, renderActiveTab, refreshLiveViews,
         pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
+        liveEntryFromEvent, liveCacheEntry,
+        __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -132,6 +134,30 @@ function setup({ games, picks = {}, results = null, withDom = false } = {}) {
 }
 
 const b5 = side => ({ line: side, winner: side, blazin: true });
+
+/**
+ * A scoreboard event shaped like ESPN's, trimmed to the fields read.
+ * Team ids are strings there, which is what makes possession resolvable.
+ */
+function espnEvent({ away = 'Los Angeles Rams', home = 'Seattle Seahawks',
+    awayScore = 0, homeScore = 0, state = 'STATUS_IN_PROGRESS',
+    shortDetail = '11:37 - 3rd', period = 3, clock = '11:37',
+    situation = null } = {}) {
+    return {
+        status: {
+            period, displayClock: clock,
+            type: { name: state, shortDetail, detail: shortDetail,
+                completed: state === 'STATUS_FINAL' }
+        },
+        competitions: [{
+            situation: situation || undefined,
+            competitors: [
+                { homeAway: 'home', score: String(homeScore), team: { id: '1', displayName: home } },
+                { homeAway: 'away', score: String(awayScore), team: { id: '2', displayName: away } }
+            ]
+        }]
+    };
+}
 
 let failures = 0, total = 0;
 function check(name, fn) {
@@ -281,6 +307,95 @@ check('a locked pick is described at its own number, not the board’s', () => {
     const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.away[0];
     assert.strictEqual(api.describeLineForSide(games[0], 'away', pick), 'Rams +7');
     assert.strictEqual(api.describeLineForSide(games[0], 'away'), 'Rams +3', 'the board still says +3');
+});
+
+section('What the scoreboard feed is reduced to');
+
+check('an event in progress keeps its clock, quarter and situation', () => {
+    const { key, entry } = makeAppEnv().liveEntryFromEvent(espnEvent({
+        awayScore: 10, homeScore: 24,
+        situation: { possession: '1', downDistanceText: '3rd & 7 at TB 28',
+            shortDownDistanceText: '3rd & 7', isRedZone: false }
+    }));
+    assert.strictEqual(key, 'Los Angeles Rams@Seattle Seahawks');
+    assert.strictEqual(entry.statusDetail, '11:37 - 3rd', 'ESPN\u2019s own wording');
+    assert.strictEqual(entry.awayScore, 10);
+    assert.strictEqual(entry.homeScore, 24);
+    assert.strictEqual(entry.possession, 'home', 'the id resolved to a side');
+    assert.strictEqual(entry.downDistance, '3rd & 7 at TB 28');
+    assert.strictEqual(entry.isRedZone, false);
+});
+
+check('possession resolves to the away side too', () => {
+    const { entry } = makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '2', downDistanceText: '1st & 10 at SEA 41' }
+    }));
+    assert.strictEqual(entry.possession, 'away');
+});
+
+check('halftime has no situation at all', () => {
+    const { entry } = makeAppEnv().liveEntryFromEvent(espnEvent({
+        state: 'STATUS_HALFTIME', shortDetail: 'Halftime'
+    }));
+    assert.strictEqual(entry.statusDetail, 'Halftime');
+    assert.strictEqual(entry.possession, null, 'nobody has the ball');
+    assert.strictEqual(entry.downDistance, '', 'and there is no down to show');
+});
+
+check('the red zone is carried through', () => {
+    const { entry } = makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '2', downDistanceText: '2nd & 4 at SEA 5', isRedZone: true }
+    }));
+    assert.strictEqual(entry.isRedZone, true);
+});
+
+section('The box shows the clock, the score and the situation');
+
+/** Render one box with `entry` standing in for the live-scores cache. */
+function boxFor(entry, { picks = { Stephen: { rams_seahawks: b5('home') } } } = {}) {
+    const games = [game(1, 'Rams', 'Seahawks')];
+    const api = setup({ games, picks, withDom: true });
+    api.__setLiveScores({ 'Los Angeles Rams@Seattle Seahawks': entry });
+    api.renderBlazinGameBoxes();
+    return api.__written['live-games-list'] || '';
+}
+
+check('a game in progress shows the clock and quarter', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        awayScore: 10, homeScore: 24,
+        situation: { possession: '1', downDistanceText: '3rd & 7 at TB 28' }
+    })).entry);
+    assert.ok(html.includes('11:37 - 3rd'), 'the clock and quarter are on the box');
+    assert.ok(html.includes('live-score-num'), 'and the score has its own row');
+    assert.ok(html.includes('Seahawks ball'), 'with who has the ball');
+    assert.ok(html.includes('3rd &amp; 7 at TB 28') || html.includes('3rd & 7 at TB 28'),
+        'and the down and distance');
+});
+
+check('halftime drops the situation row rather than showing a stale down', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        state: 'STATUS_HALFTIME', shortDetail: 'Halftime', awayScore: 0, homeScore: 7
+    })).entry);
+    assert.ok(html.includes('Halftime'), 'the state is still named');
+    assert.ok(html.includes('live-score-num'), 'and the score still shows');
+    assert.ok(!html.includes('live-situation'), 'but no down, distance or possession');
+});
+
+check('the red zone is marked on the box', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '2', downDistanceText: '2nd & 4 at SEA 5', isRedZone: true }
+    })).entry);
+    assert.ok(html.includes('is-redzone'));
+});
+
+check('a game still to come has no score row and no situation', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        state: 'STATUS_SCHEDULED', shortDetail: '9/13 - 4:25 PM EDT', period: 0, clock: '0:00'
+    })).entry);
+    assert.ok(!html.includes('live-score-num'), 'nothing to score yet');
+    assert.ok(!html.includes('live-situation'), 'and nothing happening');
+    // The app's own kickoff time, in the reader's zone, not ESPN's US string.
+    assert.ok(html.includes('1:00 PM'), 'the kickoff time is shown instead');
 });
 
 section('A line is printed by a name only where it differs');

@@ -479,25 +479,8 @@ async function fetchLiveScores() {
 
         if (data.events) {
             data.events.forEach(event => {
-                const competitors = event.competitions[0].competitors;
-                const homeTeam = competitors.find(c => c.homeAway === 'home');
-                const awayTeam = competitors.find(c => c.homeAway === 'away');
-                const status = event.status;
-
-                // Create a key based on team names
-                const gameKey = `${awayTeam.team.displayName}@${homeTeam.team.displayName}`;
-
-                scores[gameKey] = {
-                    homeTeam: homeTeam.team.displayName,
-                    awayTeam: awayTeam.team.displayName,
-                    homeScore: parseInt(homeTeam.score) || 0,
-                    awayScore: parseInt(awayTeam.score) || 0,
-                    status: status.type.name, // STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_FINAL, etc.
-                    statusDetail: status.type.shortDetail || status.type.detail,
-                    period: status.period,
-                    clock: status.displayClock,
-                    completed: status.type.completed
-                };
+                const { key, entry } = liveEntryFromEvent(event);
+                scores[key] = entry;
             });
         }
 
@@ -507,6 +490,54 @@ async function fetchLiveScores() {
         console.error('Error fetching live scores:', error);
         return liveScoresCache; // Return cached data on error
     }
+}
+
+/**
+ * One ESPN scoreboard event, reduced to what this app keeps.
+ *
+ * Pulled out of the fetch so the shape ESPN hands over can be tested without
+ * one - it is the only place the feed's layout is known, and the only place a
+ * change in it would show up.
+ */
+function liveEntryFromEvent(event) {
+    const competition = event.competitions[0];
+    const competitors = competition.competitors;
+    const homeTeam = competitors.find(c => c.homeAway === 'home');
+    const awayTeam = competitors.find(c => c.homeAway === 'away');
+    const status = event.status;
+    const situation = competition.situation || {};
+
+    // Possession arrives as a team id, which is meaningless anywhere else in
+    // the app. Resolved to a side here, once.
+    const possessionId = situation.possession;
+    const possession = possessionId === undefined ? null
+        : possessionId === homeTeam.team.id ? 'home'
+        : possessionId === awayTeam.team.id ? 'away' : null;
+
+    return {
+        // Keyed by team names, which is how a game is matched back to it.
+        key: `${awayTeam.team.displayName}@${homeTeam.team.displayName}`,
+        entry: {
+            homeTeam: homeTeam.team.displayName,
+            awayTeam: awayTeam.team.displayName,
+            homeScore: parseInt(homeTeam.score) || 0,
+            awayScore: parseInt(awayTeam.score) || 0,
+            status: status.type.name, // STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_FINAL, etc.
+            // ESPN's own short form, which already reads correctly in every
+            // state: "11:37 - 3rd", "Halftime", "Final". Worth preferring to
+            // anything hand-built from clock and period.
+            statusDetail: status.type.shortDetail || status.type.detail,
+            period: status.period,
+            clock: status.displayClock,
+            completed: status.type.completed,
+            // Absent between drives and at the half, which is why the row
+            // that shows them is dropped rather than left stale.
+            possession,
+            downDistance: situation.downDistanceText || '',
+            shortDownDistance: situation.shortDownDistanceText || '',
+            isRedZone: Boolean(situation.isRedZone)
+        }
+    };
 }
 
 /**
@@ -527,12 +558,23 @@ function getLiveGameStatus(game) {
         };
     }
 
-    // Try to match by team names in live cache
+    return liveCacheEntry(game);
+}
+
+/**
+ * The live-scores cache entry for a game, matched on team names.
+ *
+ * Separate from getLiveGameStatus because that prefers the status embedded in
+ * the schedule, which is a snapshot from whenever the schedule was fetched and
+ * carries no situation at all. Anything wanting down, distance or possession
+ * has to come here, where the data is as fresh as the last poll.
+ */
+function liveCacheEntry(game) {
+    if (!game) return null;
     const awayName = game.away;
     const homeName = game.home;
 
-    // Search through cache for matching game
-    for (const [key, scoreData] of Object.entries(liveScoresCache)) {
+    for (const scoreData of Object.values(liveScoresCache)) {
         if ((scoreData.homeTeam.includes(homeName) || homeName.includes(scoreData.homeTeam.split(' ').pop())) &&
             (scoreData.awayTeam.includes(awayName) || awayName.includes(scoreData.awayTeam.split(' ').pop()))) {
             return scoreData;
@@ -5360,22 +5402,55 @@ function renderBlazinGameBoxes() {
 
 function renderBlazinGameBox({ game, sides }, weekResults) {
     const live = getLiveGameStatus(game);
+    // The cache, not the schedule: down, distance and possession only exist
+    // here, and its clock is as fresh as the last poll.
+    const detail = liveCacheEntry(game);
     const result = getGameResult(game, weekResults);
     const inProgress = isGameInProgress(game);
     const scored = result || liveProvisionalResult(game);
 
     let state = 'upcoming';
+    // A scheduled game keeps the app's own kickoff time, which is in the
+    // reader's zone; ESPN's short form for one is a US time string.
     let status = game.time ? `${game.day} ${game.time}` : 'Scheduled';
     if (inProgress) {
         state = 'in-progress';
-        const clock = live.status === 'STATUS_HALFTIME' ? 'Half'
-            : live.status === 'STATUS_END_PERIOD' ? `End Q${live.period}`
-            : (live.clock ? `${live.clock} Q${live.period}` : 'Live');
-        status = `${live.awayScore} - ${live.homeScore} (${clock})`;
+        status = detail?.statusDetail
+            || (live.status === 'STATUS_HALFTIME' ? 'Halftime'
+                : live.status === 'STATUS_END_PERIOD' ? `End of ${live.period}`
+                : (live.clock ? `${live.clock} - Q${live.period}` : 'Live'));
     } else if (result) {
         state = 'final';
-        status = `Final ${result.awayScore} - ${result.homeScore}`;
+        status = 'Final';
     }
+
+    // The score gets its own row once there is one, rather than being folded
+    // into the status line where the clock now lives.
+    const score = scored ? `
+        <div class="live-score">
+            <span class="live-score-side">
+                <span class="live-score-team">${game.away}</span>
+                <span class="live-score-num">${scored.awayScore}</span>
+            </span>
+            <span class="live-score-sep">&ndash;</span>
+            <span class="live-score-side">
+                <span class="live-score-num">${scored.homeScore}</span>
+                <span class="live-score-team">${game.home}</span>
+            </span>
+        </div>` : '';
+
+    // Between drives - and at halftime - ESPN reports no down, so the row is
+    // dropped rather than left showing a stale one.
+    const downText = detail?.downDistance
+        || (detail?.shortDownDistance ? detail.shortDownDistance : '');
+    const possessing = detail?.possession === 'home' ? game.home
+        : detail?.possession === 'away' ? game.away : '';
+    const situation = (inProgress && (downText || possessing)) ? `
+        <div class="live-situation${detail?.isRedZone ? ' is-redzone' : ''}">
+            ${possessing ? `<span class="live-possession">${possessing} ball</span>` : ''}
+            ${downText ? `<span class="live-down">${downText}</span>` : ''}
+            ${detail?.isRedZone ? '<span class="live-redzone">red zone</span>' : ''}
+        </div>` : '';
 
     const sideRow = side => {
         const picks = sides[side];
@@ -5410,6 +5485,8 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
                 <span class="live-matchup">${game.away} @ ${game.home}</span>
                 <span class="live-status ${state}">${status}</span>
             </div>
+            ${score}
+            ${situation}
             ${sideRow('away')}
             ${sideRow('home')}
         </div>`;

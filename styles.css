@@ -6880,6 +6880,76 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--live-blue);
 }
 
+.live-score {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.live-score-side {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+}
+
+.live-score-team {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.live-score-num {
+    font-size: 1.35rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.live-score-sep {
+    color: var(--text-light);
+}
+
+/* Down, distance and who has the ball. Quiet by default - it changes every
+   few seconds and must not pull the eye off the picks. */
+.live-situation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    background: var(--bg-secondary);
+    font-size: 0.72rem;
+}
+
+.live-possession {
+    font-weight: 800;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.live-down {
+    color: var(--text-secondary);
+}
+
+/* The one situation worth looking up for. */
+.live-situation.is-redzone {
+    background: rgba(220, 38, 38, 0.10);
+}
+
+.live-redzone {
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent-red);
+    white-space: nowrap;
+}
+
 .live-side {
     display: flex;
     flex-wrap: wrap;
