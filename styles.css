@@ -30,6 +30,13 @@
     --accent-red: #dc2626;
     --accent-teal: #0d9488;
     --accent-amber: #d97706;
+    /* Live, not brand: --nfl-blue is the navy that marks a FINAL card, so a
+       live game needs its own blue to stay distinct from a finished one.
+       Deliberately not named --accent-blue: that name is referenced by
+       .toast-undo-btn and has never been defined, and the toast inverts
+       between themes, so defining it here would take that button over with
+       the wrong polarity. */
+    --live-blue: #2563eb;
 
     /* Borders & Shadows */
     --border-color: #e5e7eb;
@@ -56,6 +63,7 @@
     --accent-red: #ef4444;
     --accent-teal: #14b8a6;
     --accent-amber: #f59e0b;
+    --live-blue: #3b82f6;
 
     --border-color: #2a2a2a;
     --border-light: #1f1f1f;
@@ -2685,7 +2693,7 @@ footer a:hover {
 }
 
 .status-badge.in-progress {
-    background: var(--accent-green);
+    background: var(--live-blue);
     color: white;
     animation: pulse 2s infinite;
 }
@@ -2699,8 +2707,10 @@ footer a:hover {
     border-left: 4px solid var(--nfl-blue);
 }
 
+/* Matches the live score badge. Its own blue, not the FINAL navy, so a game
+   in progress still reads apart from a finished one at a glance. */
 .game-card.game-in-progress {
-    border-left: 4px solid var(--accent-green);
+    border-left: 4px solid var(--live-blue);
 }
 
 /* Game Footer */
@@ -7088,9 +7098,13 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     white-space: nowrap;
 }
 
+/* An outline, not a filled block. It sits on a card that already carries a
+   live score badge and a covering/losing pill, and a third solid colour made
+   the card during a game read as mostly green. */
 .freeze-state.frozen {
-    background: var(--accent-teal);
-    color: #fff;
+    background: transparent;
+    border: 1px solid var(--accent-teal);
+    color: var(--accent-teal);
 }
 
 /* The line has moved under a riding pick - informational, not a warning. */
