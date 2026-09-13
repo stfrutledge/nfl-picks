@@ -6861,8 +6861,11 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 }
 
 /* Same language as a game card: blue is live, navy is done. */
+/* A game being played gets full attention; one that is over recedes. Faded
+   rather than hidden - the score and who was on it are still worth reading,
+   just not worth looking at first. */
 .live-game-box.in-progress { border-left-color: var(--live-blue); }
-.live-game-box.final { border-left-color: var(--nfl-blue); }
+.live-game-box.final { border-left-color: var(--nfl-blue); opacity: 0.6; }
 .live-game-box.upcoming { opacity: 0.85; }
 
 .live-game-header {

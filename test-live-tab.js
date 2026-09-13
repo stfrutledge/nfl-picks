@@ -816,6 +816,32 @@ check('the poll reschedules itself even when a refresh throws', () => {
     assert.ok(src.includes('catch'), 'and a throw is caught rather than killing it');
 });
 
+section('A finished game recedes');
+
+check('a final box is marked as one, and faded', () => {
+    const games = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    const api = setup({
+        games, withDom: true,
+        picks: { Stephen: { rams_seahawks: b5('home') } },
+        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    });
+    api.renderBlazinGameBoxes();
+    assert.ok((api.__written['live-games-list'] || '').includes('live-game-box final'),
+        'the box carries the final state');
+
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const rule = styles.match(/\.live-game-box\.final \{[^}]*\}/);
+    assert.ok(rule, 'there is a rule for it');
+    assert.ok(/opacity:\s*0?\.\d+/.test(rule[0]), 'which fades it');
+});
+
+check('a game being played is not faded', () => {
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const rule = styles.match(/\.live-game-box\.in-progress \{[^}]*\}/);
+    assert.ok(rule, 'there is a rule for it');
+    assert.ok(!/opacity/.test(rule[0]), 'it keeps full attention');
+});
+
 section('In progress first, then finished, then still to come');
 
 check('the three states rank in that order', () => {
