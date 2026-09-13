@@ -465,7 +465,7 @@ function isGameLocked(game, week = null) {
 
 // Live scores cache (populated from ESPN API)
 let liveScoresCache = {};
-let liveScoresRefreshInterval = null;
+let liveScoresRefreshTimer = null;
 
 /**
  * Fetch live scores from ESPN API
@@ -1666,6 +1666,26 @@ async function updateSpreadsFromAPI(forceRefresh = false) {
     return updateOddsFromAPI(forceRefresh);
 }
 
+// How long to wait between live-score fetches.
+//
+// Two rates, because shouldPollLiveScores() stays true on nothing but
+// scheduled games - which is most of the week. Half a minute is right while
+// something is being played and wasteful when the only thing to catch is a
+// kickoff.
+const LIVE_REFRESH_PLAYING_MS = 30000;
+const LIVE_REFRESH_WAITING_MS = 120000;
+
+/** True while any game is actually being played. */
+function anyGameInProgress() {
+    return Object.values(liveScoresCache)
+        .some(scoreData => LIVE_IN_PROGRESS_STATUSES.includes(scoreData.status));
+}
+
+/** How long to wait before the next fetch. */
+function liveRefreshDelay() {
+    return anyGameInProgress() ? LIVE_REFRESH_PLAYING_MS : LIVE_REFRESH_WAITING_MS;
+}
+
 /**
  * Check if we should keep polling for live scores
  * Returns true if any games are in progress OR scheduled (not yet final)
@@ -1691,11 +1711,7 @@ function shouldPollLiveScores() {
 }
 
 function startLiveScoresRefresh() {
-    // Clear any existing interval
-    if (liveScoresRefreshInterval) {
-        clearInterval(liveScoresRefreshInterval);
-        liveScoresRefreshInterval = null;
-    }
+    stopLiveScoresRefresh();
 
     // Fetch immediately to get current game states
     fetchLiveScores().then(async () => {
@@ -1711,22 +1727,7 @@ function startLiveScoresRefresh() {
         // Only start polling interval if games are scheduled or in progress
         if (shouldPollLiveScores()) {
             console.log('Games scheduled or in progress - starting live refresh');
-            liveScoresRefreshInterval = setInterval(async () => {
-                await fetchLiveScores();
-                refreshLiveViews();
-
-                // Sync any newly final games to Google Sheets
-                await syncResultsToGoogleSheets(currentWeek, 'ESPN');
-
-                // Stop polling when all games are final
-                if (!shouldPollLiveScores()) {
-                    console.log('All games final - stopping live refresh');
-                    stopLiveScoresRefresh();
-
-                    // Check if next week's games are available and preload them
-                    await preloadNextWeekIfAvailable();
-                }
-            }, 120000);
+            scheduleLiveScoresRefresh();
         } else {
             console.log('All games final or no games - skipping live refresh');
 
@@ -1931,12 +1932,42 @@ async function preloadNextWeekIfAvailable() {
 }
 
 /**
+ * Queue the next live-scores fetch.
+ *
+ * A timeout that reschedules itself rather than a fixed interval, for two
+ * reasons: the rate depends on whether anything is being played, which can
+ * change between fetches; and at half a minute a slow fetch would otherwise
+ * overlap the one behind it.
+ */
+function scheduleLiveScoresRefresh() {
+    liveScoresRefreshTimer = setTimeout(async () => {
+        await fetchLiveScores();
+        refreshLiveViews();
+
+        // Sync any newly final games to Google Sheets
+        await syncResultsToGoogleSheets(currentWeek, 'ESPN');
+
+        // Stop polling when all games are final
+        if (!shouldPollLiveScores()) {
+            console.log('All games final - stopping live refresh');
+            stopLiveScoresRefresh();
+
+            // Check if next week's games are available and preload them
+            await preloadNextWeekIfAvailable();
+            return;
+        }
+
+        scheduleLiveScoresRefresh();
+    }, liveRefreshDelay());
+}
+
+/**
  * Stop live scores refresh
  */
 function stopLiveScoresRefresh() {
-    if (liveScoresRefreshInterval) {
-        clearInterval(liveScoresRefreshInterval);
-        liveScoresRefreshInterval = null;
+    if (liveScoresRefreshTimer) {
+        clearTimeout(liveScoresRefreshTimer);
+        liveScoresRefreshTimer = null;
     }
 }
 

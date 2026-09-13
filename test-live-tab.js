@@ -83,6 +83,8 @@ function makeAppEnv({ withDom = false } = {}) {
         liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
         renderLiveTab, renderActiveTab, refreshLiveViews, getLiveGameStatus,
+        liveRefreshDelay, anyGameInProgress, shouldPollLiveScores,
+        LIVE_REFRESH_PLAYING_MS, LIVE_REFRESH_WAITING_MS,
         pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
         liveEntryFromEvent, liveCacheEntry,
         rankStandings, asIsPositionChange, formatPositionMove,
@@ -659,6 +661,60 @@ check('a move is drawn only when there is one', () => {
     assert.ok(api.formatPositionMove(-1).includes('move-down'), 'a drop');
     assert.ok(api.formatPositionMove(0).includes('move-none'), 'level');
     assert.ok(api.formatPositionMove(null).includes('move-none'), 'nothing to compare');
+});
+
+section('How often the scores are fetched');
+
+check('half a minute while a game is being played', () => {
+    const api = makeAppEnv();
+    api.__setLiveScores({
+        a: api.liveEntryFromEvent(espnEvent({ state: 'STATUS_IN_PROGRESS' })).entry
+    });
+    assert.strictEqual(api.anyGameInProgress(), true);
+    assert.strictEqual(api.liveRefreshDelay(), api.LIVE_REFRESH_PLAYING_MS);
+    assert.strictEqual(api.LIVE_REFRESH_PLAYING_MS, 30000);
+});
+
+check('halftime still counts as being played', () => {
+    const api = makeAppEnv();
+    api.__setLiveScores({
+        a: api.liveEntryFromEvent(espnEvent({
+            state: 'STATUS_HALFTIME', shortDetail: 'Halftime'
+        })).entry
+    });
+    assert.strictEqual(api.liveRefreshDelay(), api.LIVE_REFRESH_PLAYING_MS);
+});
+
+check('slower while the only thing to catch is a kickoff', () => {
+    // shouldPollLiveScores stays true on scheduled games, which is most of the
+    // week - polling that every 30s would be for nothing.
+    const api = makeAppEnv();
+    api.__setLiveScores({
+        a: api.liveEntryFromEvent(espnEvent({
+            state: 'STATUS_SCHEDULED', shortDetail: '9/13 - 4:25 PM EDT'
+        })).entry
+    });
+    assert.strictEqual(api.shouldPollLiveScores(), true, 'still worth polling');
+    assert.strictEqual(api.anyGameInProgress(), false);
+    assert.strictEqual(api.liveRefreshDelay(), api.LIVE_REFRESH_WAITING_MS);
+});
+
+check('one game in progress is enough to speed everything up', () => {
+    const api = makeAppEnv();
+    api.__setLiveScores({
+        a: api.liveEntryFromEvent(espnEvent({ state: 'STATUS_FINAL', shortDetail: 'Final' })).entry,
+        b: api.liveEntryFromEvent(espnEvent({ state: 'STATUS_SCHEDULED' })).entry,
+        c: api.liveEntryFromEvent(espnEvent({ state: 'STATUS_IN_PROGRESS' })).entry
+    });
+    assert.strictEqual(api.liveRefreshDelay(), api.LIVE_REFRESH_PLAYING_MS);
+});
+
+check('nothing left to watch stops the polling', () => {
+    const api = makeAppEnv();
+    api.__setLiveScores({
+        a: api.liveEntryFromEvent(espnEvent({ state: 'STATUS_FINAL', shortDetail: 'Final' })).entry
+    });
+    assert.strictEqual(api.shouldPollLiveScores(), false, 'all final, so stop');
 });
 
 section('The score follows the poll, not the page load');

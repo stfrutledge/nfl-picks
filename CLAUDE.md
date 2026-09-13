@@ -155,6 +155,8 @@ Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()`
 
 Down and distance are absent between drives and at the half, so the row showing them is dropped rather than left stale, and no football is drawn.
 
+**The scores are fetched every 30s while a game is being played**, and every 2 minutes otherwise. Two rates because `shouldPollLiveScores()` stays true on nothing but scheduled games, which is most of the week — `anyGameInProgress()` is the narrower test that picks the faster one. It is a timeout that reschedules itself rather than a fixed interval, so the rate can change between fetches and a slow fetch cannot overlap the one behind it.
+
 **`getLiveGameStatus()` reads the cache before the game's own fields.** A game carries ESPN's status and score from whenever its schedule was fetched, and that snapshot used to win — so every score froze the moment its game kicked off and only moved again on a reload, while the 2-minute poll updated a cache nothing read. The snapshot is the fallback now, which is what covers a week the scoreboard is not carrying.
 
 `liveCacheEntry()` matches on the **ESPN event id** where the game has one, and a game whose id the scoreboard is not carrying gets nothing rather than falling through to team names. Names alone cannot tell two meetings of the same pair apart, and the scoreboard only ever carries the current week, so a division rematch would otherwise put a live score on the earlier fixture. They come through `liveCacheEntry()` rather than `getLiveGameStatus()`, which prefers the status embedded in the schedule — a snapshot from whenever it was fetched, carrying no situation at all.
