@@ -459,6 +459,31 @@ check('the red zone is not marked on the box', () => {
         'the down still shows');
 });
 
+check('covering is marked while a game is being played', () => {
+    // Seahawks -3 at home and up by 4 as it stands.
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        awayScore: 20, homeScore: 24,
+        situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
+    })).entry);
+    assert.ok(html.includes('covering'), 'the side ahead of the line is marked');
+});
+
+check('and not once it is over', () => {
+    // The same score, finished. Covering says where a game has got to, and a
+    // finished one is not on its way anywhere.
+    const games = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    const api = setup({
+        games, withDom: true,
+        picks: { Stephen: { rams_seahawks: b5('home') } },
+        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    });
+    api.renderBlazinGameBoxes();
+    const html = api.__written['live-games-list'] || '';
+    assert.ok(html.includes('Final'), 'the game is final');
+    assert.ok(html.includes('live-score-num'), 'and still shows its score');
+    assert.ok(!html.includes('covering'), 'but nothing is covering any more');
+});
+
 check('a game still to come has no score row and no situation', () => {
     const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
         state: 'STATUS_SCHEDULED', shortDetail: '9/13 - 4:25 PM EDT', period: 0, clock: '0:00'
