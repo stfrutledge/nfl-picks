@@ -5266,6 +5266,33 @@ function blazinGamesForWeek(week = currentWeek) {
 }
 
 /**
+ * Whether a pick is graded at a different line from the one on the board.
+ *
+ * A locked pick usually locked at the number that is still up, and most of
+ * Cowherd's match the book too - so "locked" on its own is the wrong test for
+ * whether a line is worth printing next to a name. Only a number that differs
+ * from the one already on the row says anything.
+ */
+function pickLineDiffers(game, pick) {
+    const line = lineForPick(game, pick);
+    if (!hasUsableLine(line.spread)) return false;
+    if (!hasUsableSpread(game)) return true;
+    return Number(line.spread) !== Number(game.spread) || line.favorite !== game.favorite;
+}
+
+/**
+ * A pick's own line as a signed number from the side taken: "+7", "-6.5".
+ * Just the number - the row it sits on already names the team.
+ */
+function signedLineForPick(game, pick, side) {
+    const line = lineForPick(game, pick);
+    if (!hasUsableLine(line.spread)) return '';
+    const spread = Number(line.spread);
+    if (spread === 0) return 'PK';
+    return `${line.favorite === side ? '-' : '+'}${spread}`;
+}
+
+/**
  * In progress first, then finished, then still to come; kickoff order within
  * each. What is happening now is what the tab is for.
  */
@@ -5360,7 +5387,8 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
             && calculateATSWinnerFrom(Number(game.spread), game.favorite, scored) === side;
 
         const chips = picks.map(({ picker, pick }) => {
-            const own = isPickFrozen(pick) ? describeLineForSide(game, side, pick) : '';
+            // Only where it is not the number already on the row.
+            const own = pickLineDiffers(game, pick) ? signedLineForPick(game, pick, side) : '';
             return `<span class="live-picker${picker === COWHERD ? ' cowherd' : ''}">`
                 + `${picker}${own ? ` <em>${own}</em>` : ''}</span>`;
         }).join('');

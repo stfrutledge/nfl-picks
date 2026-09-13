@@ -83,6 +83,7 @@ function makeAppEnv({ withDom = false } = {}) {
         liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
         renderLiveTab, renderActiveTab, refreshLiveViews,
+        pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -280,6 +281,61 @@ check('a locked pick is described at its own number, not the board’s', () => {
     const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.away[0];
     assert.strictEqual(api.describeLineForSide(games[0], 'away', pick), 'Rams +7');
     assert.strictEqual(api.describeLineForSide(games[0], 'away'), 'Rams +3', 'the board still says +3');
+});
+
+section('A line is printed by a name only where it differs');
+
+// "Locked" is the wrong test: a locked pick usually locked at the number that
+// is still up, and most of Cowherd's match the book too. Repeating the number
+// already on the row next to every name is noise.
+
+check('a pick at the board\u2019s own line differs from nothing', () => {
+    const games = [game(1, 'Rams', 'Seahawks')];   // home -3
+    const api = setup({ games });
+    api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'home', spread: -3 }]);
+    const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.home[0];
+    assert.strictEqual(api.pickLineDiffers(games[0], pick), false);
+});
+
+check('a pick at his own number does', () => {
+    const games = [game(1, 'Rams', 'Seahawks')];
+    const api = setup({ games });
+    api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 7 }]);
+    const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.away[0];
+    assert.strictEqual(api.pickLineDiffers(games[0], pick), true);
+    assert.strictEqual(api.signedLineForPick(games[0], pick, 'away'), '+7');
+});
+
+check('the same number on the other side of the game differs', () => {
+    // Locked with the Rams laying 3 while the board has the Seahawks laying 3:
+    // same magnitude, opposite favourite, and not the same line at all.
+    const games = [game(1, 'Rams', 'Seahawks')];
+    const api = setup({ games });
+    api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: -3 }]);
+    const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.away[0];
+    assert.strictEqual(api.pickLineDiffers(games[0], pick), true);
+    assert.strictEqual(api.signedLineForPick(games[0], pick, 'away'), '-3');
+});
+
+check('a riding pick never prints a line', () => {
+    const games = [game(1, 'Rams', 'Seahawks')];
+    const api = setup({ games, picks: { Stephen: { rams_seahawks: b5('home') } } });
+    const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.home[0];
+    assert.strictEqual(api.pickLineDiffers(games[0], pick), false,
+        'it is graded at the board line, which is the one on the row');
+});
+
+check('the rendered chips follow the same rule', () => {
+    const games = [game(1, 'Rams', 'Seahawks'), game(2, 'Bills', 'Chiefs')];
+    const api = setup({ games, withDom: true });
+    api.saveCowherdPicks(WEEK, [
+        { key: 'rams_seahawks', side: 'away', spread: 7 },     // his own number
+        { key: 'bills_chiefs', side: 'home', spread: -3 }      // the board's
+    ]);
+    api.renderBlazinGameBoxes();
+    const html = api.__written['live-games-list'] || '';
+    assert.ok(html.includes('Cowherd <em>+7</em>'), 'his own number is printed');
+    assert.ok(!html.includes('Cowherd <em>-3</em>'), 'the board\u2019s is not repeated');
 });
 
 section('The tab is redrawn when its data arrives');
