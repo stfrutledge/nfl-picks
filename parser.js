@@ -29,7 +29,8 @@ function addValidationError(section, message, severity = 'warning') {
 }
 
 const PICKERS = ['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
-const PICKERS_WITH_COWHERD = ['Cowherd', 'Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
+const COWHERD = 'Cowherd';
+const PICKERS_WITH_COWHERD = [COWHERD, 'Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
 
 const PICKER_COLORS = {
     'Stephen': '#3b82f6',

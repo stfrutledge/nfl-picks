@@ -110,6 +110,23 @@ swallowed the blue FINAL stripe.
 
 Run `node test-line-freezing.js`.
 
+## Cowherd's Blazin' 5
+
+The group plays against Colin Cowherd's Blazin' 5, so his five picks are entered by hand each week and scored by the same engine as everyone else's. Entry is the admin-only panel on the Make Picks tab (`#cowherd-panel`, gated by `.admin-only`, so Stephen only).
+
+His picks live in `allPicks` under the picker name `Cowherd`, exactly like a player's. That is deliberate and is what buys localStorage, the Backup sheet round trip and the History view for nothing — none of them know he is special, and the Apps Script has no picker whitelist, so **no redeploy was needed for any of this**.
+
+Two things stop him being just a sixth picker:
+
+- **He has a Blazin' 5 record and nothing else.** He makes no straight-up picks, and his five line picks *are* the Blazin' 5 — counting them in the Line standings would put five picks a week against everyone else's sixteen. `cowherdBelongsIn()` is the single gate: `COWHERD_CATEGORY` is `'blazin'`, and he is also left out until he has a scored pick, because an empty Cowherd row reads as a bug rather than as a scoreline. `calculateStatsForWeeks` takes a picker list so he can be scored in the same pass and filtered after.
+- **He calls his own numbers, and they are not always the book's.** Each pick carries the line he gave, stored in the same `frozen*` fields a locked pick uses — so `lineForPick()` and `atsWinnerForPick()` grade him at his number with no new scoring code, and the sheet's spread columns already record the line a pick is graded against. `cowherdLineFields()` turns a side plus a number signed from that side ("Rams +7") into the (magnitude, favourite) pair everything else stores; `cowherdSignedSpread()` is the inverse, for putting his number back in the input.
+
+`cowherdWeeklyResults(season)` is the one source for his history: a finished season reads its archived `COWHERD_<year>_RESULTS`, the season in progress is scored from the picks entered so far. It replaced two copies of an eight-way ternary over hardcoded season globals, so a newly archived year now works without editing them.
+
+Watch out for the five analysis panels that still score Blazin' picks with `calculateATSWinner(game, result)` — the market line — rather than `atsWinnerForPick()`: `calculateBlazinTeamPickRecords`, `calculateBlazinSpreadRecords`, `calculateHistoryBlazinTeamRecords`, `calculateHistoryBlazinSpreadRecords` and `calculatePickerWeeklyBankroll`. They take a picker from a `PICKERS`-only dropdown so Cowherd never reaches them, but they are wrong for a locked pick today. `calculateWorstBlazinWeeks` was in that list and had to be fixed, because it feeds the Blazin' standings table he does appear in.
+
+Run `node test-cowherd-blazin.js`.
+
 ## Standings
 
 Standings, the trend chart, last-3-week form and best week are **computed from picks + results** by `calculateStatsForWeeks(firstWeek, lastWeek)`, not read from a spreadsheet. `renderDashboard` switches to the computed path whenever `LEGACY_SHEETS_SEASON !== CURRENT_SEASON`, which is every season after 2025.
@@ -126,6 +143,6 @@ Two things the engine depends on:
 Still fed by the workbook, so still blank for a new season: the group-overall panel, lone wolf, universal agreement and favourites-vs-underdogs. Those need the same treatment (`parseNFLPicksCSV` is what they come from). `node test-standings-engine.js` covers the parts that are done.
 - **ESPN schedule fetches** pin `dates=<CURRENT_SEASON>` — without it, ESPN serves the previous season during the offseason.
 
-Offseason checklist (the only manual step): archive the finished season to `historical-<year>.js` **including playoff weeks 19-22** (historical-2025.js has them; 2016-2024 are regular-season only).
+Offseason checklist (the only manual step): archive the finished season to `historical-<year>.js` **including playoff weeks 19-22** (historical-2025.js has them; 2016-2024 are regular-season only), and paste in the Cowherd block that `exportCowherdResults()` prints from the browser console. His week-by-week record is the one piece that cannot be re-derived once the season's picks are cleared.
 
 Run `node test-offseason-reset.js` to smoke-test the rollover behavior.

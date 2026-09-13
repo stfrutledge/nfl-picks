@@ -2853,38 +2853,22 @@ function renderLifetimeStandingsTable() {
             });
         });
 
-        // Add Cowherd's data for this season
-        const cowherdResults = season === 2025 ? window.COWHERD_2025_RESULTS :
-                               season === 2024 ? window.COWHERD_2024_RESULTS :
-                               season === 2023 ? window.COWHERD_2023_RESULTS :
-                               season === 2022 ? window.COWHERD_2022_RESULTS :
-                               season === 2021 ? window.COWHERD_2021_RESULTS :
-                               season === 2020 ? window.COWHERD_2020_RESULTS :
-                               season === 2019 ? window.COWHERD_2019_RESULTS :
-                               season === 2018 ? window.COWHERD_2018_RESULTS : null;
-        if (cowherdResults) {
-            if (!pickerStats['Cowherd']) {
-                pickerStats['Cowherd'] = {
-                    name: 'Cowherd',
+        // Cowherd's Blazin' 5 for this season - archived for a finished one,
+        // scored from the entered picks for the season in progress.
+        const cowherdTotal = totalCowherdRecord(cowherdWeeklyResults(season));
+        if (cowherdTotal.wins + cowherdTotal.losses + cowherdTotal.pushes > 0) {
+            if (!pickerStats[COWHERD]) {
+                pickerStats[COWHERD] = {
+                    name: COWHERD,
                     lineWins: 0, lineLosses: 0, linePushes: 0,
                     suWins: 0, suLosses: 0,
                     blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
                     totalWins: 0, totalLosses: 0, totalPushes: 0
                 };
             }
-            if (cowherdResults.aggregate) {
-                pickerStats['Cowherd'].blazinWins += cowherdResults.aggregate.wins;
-                pickerStats['Cowherd'].blazinLosses += cowherdResults.aggregate.losses;
-                pickerStats['Cowherd'].blazinPushes += cowherdResults.aggregate.pushes;
-            } else {
-                Object.values(cowherdResults).forEach(weekData => {
-                    if (weekData) {
-                        pickerStats['Cowherd'].blazinWins += weekData.wins;
-                        pickerStats['Cowherd'].blazinLosses += weekData.losses;
-                        pickerStats['Cowherd'].blazinPushes += weekData.pushes;
-                    }
-                });
-            }
+            pickerStats[COWHERD].blazinWins += cowherdTotal.wins;
+            pickerStats[COWHERD].blazinLosses += cowherdTotal.losses;
+            pickerStats[COWHERD].blazinPushes += cowherdTotal.pushes;
         }
     });
 
@@ -3208,40 +3192,20 @@ function renderHistoryStandingsTable(season) {
         });
     });
 
-    // Add Cowherd's aggregate data for seasons with Blazin' 5 data (no pick-by-pick data)
-    const cowherdResults = season === 2025 ? window.COWHERD_2025_RESULTS :
-                           season === 2024 ? window.COWHERD_2024_RESULTS :
-                           season === 2023 ? window.COWHERD_2023_RESULTS :
-                           season === 2022 ? window.COWHERD_2022_RESULTS :
-                           season === 2021 ? window.COWHERD_2021_RESULTS :
-                           season === 2020 ? window.COWHERD_2020_RESULTS :
-                           season === 2019 ? window.COWHERD_2019_RESULTS :
-                           season === 2018 ? window.COWHERD_2018_RESULTS : null;
-    if (cowherdResults) {
-        let cowherdStats = {
-            name: 'Cowherd',
+    // Cowherd has a Blazin' 5 record and nothing else, whether it comes from
+    // the season's archive or, for the season in progress, from the picks
+    // entered so far.
+    const cowherdTotal = totalCowherdRecord(cowherdWeeklyResults(season));
+    if (cowherdTotal.wins + cowherdTotal.losses + cowherdTotal.pushes > 0) {
+        pickerStats[COWHERD] = {
+            name: COWHERD,
             lineWins: 0, lineLosses: 0, linePushes: 0,
             suWins: 0, suLosses: 0,
-            blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
+            blazinWins: cowherdTotal.wins,
+            blazinLosses: cowherdTotal.losses,
+            blazinPushes: cowherdTotal.pushes,
             totalWins: 0, totalLosses: 0, totalPushes: 0
         };
-        // Handle both week-by-week and aggregate-only formats
-        if (cowherdResults.aggregate) {
-            // Aggregate-only format (e.g., 2022)
-            cowherdStats.blazinWins = cowherdResults.aggregate.wins;
-            cowherdStats.blazinLosses = cowherdResults.aggregate.losses;
-            cowherdStats.blazinPushes = cowherdResults.aggregate.pushes;
-        } else {
-            // Week-by-week format (e.g., 2023, 2024)
-            Object.values(cowherdResults).forEach(weekData => {
-                if (weekData) {
-                    cowherdStats.blazinWins += weekData.wins;
-                    cowherdStats.blazinLosses += weekData.losses;
-                    cowherdStats.blazinPushes += weekData.pushes;
-                }
-            });
-        }
-        pickerStats['Cowherd'] = cowherdStats;
     }
 
     // Sort by Blazin' 5 percentage descending, then by Blazin' wins
@@ -3937,6 +3901,22 @@ function setupPicksActions() {
         }
     });
     document.getElementById('freeze-all-btn-mobile')?.addEventListener('click', freezeAllCompleteGames);
+
+    // Cowherd's Blazin' 5, admin only. Delegated because the rows are redrawn
+    // from storage on every week change.
+    document.getElementById('cowherd-save-btn')?.addEventListener('click', saveCowherdPanel);
+    document.getElementById('cowherd-clear-btn')?.addEventListener('click', () => {
+        requestConfirmation(
+            `Clear Cowherd's picks for ${isPlayoffWeek(currentWeek) ? getWeekDisplayName(currentWeek) : `week ${currentWeek}`}?`,
+            'They can be entered again at any time.',
+            { confirmLabel: 'Clear' },
+            () => {
+                saveCowherdPicks(currentWeek, []);
+                renderCowherdPanel();
+                showToast('Cleared Cowherd\u2019s picks for this week');
+            });
+    });
+    document.getElementById('cowherd-rows')?.addEventListener('change', handleCowherdRowChange);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
     document.getElementById('randomize-picks-btn')?.addEventListener('click', () => {
         randomizePicks();
@@ -4934,6 +4914,290 @@ function freezeAllCompleteGames() {
         });
 }
 
+// --- Cowherd's Blazin' 5 ---------------------------------------------------
+// The group plays against Colin Cowherd's Blazin' 5, so his five picks are
+// entered by hand each week and scored by the same engine as everyone else.
+//
+// Two things stop him being just a sixth picker:
+//
+//   - He only ever has a Blazin' 5 record. He makes no straight-up picks, and
+//     his five line picks ARE the Blazin' 5, so letting them into the Line
+//     standings would put five picks a week against everyone else's sixteen.
+//     COWHERD_CATEGORY is the single place that says which column he is in.
+//   - He calls his own numbers, and they are not always the book's. Each pick
+//     therefore carries the line he gave, stored in the same frozen* fields a
+//     locked pick uses, so lineForPick() and atsWinnerForPick() grade him at
+//     his number with no new scoring code.
+//
+// His picks live in allPicks under the picker name 'Cowherd', which is what
+// gets localStorage, the Backup sheet round trip and the History view for
+// free - none of them know he is special. Entry is admin-only (Stephen).
+
+/** The one standings column Cowherd appears in. */
+const COWHERD_CATEGORY = 'blazin';
+
+/** The other side of a game. */
+function otherSide(side) {
+    return side === 'home' ? 'away' : 'home';
+}
+
+/**
+ * Split a line as Cowherd called it - a side plus a number signed from that
+ * side, "Rams +3.5" or "Seahawks -3.5" - into the (magnitude, favourite) pair
+ * every other pick is stored with.
+ */
+function cowherdLineFields(game, side, signedSpread) {
+    // hasUsableLine, not Number.isFinite: Number('') is 0, so a blank field
+    // would otherwise be stored as a pick'em and scored for ever.
+    if (!hasUsableLine(signedSpread)) return null;
+    const signed = Number(signedSpread);
+    const spread = Math.abs(signed);
+    // Laying the points makes his side the favourite. At a pick'em nobody is,
+    // and scoring never reads it, so his own side is as good a value as any.
+    const favorite = signed <= 0 ? side : otherSide(side);
+    return { frozenSpread: spread, frozenFavorite: favorite };
+}
+
+/**
+ * The line on a stored Cowherd pick, signed from the side he took - the
+ * inverse of cowherdLineFields(), for putting his number back in the input.
+ */
+function cowherdSignedSpread(pick) {
+    if (!pick || !hasUsableLine(pick.frozenSpread)) return null;
+    const spread = Number(pick.frozenSpread);
+    return pick.frozenFavorite === pick.line ? -spread : spread;
+}
+
+/** Cowherd's entered picks for a week: local, plus anything from the backup. */
+function getCowherdPicksForWeek(week = currentWeek) {
+    const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
+    const local = seasonPicks[COWHERD] || {};
+    const cached = weeklyPicksCache[week]?.picks?.[COWHERD]
+        || weeklyPicksCache[String(week)]?.picks?.[COWHERD] || {};
+    return { ...cached, ...local };
+}
+
+/**
+ * Replace Cowherd's picks for a week with `entries`, each { key, side, spread }
+ * - the game's pick key, the side he took, and the number he gave it signed
+ * from that side.
+ *
+ * The week is written whole: an entry left out is a pick he no longer has, and
+ * the week-snapshot sync then tombstones it in the sheet. Returns how many
+ * picks were stored.
+ */
+function saveCowherdPicks(week, entries) {
+    const games = getGamesForWeekAndSeason(week, currentSeason) || [];
+    const byKey = new Map(games.map(g => [pickKey(g), g]));
+    const stamp = new Date().toISOString();
+    const picks = {};
+
+    entries.forEach(entry => {
+        const game = byKey.get(entry.key);
+        if (!game || !entry.side) return;
+        const fields = cowherdLineFields(game, entry.side, entry.spread);
+        if (!fields) return;
+        picks[entry.key] = { line: entry.side, blazin: true, ...fields, frozenAt: stamp };
+    });
+
+    if (!allPicks[week]) allPicks[week] = {};
+    allPicks[week][COWHERD] = picks;
+    localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
+    // A deliberate single Save, not a click-through: sync it now rather than
+    // through the debounce that exists to batch a player working down a slate.
+    syncPicksToGoogleSheets(false, COWHERD, week);
+    return Object.keys(picks).length;
+}
+
+/**
+ * Cowherd's week-by-week Blazin' 5 record, in the { "1": {wins,losses,pushes} }
+ * shape the season archives store.
+ *
+ * One source for both halves of his history: a finished season reads its
+ * archived COWHERD_<year>_RESULTS, the season in progress is scored from the
+ * picks entered so far. Returns null when there is nothing either way.
+ */
+function cowherdWeeklyResults(season) {
+    const year = Number(season);
+    if (year !== CURRENT_SEASON) {
+        return (typeof window !== 'undefined' && window[`COWHERD_${year}_RESULTS`]) || null;
+    }
+
+    const computed = calculateStatsForWeeks(1, LAST_PLAYOFF_WEEK, [COWHERD]);
+    const weekly = {};
+    computed[COWHERD].byWeek.forEach(w => {
+        const rec = w.blazin;
+        if (rec.wins + rec.losses + rec.pushes > 0) weekly[w.week] = rec;
+    });
+    return Object.keys(weekly).length > 0 ? weekly : null;
+}
+
+/**
+ * Draw the admin entry panel for the current week: five rows of
+ * game / side / his number, filled in from whatever is already stored.
+ *
+ * Rebuilt from storage every time rather than patched in place, so switching
+ * week or picking the picks up from another device cannot leave a stale row
+ * behind. Reading it back out is readCowherdRows().
+ */
+function renderCowherdPanel() {
+    const rows = document.getElementById('cowherd-rows');
+    if (!rows) return;
+
+    const weekLabel = document.getElementById('cowherd-week-num');
+    if (weekLabel) {
+        weekLabel.textContent = isPlayoffWeek(currentWeek)
+            ? getWeekDisplayName(currentWeek)
+            : `Week ${getWeekDisplayName(currentWeek)}`;
+    }
+
+    const games = getGamesForWeekAndSeason(currentWeek, currentSeason) || [];
+    const stored = getCowherdPicksForWeek(currentWeek);
+    // Stable order so a row does not jump as the number is typed into it.
+    const entries = games
+        .map(game => ({ game, pick: getPicksForGame(stored, game) }))
+        .filter(e => e.pick.line);
+
+    const gameOption = (game, selectedKey) => {
+        const key = pickKey(game);
+        const selected = key === selectedKey ? ' selected' : '';
+        return `<option value="${key}"${selected}>${game.away} @ ${game.home}</option>`;
+    };
+
+    let html = '';
+    for (let i = 0; i < MAX_BLAZIN_PICKS; i++) {
+        const entry = entries[i];
+        const game = entry ? entry.game : null;
+        const key = game ? pickKey(game) : '';
+        const side = entry ? entry.pick.line : '';
+        const signed = entry ? cowherdSignedSpread(entry.pick) : null;
+
+        const sideOptions = game
+            ? `<option value=""></option>`
+              + `<option value="away"${side === 'away' ? ' selected' : ''}>${game.away}</option>`
+              + `<option value="home"${side === 'home' ? ' selected' : ''}>${game.home}</option>`
+            : '<option value=""></option>';
+
+        const incomplete = key && (!side || signed === null) ? ' incomplete' : '';
+
+        html += `
+            <div class="cowherd-row${incomplete}" data-row="${i}">
+                <select class="cowherd-game" aria-label="Game ${i + 1}">
+                    <option value="">- Game -</option>
+                    ${games.map(g => gameOption(g, key)).join('')}
+                </select>
+                <select class="cowherd-side" aria-label="Cowherd's side, pick ${i + 1}">${sideOptions}</select>
+                <input class="cowherd-spread" type="number" step="0.5" inputmode="decimal"
+                       aria-label="Cowherd's line, pick ${i + 1}" placeholder="line"
+                       value="${signed === null ? '' : signed}">
+            </div>`;
+    }
+    rows.innerHTML = html;
+
+    renderCowherdRecord();
+}
+
+/** The running Blazin' 5 record under the entry panel. */
+function renderCowherdRecord() {
+    const label = document.getElementById('cowherd-record');
+    if (!label) return;
+    const total = totalCowherdRecord(cowherdWeeklyResults(CURRENT_SEASON));
+    const played = total.wins + total.losses + total.pushes;
+    label.textContent = played
+        ? `Season: ${total.wins}-${total.losses}${total.pushes ? `-${total.pushes}` : ''}`
+        : '';
+}
+
+/**
+ * Keep a row consistent as it is edited: choosing a game repopulates the two
+ * sides, and choosing a side fills in the book's number for it so only a line
+ * Cowherd actually moved has to be typed.
+ */
+function handleCowherdRowChange(event) {
+    const row = event.target.closest('.cowherd-row');
+    if (!row) return;
+
+    const gameSelect = row.querySelector('.cowherd-game');
+    const sideSelect = row.querySelector('.cowherd-side');
+    const spreadInput = row.querySelector('.cowherd-spread');
+    const games = getGamesForWeekAndSeason(currentWeek, currentSeason) || [];
+    const game = games.find(g => pickKey(g) === gameSelect?.value);
+
+    if (event.target === gameSelect) {
+        sideSelect.innerHTML = game
+            ? `<option value=""></option><option value="away">${game.away}</option><option value="home">${game.home}</option>`
+            : '<option value=""></option>';
+        spreadInput.value = '';
+    }
+
+    // Prefill the book's line for the chosen side, but never overwrite a
+    // number already typed - that number is the whole point of the field.
+    if (event.target === sideSelect && game && sideSelect.value && spreadInput.value === '') {
+        if (hasUsableSpread(game)) {
+            const signed = game.favorite === sideSelect.value ? -Number(game.spread) : Number(game.spread);
+            spreadInput.value = signed;
+        }
+    }
+
+    const complete = gameSelect.value && sideSelect.value && spreadInput.value !== '';
+    row.classList.toggle('incomplete', Boolean(gameSelect.value) && !complete);
+}
+
+/** Read the entry panel back out as saveCowherdPicks() entries. */
+function readCowherdRows() {
+    return Array.from(document.querySelectorAll('#cowherd-rows .cowherd-row')).map(row => ({
+        key: row.querySelector('.cowherd-game')?.value || '',
+        side: row.querySelector('.cowherd-side')?.value || '',
+        spread: row.querySelector('.cowherd-spread')?.value ?? ''
+    }));
+}
+
+/**
+ * Validate and store what is in the panel.
+ *
+ * A row is either empty or complete - a game with no side or no number is a
+ * half-entered pick, and saving it silently would drop it. The same game twice
+ * is a mis-click rather than two picks.
+ */
+function saveCowherdPanel() {
+    const rows = readCowherdRows();
+    const filled = rows.filter(r => r.key || r.side || r.spread !== '');
+
+    const halfDone = filled.filter(r => !r.key || !r.side || !Number.isFinite(Number(r.spread)) || r.spread === '');
+    if (halfDone.length > 0) {
+        showToast(`${halfDone.length} row${halfDone.length === 1 ? ' needs' : 's need'} a game, a side and a line`, 'warning');
+        return false;
+    }
+
+    const keys = filled.map(r => r.key);
+    if (new Set(keys).size !== keys.length) {
+        showToast('The same game is picked twice', 'warning');
+        return false;
+    }
+
+    const saved = saveCowherdPicks(currentWeek, filled);
+    renderCowherdPanel();
+    showToast(saved === MAX_BLAZIN_PICKS
+        ? `Saved Cowherd's Blazin' ${MAX_BLAZIN_PICKS}`
+        : `Saved ${saved} of ${MAX_BLAZIN_PICKS} Cowherd picks`);
+    return true;
+}
+
+/** Total a cowherdWeeklyResults()-shaped object, aggregate form included. */
+function totalCowherdRecord(weekly) {
+    const total = emptyRecord();
+    if (!weekly) return total;
+    // 2022 and earlier were archived as one season aggregate, not by week.
+    const buckets = weekly.aggregate ? [weekly.aggregate] : Object.values(weekly);
+    buckets.forEach(rec => {
+        if (!rec) return;
+        total.wins += rec.wins || 0;
+        total.losses += rec.losses || 0;
+        total.pushes += rec.pushes || 0;
+    });
+    return total;
+}
+
 function emptyRecord() {
     return { wins: 0, losses: 0, pushes: 0 };
 }
@@ -4948,10 +5212,13 @@ function emptyRecord() {
  *
  * Blazin' 5 is scored on the ATS outcome of the starred line pick - a B5 pick
  * is a line pick, not a separate kind of pick.
+ *
+ * `pickers` is a list rather than PICKERS outright so Cowherd can be scored by
+ * the same pass - see COWHERD_CATEGORY for why he is then kept to one column.
  */
-function calculateStatsForWeeks(firstWeek, lastWeek) {
+function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS) {
     const stats = {};
-    PICKERS.forEach(picker => {
+    pickers.forEach(picker => {
         stats[picker] = {
             name: picker,
             line: emptyRecord(), blazin: emptyRecord(),
@@ -4969,7 +5236,7 @@ function calculateStatsForWeeks(firstWeek, lastWeek) {
         const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
         const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
 
-        PICKERS.forEach(picker => {
+        pickers.forEach(picker => {
             const weekly = {
                 week: week,
                 line: emptyRecord(), blazin: emptyRecord(),
@@ -5046,6 +5313,7 @@ function standingsFromComputed(computed, category) {
     Object.keys(computed).forEach(picker => {
         const s = computed[picker];
         const rec = s[category];
+        if (!cowherdBelongsIn(picker, category, rec)) return;
         const weekly = s.byWeek
             .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
             .filter(w => w.pct !== null);
@@ -5078,11 +5346,27 @@ function standingsFromComputed(computed, category) {
 function weeklySeriesFromComputed(computed, category) {
     const out = {};
     Object.keys(computed).forEach(picker => {
+        if (!cowherdBelongsIn(picker, category, computed[picker][category])) return;
         out[picker] = computed[picker].byWeek
             .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
             .filter(w => w.pct !== null);
     });
     return out;
+}
+
+/**
+ * Whether a picker belongs in a standings category at all.
+ *
+ * Only Cowherd is ever excluded, and for two reasons: he has no record but a
+ * Blazin' 5 one (his line picks ARE the Blazin' 5, so the Line column would be
+ * five picks a week against everyone else's sixteen), and an empty Cowherd row
+ * before the first week of his picks is entered reads as a bug rather than as
+ * a scoreline.
+ */
+function cowherdBelongsIn(picker, category, record) {
+    if (picker !== COWHERD) return true;
+    if (category !== COWHERD_CATEGORY) return false;
+    return record.wins + record.losses + record.pushes > 0;
 }
 
 /**
@@ -5181,7 +5465,11 @@ function renderDashboard() {
     // so nobody has to hand-maintain a spreadsheet for the standings to work.
     const computeLocally = usingComputedStandings();
     const range = regularSeasonWeekRange();
-    const computed = computeLocally ? calculateStatsForWeeks(range.first, range.last) : null;
+    // Cowherd is scored in the same pass and then kept to the Blazin' 5
+    // column by cowherdBelongsIn(); see COWHERD_CATEGORY.
+    const computed = computeLocally
+        ? calculateStatsForWeeks(range.first, range.last, PICKERS_WITH_COWHERD)
+        : null;
     const useComputed = category => {
         stats = standingsFromComputed(computed, category);
         weeklyData = weeklySeriesFromComputed(computed, category);
@@ -5611,7 +5899,11 @@ function calculateWorstBlazinWeeks() {
                 // Only count Blazin' 5 picks
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                // Against the pick's OWN line, not the market's: a locked
+                // pick keeps the number it was locked at, and every Cowherd
+                // pick carries the number he called.
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
 
@@ -8729,6 +9021,10 @@ function renderGames() {
     // Setup keyboard navigation
     setupKeyboardNavigation();
 
+    // Cowherd's entry panel is keyed to the same week and schedule, so it is
+    // redrawn here rather than needing its own week-change hook.
+    renderCowherdPanel();
+
     // Start countdown timer
     startCountdownTimer();
 }
@@ -10431,15 +10727,19 @@ function savePicksToStorage(showSyncToast = false, skipSync = false) {
 }
 
 /**
- * Sync current picker's picks for current week to Google Sheets
+ * Sync one picker's picks for one week to Google Sheets.
+ *
+ * Defaults to the current picker and week, which is every call from the pick
+ * UI. Cowherd's picks are saved by an admin who is signed in as themselves,
+ * so his sync has to name him explicitly.
  */
-async function syncPicksToGoogleSheets(displayToast = true) {
+async function syncPicksToGoogleSheets(displayToast = true, picker = currentPicker, week = currentWeek) {
     if (!APPS_SCRIPT_URL) {
         return;
     }
 
-    const weekPicks = allPicks[currentWeek]?.[currentPicker] || {};
-    const weekGames = getGamesForWeek(currentWeek);
+    const weekPicks = allPicks[week]?.[picker] || {};
+    const weekGames = getGamesForWeekAndSeason(week, currentSeason) || [];
 
     // A sync writes a SNAPSHOT of the whole week, one row per game, blank
     // where there is no pick - not just the games that currently have one.
@@ -10454,14 +10754,14 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     // the schedule has not loaded: writing blanks for games we cannot see would
     // tombstone real picks.
     if (weekGames.length === 0) {
-        console.warn(`[Sync] No schedule for week ${currentWeek}, skipping sync`);
+        console.warn(`[Sync] No schedule for week ${week}, skipping sync`);
         return;
     }
 
     const knownKeys = new Set(weekGames.map(g => pickKey(g)));
     for (const storedKey of Object.keys(weekPicks)) {
         if (!knownKeys.has(storedKey)) {
-            console.warn(`[Sync] Pick key with no matching game in week ${currentWeek}, not synced: ${storedKey}`);
+            console.warn(`[Sync] Pick key with no matching game in week ${week}, not synced: ${storedKey}`);
         }
     }
 
@@ -10498,15 +10798,15 @@ async function syncPicksToGoogleSheets(displayToast = true) {
     // Nothing to do if this is byte-for-byte what was last written. Without
     // this, a couple of clicks a few seconds apart write the whole week twice.
     const signature = JSON.stringify(formattedPicks);
-    const signatureKey = `${currentWeek}|${currentPicker}`;
+    const signatureKey = `${week}|${picker}`;
     if (lastSyncedSignature[signatureKey] === signature) {
-        console.log(`[Sync] Week ${currentWeek} unchanged since last sync, skipping`);
+        console.log(`[Sync] Week ${week} unchanged since last sync, skipping`);
         return;
     }
 
     const payload = {
-        week: toSheetWeek(currentWeek),
-        picker: currentPicker,
+        week: toSheetWeek(week),
+        picker: picker,
         picks: formattedPicks,
         cleared: false  // Always reset cleared flag when syncing picks
     };
@@ -13163,7 +13463,9 @@ window.exportHistoricalData = function() {
     for (let week = 1; week <= 18; week++) {
         output.picks[week] = {};
 
-        PICKERS.forEach(picker => {
+        // Cowherd included: his picks are stored like anyone else's, and a
+        // snapshot without them loses the week's Blazin' 5 opposition.
+        PICKERS_WITH_COWHERD.forEach(picker => {
             const pickerPicks = allPicks[week]?.[picker] || {};
             const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
 
@@ -13247,6 +13549,37 @@ const HISTORICAL_PICKS = ${JSON.stringify(output.picks, null, 4)};
     }
 
     return output;
+};
+
+/**
+ * Print this season's Cowherd block for the offseason archive, ready to paste
+ * into historical-<year>.js next to SEASON_<year>_DATA.
+ *
+ * The archives store his Blazin' 5 as a week-by-week record rather than as
+ * picks, which is the one piece of the rollover that cannot be derived once
+ * the season's picks are cleared. Run it in the browser console before then.
+ */
+window.exportCowherdResults = function() {
+    const weekly = cowherdWeeklyResults(CURRENT_SEASON);
+    if (!weekly) {
+        console.log(`No Cowherd picks scored for ${CURRENT_SEASON} yet.`);
+        return null;
+    }
+
+    const total = totalCowherdRecord(weekly);
+    const jsCode = `// Cowherd's ${CURRENT_SEASON} Blazin' 5 results `
+        + `(${total.wins}-${total.losses}${total.pushes ? `-${total.pushes}` : ''})\n`
+        + `const COWHERD_${CURRENT_SEASON}_RESULTS = ${JSON.stringify(weekly, null, 2)};\n\n`
+        + `if (typeof window !== 'undefined') {\n`
+        + `    window.COWHERD_${CURRENT_SEASON}_RESULTS = COWHERD_${CURRENT_SEASON}_RESULTS;\n}`;
+
+    console.log('=== COPY EVERYTHING BELOW THIS LINE ===');
+    console.log(jsCode);
+    console.log('=== COPY EVERYTHING ABOVE THIS LINE ===');
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(jsCode).catch(() => {});
+    }
+    return weekly;
 };
 
 /**

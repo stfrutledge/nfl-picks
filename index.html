@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=8e47d2e7">
+    <link rel="stylesheet" href="styles.css?v=5ca32f24">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -548,6 +548,25 @@
                     <span class="api-quota" id="api-quota" title="Odds API credits left this month"></span>
                 </div>
 
+                <!-- Admin: Cowherd's Blazin' 5 (Stephen only) -->
+                <div class="cowherd-panel admin-only hidden collapsible-section" id="cowherd-panel" data-section="cowherd">
+                    <div class="collapsible-header" onclick="toggleSection('cowherd')">
+                        <h3 class="section-header-title">Cowherd&rsquo;s Blazin&rsquo; 5 &mdash; <span id="cowherd-week-num">--</span></h3>
+                        <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p class="cowherd-hint">Colin calls his own numbers. Enter the line <em>he</em> gave, signed from his side &mdash; the book&rsquo;s is filled in to start.</p>
+                        <div class="cowherd-rows" id="cowherd-rows">
+                            <!-- Rows injected here -->
+                        </div>
+                        <div class="cowherd-actions">
+                            <button class="btn btn-primary btn-small" id="cowherd-save-btn">Save Cowherd&rsquo;s Picks</button>
+                            <button class="btn btn-secondary btn-small" id="cowherd-clear-btn">Clear Week</button>
+                            <span class="cowherd-record" id="cowherd-record"></span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Scoring Summary -->
                 <div class="scoring-summary collapsible-section" id="scoring-summary" data-section="scoring">
                     <div class="collapsible-header" onclick="toggleSection('scoring')">
@@ -781,10 +800,10 @@
     <!-- Back to Top Button -->
     <button class="back-to-top" id="back-to-top" title="Back to top" aria-label="Scroll back to top">&#8593;</button>
 
-    <script src="parser.js?v=a1c79c04"></script>
+    <script src="parser.js?v=2588c724"></script>
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=79bd2160"></script>
+    <script src="app.js?v=2009c705"></script>
 </body>
 </html>

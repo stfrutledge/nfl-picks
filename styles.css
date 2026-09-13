@@ -6817,6 +6817,78 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     }
 }
 
+/* --- Cowherd's Blazin' 5 entry (admin only) -------------------------------
+   Five rows of game / side / his number. Deliberately plain: it is a data
+   entry form for one person, not part of the picking experience. */
+
+.cowherd-panel {
+    margin-bottom: 24px;
+}
+
+.cowherd-hint {
+    margin: 0 0 14px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.cowherd-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr) 92px;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.cowherd-row select,
+.cowherd-row input {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+
+.cowherd-row input {
+    text-align: center;
+}
+
+/* A row with a game but no side or number yet is the one still to finish. */
+.cowherd-row.incomplete select.cowherd-side,
+.cowherd-row.incomplete input.cowherd-spread {
+    border-color: var(--accent-amber);
+}
+
+.cowherd-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.cowherd-record {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 600px) {
+    .cowherd-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px;
+        gap: 6px;
+    }
+
+    .cowherd-row select,
+    .cowherd-row input {
+        font-size: 0.78rem;
+        padding: 6px 7px;
+    }
+}
+
 /* Mobile picks actions - hidden by default, shown below 600px */
 .picks-actions-mobile {
     display: none;
