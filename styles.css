@@ -5441,34 +5441,6 @@ footer a:hover {
     border-color: rgba(239, 68, 68, 0.3);
 }
 
-/* ============================================
-   LIVE PICK TRACKING
-   ============================================ */
-
-.live-pick-status {
-    display: inline-block;
-    padding: 4px 10px;
-    margin: 8px 0 0 0;
-    border-radius: 3px;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-}
-
-.live-pick-status.covering {
-    background: #059669;
-    color: white;
-}
-
-.live-pick-status.losing {
-    background: #b91c1c;
-    color: white;
-}
-
-.live-pick-status.push {
-    background: #525252;
-    color: white;
-}
 
 /* ============================================
    VS MARKET SECTION

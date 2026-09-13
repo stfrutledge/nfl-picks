@@ -8947,8 +8947,6 @@ function renderGames() {
                     </div>
                 </div>
 
-                ${renderLivePickStatus(game, liveData, gamePicks)}
-
                 <div class="game-footer">
                     <div class="game-location">
                         <span class="location-city">${game.location}</span>
@@ -9912,80 +9910,6 @@ function calculateATSWinnerFrom(spread, favorite, result) {
 function calculateATSWinner(game, result) {
     if (!result) return null;
     return calculateATSWinnerFrom(game.spread, game.favorite, result);
-}
-
-/**
- * Calculate live pick margin for in-progress games
- * Returns the current spread margin for the picker's selection
- */
-function calculateLivePickMargin(game, liveData, pick) {
-    if (!liveData || !pick || !pick.line) return null;
-
-    const { awayScore, homeScore } = liveData;
-    const { spread, favorite } = game;
-
-    // Calculate the picked team's spread
-    let pickedTeam, pickedSpread, currentMargin;
-
-    if (pick.line === 'away') {
-        pickedTeam = game.away;
-        // Away team gets points if home is favorite, loses points if away is favorite
-        pickedSpread = favorite === 'away' ? -spread : spread;
-        // Current margin from away team's perspective (positive = away winning)
-        currentMargin = (awayScore - homeScore) + pickedSpread;
-    } else {
-        pickedTeam = game.home;
-        // Home team gets points if away is favorite, loses points if home is favorite
-        pickedSpread = favorite === 'home' ? -spread : spread;
-        // Current margin from home team's perspective (positive = home winning)
-        currentMargin = (homeScore - awayScore) + pickedSpread;
-    }
-
-    // Format the spread display
-    const spreadDisplay = pickedSpread > 0 ? `+${pickedSpread}` : pickedSpread === 0 ? 'PK' : pickedSpread;
-
-    // Determine status and message
-    let status, message;
-    if (currentMargin > 0) {
-        status = 'covering';
-        message = `+${currentMargin} ATS`;
-    } else if (currentMargin < 0) {
-        status = 'losing';
-        message = `${currentMargin} ATS`;
-    } else {
-        status = 'push';
-        message = 'Currently a push';
-    }
-
-    return {
-        status,
-        margin: currentMargin,
-        message,
-        pickedTeam,
-        spreadDisplay
-    };
-}
-
-/**
- * Render live pick status HTML for in-progress games
- */
-function renderLivePickStatus(game, liveData, pick) {
-    // Only show for in-progress games with a line pick
-    if (!liveData || !pick || !pick.line) return '';
-
-    const inProgressStatuses = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
-    if (!inProgressStatuses.includes(liveData.status)) return '';
-
-    const marginData = calculateLivePickMargin(game, liveData, pick);
-    if (!marginData) return '';
-
-    const { status, message, pickedTeam, spreadDisplay } = marginData;
-
-    return `
-        <div class="live-pick-status ${status}">
-            <span class="live-pick-margin">${message}</span>
-        </div>
-    `;
 }
 
 /**
