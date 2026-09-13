@@ -6988,19 +6988,20 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
    which means the game itself has kicked off. Teal reads as a decision made;
    red stays reserved for "you can no longer act". */
 
-.game-card.pick-frozen {
+/* Only while the game is still open. Once it kicks off, .game-locked and
+   .game-final own the whole card - background, opacity and the blue FINAL
+   stripe - and a locked pick has to finish looking like every other finished
+   game. Styling .pick-frozen unconditionally left it on the lighter card
+   background, dimmed a second time on top of the locked 0.75, and with its
+   border-color overriding the FINAL stripe. */
+.game-card.pick-frozen:not(.game-locked) {
     border-color: var(--accent-teal);
     background: var(--bg-card);
 }
 
-.game-card.pick-frozen .picks-row {
+.game-card.pick-frozen:not(.game-locked) .picks-row {
     pointer-events: none;
     opacity: 0.85;
-}
-
-/* Frozen and locked at once: locked wins, since it is the harder stop. */
-.game-card.pick-frozen.game-locked {
-    border-color: var(--border-color);
 }
 
 .freeze-state {

@@ -99,6 +99,13 @@ Persistence: the Backup sheet's `Away Spread`/`Home Spread` columns record **the
 
 `pickedSpread`/`pickedFavorite` are recorded on a riding pick for display only, so the card can show that the line has moved. They never affect scoring.
 
+**The styling stops at kickoff.** Every `.pick-frozen` rule is scoped
+`:not(.game-locked)`, so once a game starts `.game-locked` and `.game-final`
+own the card and a locked pick’s finished card looks like every other
+finished card. Unscoped it overrode the grey locked background, dimmed the
+picks a second time on top of the locked `0.75`, and its `border-color`
+swallowed the blue FINAL stripe.
+
 Run `node test-line-freezing.js`.
 
 ## Standings

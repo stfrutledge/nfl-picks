@@ -17,6 +17,39 @@ const assert = require('assert');
 const APP = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const PARSER = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8');
 const SHEET = fs.readFileSync(path.join(__dirname, 'google-apps-script-simple.js'), 'utf8');
+const STYLES = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+
+/**
+ * Every selector in styles.css that mentions `token`, comments stripped.
+ * Nested blocks are fine: only the text before a '{' is read as a selector.
+ */
+function selectorsMentioning(token) {
+    // Strip /* ... */ comments, then harvest the text before every '{'.
+    let css = '', rest = STYLES;
+    for (;;) {
+        const open = rest.indexOf('/*');
+        if (open === -1) { css += rest; break; }
+        css += rest.slice(0, open);
+        const close = rest.indexOf('*/', open + 2);
+        if (close === -1) break;
+        rest = rest.slice(close + 2);
+    }
+
+    const found = [];
+    let from = 0;
+    for (let i = 0; i < css.length; i++) {
+        const ch = css[i];
+        if (ch !== '{' && ch !== '}') continue;
+        if (ch === '{') {
+            css.slice(from, i).split(',').forEach(sel => {
+                const s = sel.trim();
+                if (s && !s.startsWith('@') && s.includes(token)) found.push(s);
+            });
+        }
+        from = i + 1;
+    }
+    return found;
+}
 
 /* ------------------------------------------------------------------ app.js */
 
@@ -608,6 +641,19 @@ await check('renderScoringSummary does not throw with a frozen pick', async () =
     const h = setup({ games, picks: { rams_seahawks: complete() }, withDom: true });
     h.api.applyFreeze(games[0]);
     h.api.renderScoringSummary();
+});
+
+section('A locked pick stops looking special once the game starts');
+
+await check('no .pick-frozen rule can reach a card that has kicked off', async () => {
+    // .game-locked and .game-final own a started card outright: the grey
+    // background, the 0.75 opacity and the blue FINAL stripe. A .pick-frozen
+    // rule that still matches there overrides one of them and the card comes
+    // out looking unlike every other finished game.
+    const rules = selectorsMentioning('.pick-frozen');
+    assert.ok(rules.length > 0, 'found the frozen-card rules at all');
+    const leaks = rules.filter(sel => !sel.includes(':not(.game-locked)'));
+    assert.deepStrictEqual(leaks, [], 'still painting a started card: ' + leaks.join(' | '));
 });
 
 section('The sheet reader treats a freeze as final');
