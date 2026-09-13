@@ -824,28 +824,32 @@ check('the poll reschedules itself even when a refresh throws', () => {
 
 section('A finished game recedes');
 
-check('a final box is marked as one, and faded', () => {
-    const games = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
-    const api = setup({
-        games, withDom: true,
-        picks: { Stephen: { rams_seahawks: b5('home') } },
-        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
-    });
-    api.renderBlazinGameBoxes();
-    assert.ok((api.__written['live-completed-list'] || '').includes('live-game-box final'),
-        'the box carries the final state');
-
+/** The rule blocks in styles.css whose selector mentions `token`. */
+function rulesFor(token) {
     const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
-    const rule = styles.match(/\.live-game-box\.final \{[^}]*\}/);
-    assert.ok(rule, 'there is a rule for it');
-    assert.ok(/opacity:\s*0?\.\d+/.test(rule[0]), 'which fades it');
+    return (styles.match(/[^{}]+\{[^{}]*\}/g) || [])
+        .filter(block => block.split('{')[0].includes(token));
+}
+
+check('a box is marked with the state it is in', () => {
+    const api = setup(threeStates());
+    api.renderBlazinGameBoxes();
+    assert.ok((api.__written['live-games-list'] || '').includes('live-game-box in-progress'));
+    assert.ok((api.__written['live-completed-list'] || '').includes('live-game-box final'));
+    assert.ok((api.__written['live-upcoming-list'] || '').includes('live-game-box upcoming'));
 });
 
-check('a game being played is not faded', () => {
-    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
-    const rule = styles.match(/\.live-game-box\.in-progress \{[^}]*\}/);
-    assert.ok(rule, 'there is a rule for it');
-    assert.ok(!/opacity/.test(rule[0]), 'it keeps full attention');
+check('finished and upcoming are both faded', () => {
+    ['.live-game-box.final', '.live-game-box.upcoming'].forEach(sel => {
+        const faded = rulesFor(sel).some(block => /opacity:\s*0?\.\d+/.test(block));
+        assert.ok(faded, sel + ' is faded');
+    });
+});
+
+check('a game being played is not', () => {
+    const faded = rulesFor('.live-game-box.in-progress')
+        .some(block => /opacity:\s*0?\.\d+/.test(block));
+    assert.ok(!faded, 'it keeps full attention');
 });
 
 section('Finished games go in their own section');
