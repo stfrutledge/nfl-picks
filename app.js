@@ -5453,31 +5453,35 @@ function asIsPickDetail(picker) {
 
         // A game in progress is scored as it stands, and said to be so - the
         // same claim the table above makes about the record.
-        const state = !ats ? 'pending'
+        const outcome = !ats ? 'pending'
             : ats === 'push' ? 'push'
             : ats === pick.line ? 'win' : 'loss';
-        const label = state === 'pending' ? '&ndash;'
-            : state === 'push' ? 'Push'
-            : state === 'win' ? 'Win' : 'Loss';
+        const label = outcome === 'pending' ? '&ndash;' : outcome.toUpperCase();
 
-        const score = result
-            ? `${result.awayScore}&ndash;${result.homeScore}`
-            : (game.time || '');
+        const live = getLiveGameStatus(game);
+        const status = settled ? 'Final'
+            : (isGameInProgress(game) && live?.clock ? live.clock : (game.time || ''));
+        const matchup = result
+            ? `${game.away} ${result.awayScore} @ ${game.home} ${result.homeScore}`
+            : `${game.away} @ ${game.home}`;
+        const picked = pick.line === 'away' ? game.away : game.home;
 
+        // Same shape as the Team Records detail, down to the class names, so
+        // the two read as one thing rather than two takes on it.
         return `
-            <div class="as-is-pick">
-                <span class="as-is-pick-game">${game.away} @ ${game.home}</span>
-                <span class="as-is-pick-line">${describeLineForSide(game, pick.line, pick)}</span>
-                <span class="as-is-pick-score">${score}</span>
-                <span class="as-is-pick-state ${state}${settled ? '' : ' provisional'}"
-                      ${settled || state === 'pending' ? '' : 'title="As it stands"'}>${label}</span>
+            <div class="game-detail-row outcome-${outcome}${settled || outcome === 'pending' ? '' : ' outcome-provisional'}">
+                <span class="game-week">${status}</span>
+                <span class="game-matchup">${matchup}</span>
+                <span class="game-spread">${describeLineForSide(game, pick.line, pick)}</span>
+                <span class="game-picked">Picked: ${picked}</span>
+                <span class="game-outcome"${settled || outcome === 'pending' ? '' : ' title="As it stands"'}>${label}</span>
             </div>`;
     }).filter(Boolean);
 
     if (rows.length === 0) {
-        return `<p class="as-is-no-picks">No Blazin&rsquo; 5 picks for this week.</p>`;
+        return '<p class="as-is-no-picks">No Blazin&rsquo; 5 picks for this week.</p>';
     }
-    return `<div class="as-is-picks">${rows.join('')}</div>`;
+    return rows.join('');
 }
 
 /**
@@ -8598,9 +8602,7 @@ function renderStandingsTable(stats, {
                 <tr class="as-is-row ${open ? 'open' : ''} ${index === 0 ? 'leader' : ''}"
                     onclick="toggleAsIsDetail('${picker.name}')"
                     title="Show this week&rsquo;s picks">
-                    <td class="picker-name">
-                        <span class="as-is-caret">${open ? '&#9662;' : '&#9656;'}</span>${picker.name}
-                    </td>
+                    <td class="picker-name">${picker.name}</td>
                     <td>${picker.wins || 0}</td>
                     <td>${picker.losses || 0}</td>
                     <td>${picker.pushes || 0}</td>
@@ -8609,8 +8611,10 @@ function renderStandingsTable(stats, {
                     <td class="position-move">${formatPositionMove(move)}</td>
                 </tr>
                 ${open ? `
-                <tr class="as-is-detail-row">
-                    <td colspan="7">${asIsPickDetail(picker.name)}</td>
+                <tr class="team-details-row">
+                    <td colspan="7">
+                        <div class="team-details-container">${asIsPickDetail(picker.name)}</div>
+                    </td>
                 </tr>` : ''}
             `;
         }).join('');

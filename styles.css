@@ -6869,93 +6869,29 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     font-weight: 600;
 }
 
-/* --- as-is row expansion -------------------------------------------------- */
+/* --- as-is row expansion --------------------------------------------------
+   The detail itself reuses the Team Records classes wholesale - same row
+   shape, same slots, same outcome colours - so the two expansions read as
+   one thing. Only what is particular to this table lives here. */
 
 .as-is-row {
     cursor: pointer;
 }
 
-.as-is-caret {
-    display: inline-block;
-    width: 12px;
-    margin-right: 4px;
-    color: var(--text-light);
-    font-size: 0.7rem;
-}
-
-.as-is-detail-row > td {
-    padding: 0 10px 12px;
-    background: var(--bg-secondary);
-}
-
-.as-is-picks {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding-top: 10px;
-}
-
-.as-is-pick {
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto 52px;
-    gap: 10px;
-    align-items: baseline;
-    font-size: 0.78rem;
-}
-
-.as-is-pick-game {
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.as-is-pick-line {
-    color: var(--text-secondary);
-    white-space: nowrap;
-}
-
-.as-is-pick-score {
-    color: var(--text-light);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-/* The one place on this tab where win and loss are the point, rather than
-   decoration around a score. */
-.as-is-pick-state {
-    font-weight: 800;
-    text-align: right;
-    white-space: nowrap;
-}
-
-.as-is-pick-state.win { color: var(--accent-green); }
-.as-is-pick-state.loss { color: var(--accent-red); }
-.as-is-pick-state.push,
-.as-is-pick-state.pending { color: var(--text-light); }
-
-/* Scored as it stands, not settled. */
-.as-is-pick-state.provisional {
+/* Scored as it stands rather than settled. */
+.game-detail-row.outcome-provisional .game-outcome {
     font-style: italic;
     font-weight: 600;
 }
 
-.as-is-no-picks {
-    margin: 10px 0 0;
-    font-size: 0.78rem;
+.game-detail-row.outcome-pending .game-outcome {
     color: var(--text-light);
 }
 
-@media (max-width: 600px) {
-    .as-is-pick {
-        grid-template-columns: minmax(0, 1fr) auto 46px;
-        row-gap: 2px;
-    }
-
-    .as-is-pick-line {
-        grid-column: 1 / -1;
-        grid-row: 2;
-    }
+.as-is-no-picks {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-light);
 }
 
 .live-game-box {

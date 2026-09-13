@@ -143,6 +143,8 @@ It is then drawn by `renderStandingsTable`, which takes `tableId`/`tbodyId`/`cat
 
 **A row opens onto that picker’s week.** Clicking a name shows their Blazin’ 5 picks for the current week only - the table above is a season record, and the reason to open a row is to see what is behind today’s movement in it. Each pick shows the line it is graded against, so a locked or Cowherd pick shows its own number. A game in progress is scored as it stands and marked provisional, the same claim the table makes about the record.
 
+The detail **reuses the Team Records expansion wholesale** - `team-details-row`, `game-detail-row` and its slots, the `outcome-*` colours - so the two read as one thing rather than two takes on it. Only `outcome-provisional` and `outcome-pending` are new, for the two states a settled season record cannot have.
+
 Which rows are open lives in `asIsExpanded`, **outside the render**: the table is rebuilt on every score poll, so an open row would otherwise snap shut every thirty seconds while it was being read.
 
 **The as-is column set is the record plus a Move.** Last 3-Wk, Best Week and Year Chg describe the shape of a season, which says nothing about where an afternoon is heading. Move is the position now — live games counted as they stand — against the table as it finished **last week**, from `asIsPositionChange()`. Equal records share a place (`rankStandings`), or five pickers level on 0-0 get five arbitrary places and the season's first result reads as a four-place climb. A dash covers both "level" and "nothing to compare against", which is every row in week 1.

@@ -582,8 +582,9 @@ check('a row is closed until it is opened', () => {
     api.asIsExpanded.clear();
     api.renderAsIsStandings();
     const body = api.__written['as-is-standings-body'] || '';
-    assert.ok(!body.includes('as-is-detail-row'), 'no detail until asked for');
+    assert.ok(!body.includes('team-details-row'), 'no detail until asked for');
     assert.ok(body.includes('toggleAsIsDetail('), 'but the name is clickable');
+    assert.ok(!body.includes('as-is-caret'), 'and no arrow on it');
 });
 
 check('opening one shows that picker\u2019s picks for the week', () => {
@@ -592,10 +593,10 @@ check('opening one shows that picker\u2019s picks for the week', () => {
     api.toggleAsIsDetail('Stephen');
     const body = api.__written['as-is-standings-body'] || '';
 
-    assert.ok(body.includes('as-is-detail-row'), 'the row opened');
-    assert.ok(body.includes('Rams @ Seahawks'), 'his settled pick');
-    assert.ok(body.includes('Bills @ Chiefs'), 'his live one');
-    assert.ok(body.includes('Jets @ Dolphins'), 'and the one still to come');
+    assert.ok(body.includes('team-details-row'), 'the row opened');
+    assert.ok(body.includes('Rams 20 @ Seahawks 24'), 'his settled pick, with its score');
+    assert.ok(body.includes('Bills 30 @ Chiefs 20'), 'his live one');
+    assert.ok(body.includes('Jets @ Dolphins'), 'and the one still to come, without one');
 });
 
 check('and nobody else\u2019s', () => {
@@ -603,21 +604,44 @@ check('and nobody else\u2019s', () => {
     api.asIsExpanded.clear();
     api.toggleAsIsDetail('Sean');
     const detail = (api.__written['as-is-standings-body'] || '')
-        .split('as-is-detail-row')[1] || '';
-    assert.ok(detail.includes('Rams @ Seahawks'), 'Sean took that game');
-    assert.ok(!detail.includes('Bills @ Chiefs'), 'he did not take that one');
+        .split('team-details-row')[1] || '';
+    assert.ok(detail.includes('Rams 20 @ Seahawks 24'), 'Sean took that game');
+    assert.ok(!detail.includes('Chiefs'), 'he did not take that one');
 });
 
 check('each pick says where it stands', () => {
     const api = setup(weekOfPicks());
-    const html = api.asIsPickDetail('Stephen');
-    // Seahawks -3 at home, won by 4: settled win.
-    assert.ok(/class="as-is-pick-state win"[^>]*>Win/.test(html), 'the settled one is a win');
+    const rows = api.asIsPickDetail('Stephen').split('game-detail-row').slice(1);
+    assert.strictEqual(rows.length, 3, 'one row per starred pick');
+
+    // Seahawks -3 at home, won by 4: settled win, and said so outright.
+    const settled = rows.find(r => r.includes('Seahawks 24'));
+    assert.ok(settled.includes('outcome-win'), 'the settled one is a win');
+    assert.ok(!settled.includes('outcome-provisional'), 'and not provisional');
+    assert.ok(settled.includes('>WIN<'), 'labelled like the Team Records rows');
+    assert.ok(settled.includes('Final'), 'with its state in the first slot');
+
     // Bills +3 away and up by 10 with the game still on: a win as it stands,
     // marked provisional rather than claimed outright.
-    assert.ok(/as-is-pick-state win provisional/.test(html), 'the live one is provisional');
+    const live = rows.find(r => r.includes('Chiefs 20'));
+    assert.ok(live.includes('outcome-win') && live.includes('outcome-provisional'),
+        'the live one is a win as it stands');
+
     // Nothing to say about a game that has not started.
-    assert.ok(/as-is-pick-state pending/.test(html), 'the unplayed one is pending');
+    const soon = rows.find(r => r.includes('Jets @ Dolphins'));
+    assert.ok(soon.includes('outcome-pending'), 'the unplayed one is pending');
+    assert.ok(!soon.includes('outcome-provisional'), 'and not called provisional');
+});
+
+check('the detail is shaped like the Team Records one', () => {
+    // Same row class, same slots, same outcome classes - the two expansions
+    // are one thing, not two takes on it.
+    const api = setup(weekOfPicks());
+    const html = api.asIsPickDetail('Stephen');
+    ['game-detail-row', 'game-week', 'game-matchup', 'game-spread',
+     'game-picked', 'game-outcome'].forEach(cls =>
+        assert.ok(html.includes(cls), cls + ' is used'));
+    assert.ok(html.includes('Picked: '), 'including the picked-team slot');
 });
 
 check('a pick is shown at the line it is graded against', () => {
@@ -639,7 +663,7 @@ check('an open row survives the thirty-second redraw', () => {
     api.asIsExpanded.clear();
     api.toggleAsIsDetail('Stephen');
     api.renderAsIsStandings();          // as a poll would
-    assert.ok((api.__written['as-is-standings-body'] || '').includes('as-is-detail-row'),
+    assert.ok((api.__written['as-is-standings-body'] || '').includes('team-details-row'),
         'still open');
 });
 
@@ -648,7 +672,7 @@ check('clicking it again closes it', () => {
     api.asIsExpanded.clear();
     api.toggleAsIsDetail('Stephen');
     api.toggleAsIsDetail('Stephen');
-    assert.ok(!(api.__written['as-is-standings-body'] || '').includes('as-is-detail-row'));
+    assert.ok(!(api.__written['as-is-standings-body'] || '').includes('team-details-row'));
 });
 
 section('The as-is table carries a position change, and little else');
