@@ -5587,13 +5587,6 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
         const picks = sides[side];
         const team = side === 'away' ? game.away : game.home;
         const line = describeLineForSide(game, side);
-        // Only while it is still being played: "covering" says where a game has
-        // got to, and a finished one is not on its way anywhere.
-        //
-        // Against the game's line. A picker locked at their own number can
-        // differ, which is why their own line is on their chip.
-        const covering = inProgress && scored && hasUsableSpread(game)
-            && calculateATSWinnerFrom(Number(game.spread), game.favorite, scored) === side;
 
         const chips = picks.map(({ picker, pick }) => {
             // Only where it is not the number already on the row.
@@ -5607,7 +5600,6 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
                 <div class="live-side-team">
                     <span class="live-team-name">${team}</span>
                     <span class="live-team-line">${line.replace(team, '').trim()}</span>
-                    ${covering ? '<span class="live-covering">covering</span>' : ''}
                 </div>
                 <div class="live-pickers">${chips}</div>
             </div>`;

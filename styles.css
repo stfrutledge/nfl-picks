@@ -6790,7 +6790,7 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 
 /* --- Live tab -------------------------------------------------------------
    The week's starred games and the as-is table. Colour is spent only where it
-   carries information: the live status, and which side is covering. */
+   carries information: the live status. */
 
 .live-section {
     padding: 30px 40px;
@@ -7016,13 +7016,6 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--text-secondary);
 }
 
-.live-covering {
-    font-size: 0.62rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--accent-green);
-}
 
 .live-pickers {
     display: flex;
@@ -7339,7 +7332,7 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 }
 
 /* An outline, not a filled block. It sits on a card that already carries a
-   live score badge and a covering/losing pill, and a third solid colour made
+   live score badge and a locked badge, and a third solid colour made
    the card during a game read as mostly green. */
 .freeze-state.frozen {
     background: transparent;
