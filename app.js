@@ -5502,24 +5502,53 @@ function renderAsIsStandings() {
     });
 }
 
-/** One box per starred game, in progress first. */
+/**
+ * The starred games, split in two: what is still to come or being played,
+ * and what is done.
+ *
+ * A finished game is worth keeping - the score and who was on it still read -
+ * but by the end of a Sunday it is most of the list, and burying the two games
+ * still running underneath a dozen finished ones is the wrong way round. They
+ * go in a section of their own, closed by default.
+ */
 function renderBlazinGameBoxes() {
     const list = document.getElementById('live-games-list');
     if (!list) return;
 
     const weekResults = getResultsForWeekAndSeason(currentWeek, currentSeason) || {};
-    const entries = blazinGamesForWeek(currentWeek).sort((a, b) => {
-        const byState = liveGameRank(a.game, weekResults) - liveGameRank(b.game, weekResults);
-        if (byState !== 0) return byState;
-        return String(a.game.kickoff || '').localeCompare(String(b.game.kickoff || ''));
-    });
+    const byKickoff = (a, b) =>
+        String(a.game.kickoff || '').localeCompare(String(b.game.kickoff || ''));
+
+    const entries = blazinGamesForWeek(currentWeek);
+    // liveGameRank: 0 in progress, 1 finished, 2 still to come.
+    const rankOf = entry => liveGameRank(entry.game, weekResults);
+    const active = entries.filter(e => rankOf(e) !== 1)
+        .sort((a, b) => rankOf(a) - rankOf(b) || byKickoff(a, b));
+    const finished = entries.filter(e => rankOf(e) === 1).sort(byKickoff);
 
     if (entries.length === 0) {
         list.innerHTML = '<p class="no-data-message">Nobody has starred a game this week yet.</p>';
-        return;
+    } else if (active.length === 0) {
+        list.innerHTML = '<p class="no-data-message">Every starred game is done.</p>';
+    } else {
+        list.innerHTML = active.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
     }
 
-    list.innerHTML = entries.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
+    renderCompletedGames(finished, weekResults);
+}
+
+/** The Completed Games section, hidden entirely until there is one. */
+function renderCompletedGames(finished, weekResults) {
+    const section = document.getElementById('live-completed-section');
+    const list = document.getElementById('live-completed-list');
+    const count = document.getElementById('live-completed-count');
+    if (!section || !list) return;
+
+    section.classList.toggle('hidden', finished.length === 0);
+    if (count) {
+        count.textContent = finished.length ? `(${finished.length})` : '';
+    }
+    list.innerHTML = finished.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
 }
 
 function renderBlazinGameBox({ game, sides }, weekResults) {
@@ -12222,29 +12251,29 @@ function toggleSection(sectionId) {
         icon.textContent = isCollapsed ? '+' : '−';
     }
 
-    // Save state to localStorage
+    // Save state to localStorage. Both states, not just the collapsed one:
+    // deleting the key left a section that starts collapsed in its markup
+    // unable to be opened for good, since the next load would find nothing
+    // saved and fall back to the markup again.
     const collapsedSections = getCollapsedSections();
-    if (isCollapsed) {
-        collapsedSections[sectionId] = true;
-    } else {
-        delete collapsedSections[sectionId];
-    }
+    collapsedSections[sectionId] = isCollapsed;
     saveCollapsedSections(collapsedSections);
 }
 
 function initCollapsibleSections() {
     const collapsedSections = getCollapsedSections();
 
-    // Apply saved collapsed states
-    Object.keys(collapsedSections).forEach(sectionId => {
+    // Apply saved states, opening as well as closing: a section whose markup
+    // starts it collapsed has to be able to stay open once it is opened.
+    // Anything with nothing saved keeps whatever its markup says.
+    Object.entries(collapsedSections).forEach(([sectionId, isCollapsed]) => {
         const section = document.querySelector(`[data-section="${sectionId}"]`);
-        if (section && collapsedSections[sectionId]) {
-            section.classList.add('collapsed');
-            // Update icon to +
-            const icon = section.querySelector('.collapse-toggle-icon');
-            if (icon) {
-                icon.textContent = '+';
-            }
+        if (!section) return;
+
+        section.classList.toggle('collapsed', Boolean(isCollapsed));
+        const icon = section.querySelector('.collapse-toggle-icon');
+        if (icon) {
+            icon.textContent = isCollapsed ? '+' : '\u2212';
         }
     });
 }

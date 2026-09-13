@@ -6851,6 +6851,23 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     gap: 14px;
 }
 
+.live-completed {
+    margin-top: 24px;
+}
+
+.live-completed .collapsible-content {
+    padding-top: 14px;
+}
+
+.live-completed .section-header-title {
+    font-size: 1rem;
+}
+
+#live-completed-count {
+    color: var(--text-light);
+    font-weight: 600;
+}
+
 .live-game-box {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
