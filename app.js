@@ -5420,6 +5420,66 @@ function renderLiveTab() {
     renderBlazinGameBoxes();
 }
 
+// Which pickers have their week's picks open on the as-is table. Kept outside
+// the render because that runs on every score poll - without it an open row
+// would snap shut every thirty seconds.
+const asIsExpanded = new Set();
+
+/** Open or close one picker's week on the as-is table. */
+function toggleAsIsDetail(picker) {
+    if (!asIsExpanded.delete(picker)) asIsExpanded.add(picker);
+    renderAsIsStandings();
+}
+
+/**
+ * One picker's Blazin' 5 for the current week: what they took, at what line,
+ * and where it stands.
+ *
+ * This week only. The table above is a season record, and the reason to open
+ * a row is to see what is behind today's movement in it.
+ */
+function asIsPickDetail(picker) {
+    const games = getGamesForWeekAndSeason(currentWeek, currentSeason) || [];
+    const weekResults = getResultsForWeekAndSeason(currentWeek, currentSeason) || {};
+    const picks = getPickerPicksForWeek(currentWeek, picker);
+
+    const rows = games.map(game => {
+        const pick = getPicksForGame(picks, game);
+        if (!pick.line || !pick.blazin) return null;
+
+        const settled = getGameResult(game, weekResults);
+        const result = settled || liveProvisionalResult(game);
+        const ats = result ? atsWinnerForPick(game, pick, result) : null;
+
+        // A game in progress is scored as it stands, and said to be so - the
+        // same claim the table above makes about the record.
+        const state = !ats ? 'pending'
+            : ats === 'push' ? 'push'
+            : ats === pick.line ? 'win' : 'loss';
+        const label = state === 'pending' ? '&ndash;'
+            : state === 'push' ? 'Push'
+            : state === 'win' ? 'Win' : 'Loss';
+
+        const score = result
+            ? `${result.awayScore}&ndash;${result.homeScore}`
+            : (game.time || '');
+
+        return `
+            <div class="as-is-pick">
+                <span class="as-is-pick-game">${game.away} @ ${game.home}</span>
+                <span class="as-is-pick-line">${describeLineForSide(game, pick.line, pick)}</span>
+                <span class="as-is-pick-score">${score}</span>
+                <span class="as-is-pick-state ${state}${settled ? '' : ' provisional'}"
+                      ${settled || state === 'pending' ? '' : 'title="As it stands"'}>${label}</span>
+            </div>`;
+    }).filter(Boolean);
+
+    if (rows.length === 0) {
+        return `<p class="as-is-no-picks">No Blazin&rsquo; 5 picks for this week.</p>`;
+    }
+    return `<div class="as-is-picks">${rows.join('')}</div>`;
+}
+
 /**
  * A position change as a cell: up, down, or nothing to say.
  *
@@ -8533,9 +8593,14 @@ function renderStandingsTable(stats, {
             const pct = typeof picker.percentage === 'number'
                 ? picker.percentage.toFixed(2) + '%' : '-';
             const move = positionChange ? positionChange[picker.name] : null;
+            const open = asIsExpanded.has(picker.name);
             return `
-                <tr class="${index === 0 ? 'leader' : ''}">
-                    <td class="picker-name">${picker.name}</td>
+                <tr class="as-is-row ${open ? 'open' : ''} ${index === 0 ? 'leader' : ''}"
+                    onclick="toggleAsIsDetail('${picker.name}')"
+                    title="Show this week&rsquo;s picks">
+                    <td class="picker-name">
+                        <span class="as-is-caret">${open ? '&#9662;' : '&#9656;'}</span>${picker.name}
+                    </td>
                     <td>${picker.wins || 0}</td>
                     <td>${picker.losses || 0}</td>
                     <td>${picker.pushes || 0}</td>
@@ -8543,6 +8608,10 @@ function renderStandingsTable(stats, {
                     <td>${picker.totalPicks || 0}</td>
                     <td class="position-move">${formatPositionMove(move)}</td>
                 </tr>
+                ${open ? `
+                <tr class="as-is-detail-row">
+                    <td colspan="7">${asIsPickDetail(picker.name)}</td>
+                </tr>` : ''}
             `;
         }).join('');
         return;

@@ -141,6 +141,10 @@ What the group watches on a Sunday: every game somebody starred this week, who i
 
 It is then drawn by `renderStandingsTable`, which takes `tableId`/`tbodyId`/`category`/`setTitle`/`columns`/`positionChange`, so the Live tab keeps the Standings tab's styling and sort while carrying its own narrower column set. `category` matters because the as-is table is always the Blazin' 5 one whatever the Standings tab happens to be showing.
 
+**A row opens onto that picker’s week.** Clicking a name shows their Blazin’ 5 picks for the current week only - the table above is a season record, and the reason to open a row is to see what is behind today’s movement in it. Each pick shows the line it is graded against, so a locked or Cowherd pick shows its own number. A game in progress is scored as it stands and marked provisional, the same claim the table makes about the record.
+
+Which rows are open lives in `asIsExpanded`, **outside the render**: the table is rebuilt on every score poll, so an open row would otherwise snap shut every thirty seconds while it was being read.
+
 **The as-is column set is the record plus a Move.** Last 3-Wk, Best Week and Year Chg describe the shape of a season, which says nothing about where an afternoon is heading. Move is the position now — live games counted as they stand — against the table as it finished **last week**, from `asIsPositionChange()`. Equal records share a place (`rankStandings`), or five pickers level on 0-0 get five arbitrary places and the season's first result reads as a four-place climb. A dash covers both "level" and "nothing to compare against", which is every row in week 1.
 
 `asIsPositionChange()` takes its week range as a parameter, defaulting to `regularSeasonWeekRange()`. That is the only reason a later week can be tested at all: `CURRENT_NFL_WEEK` comes off the clock, and week 1 is the one week where this column does nothing.

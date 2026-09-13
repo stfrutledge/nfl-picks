@@ -89,6 +89,7 @@ function makeAppEnv({ withDom = false } = {}) {
         liveEntryFromEvent, liveCacheEntry,
         rankStandings, asIsPositionChange, formatPositionMove,
         renderAsIsStandings, CURRENT_NFL_WEEK,
+        toggleAsIsDetail, asIsPickDetail, asIsExpanded,
         __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
@@ -551,6 +552,103 @@ check('the rendered chips follow the same rule', () => {
     const html = allBoxes(api);
     assert.ok(html.includes('Cowherd <em>+7</em>'), 'his own number is printed');
     assert.ok(!html.includes('Cowherd <em>-3</em>'), 'the board\u2019s is not repeated');
+});
+
+section('Opening a picker shows their week');
+
+/** A week with one settled pick, one still being played, one not started. */
+function weekOfPicks() {
+    return {
+        games: [
+            finalGame(1, 'Rams', 'Seahawks', 20, 24),
+            inProgress(2, 'Bills', 'Chiefs', 30, 20),
+            game(3, 'Jets', 'Dolphins')
+        ],
+        withDom: true,
+        picks: {
+            Stephen: {
+                rams_seahawks: b5('home'),      // covered, settled
+                bills_chiefs: b5('away'),       // ahead, still playing
+                jets_dolphins: b5('home')       // not started
+            },
+            Sean: { rams_seahawks: b5('away') }
+        },
+        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    };
+}
+
+check('a row is closed until it is opened', () => {
+    const api = setup(weekOfPicks());
+    api.asIsExpanded.clear();
+    api.renderAsIsStandings();
+    const body = api.__written['as-is-standings-body'] || '';
+    assert.ok(!body.includes('as-is-detail-row'), 'no detail until asked for');
+    assert.ok(body.includes('toggleAsIsDetail('), 'but the name is clickable');
+});
+
+check('opening one shows that picker\u2019s picks for the week', () => {
+    const api = setup(weekOfPicks());
+    api.asIsExpanded.clear();
+    api.toggleAsIsDetail('Stephen');
+    const body = api.__written['as-is-standings-body'] || '';
+
+    assert.ok(body.includes('as-is-detail-row'), 'the row opened');
+    assert.ok(body.includes('Rams @ Seahawks'), 'his settled pick');
+    assert.ok(body.includes('Bills @ Chiefs'), 'his live one');
+    assert.ok(body.includes('Jets @ Dolphins'), 'and the one still to come');
+});
+
+check('and nobody else\u2019s', () => {
+    const api = setup(weekOfPicks());
+    api.asIsExpanded.clear();
+    api.toggleAsIsDetail('Sean');
+    const detail = (api.__written['as-is-standings-body'] || '')
+        .split('as-is-detail-row')[1] || '';
+    assert.ok(detail.includes('Rams @ Seahawks'), 'Sean took that game');
+    assert.ok(!detail.includes('Bills @ Chiefs'), 'he did not take that one');
+});
+
+check('each pick says where it stands', () => {
+    const api = setup(weekOfPicks());
+    const html = api.asIsPickDetail('Stephen');
+    // Seahawks -3 at home, won by 4: settled win.
+    assert.ok(/class="as-is-pick-state win"[^>]*>Win/.test(html), 'the settled one is a win');
+    // Bills +3 away and up by 10 with the game still on: a win as it stands,
+    // marked provisional rather than claimed outright.
+    assert.ok(/as-is-pick-state win provisional/.test(html), 'the live one is provisional');
+    // Nothing to say about a game that has not started.
+    assert.ok(/as-is-pick-state pending/.test(html), 'the unplayed one is pending');
+});
+
+check('a pick is shown at the line it is graded against', () => {
+    const api = setup(weekOfPicks());
+    api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 7 }]);
+    const html = api.asIsPickDetail('Cowherd');
+    assert.ok(html.includes('Rams +7'), 'his own number, not the board\u2019s +3');
+});
+
+check('a picker with nothing starred this week says so', () => {
+    const api = setup(weekOfPicks());
+    assert.ok(api.asIsPickDetail('Daniel').includes('No Blazin'), 'nothing to show');
+});
+
+check('an open row survives the thirty-second redraw', () => {
+    // The table is rebuilt on every score poll. Holding the open rows outside
+    // the render is what stops one snapping shut while it is being read.
+    const api = setup(weekOfPicks());
+    api.asIsExpanded.clear();
+    api.toggleAsIsDetail('Stephen');
+    api.renderAsIsStandings();          // as a poll would
+    assert.ok((api.__written['as-is-standings-body'] || '').includes('as-is-detail-row'),
+        'still open');
+});
+
+check('clicking it again closes it', () => {
+    const api = setup(weekOfPicks());
+    api.asIsExpanded.clear();
+    api.toggleAsIsDetail('Stephen');
+    api.toggleAsIsDetail('Stephen');
+    assert.ok(!(api.__written['as-is-standings-body'] || '').includes('as-is-detail-row'));
 });
 
 section('The as-is table carries a position change, and little else');
