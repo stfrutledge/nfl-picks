@@ -5275,50 +5275,6 @@ function liveGameRank(game, weekResults) {
     return getGameResult(game, weekResults) ? 1 : 2;
 }
 
-/**
- * The Blazin' 5 season table twice: settled, and with games in progress
- * counted as they stand. Rows carry the move between the two, which is the
- * only reason to show an "as is" table rather than the ordinary one.
- */
-function asIsBlazinStandings() {
-    const { first, last } = regularSeasonWeekRange();
-
-    // Equal records share a rank, and the sort falls back to the name.
-    // Without both, five pickers on 0-0 in week 1 get five arbitrary ranks
-    // and the first result of the season reads as a four-place climb.
-    const key = row => `${row.percentage ?? -1}|${row.wins}`;
-    const rank = rows => {
-        const order = Object.values(rows).sort((a, b) =>
-            (b.percentage ?? -1) - (a.percentage ?? -1)
-            || b.wins - a.wins
-            || a.name.localeCompare(b.name));
-        const out = {};
-        let place = 0;
-        order.forEach((row, i) => {
-            if (i === 0 || key(row) !== key(order[i - 1])) place = i + 1;
-            out[row.name] = place;
-        });
-        return { order, rankOf: out };
-    };
-
-    const settled = standingsFromComputed(
-        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD), COWHERD_CATEGORY);
-    const asIs = standingsFromComputed(
-        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD, { includeLive: true }),
-        COWHERD_CATEGORY);
-
-    const settledRank = rank(settled).rankOf;
-    const { order, rankOf } = rank(asIs);
-
-    return order.map(row => ({
-        ...row,
-        rank: rankOf[row.name],
-        // Positive means they have climbed. Null where they were not on the
-        // settled table at all - Cowherd before his first scored pick - which
-        // is a first result rather than a move.
-        move: settledRank[row.name] ? settledRank[row.name] - rankOf[row.name] : null
-    }));
-}
 
 /** Draw the whole Live tab. Cheap enough to redraw on every score refresh. */
 function renderLiveTab() {
@@ -5336,34 +5292,24 @@ function renderLiveTab() {
     renderBlazinGameBoxes();
 }
 
-/** The "as is" Blazin' 5 table: the season, with today counted as it stands. */
+/**
+ * The "as is" table: the Blazin' 5 season standings with games in progress
+ * counted at the score they are standing at.
+ *
+ * Drawn by renderStandingsTable so it is the Standings tab's table exactly -
+ * same columns, same styling, same sort - with one thing changed, which is
+ * the only thing that should differ between them.
+ */
 function renderAsIsStandings() {
-    const tbody = document.getElementById('as-is-standings-body');
-    if (!tbody) return;
-
-    const rows = asIsBlazinStandings();
-    if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="no-data">No scored Blazin\u2019 5 picks yet this season.</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = rows.map(row => {
-        const record = `${row.wins}-${row.losses}${row.pushes ? `-${row.pushes}` : ''}`;
-        const pct = row.percentage === null ? '-' : `${row.percentage.toFixed(1)}%`;
-        // Only a move that actually happened is worth drawing attention to.
-        const move = !row.move
-            ? '<span class="as-is-move flat">&ndash;</span>'
-            : `<span class="as-is-move ${row.move > 0 ? 'up' : 'down'}">`
-              + `${row.move > 0 ? '\u2191' : '\u2193'}${Math.abs(row.move)}</span>`;
-        return `
-            <tr>
-                <td class="as-is-rank">${row.rank}</td>
-                <td class="as-is-name">${row.name}</td>
-                <td>${record}</td>
-                <td>${pct}</td>
-                <td>${move}</td>
-            </tr>`;
-    }).join('');
+    const { first, last } = regularSeasonWeekRange();
+    const computed = calculateStatsForWeeks(
+        first, last, PICKERS_WITH_COWHERD, { includeLive: true });
+    renderStandingsTable(standingsFromComputed(computed, COWHERD_CATEGORY), {
+        tableId: 'as-is-standings-table',
+        tbodyId: 'as-is-standings-body',
+        category: COWHERD_CATEGORY,
+        setTitle: false
+    });
 }
 
 /** One box per starred game, in progress first. */
@@ -8262,17 +8208,32 @@ function renderPickerCard(picker, index, isCompact = false) {
 /**
  * Render standings table
  */
-function renderStandingsTable(stats) {
-    const tbody = document.getElementById('standings-table-body');
-    const thead = document.querySelector('#standings-table thead');
+/**
+ * Draw a standings table.
+ *
+ * Targets the Standings tab by default. The Live tab's "as is" table passes
+ * its own ids so it is the same table, drawn by the same code, rather than a
+ * lookalike that drifts from it - and passes its own category, since it is
+ * always the Blazin' 5 one whatever the Standings tab happens to be showing.
+ */
+function renderStandingsTable(stats, {
+    tableId = 'standings-table',
+    tbodyId = 'standings-table-body',
+    category = currentSubcategory,
+    setTitle = true
+} = {}) {
+    const tbody = document.getElementById(tbodyId);
+    const thead = document.querySelector(`#${tableId} thead`);
     if (!tbody || !thead) return;
 
     const sorted = getSortedPickers(stats);
 
     // Playoffs uses a different table layout showing Line/SU/O/U breakdown
-    if (currentSubcategory === 'playoffs') {
+    if (category === 'playoffs') {
         // Update table title to explain combined scoring (only target the one in performance-insights)
-        const tableTitle = document.querySelector('#performance-insights-section .standings-panel h3');
+        const tableTitle = setTitle
+            ? document.querySelector('#performance-insights-section .standings-panel h3')
+            : null;
         if (tableTitle) {
             tableTitle.innerHTML = 'Playoff Standings <span style="font-weight: normal; font-size: 0.85em; color: var(--text-secondary);">(Combined: Line + Straight Up + Over/Under)</span>';
         }
@@ -8314,7 +8275,9 @@ function renderStandingsTable(stats) {
     }
 
     // Restore default table title for non-playoff tabs (only target the one in performance-insights)
-    const tableTitle = document.querySelector('#performance-insights-section .standings-panel h3');
+    const tableTitle = setTitle
+        ? document.querySelector('#performance-insights-section .standings-panel h3')
+        : null;
     if (tableTitle) {
         tableTitle.textContent = 'Season Standings';
     }
@@ -8350,7 +8313,7 @@ function renderStandingsTable(stats) {
         const last3Wk = typeof picker.last3WeekPct === 'number' ? picker.last3WeekPct.toFixed(2) + '%' : picker.last3WeekPct || '-';
 
         // Determine push/draw label based on category
-        const pushOrDraw = currentSubcategory === 'winner' ? picker.draws || 0 : picker.pushes || 0;
+        const pushOrDraw = category === 'winner' ? picker.draws || 0 : picker.pushes || 0;
 
         return `
             <tr class="${index === 0 ? 'leader' : ''}">

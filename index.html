@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=0fd31f42">
+    <link rel="stylesheet" href="styles.css?v=a28addbd">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -595,16 +595,10 @@
                         <h3>As is</h3>
                         <span class="as-is-note">Season Blazin&rsquo; 5, with games in progress counted as they stand</span>
                     </div>
-                    <div class="as-is-table-container">
-                        <table class="as-is-table">
+                    <div class="standings-table-container">
+                        <table class="standings-table" id="as-is-standings-table">
                             <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Picker</th>
-                                    <th>Record</th>
-                                    <th>Win %</th>
-                                    <th>Move</th>
-                                </tr>
+                                <!-- Header row injected by renderStandingsTable -->
                             </thead>
                             <tbody id="as-is-standings-body">
                                 <!-- Rows injected here -->
@@ -839,6 +833,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=41cf86a6"></script>
+    <script src="app.js?v=b2339d70"></script>
 </body>
 </html>

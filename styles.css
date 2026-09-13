@@ -6846,46 +6846,6 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--text-secondary);
 }
 
-.as-is-table-container {
-    overflow-x: auto;
-}
-
-.as-is-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-}
-
-.as-is-table th {
-    text-align: left;
-    padding: 6px 10px;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-light);
-    border-bottom: 1px solid var(--border-color);
-    white-space: nowrap;
-}
-
-.as-is-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border-light);
-    white-space: nowrap;
-}
-
-.as-is-rank {
-    color: var(--text-light);
-    width: 1%;
-}
-
-.as-is-name {
-    font-weight: 700;
-}
-
-.as-is-move.up { color: var(--accent-green); font-weight: 700; }
-.as-is-move.down { color: var(--accent-red); font-weight: 700; }
-.as-is-move.flat { color: var(--text-light); }
-
 .live-games-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

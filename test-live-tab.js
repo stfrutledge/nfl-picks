@@ -63,7 +63,7 @@ function makeAppEnv() {
     return ({
         PICKERS, PICKERS_WITH_COWHERD, COWHERD, COWHERD_CATEGORY,
         isGameInProgress, liveProvisionalResult, blazinGamesForWeek,
-        liveGameRank, asIsBlazinStandings, calculateStatsForWeeks,
+        liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
@@ -179,9 +179,16 @@ check('a finished game counts in both', () => {
     });
 });
 
-check('the move column reports the climb against the settled table', () => {
-    // Sean has a win in the books. Stephen has none, but is covering live, so
-    // as-is he goes ahead of Sean and Sean drops a place.
+/** The stats renderAsIsStandings hands to the shared standings renderer. */
+function asIsRows(api) {
+    const { first, last } = api.regularSeasonWeekRange();
+    return api.standingsFromComputed(
+        api.calculateStatsForWeeks(first, last, api.PICKERS_WITH_COWHERD,
+            { includeLive: true }), api.COWHERD_CATEGORY);
+}
+
+check('settled results and live ones land in the same table', () => {
+    // Sean has a win in the books; Stephen is covering live. Both show.
     const games = [
         finalGame(1, 'Bills', 'Chiefs', 30, 20),
         inProgress(2, 'Rams', 'Seahawks', 20, 24)
@@ -195,37 +202,27 @@ check('the move column reports the climb against the settled table', () => {
         results: { 1: { awayScore: 30, homeScore: 20, winner: 'away' } }
     });
 
-    const rows = api.asIsBlazinStandings();
-    const byName = Object.fromEntries(rows.map(r => [r.name, r]));
-    assert.strictEqual(byName.Stephen.wins, 1, 'the live cover counts');
-    assert.strictEqual(byName.Sean.wins, 1, 'the settled win counts');
-    // Settled, Sean is alone on 1-0 and everyone else ties on 0-0. As is,
-    // Stephen joins him at the top, so he is up one place and no further.
-    assert.strictEqual(byName.Stephen.move, 1, 'Stephen climbs exactly one');
-    assert.strictEqual(byName.Sean.move, 0, 'Sean has not moved');
+    const rows = asIsRows(api);
+    assert.strictEqual(rows.Stephen.wins, 1, 'the live cover counts');
+    assert.strictEqual(rows.Sean.wins, 1, 'the settled win counts');
+    // Stephen's unstarred Bills pick is not a Blazin' 5 pick and must not
+    // reach this table, which is the Blazin' 5 one.
+    assert.strictEqual(rows.Stephen.totalPicks, 1, 'only the starred pick counts');
 });
 
-check('nobody moves before anything has been scored', () => {
-    const games = [inProgress(1, 'Rams', 'Seahawks', 20, 24)];
-    const api = setup({ games, picks: { Stephen: { rams_seahawks: b5('home') } } });
-    const rows = api.asIsBlazinStandings();
-    // Settled, all five are level on 0-0 and share a rank, so Stephen going
-    // ahead on a live cover is a one-place climb, not a four-place one.
-    assert.strictEqual(rows.find(r => r.name === 'Stephen').move, 0,
-        'already joint-first, so no climb');
-    assert.strictEqual(rows.find(r => r.name === 'Sean').move, -1,
-        'and the rest are now behind him');
-});
-
-check('Cowherd shows no move until he has a settled record', () => {
-    // He is filtered off the settled table with nothing scored, so there is no
-    // earlier rank to compare his live one against.
+check('Cowherd reaches the table on a live cover, like anyone else', () => {
     const games = [inProgress(1, 'Rams', 'Seahawks', 20, 24)];
     const api = setup({ games });
+    // Seahawks -3 by his own number, and up by 4 as it stands.
     api.saveCowherdPicks(1, [{ key: 'rams_seahawks', side: 'home', spread: -3 }]);
-    const cowherd = api.asIsBlazinStandings().find(r => r.name === 'Cowherd');
-    assert.ok(cowherd, 'he is on the as-is table');
-    assert.strictEqual(cowherd.move, null, 'a first result is not a climb');
+    assert.strictEqual(asIsRows(api).Cowherd.wins, 1);
+});
+
+check('and stays off it with nothing of his scored', () => {
+    const games = [game(1, 'Rams', 'Seahawks')];   // not started
+    const api = setup({ games });
+    api.saveCowherdPicks(1, [{ key: 'rams_seahawks', side: 'home', spread: -3 }]);
+    assert.ok(!asIsRows(api).Cowherd, 'an empty row reads as a bug, not a scoreline');
 });
 
 section('The game list holds starred games only');
