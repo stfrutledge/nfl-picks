@@ -374,6 +374,26 @@ check('a game in progress shows the clock, quarter and down', () => {
     assert.ok(!html.includes(' ball</span>'), 'possession is not spelled out');
 });
 
+check('a side with nobody on it is left empty', () => {
+    // Only the home side is picked, so the away side carries its crest and
+    // line and nothing else - no placeholder word.
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
+    })).entry);
+    assert.ok(!html.includes('nobody'), 'no placeholder for an unpicked side');
+    assert.ok(html.includes('live-side empty'), 'it is still marked as empty');
+});
+
+check('the side rows carry crests too', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
+    })).entry);
+    const sideLogos = html.match(/class="live-side-logo"/g) || [];
+    assert.strictEqual(sideLogos.length, 2, 'one crest per side row');
+    // The line stays as text beside it.
+    assert.ok(html.includes('live-team-line'), 'and the line is still written out');
+});
+
 check('the score row carries crests, not names', () => {
     const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
         awayScore: 10, homeScore: 24,
