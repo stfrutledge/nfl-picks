@@ -153,7 +153,11 @@ Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()`
 - **`isRedZone` is captured and deliberately not drawn.** It had a tinted row and a label, which was the loudest thing on the tab for the least reason. The field stays because it costs nothing and the feed gives it.
 - **The status text is ESPN's own `shortDetail`** (`11:37 - 3rd`, `Halftime`, `Final`), which already reads correctly in every state and is better than anything built from clock and period. The exception is a game still to come, which keeps the app's own kickoff time: ESPN's short form for one is a US time string.
 
-Down and distance are absent between drives and at the half, so the row showing them is dropped rather than left stale, and no football is drawn. They come through `liveCacheEntry()` rather than `getLiveGameStatus()`, which prefers the status embedded in the schedule — a snapshot from whenever it was fetched, carrying no situation at all.
+Down and distance are absent between drives and at the half, so the row showing them is dropped rather than left stale, and no football is drawn.
+
+**`getLiveGameStatus()` reads the cache before the game's own fields.** A game carries ESPN's status and score from whenever its schedule was fetched, and that snapshot used to win — so every score froze the moment its game kicked off and only moved again on a reload, while the 2-minute poll updated a cache nothing read. The snapshot is the fallback now, which is what covers a week the scoreboard is not carrying.
+
+`liveCacheEntry()` matches on the **ESPN event id** where the game has one, and a game whose id the scoreboard is not carrying gets nothing rather than falling through to team names. Names alone cannot tell two meetings of the same pair apart, and the scoreboard only ever carries the current week, so a division rematch would otherwise put a live score on the earlier fixture. They come through `liveCacheEntry()` rather than `getLiveGameStatus()`, which prefers the status embedded in the schedule — a snapshot from whenever it was fetched, carrying no situation at all.
 
 **A line is printed beside a name only where it differs from the one on the row** (`pickLineDiffers`). "Locked" is the wrong test and was the first one used: a locked pick usually locked at the number that is still up, and most of Cowherd's match the book, so nearly every chip repeated the number already printed above it. On the real week 1 that was 29 chips carrying a line where 2 of them said anything.
 

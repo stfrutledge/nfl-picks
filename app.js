@@ -515,9 +515,15 @@ function liveEntryFromEvent(event) {
         : possessionId === awayTeam.team.id ? 'away' : null;
 
     return {
-        // Keyed by team names, which is how a game is matched back to it.
+        // Keyed by team names, which is how a game is matched back to it when
+        // there is no id to match on.
         key: `${awayTeam.team.displayName}@${homeTeam.team.displayName}`,
         entry: {
+            // The exact game. Team names alone cannot tell two meetings of the
+            // same pair apart, and ESPN's scoreboard only ever carries the
+            // current week - so a division rematch could otherwise put a live
+            // score on the earlier fixture.
+            espnId: event.id,
             homeTeam: homeTeam.team.displayName,
             awayTeam: awayTeam.team.displayName,
             homeScore: parseInt(homeTeam.score) || 0,
@@ -545,8 +551,22 @@ function liveEntryFromEvent(event) {
  * First checks if game object has embedded status/scores (from ESPN schedule fetch),
  * then falls back to live scores cache
  */
+/**
+ * The live state of a game: score, status, clock.
+ *
+ * The cache first, because it is refreshed every couple of minutes while the
+ * status embedded in a game is a snapshot from whenever the schedule was
+ * fetched. Preferring the snapshot meant a score froze the moment a game
+ * kicked off and only moved again on a page reload - the poll was updating a
+ * cache that nothing read.
+ *
+ * The snapshot is still the fallback, which is what covers a week the
+ * scoreboard is not currently carrying.
+ */
 function getLiveGameStatus(game) {
-    // If game already has status from ESPN schedule data, use it
+    const cached = liveCacheEntry(game);
+    if (cached) return cached;
+
     if (game.status && game.status !== 'STATUS_SCHEDULED') {
         return {
             homeTeam: game.homeFull || game.home,
@@ -558,23 +578,30 @@ function getLiveGameStatus(game) {
         };
     }
 
-    return liveCacheEntry(game);
+    return null;
 }
 
 /**
- * The live-scores cache entry for a game, matched on team names.
+ * The live-scores cache entry for a game, as fresh as the last poll.
  *
- * Separate from getLiveGameStatus because that prefers the status embedded in
- * the schedule, which is a snapshot from whenever the schedule was fetched and
- * carries no situation at all. Anything wanting down, distance or possession
- * has to come here, where the data is as fresh as the last poll.
+ * By ESPN id where the game has one, since team names cannot tell two meetings
+ * of the same pair apart and the scoreboard only carries the current week.
+ * Names are the fallback, for a game the schedule never matched to an event.
  */
 function liveCacheEntry(game) {
     if (!game) return null;
+    const entries = Object.values(liveScoresCache);
+
+    if (game.espnId) {
+        const byId = entries.find(e => e.espnId && String(e.espnId) === String(game.espnId));
+        // A game with an id that the scoreboard is not carrying is not this
+        // week's, and must not fall through to matching on names.
+        return byId || null;
+    }
+
     const awayName = game.away;
     const homeName = game.home;
-
-    for (const scoreData of Object.values(liveScoresCache)) {
+    for (const scoreData of entries) {
         if ((scoreData.homeTeam.includes(homeName) || homeName.includes(scoreData.homeTeam.split(' ').pop())) &&
             (scoreData.awayTeam.includes(awayName) || awayName.includes(scoreData.awayTeam.split(' ').pop()))) {
             return scoreData;

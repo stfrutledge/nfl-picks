@@ -82,7 +82,7 @@ function makeAppEnv({ withDom = false } = {}) {
         isGameInProgress, liveProvisionalResult, blazinGamesForWeek,
         liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
-        renderLiveTab, renderActiveTab, refreshLiveViews,
+        renderLiveTab, renderActiveTab, refreshLiveViews, getLiveGameStatus,
         pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
         liveEntryFromEvent, liveCacheEntry,
         rankStandings, asIsPositionChange, formatPositionMove,
@@ -659,6 +659,56 @@ check('a move is drawn only when there is one', () => {
     assert.ok(api.formatPositionMove(-1).includes('move-down'), 'a drop');
     assert.ok(api.formatPositionMove(0).includes('move-none'), 'level');
     assert.ok(api.formatPositionMove(null).includes('move-none'), 'nothing to compare');
+});
+
+section('The score follows the poll, not the page load');
+
+// A game carries ESPN's status and score from whenever the schedule was
+// fetched. The poll refreshes the cache every couple of minutes, and reading
+// the snapshot in preference to it froze every score the moment its game
+// kicked off - the score only moved again on a reload.
+
+check('a fresher poll beats the score baked into the schedule', () => {
+    const stale = inProgress(1, 'Rams', 'Seahawks', 7, 3);   // as the page loaded
+    stale.espnId = 'evt-1';
+    const api = setup({ games: [stale] });
+    assert.strictEqual(api.getLiveGameStatus(stale).homeScore, 3, 'the snapshot, with nothing polled');
+
+    api.__setLiveScores({
+        'Los Angeles Rams@Seattle Seahawks': api.liveEntryFromEvent(espnEvent({
+            awayScore: 20, homeScore: 24
+        })).entry
+    });
+    // liveEntryFromEvent has no id on this stub event, so match by name.
+    delete stale.espnId;
+    const live = api.getLiveGameStatus(stale);
+    assert.strictEqual(live.homeScore, 24, 'the poll wins');
+    assert.strictEqual(live.awayScore, 20);
+});
+
+check('the snapshot still covers a week the scoreboard is not carrying', () => {
+    const played = finalGame(1, 'Rams', 'Seahawks', 20, 24);
+    const api = setup({ games: [played] });
+    api.__setLiveScores({});   // scoreboard has moved on to another week
+    const status = api.getLiveGameStatus(played);
+    assert.strictEqual(status.homeScore, 24, 'falls back to what the schedule knows');
+    assert.strictEqual(status.completed, true);
+});
+
+check('a game the scoreboard is not carrying takes no other game\u2019s score', () => {
+    // Same two teams, a different meeting. Matching on names alone would hand
+    // this one the live score of the rematch.
+    const earlier = finalGame(1, 'Rams', 'Seahawks', 20, 24);
+    earlier.espnId = 'week-1-meeting';
+    const api = setup({ games: [earlier] });
+    api.__setLiveScores({
+        'Los Angeles Rams@Seattle Seahawks': {
+            ...api.liveEntryFromEvent(espnEvent({ awayScore: 3, homeScore: 0 })).entry,
+            espnId: 'week-12-rematch'
+        }
+    });
+    const status = api.getLiveGameStatus(earlier);
+    assert.strictEqual(status.awayScore, 20, 'its own score, not the rematch\u2019s');
 });
 
 section('The tab is redrawn when its data arrives');
