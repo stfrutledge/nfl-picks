@@ -6997,28 +6997,18 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     opacity: 0.5;
 }
 
-/* Centred, not baseline: the crest is an image and has no baseline worth
-   aligning the line to. */
+/* Names, not crests: the score row above already carries those, and the rows
+   here are read for the line and who is on it. */
 .live-side-team {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 6px;
-    min-width: 76px;
+    min-width: 104px;
 }
 
-.live-side-logo {
-    display: block;
-    width: 20px;
-    height: 20px;
-    object-fit: contain;
-    flex-shrink: 0;
-}
-
-/* The pick cards' fallback badge is sized for a 44px crest; this row is not. */
-.live-side-team .team-logo-fallback {
-    width: 20px;
-    height: 20px;
-    font-size: 0.5rem;
+.live-team-name {
+    font-weight: 700;
+    font-size: 0.82rem;
 }
 
 .live-team-line {

@@ -384,14 +384,16 @@ check('a side with nobody on it is left empty', () => {
     assert.ok(html.includes('live-side empty'), 'it is still marked as empty');
 });
 
-check('the side rows carry crests too', () => {
+check('the side rows name the team, where the score row shows the crest', () => {
     const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
         situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
     })).entry);
-    const sideLogos = html.match(/class="live-side-logo"/g) || [];
-    assert.strictEqual(sideLogos.length, 2, 'one crest per side row');
-    // The line stays as text beside it.
-    assert.ok(html.includes('live-team-line'), 'and the line is still written out');
+    assert.ok(!html.includes('live-side-logo'), 'no crest on the side rows');
+    const names = html.match(/class="live-team-name"/g) || [];
+    assert.strictEqual(names.length, 2, 'one name per side row');
+    assert.ok(html.includes('live-team-line'), 'with the line beside it');
+    // The score row above is the one that carries crests.
+    assert.strictEqual((html.match(/class="live-score-logo"/g) || []).length, 2);
 });
 
 check('the score row carries crests, not names', () => {

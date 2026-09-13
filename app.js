@@ -5544,8 +5544,7 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
         return `
             <div class="live-side${picks.length ? '' : ' empty'}">
                 <div class="live-side-team">
-                    <img class="live-side-logo" src="${getTeamLogo(team)}" alt="${team}"
-                         title="${team}" onerror="handleLogoError(this, '${team}')">
+                    <span class="live-team-name">${team}</span>
                     <span class="live-team-line">${line.replace(team, '').trim()}</span>
                     ${covering ? '<span class="live-covering">covering</span>' : ''}
                 </div>
