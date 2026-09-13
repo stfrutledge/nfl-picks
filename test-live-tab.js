@@ -372,9 +372,23 @@ check('a game in progress shows the clock, quarter and down', () => {
     assert.ok(!html.includes(' ball</span>'), 'possession is not spelled out');
 });
 
-check('the ball sits under the name of whoever has it', () => {
+check('the score row carries crests, not names', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        awayScore: 10, homeScore: 24,
+        situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
+    })).entry);
+    const logos = html.match(/class="live-score-logo"/g) || [];
+    assert.strictEqual(logos.length, 2, 'one crest per side');
+    assert.ok(html.includes('alt="Rams"') && html.includes('alt="Seahawks"'),
+        'each names its team for a reader who cannot see it');
+    assert.ok(html.includes('handleLogoError'), 'and falls back to the initials badge');
+    // The header still spells the matchup out.
+    assert.ok(html.includes('Rams @ Seahawks'), 'the header keeps the names');
+});
+
+check('the ball sits under the crest of whoever has it', () => {
     // Home has it: the football goes in the home slot and the away slot stays
-    // empty, rather than being left out, so the two sides keep their baseline.
+    // empty, rather than being left out, so nothing shifts as it changes hands.
     const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
         situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
     })).entry);

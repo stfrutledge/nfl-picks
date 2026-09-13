@@ -5424,15 +5424,16 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
         status = 'Final';
     }
 
-    // Who has the ball, shown as a football under their name on the score
-    // rather than spelled out: the score row already names both teams.
+    // Who has the ball, shown as a football under their logo. Not spelled out:
+    // the header above already names both teams.
     const hasBall = side => inProgress && detail?.possession === side;
     const teamCol = side => {
         const team = side === 'away' ? game.away : game.home;
-        // The slot is always rendered, empty or not, so the two sides stay on
-        // the same baseline as possession changes hands.
+        // onerror hands over to the abbreviation badge the pick cards use, so
+        // a CDN miss is a team's initials rather than a broken image.
         return `<span class="live-score-teamcol">
-                <span class="live-score-team">${team}</span>
+                <img class="live-score-logo" src="${getTeamLogo(team)}" alt="${team}"
+                     title="${team}" onerror="handleLogoError(this, '${team}')">
                 <span class="live-possession-icon"${hasBall(side) ? ` title="${team} have the ball"` : ''}>`
             + `${hasBall(side) ? '&#127944;' : ''}</span>
             </span>`;

@@ -6887,15 +6887,17 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 .live-score {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
-    align-items: baseline;
+    align-items: center;
     gap: 10px;
     margin-bottom: 10px;
 }
 
-/* Baseline, so the team name and the score sit on one line. */
+/* Centred, not baseline: the row is a logo and a number now, and an image has
+   no baseline worth aligning a score to - its bottom edge is not where the
+   crest visually sits. */
 .live-score-side {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 7px;
     min-width: 0;
 }
@@ -6908,17 +6910,27 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     justify-content: flex-start;
 }
 
-/* The name, with the football hanging below it. */
+/* The crest, with the football hanging below it. line-height 0 so the image
+   brings no inline descender gap of its own. */
 .live-score-teamcol {
     position: relative;
     display: inline-block;
+    line-height: 0;
     min-width: 0;
 }
 
-.live-score-team {
-    font-size: 0.78rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
+.live-score-logo {
+    display: block;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+/* The pick cards' fallback badge is sized for a 44px crest; this row is not. */
+.live-score-teamcol .team-logo-fallback {
+    width: 28px;
+    height: 28px;
+    font-size: 0.58rem;
 }
 
 /* Absolute: the ball takes no part in the layout, so the names and scores
