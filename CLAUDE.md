@@ -143,6 +143,8 @@ It is then drawn by `renderStandingsTable`, which takes `tableId`/`tbodyId`/`cat
 
 Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()` runs only when neither is on screen, and the refresh loop goes through `refreshLiveViews()` rather than calling `renderGames()` directly. A stale score is the whole problem on this tab.
 
+**Anything that finishes loading data calls `renderActiveTab()`** rather than naming tabs itself. The backup load lands long after the first paint, and each of those points used to list the tabs it knew about — so the Live tab was simply missed, drew once on the way in, and kept what it had. A pick that came back from the sheet a moment later never appeared on it, which looked exactly like the pick having failed to save.
+
 Run `node test-live-tab.js`.
 
 ## Standings

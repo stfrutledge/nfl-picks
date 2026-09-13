@@ -4288,9 +4288,8 @@ async function loadFromGoogleSheets() {
         initialLoadComplete = true;
         console.log(`[Timing] === TOTAL LOAD TIME: ${(performance.now() - loadStart).toFixed(0)}ms ===`);
 
-        // Re-render games after schedule and odds are loaded
-        renderGames();
-        renderScoringSummary();
+        // Re-render after schedule and odds are loaded
+        renderActiveTab();
 
         // Now hide loading state after all data is loaded
         hideLoadingState();
@@ -4313,29 +4312,18 @@ async function loadFromGoogleSheets() {
                         // Write down anything ESPN knows and the sheet does not,
                         // before rendering standings off it.
                         .then(() => backfillResults())
-                        .then(() => {
-                            if (currentCategory === 'standings') renderDashboard();
-                        })
+                        .then(() => renderActiveTab())
                     : Promise.resolve(),
                 prefetchAndSaveSpreads()
             ]);
 
             console.log(`[Background] All data synced: ${(performance.now() - bgStart).toFixed(0)}ms`);
 
-            // Mark spreads as loaded and re-render once
-            spreadsLoading = false;
-            renderGames();
-
-            // Line picks cannot be scored without spreads, so the standings
+            // Mark spreads as loaded and re-render once. Line picks cannot be
+            // scored without spreads, so the standings and the as-is table
             // have to be recomputed now that they are in.
-            if (currentCategory === 'standings') {
-                renderDashboard();
-            }
-
-            // Re-render scoring summary after picks are loaded (for Super Bowl picks summary)
-            if (currentCategory === 'make-picks' || currentCategory === 'standings') {
-                renderScoringSummary();
-            }
+            spreadsLoading = false;
+            renderActiveTab();
         }, 100);
 
     } catch (err) {
@@ -4950,6 +4938,23 @@ function refreshLiveViews() {
     }
     renderGames();
     renderScoringSummary();
+}
+
+/**
+ * Redraw the tab that is showing, after data has landed.
+ *
+ * The backup load finishes long after the first paint, so every view that
+ * renders from picks or results has to be told when it does. Each tab used to
+ * be named individually at each of those points, and the Live tab was missed:
+ * it drew once on the way in and then kept what it had, so a pick that came
+ * back from the sheet a moment later never appeared on it. Anything that
+ * finishes loading data calls this rather than naming tabs itself.
+ */
+function renderActiveTab() {
+    renderGames();
+    renderScoringSummary();
+    if (currentCategory === 'standings') renderDashboard();
+    if (currentCategory === 'live') renderLiveTab();
 }
 
 /** ESPN statuses that mean the game is being played right now. */

@@ -14,8 +14,25 @@ const assert = require('assert');
 const APP = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const PARSER = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8');
 
-function makeAppEnv() {
+/** An element stub that remembers what it was given. */
+function node(id, written) {
+    return {
+        set innerHTML(v) { written[id] = v; },
+        get innerHTML() { return written[id] || ''; },
+        set textContent(v) { written[id + ':text'] = v; },
+        get textContent() { return written[id + ':text'] || ''; },
+        style: {}, className: '', disabled: false, title: '', dataset: {},
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        appendChild() {}, remove() {}, setAttribute() {}, removeAttribute() {},
+        addEventListener() {}, closest: () => null,
+        querySelector: () => node(id + ' thead', written),
+        querySelectorAll: () => [], getAttribute: () => null, focus() {}, click() {}
+    };
+}
+
+function makeAppEnv({ withDom = false } = {}) {
     const store = new Map();
+    const written = {};
     const env = {
         localStorage: {
             getItem: k => (store.has(k) ? store.get(k) : null),
@@ -26,8 +43,8 @@ function makeAppEnv() {
         },
         document: {
             addEventListener: () => {},
-            getElementById: () => null,
-            querySelector: () => null,
+            getElementById: id => (withDom ? node(id, written) : null),
+            querySelector: sel => (withDom ? node(sel, written) : null),
             querySelectorAll: () => [],
             createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {}, remove() {} }),
             head: { appendChild: () => {} },
@@ -65,11 +82,13 @@ function makeAppEnv() {
         isGameInProgress, liveProvisionalResult, blazinGamesForWeek,
         liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
+        renderLiveTab, renderActiveTab, refreshLiveViews,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
             if ('currentWeek' in s) currentWeek = s.currentWeek;
             if ('currentPicker' in s) currentPicker = s.currentPicker;
+            if ('currentCategory' in s) currentCategory = s.currentCategory;
         }
     });`;
     const fn = new Function(
@@ -77,9 +96,11 @@ function makeAppEnv() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         PARSER + '\n' + snapshot + '\n' + APP + exports
     );
-    return fn(env.window, env.document, env.localStorage, env.navigator,
+    const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
         env.confirm, env.addEventListener, env.matchMedia);
+    api.__written = written;
+    return api;
 }
 
 const WEEK = 1;
@@ -101,8 +122,8 @@ const inProgress = (id, away, home, awayScore, homeScore, extra = {}) =>
 const finalGame = (id, away, home, awayScore, homeScore, extra = {}) =>
     game(id, away, home, { status: 'STATUS_FINAL', completed: true, awayScore, homeScore, ...extra });
 
-function setup({ games, picks = {}, results = null } = {}) {
-    const api = makeAppEnv();
+function setup({ games, picks = {}, results = null, withDom = false } = {}) {
+    const api = makeAppEnv({ withDom });
     api.NFL_GAMES_BY_WEEK[WEEK] = games;
     if (results) api.NFL_RESULTS_BY_WEEK[WEEK] = results;
     api.__setState({ currentWeek: WEEK, currentPicker: 'Stephen', allPicks: { [WEEK]: picks } });
@@ -259,6 +280,36 @@ check('a locked pick is described at its own number, not the board’s', () => {
     const { pick } = api.blazinGamesForWeek(WEEK)[0].sides.away[0];
     assert.strictEqual(api.describeLineForSide(games[0], 'away', pick), 'Rams +7');
     assert.strictEqual(api.describeLineForSide(games[0], 'away'), 'Rams +3', 'the board still says +3');
+});
+
+section('The tab is redrawn when its data arrives');
+
+// The backup load finishes long after the first paint. Every view that
+// renders from picks has to be redrawn then, and the Live tab was the one
+// left out: it drew once on the way in and kept what it had, so picks that
+// came back from the sheet a moment later never appeared on it.
+
+check('renderActiveTab draws the Live tab when it is the one showing', () => {
+    const games = [inProgress(1, 'Rams', 'Seahawks', 20, 24)];
+    const api = setup({ games, withDom: true });
+    api.__setState({ currentCategory: 'live' });
+    // Picks arrive from the backup after the tab has already been drawn.
+    api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'home', spread: -3 }]);
+
+    api.renderActiveTab();
+    const boxes = api.__written['live-games-list'] || '';
+    assert.ok(boxes.includes('live-game-box'), 'the games were drawn');
+    assert.ok(boxes.includes('Cowherd'), 'with the picks that had just landed');
+});
+
+check('and leaves it alone when another tab is showing', () => {
+    const games = [inProgress(1, 'Rams', 'Seahawks', 20, 24)];
+    const api = setup({ games, withDom: true });
+    api.__setState({ currentCategory: 'make-picks' });
+    api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'home', spread: -3 }]);
+
+    api.renderActiveTab();
+    assert.ok(!api.__written['live-games-list'], 'no work done for a hidden tab');
 });
 
 section('In progress first, then finished, then still to come');
