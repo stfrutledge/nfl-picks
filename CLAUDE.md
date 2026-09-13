@@ -99,6 +99,8 @@ Persistence: the Backup sheet's `Away Spread`/`Home Spread` columns record **the
 
 `pickedSpread`/`pickedFavorite` are recorded on a riding pick for display only, so the card can show that the line has moved. They never affect scoring.
 
+**One line per pick, everywhere.** `atsWinnerForPick(game, pick, result)` is the only way to score a pick, and `calculateATSWinner(game, result)` — which read the line off the *game* — has been deleted rather than left sitting there as the shorter, more obvious-looking thing to reach for. Sixteen sites used to call it: the standings and lifetime tables, every Blazin' records and history panel, both lone-wolf calculations, the P&L and bankroll figures, and the pattern engine. All of them graded a locked pick, and would have graded every Cowherd pick, at a number it was not playing — so those panels quietly disagreed with the standings and with the game card's own correct/incorrect colouring. Two of them were computing one result per *game* and sharing it across all five pickers, which cannot be right once two people can hold different numbers on the same game; they now compute per picker. A site with no usable line skips the game instead of scoring it, since the underlying arithmetic returns a silent `'push'` on a `NaN` comparison. `test-line-freezing.js` fails if the helper ever comes back.
+
 **Every label that describes a pick reads the line from the side the picker took**, through `describeLineForSide(game, side)` — take the Buccaneers and the lock dialog, the button tooltip and the locked badge all say "Buccaneers +3.5". `describeLine()` names the favourite, which is the same line seen from the other side of the table: correct for a line in the abstract, and the wrong pick anywhere a person’s own choice is being quoted back to them.
 
 **The styling stops at kickoff.** Every `.pick-frozen` rule is scoped
@@ -127,7 +129,7 @@ Two things stop him being just a sixth picker:
 
 **Entry never locks.** There is no `isGameLocked` check anywhere in his path, deliberately: his five are transcribed off the show, often after the games are played, so a back week has to be fillable and correctable. Do not add one.
 
-Watch out for the five analysis panels that still score Blazin' picks with `calculateATSWinner(game, result)` — the market line — rather than `atsWinnerForPick()`: `calculateBlazinTeamPickRecords`, `calculateBlazinSpreadRecords`, `calculateHistoryBlazinTeamRecords`, `calculateHistoryBlazinSpreadRecords` and `calculatePickerWeeklyBankroll`. They take a picker from a `PICKERS`-only dropdown so Cowherd never reaches them, but they are wrong for a locked pick today. `calculateWorstBlazinWeeks` was in that list and had to be fixed, because it feeds the Blazin' standings table he does appear in.
+Every panel scores him at his own line, like everyone else — see "One line per pick" below.
 
 Run `node test-cowherd-blazin.js`.
 

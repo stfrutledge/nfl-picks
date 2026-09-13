@@ -2810,14 +2810,15 @@ function renderLifetimeStandingsTable() {
                 const gameResult = weekResults[game.id] || weekResults[String(game.id)];
                 if (!gameResult) return;
 
-                const atsWinner = calculateATSWinner(game, gameResult);
-
                 seasonPickers.forEach(picker => {
                     const pickerWeekPicks = weekPicks[picker] || {};
                     const gamePick = getPicksForGame(pickerWeekPicks, game);
                     const stats = pickerStats[picker];
+                    // Per picker, not per game: each is graded at their own
+                    // line, which a locked pick carries its own copy of.
+                    const atsWinner = atsWinnerForPick(game, gamePick, gameResult);
 
-                    if (gamePick.line) {
+                    if (gamePick.line && atsWinner) {
                         if (atsWinner === 'push') {
                             stats.linePushes++;
                             stats.totalPushes++;
@@ -2987,12 +2988,12 @@ function renderHistoryWeek(week) {
         // Calculate pick results
         let lineAwayResult = '', lineHomeResult = '', winnerAwayResult = '', winnerHomeResult = '';
         if (gameComplete && result) {
-            const atsWinner = calculateATSWinner(game, result);
+            const atsWinner = atsWinnerForPick(game, gamePick, result);
             // Line pick results
-            if (linePick === 'away') {
+            if (linePick === 'away' && atsWinner) {
                 lineAwayResult = atsWinner === 'push' ? 'push' : (atsWinner === 'away' ? 'correct' : 'incorrect');
             }
-            if (linePick === 'home') {
+            if (linePick === 'home' && atsWinner) {
                 lineHomeResult = atsWinner === 'push' ? 'push' : (atsWinner === 'home' ? 'correct' : 'incorrect');
             }
             // Winner pick results
@@ -3145,16 +3146,16 @@ function renderHistoryStandingsTable(season) {
             const gameResult = weekResults[game.id] || weekResults[String(game.id)];
             if (!gameResult) return; // Skip games without results
 
-            // Calculate ATS winner
-            const atsWinner = calculateATSWinner(game, gameResult);
-
             seasonPickers.forEach(picker => {
                 const pickerWeekPicks = weekPicks[picker] || {};
                 const gamePick = getPicksForGame(pickerWeekPicks, game);
                 const stats = pickerStats[picker];
+                // Per picker, not per game: each is graded at their own
+                // line, which a locked pick carries its own copy of.
+                const atsWinner = atsWinnerForPick(game, gamePick, gameResult);
 
                 // Line pick (ATS)
-                if (gamePick.line) {
+                if (gamePick.line && atsWinner) {
                     if (atsWinner === 'push') {
                         stats.linePushes++;
                         stats.totalPushes++;
@@ -4599,7 +4600,7 @@ function getGameResult(game, weekResults) {
  *
  * Spreads load asynchronously (prefetchAndSaveSpreads, and the Spreads sheet),
  * so a current-season game can be rendered before its spread exists. Scoring
- * anyway makes calculateATSWinner return 'push' for every game, which reads as
+ * anyway makes the ATS comparison return 'push' for every game, which reads as
  * "the maths is broken" rather than "the data has not arrived".
  */
 function hasUsableSpread(game) {
@@ -5390,8 +5391,8 @@ async function preloadSeasonSchedules() {
     if (missing.length === 0) return;
 
     console.log(`[Standings] Loading ${missing.length} week schedule(s) for season stats...`);
-    // Spreads included: without them calculateATSWinner scores every line pick
-    // as a push, so skipping the spread load here silently broke ATS standings.
+    // Spreads included: without them there is no line to score against, so
+    // skipping the spread load here silently broke ATS standings.
     await Promise.all(missing.map(week => loadWeekSchedule(week, false)));
 }
 
@@ -5628,7 +5629,8 @@ function calculateTeamPickRecords(picker) {
             if (!pick?.line || !result) return;
 
             // Calculate if the pick was correct
-            const atsWinner = calculateATSWinner(game, result);
+            const atsWinner = atsWinnerForPick(game, pick, result);
+            if (!atsWinner) return;
             const isWin = pick.line === atsWinner;
             const isPush = atsWinner === 'push';
             const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -5968,7 +5970,8 @@ function calculateBlazinTeamPickRecords(picker) {
             // Only count Blazin' 5 picks
             if (!pick?.line || !pick?.blazin || !result) return;
 
-            const atsWinner = calculateATSWinner(game, result);
+            const atsWinner = atsWinnerForPick(game, pick, result);
+            if (!atsWinner) return;
             const isWin = pick.line === atsWinner;
             const isPush = atsWinner === 'push';
             const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -6156,7 +6159,8 @@ function calculateBlazinSpreadRecords(picker) {
             // Only count Blazin' 5 picks
             if (!pick?.line || !pick?.blazin || !result) return;
 
-            const atsWinner = calculateATSWinner(game, result);
+            const atsWinner = atsWinnerForPick(game, pick, result);
+            if (!atsWinner) return;
             const isWin = pick.line === atsWinner;
             const isPush = atsWinner === 'push';
             const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -6324,7 +6328,8 @@ function calculateHistoryBlazinTeamRecords(picker, season) {
                 // Only count Blazin' 5 picks
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
                 const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -6401,7 +6406,8 @@ function calculateHistoryBlazinTeamPicked(picker, season) {
 
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
 
@@ -6473,7 +6479,8 @@ function calculateHistoryBlazinTeamFaded(picker, season) {
 
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
 
@@ -6549,7 +6556,8 @@ function calculateHistoryBlazinHomeAway(picker, season) {
 
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
 
@@ -6619,7 +6627,8 @@ function calculateHistoryBlazinFavDog(picker, season) {
 
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
 
@@ -6803,7 +6812,8 @@ function calculateHistoryBlazinSpreadRecords(picker, season) {
                 // Only count Blazin' 5 picks
                 if (!pick?.line || !pick?.blazin || !result) return;
 
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pick, result);
+                if (!atsWinner) return;
                 const isWin = pick.line === atsWinner;
                 const isPush = atsWinner === 'push';
                 const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -7095,6 +7105,7 @@ function calculateLoneWolfPicksWithDetails() {
 
             // Collect all picks for this game
             const picksByChoice = { away: [], home: [] };
+            const pickByPicker = {};   // the wolf is graded at their own line
             const weekPicks = getPicksForWeekAndSeason(week, currentSeason);
 
             PICKERS.forEach(picker => {
@@ -7104,6 +7115,7 @@ function calculateLoneWolfPicksWithDetails() {
 
                 if (pick?.line) {
                     picksByChoice[pick.line].push(picker);
+                    pickByPicker[picker] = pick;
                 }
             });
 
@@ -7123,7 +7135,9 @@ function calculateLoneWolfPicksWithDetails() {
             }
 
             if (loneWolfPicker) {
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(
+                    game, pickByPicker[loneWolfPicker], result);
+                if (!atsWinner) return;
                 const isWin = loneWolfSide === atsWinner;
                 const isPush = atsWinner === 'push';
                 const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -7308,7 +7322,8 @@ function calculateBlazinLoneWolfPicks() {
 
             // Only count if the lone wolf picker ALSO made it a Blazin' 5 pick
             if (loneWolfPicker && pickerPickData[loneWolfPicker]?.blazin) {
-                const atsWinner = calculateATSWinner(game, result);
+                const atsWinner = atsWinnerForPick(game, pickerPickData[loneWolfPicker], result);
+                if (!atsWinner) return;
                 const isWin = loneWolfSide === atsWinner;
                 const isPush = atsWinner === 'push';
                 const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -7665,7 +7680,8 @@ function calculateAllPickersPnL(betAmount) {
 
                 // Calculate spread pick P&L
                 if (pick.line) {
-                    const atsWinner = calculateATSWinner(game, result);
+                    const atsWinner = atsWinnerForPick(game, pick, result);
+                    if (!atsWinner) return;
                     const isPush = atsWinner === 'push';
                     const isWin = pick.line === atsWinner;
                     const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
@@ -9582,7 +9598,7 @@ const PatternEngine = {
                 const result = results[game.id];
                 if (!result) return;
 
-                const atsResult = calculateATSWinner(game, result);
+                const atsResult = atsWinnerForPick(game, pick, result);
                 if (!atsResult) return;
 
                 // Determine which team was picked
@@ -9680,7 +9696,7 @@ const PatternEngine = {
                 const result = results[game.id];
                 if (!result) return;
 
-                const atsResult = calculateATSWinner(game, result);
+                const atsResult = atsWinnerForPick(game, pick, result);
                 if (!atsResult) return;
 
                 const outcome = pick.line === atsResult ? 'win' : (atsResult === 'push' ? 'push' : 'loss');
@@ -9875,14 +9891,12 @@ const InsightsManager = {
 };
 
 /**
- * Calculate ATS winner based on score and spread
- */
-/**
  * Which side covered, against an explicitly supplied line.
  *
- * Separate from calculateATSWinner(game, result) because a pick can be frozen
- * at its own number: two players can be graded on different spreads for the
- * same game, so the line cannot always be read off the game.
+ * Takes the line rather than reading it off the game, because a pick can be
+ * frozen at its own number: two players can be graded on different spreads
+ * for the same game. Everything that scores a PICK goes through
+ * atsWinnerForPick(); this is the shared arithmetic underneath it.
  *
  * NOTE: with a missing or non-numeric spread both comparisons are NaN and this
  * returns 'push' - a silent wrong answer, not an error. Callers must check
@@ -9899,17 +9913,6 @@ function calculateATSWinnerFrom(spread, favorite, result) {
     if (awayWithSpread > homeWithSpread) return 'away';
     if (homeWithSpread > awayWithSpread) return 'home';
     return 'push';
-}
-
-/**
- * Which side covered, against the game's current line. Used by the historical
- * and records paths, where the archived spread is the only one there is.
- * Current-season scoring goes through lineForPick() instead, so a frozen pick
- * keeps its own number.
- */
-function calculateATSWinner(game, result) {
-    if (!result) return null;
-    return calculateATSWinnerFrom(game.spread, game.favorite, result);
 }
 
 /**
@@ -12122,7 +12125,8 @@ function calculatePickerWeeklyBankroll(picker) {
             // Only count Blazin' 5 picks
             if (!pick.blazin) return;
 
-            const atsWinner = calculateATSWinner(game, result);
+            const atsWinner = atsWinnerForPick(game, pick, result);
+            if (!atsWinner) return;
             const isPush = atsWinner === 'push';
             const isWin = pick.line === atsWinner;
 

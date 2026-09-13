@@ -696,6 +696,36 @@ await check('the lock dialog quotes the pick, not the favourite', async () => {
     assert.ok(!h.prompts[0].includes('Seahawks -3'), h.prompts[0]);
 });
 
+section('Nothing scores a pick against the market line');
+
+await check('there is no game-only ATS helper left to reach for', () => {
+    // Every panel that scored a pick used to call calculateATSWinner(game,
+    // result), which reads the line off the GAME - so a locked pick and every
+    // Cowherd pick were graded at a number they were not playing, and the
+    // panels disagreed with the standings and with the card's own colouring.
+    //
+    // All of them go through atsWinnerForPick() now, which leaves the old
+    // helper dead. Deleting it is what stops the bug returning: it was the
+    // shorter and more obvious-looking of the two to reach for.
+    assert.doesNotMatch(APP, /function calculateATSWinner\s*\(/,
+        'calculateATSWinner is back - score picks with atsWinnerForPick instead');
+    assert.ok(/function calculateATSWinnerFrom\s*\(/.test(APP),
+        'the shared arithmetic underneath is still there');
+});
+
+await check('a locked pick scores at its own number everywhere', () => {
+    const games = sixGames();
+    const h = setup({ games, picks: { rams_seahawks: complete() } });
+    // Locked at the -3 on the board, then the line moves to -10.
+    h.api.applyFreeze(games[0]);
+    games[0].spread = 10;
+
+    // Seahawks win by 4: covers the -3 it was locked at, not the -10 now up.
+    const result = { awayScore: 20, homeScore: 24, winner: 'home' };
+    const pick = h.api.__state().allPicks[WEEK].Stephen.rams_seahawks;
+    assert.strictEqual(h.api.atsWinnerForPick(games[0], pick, result), 'home');
+});
+
 section('A locked pick stops looking special once the game starts');
 
 await check('no .pick-frozen rule can reach a card that has kicked off', async () => {
