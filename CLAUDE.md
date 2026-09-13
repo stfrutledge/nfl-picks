@@ -114,7 +114,7 @@ Run `node test-line-freezing.js`.
 
 The group plays against Colin Cowherd's Blazin' 5, so his five picks are entered by hand each week and scored by the same engine as everyone else's. Entry is the admin-only panel on the Make Picks tab (`#cowherd-panel`, gated by `.admin-only`, so Stephen only).
 
-His picks live in `allPicks` under the picker name `Cowherd`, exactly like a player's. That is deliberate and is what buys localStorage, the Backup sheet round trip and the History view for nothing — none of them know he is special, and the Apps Script has no picker whitelist, so **no redeploy was needed for any of this**.
+His picks live in `allPicks` under the picker name `Cowherd`, exactly like a player's. That is deliberate and is what buys localStorage, the Backup sheet round trip and the History view for nothing — none of them know he is special, and the Apps Script has no picker whitelist, so **no redeploy was needed for any of this**. It does mean his picks inherit the reader's rules, including the one about frozen rows below.
 
 Two things stop him being just a sixth picker:
 
@@ -122,6 +122,10 @@ Two things stop him being just a sixth picker:
 - **He calls his own numbers, and they are not always the book's.** Each pick carries the line he gave, stored in the same `frozen*` fields a locked pick uses — so `lineForPick()` and `atsWinnerForPick()` grade him at his number with no new scoring code, and the sheet's spread columns already record the line a pick is graded against. `cowherdLineFields()` turns a side plus a number signed from that side ("Rams +7") into the (magnitude, favourite) pair everything else stores; `cowherdSignedSpread()` is the inverse, for putting his number back in the input.
 
 `cowherdWeeklyResults(season)` is the one source for his history: a finished season reads its archived `COWHERD_<year>_RESULTS`, the season in progress is scored from the picks entered so far. It replaced two copies of an eight-way ternary over hardcoded season globals, so a newly archived year now works without editing them.
+
+**His tombstones are stamped, and have to be.** `foldPickRow` gives a frozen row precedence over any later row that lacks the freeze, so a blank tombstone would lose to the very row it is meant to retire. For a player that never matters — a frozen pick is read-only, so a later blank really is a stale tab — but every Cowherd pick is stored frozen while staying editable, so without a stamp his picks could be added and never removed, and a corrected week would resurrect the pick it replaced on the next load. `syncPicksToGoogleSheets` therefore stamps `frozenAt` on every row of his snapshot, taken from his own picks rather than the clock so an unchanged payload stays byte-identical and `lastSyncedSignature` still dedupes it. This is a **client-side** fix on purpose: the deployed Apps Script needs no redeploy. `node test-cowherd-blazin.js` drives the real reader over the rows `savePicks()` would have appended.
+
+**Entry never locks.** There is no `isGameLocked` check anywhere in his path, deliberately: his five are transcribed off the show, often after the games are played, so a back week has to be fillable and correctable. Do not add one.
 
 Watch out for the five analysis panels that still score Blazin' picks with `calculateATSWinner(game, result)` — the market line — rather than `atsWinnerForPick()`: `calculateBlazinTeamPickRecords`, `calculateBlazinSpreadRecords`, `calculateHistoryBlazinTeamRecords`, `calculateHistoryBlazinSpreadRecords` and `calculatePickerWeeklyBankroll`. They take a picker from a `PICKERS`-only dropdown so Cowherd never reaches them, but they are wrong for a locked pick today. `calculateWorstBlazinWeeks` was in that list and had to be fixed, because it feeds the Blazin' standings table he does appear in.
 

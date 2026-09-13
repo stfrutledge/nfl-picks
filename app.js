@@ -10758,6 +10758,25 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         return;
     }
 
+    // A blank row in the snapshot is a tombstone, and foldPickRow gives a
+    // frozen row precedence over any later row that lacks the freeze - so an
+    // unstamped tombstone loses to the very row it is meant to retire.
+    //
+    // For a player that never matters: a frozen pick is read-only, so it cannot
+    // be deselected and a later blank really is a stale tab. Every Cowherd pick
+    // is stored frozen (that is how his own line is carried) while staying
+    // editable, so without this his picks could be added but never removed -
+    // a corrected week would resurrect the pick it replaced on the next load.
+    //
+    // Stamping his tombstones puts them in the same class as the rows they
+    // replace, so the newest batch wins on timestamp as intended. The stamp is
+    // taken from his own picks rather than from the clock, so an unchanged
+    // payload stays byte-identical and lastSyncedSignature still dedupes it.
+    const tombstoneStamp = picker === COWHERD
+        ? (Object.values(weekPicks).map(p => p.frozenAt).filter(Boolean).sort().pop()
+            || new Date().toISOString())
+        : '';
+
     const knownKeys = new Set(weekGames.map(g => pickKey(g)));
     for (const storedKey of Object.keys(weekPicks)) {
         if (!knownKeys.has(storedKey)) {
@@ -10791,7 +10810,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
             blazin: pickData.blazin || false,
             overUnder: pickData.overUnder || '',
             totalLine: pickData.totalLine || '',
-            frozenAt: pickData.frozenAt || ''
+            frozenAt: pickData.frozenAt || tombstoneStamp
         };
     });
 

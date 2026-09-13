@@ -14,6 +14,42 @@ const assert = require('assert');
 
 const APP = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const PARSER = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8');
+const SHEET = fs.readFileSync(path.join(__dirname, 'google-apps-script-simple.js'), 'utf8');
+
+const SHEET_HEADER = ['Timestamp', 'Week', 'Picker', 'Game', 'Away Team', 'Home Team',
+    'Away Spread', 'Home Spread', 'Line Pick', 'Winner Pick', 'Blazin',
+    'O/U Pick', 'O/U Line', 'Line Outcome', 'Winner Outcome', 'O/U Outcome', 'Frozen At'];
+
+/** The row savePicks() appends for one pick of a sync payload. */
+function sheetRowFor(payload, pick, timestamp) {
+    return [timestamp, payload.week, payload.picker, pick.gameId, pick.away || '',
+        pick.home || '', pick.awaySpread || '', pick.homeSpread || '',
+        pick.linePick || '', pick.winnerPick || '', pick.blazin ? 'Yes' : '',
+        pick.overUnder || '', pick.totalLine || '', '', '', '', pick.frozenAt || ''];
+}
+
+/** Run the deployed Apps Script's read path over a set of Backup rows. */
+function loadSheet(rows) {
+    const SpreadsheetApp = {
+        getActiveSpreadsheet: () => ({
+            getSheetByName: name => (name === 'Backup' ? {
+                getDataRange: () => ({ getValues: () => rows }),
+                getRange: () => ({ setValues() {}, setValue() {}, setFontWeight() {}, getValues: () => [[]] }),
+                appendRow() {}
+            } : null),
+            insertSheet: () => ({
+                getDataRange: () => ({ getValues: () => [] }),
+                getRange: () => ({ setValues() {}, setValue() {}, setFontWeight() {}, getValues: () => [[]] }),
+                appendRow() {}
+            })
+        })
+    };
+    return new Function('SpreadsheetApp', 'ContentService', 'Logger',
+        SHEET + ';return { getAllPicks, foldPickRow, lineFromRow, readPickRow };')(
+        SpreadsheetApp,
+        { createTextOutput: () => ({ setMimeType: () => ({}) }), MimeType: { JSON: 'json' } },
+        { log() {} });
+}
 
 /* ------------------------------------------------------------------ harness */
 
@@ -73,7 +109,7 @@ function makeAppEnv({ confirms = true } = {}) {
         CURRENT_SEASON, pickKey, otherSide,
         cowherdLineFields, cowherdSignedSpread, saveCowherdPicks,
         getCowherdPicksForWeek, cowherdWeeklyResults, totalCowherdRecord,
-        cowherdBelongsIn, calculateStatsForWeeks, standingsFromComputed,
+        cowherdBelongsIn, calculateStatsForWeeks, standingsFromComputed, isGameLocked,
         weeklySeriesFromComputed, atsWinnerForPick, syncPicksToGoogleSheets,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __toasts: () => TEST_TOASTS,
@@ -260,6 +296,61 @@ await check('his picks sync to the sheet under his own name', async () => {
     assert.ok(row.frozenAt, 'and it is recorded as a fixed line');
 });
 
+section('The Google Sheet round trip');
+
+// The write half and the read half are separately plausible and jointly the
+// whole backup: if his rows go up but never come back down, the picks are
+// simply lost on the next device. So this drives the real Apps Script reader
+// with the exact rows savePicks() would have appended for the real payload.
+
+await check('his picks come back off the sheet, at his own line', async () => {
+    const h = setup();
+    h.api.saveCowherdPicks(WEEK, [
+        { key: 'rams_seahawks', side: 'away', spread: 7 },
+        { key: 'bills_chiefs', side: 'home', spread: -6.5 }
+    ]);
+    await new Promise(r => setTimeout(r, 0));
+
+    const payload = h.posts.find(p => p.picker === 'Cowherd');
+    const rows = [SHEET_HEADER, ...payload.picks.map(
+        pick => sheetRowFor(payload, pick, '2026-09-13T10:00:00Z'))];
+
+    const week = loadSheet(rows).getAllPicks().picks[payload.week];
+    assert.ok(week, 'the week came back');
+    assert.ok(week.Cowherd, 'under his own name, not dropped as an unknown picker');
+
+    const rams = week.Cowherd.rams_seahawks;
+    assert.strictEqual(rams.line, 'away', 'the side he took');
+    assert.strictEqual(rams.blazin, true, 'still starred');
+    assert.strictEqual(rams.frozenSpread, 7, 'his number, not the book\u2019s 3');
+    assert.strictEqual(rams.frozenFavorite, 'home');
+
+    const bills = week.Cowherd.bills_chiefs;
+    assert.strictEqual(bills.line, 'home');
+    assert.strictEqual(bills.frozenSpread, 6.5);
+    assert.strictEqual(bills.frozenFavorite, 'home', 'he had the Chiefs laying 6.5');
+});
+
+await check('a pick he dropped does not come back from the dead', async () => {
+    const h = setup();
+    h.api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 7 }]);
+    h.api.saveCowherdPicks(WEEK, [{ key: 'bills_chiefs', side: 'home', spread: -6.5 }]);
+    await new Promise(r => setTimeout(r, 0));
+
+    const payloads = h.posts.filter(p => p.picker === 'Cowherd');
+    assert.strictEqual(payloads.length, 2, 'both saves were sent');
+    // Each sync is a whole-week snapshot, so the second batch carries a blank
+    // row for the dropped game and the reader takes the newest batch entire.
+    const rows = [SHEET_HEADER];
+    payloads.forEach((payload, i) => payload.picks.forEach(pick => {
+        rows.push(sheetRowFor(payload, pick, `2026-09-1${3 + i}T10:00:00Z`));
+    }));
+
+    const week = loadSheet(rows).getAllPicks().picks[payloads[0].week];
+    assert.ok(!week.Cowherd.rams_seahawks?.line, 'the dropped pick stays dropped');
+    assert.strictEqual(week.Cowherd.bills_chiefs.line, 'home', 'the current one survives');
+});
+
 section('He is in the Blazin’ 5 column and nowhere else');
 
 await check('the Blazin’ 5 standings include him once he has a scored pick', async () => {
@@ -298,6 +389,48 @@ await check('the real pickers are untouched by his presence', async () => {
         assert.ok(h.api.cowherdBelongsIn(picker, 'line', computed[picker].line),
             `${picker} still belongs in the Line column`);
     });
+});
+
+section('Entry stays open after kickoff');
+
+// Deliberate, and the reason there is no lock check anywhere in the Cowherd
+// path: his five picks are transcribed from the show, often after the games
+// have been played, and a back-week has to be fillable. This is exactly the
+// rule a well-meaning isGameLocked() guard would break.
+
+await check('a played week can still be entered', async () => {
+    const played = sixGames().map(g => ({ ...g, kickoff: '2020-01-01T18:00:00Z' }));
+    const h = setup({ games: played, results: seahawksBy4() });
+    assert.strictEqual(h.api.isGameLocked(played[0], WEEK), true,
+        'the game really is locked for a player');
+
+    const saved = h.api.saveCowherdPicks(WEEK, [
+        { key: 'rams_seahawks', side: 'away', spread: 7 }
+    ]);
+    assert.strictEqual(saved, 1, 'and Cowherd is entered against it anyway');
+});
+
+await check('a pick entered after the fact still scores', async () => {
+    const played = sixGames().map(g => ({ ...g, kickoff: '2020-01-01T18:00:00Z' }));
+    const h = setup({ games: played, results: seahawksBy4() });
+    h.api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 7 }]);
+    const computed = h.api.calculateStatsForWeeks(WEEK, WEEK, h.api.PICKERS_WITH_COWHERD);
+    assert.strictEqual(h.api.standingsFromComputed(computed, 'blazin').Cowherd.wins, 1);
+});
+
+await check('a back week can be corrected after it was entered', async () => {
+    const played = sixGames().map(g => ({ ...g, kickoff: '2020-01-01T18:00:00Z' }));
+    const h = setup({ games: played, results: seahawksBy4() });
+    // Entered at the wrong number first: Rams +3 loses a 4-point game.
+    h.api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 3 }]);
+    let computed = h.api.calculateStatsForWeeks(WEEK, WEEK, h.api.PICKERS_WITH_COWHERD);
+    assert.strictEqual(h.api.standingsFromComputed(computed, 'blazin').Cowherd.losses, 1);
+
+    h.api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 7 }]);
+    computed = h.api.calculateStatsForWeeks(WEEK, WEEK, h.api.PICKERS_WITH_COWHERD);
+    const fixed = h.api.standingsFromComputed(computed, 'blazin').Cowherd;
+    assert.strictEqual(fixed.wins, 1, 'the correction re-scores');
+    assert.strictEqual(fixed.losses, 0, 'and the wrong number is gone');
 });
 
 section('History');
