@@ -68,6 +68,7 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
     const store = new Map();
     const toasts = [];
     const posts = [];
+    const prompts = [];
     const env = {
         localStorage: {
             getItem: k => (store.has(k) ? store.get(k) : null),
@@ -101,7 +102,7 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
         console: { log() {}, warn() {}, error() {}, info() {} },
         performance: { now: () => 0 },
         alert() {},
-        confirm: () => confirms,
+        confirm: msg => { prompts.push(String(msg)); return confirms; },
         addEventListener: () => {},
         matchMedia: () => ({ matches: false, addEventListener() {} })
     };
@@ -124,7 +125,8 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
         MAX_BLAZIN_PICKS, PICKERS,
         lineForPick, atsWinnerForPick, isPickFrozen, isCardComplete,
         blazinReachableAfterFreezing, freezeEligibility, freezableGames,
-        applyFreeze, freezeGameByKey, freezeAllCompleteGames, describeLine,
+        applyFreeze, freezeGameByKey, freezeAllCompleteGames,
+        describeLine, describeLineForSide,
         calculateStatsForWeeks, standingsFromComputed, pickKey, countBlazinPicks,
         renderGames, renderScoringSummary,
         isConfirmSuppressed, suppressConfirm, requestConfirmation,
@@ -148,7 +150,7 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
         env.confirm, env.addEventListener, env.matchMedia);
-    return { api, posts, toasts: () => api.__toasts() };
+    return { api, posts, prompts, toasts: () => api.__toasts() };
 }
 
 // Home favoured by 3 unless overridden.
@@ -641,6 +643,57 @@ await check('renderScoringSummary does not throw with a frozen pick', async () =
     const h = setup({ games, picks: { rams_seahawks: complete() }, withDom: true });
     h.api.applyFreeze(games[0]);
     h.api.renderScoringSummary();
+});
+
+section('A line is described from the side the picker took');
+
+await check('the favourite reads as the favourite', async () => {
+    const h = setup({ games: sixGames() });
+    const g = h.api.NFL_GAMES_BY_WEEK[WEEK][0];   // Rams @ Seahawks, home -3
+    assert.strictEqual(h.api.describeLineForSide(g, 'home'), 'Seahawks -3');
+});
+
+await check('the underdog reads as the underdog, not the other team', async () => {
+    const h = setup({ games: sixGames() });
+    const g = h.api.NFL_GAMES_BY_WEEK[WEEK][0];
+    assert.strictEqual(h.api.describeLineForSide(g, 'away'), 'Rams +3');
+});
+
+await check('an away favourite flips the same way', async () => {
+    const h = setup({ games: [game(1, 'Rams', 'Seahawks', { favorite: 'away', spread: 6.5 })] });
+    const g = h.api.NFL_GAMES_BY_WEEK[WEEK][0];
+    assert.strictEqual(h.api.describeLineForSide(g, 'away'), 'Rams -6.5');
+    assert.strictEqual(h.api.describeLineForSide(g, 'home'), 'Seahawks +6.5');
+});
+
+await check('a pick’em still names the team', async () => {
+    const h = setup({ games: [game(1, 'Rams', 'Seahawks', { spread: 0 })] });
+    const g = h.api.NFL_GAMES_BY_WEEK[WEEK][0];
+    assert.strictEqual(h.api.describeLineForSide(g, 'away'), "Rams Pick'em");
+});
+
+await check('no line, and no side, both still answer', async () => {
+    const h = setup({ games: [game(1, 'Rams', 'Seahawks', { spread: null })] });
+    const g = h.api.NFL_GAMES_BY_WEEK[WEEK][0];
+    assert.strictEqual(h.api.describeLineForSide(g, 'away'), 'no line');
+    // Nothing picked yet: fall back to naming the favourite.
+    const h2 = setup({ games: sixGames() });
+    assert.strictEqual(
+        h2.api.describeLineForSide(h2.api.NFL_GAMES_BY_WEEK[WEEK][0], undefined),
+        'Seahawks -3');
+});
+
+await check('the lock dialog quotes the pick, not the favourite', async () => {
+    // Took the underdog: the prompt has to say "Rams +3", not "Seahawks -3".
+    const h = setup({
+        games: sixGames(),
+        picks: { rams_seahawks: { line: 'away', winner: 'away' } },
+        confirms: false
+    });
+    h.api.freezeGameByKey('rams_seahawks');
+    assert.strictEqual(h.prompts.length, 1, 'it asked');
+    assert.ok(h.prompts[0].includes('at Rams +3?'), h.prompts[0]);
+    assert.ok(!h.prompts[0].includes('Seahawks -3'), h.prompts[0]);
 });
 
 section('A locked pick stops looking special once the game starts');

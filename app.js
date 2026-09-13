@@ -4768,13 +4768,32 @@ function freezableGames(week = currentWeek, picker = currentPicker) {
         .filter(game => freezeEligibility(game, week, picker).canFreeze);
 }
 
-/** A line as a player reads it: "Seahawks -3", "Pick'em". */
+/** A line as a player reads it: "Seahawks -3", "Pick'em". Names the favourite. */
 function describeLine(game) {
     const spread = Number(game?.spread);
     if (!hasUsableSpread(game)) return 'no line';
     if (spread === 0) return "Pick'em";
     const favourite = game.favorite === 'home' ? game.home : game.away;
     return `${favourite} -${spread}`;
+}
+
+/**
+ * The same line read from one side of it: "Buccaneers +3.5" rather than
+ * "Bengals -3.5".
+ *
+ * Anywhere we are describing somebody's PICK - locking it, the tooltip on a
+ * locked badge, a line that has drifted under it - it has to be their own team
+ * and their own number. describeLine() names the favourite, which is the same
+ * line seen from the other side of the table and reads as the wrong pick.
+ * Falls back to the favourite when there is no side to read it from.
+ */
+function describeLineForSide(game, side) {
+    if (!side) return describeLine(game);
+    if (!hasUsableSpread(game)) return 'no line';
+    const spread = Number(game.spread);
+    const team = side === 'home' ? game.home : game.away;
+    if (spread === 0) return `${team} Pick'em`;
+    return `${team} ${game.favorite === side ? '-' : '+'}${spread}`;
 }
 
 /**
@@ -4832,7 +4851,8 @@ function freezeGameByKey(key) {
         return false;
     }
 
-    const line = describeLine(game);
+    const pick = getPicksForGame(getPickerPicksForWeek(currentWeek, currentPicker), game);
+    const line = describeLineForSide(game, pick.line);
     const remaining = blazinRemaining();
     const starWarning = remaining > 0
         ? ` You still have ${remaining} Blazin' 5 pick${remaining === 1 ? '' : 's'} to make,`
@@ -8430,7 +8450,8 @@ function renderGames() {
         const frozen = isPickFrozen(gamePicks);
         const readOnly = locked || frozen;
         const frozenLineLabel = frozen
-            ? describeLine({ ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite })
+            ? describeLineForSide(
+                { ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite }, linePick)
             : '';
         const freezeState = (locked || frozen || isHistoricalWeek || isHistoricalSeason())
             ? null
@@ -8441,7 +8462,8 @@ function renderGames() {
                 && hasUsableLine(gamePicks.pickedSpread) && hasUsableSpread(game)
                 && (Number(gamePicks.pickedSpread) !== Number(game.spread)
                     || gamePicks.pickedFavorite !== game.favorite))
-            ? describeLine({ ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite })
+            ? describeLineForSide(
+                { ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite }, linePick)
             : '';
 
         const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
@@ -8646,13 +8668,13 @@ function renderGames() {
                         </span>
                     ` : (ridingDrift ? `
                         <span class="freeze-state drifted" title="You picked ${ridingDrift}; the line has since moved">
-                            Picked at ${ridingDrift} &rarr; now ${describeLine(game)}
+                            Picked at ${ridingDrift} &rarr; now ${describeLineForSide(game, linePick)}
                         </span>
                     ` : '')}
                     ${freezeState ? `
                         <button class="freeze-btn" data-game-id="${game.id}" data-pick-key="${key}"
                                 ${freezeState.canFreeze ? '' : 'disabled'}
-                                title="${freezeState.canFreeze ? `Lock this pick at ${describeLine(game)} - the game becomes final` : freezeState.reason}">
+                                title="${freezeState.canFreeze ? `Lock this pick at ${describeLineForSide(game, linePick)} - the game becomes final` : freezeState.reason}">
                             Lock Pick
                         </button>
                     ` : ''}
@@ -8967,6 +8989,7 @@ function updateFreezeControls() {
     if (buttons.length === 0) return;
 
     const weekGames = getGamesForWeek(currentWeek);
+    const pickerPicks = getPickerPicksForWeek(currentWeek, currentPicker);
     buttons.forEach(btn => {
         const game = weekGames.find(g => pickKey(g) === btn.dataset.pickKey);
         if (!game) return;
@@ -8974,7 +8997,7 @@ function updateFreezeControls() {
         const { canFreeze, reason } = freezeEligibility(game, currentWeek, currentPicker);
         btn.disabled = !canFreeze;
         btn.title = canFreeze
-            ? `Lock this pick at ${describeLine(game)} - the game becomes final`
+            ? `Lock this pick at ${describeLineForSide(game, getPicksForGame(pickerPicks, game).line)} - the game becomes final`
             : reason;
     });
 }

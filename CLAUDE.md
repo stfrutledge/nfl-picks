@@ -99,6 +99,8 @@ Persistence: the Backup sheet's `Away Spread`/`Home Spread` columns record **the
 
 `pickedSpread`/`pickedFavorite` are recorded on a riding pick for display only, so the card can show that the line has moved. They never affect scoring.
 
+**Every label that describes a pick reads the line from the side the picker took**, through `describeLineForSide(game, side)` — take the Buccaneers and the lock dialog, the button tooltip and the locked badge all say "Buccaneers +3.5". `describeLine()` names the favourite, which is the same line seen from the other side of the table: correct for a line in the abstract, and the wrong pick anywhere a person’s own choice is being quoted back to them.
+
 **The styling stops at kickoff.** Every `.pick-frozen` rule is scoped
 `:not(.game-locked)`, so once a game starts `.game-locked` and `.game-final`
 own the card and a locked pick’s finished card looks like every other
