@@ -3913,15 +3913,13 @@ function updateAdminButtons() {
         }
     });
 
-    // Hide/show Clear My Picks buttons based on picker selection
-    const clearPicksBtn = document.getElementById('clear-picks-btn');
-    const clearPicksBtnMobile = document.getElementById('clear-picks-btn-mobile');
-    if (clearPicksBtn) {
-        clearPicksBtn.style.display = currentPicker ? '' : 'none';
-    }
-    if (clearPicksBtnMobile) {
-        clearPicksBtnMobile.style.display = currentPicker ? '' : 'none';
-    }
+    // Hide/show the picker-specific action buttons based on picker selection.
+    // The mobile lock button hides with them: with no picker it would
+    // otherwise be the only thing left in the mobile actions row.
+    ['clear-picks-btn', 'clear-picks-btn-mobile', 'freeze-all-btn-mobile'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = currentPicker ? '' : 'none';
+    });
 }
 
 /**
@@ -3941,6 +3939,7 @@ function setupPicksActions() {
         }
     });
     document.getElementById('clear-picks-btn-mobile')?.addEventListener('click', clearCurrentPickerPicks);
+    document.getElementById('freeze-all-btn-mobile')?.addEventListener('click', freezeAllCompleteGames);
     document.getElementById('reset-all-picks-btn')?.addEventListener('click', resetAllPicks);
     document.getElementById('randomize-picks-btn')?.addEventListener('click', () => {
         randomizePicks();

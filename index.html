@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=9bd81092">
+    <link rel="stylesheet" href="styles.css?v=9592087b">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -532,9 +532,10 @@
                     <!-- Games will be injected here -->
                 </div>
 
-                <!-- Clear Picks Button (mobile only - shown at bottom) -->
-                <div class="clear-picks-mobile">
+                <!-- Picks actions (mobile only - .picks-actions is hidden at this width) -->
+                <div class="picks-actions-mobile">
                     <button class="btn btn-secondary" id="clear-picks-btn-mobile">Clear My Picks</button>
+                    <button class="btn btn-secondary" id="freeze-all-btn-mobile" title="Lock in the current lines for every completed game">Lock All Picks</button>
                 </div>
 
                 <!-- Admin: Refresh Spreads (Stephen only) -->
@@ -785,6 +786,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=fc0f176d"></script>
+    <script src="app.js?v=2fe00dd6"></script>
 </body>
 </html>

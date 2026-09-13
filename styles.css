@@ -6817,8 +6817,8 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     }
 }
 
-/* Clear Picks Mobile Button - hidden by default */
-.clear-picks-mobile {
+/* Mobile picks actions - hidden by default, shown below 600px */
+.picks-actions-mobile {
     display: none;
 }
 
@@ -6862,20 +6862,22 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
         display: none;
     }
 
-    /* Hide original Clear My Picks button on mobile */
+    /* Hide the desktop actions row on mobile - .picks-actions-mobile replaces it */
     .picks-actions {
         display: none;
     }
 
-    /* Show Clear My Picks at bottom on mobile */
-    .clear-picks-mobile {
+    /* Show the picks actions at the bottom on mobile */
+    .picks-actions-mobile {
         display: flex;
-        justify-content: center;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
         padding: 20px 0;
         margin-top: 16px;
     }
 
-    .clear-picks-mobile .btn {
+    .picks-actions-mobile .btn {
         width: 100%;
         max-width: 300px;
     }
@@ -6942,12 +6944,14 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     transform: none;
 }
 
-.picks-disabled .picks-actions .btn {
+.picks-disabled .picks-actions .btn,
+.picks-disabled .picks-actions-mobile .btn {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.picks-disabled .picks-actions .btn:hover {
+.picks-disabled .picks-actions .btn:hover,
+.picks-disabled .picks-actions-mobile .btn:hover {
     transform: none;
 }
 
