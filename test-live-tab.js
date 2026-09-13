@@ -355,13 +355,19 @@ check('the red zone is carried through', () => {
 
 section('The box shows the clock, the score and the situation');
 
+/** Every box drawn, whichever of the three sections it landed in. */
+function allBoxes(api) {
+    return ['live-games-list', 'live-completed-list', 'live-upcoming-list']
+        .map(id => api.__written[id] || '').join('');
+}
+
 /** Render one box with `entry` standing in for the live-scores cache. */
 function boxFor(entry, { picks = { Stephen: { rams_seahawks: b5('home') } } } = {}) {
     const games = [game(1, 'Rams', 'Seahawks')];
     const api = setup({ games, picks, withDom: true });
     api.__setLiveScores({ 'Los Angeles Rams@Seattle Seahawks': entry });
     api.renderBlazinGameBoxes();
-    return api.__written['live-games-list'] || '';
+    return allBoxes(api);
 }
 
 check('a game in progress shows the clock, quarter and down', () => {
@@ -542,7 +548,7 @@ check('the rendered chips follow the same rule', () => {
         { key: 'bills_chiefs', side: 'home', spread: -3 }      // the board's
     ]);
     api.renderBlazinGameBoxes();
-    const html = api.__written['live-games-list'] || '';
+    const html = allBoxes(api);
     assert.ok(html.includes('Cowherd <em>+7</em>'), 'his own number is printed');
     assert.ok(!html.includes('Cowherd <em>-3</em>'), 'the board\u2019s is not repeated');
 });
@@ -844,14 +850,15 @@ check('a game being played is not faded', () => {
 
 section('Finished games go in their own section');
 
-check('a finished game leaves the main list for the completed one', () => {
-    const games = [
-        inProgress(1, 'Rams', 'Seahawks', 20, 24),
-        finalGame(2, 'Bills', 'Chiefs', 30, 20),
-        game(3, 'Jets', 'Dolphins')                 // still to come
-    ];
-    const api = setup({
-        games, withDom: true,
+/** One of each: being played, done, still to come. */
+function threeStates() {
+    return {
+        games: [
+            inProgress(1, 'Rams', 'Seahawks', 20, 24),
+            finalGame(2, 'Bills', 'Chiefs', 30, 20),
+            game(3, 'Jets', 'Dolphins')
+        ],
+        withDom: true,
         picks: {
             Stephen: {
                 rams_seahawks: b5('home'),
@@ -860,35 +867,38 @@ check('a finished game leaves the main list for the completed one', () => {
             }
         },
         results: { 2: { awayScore: 30, homeScore: 20, winner: 'away' } }
-    });
+    };
+}
+
+check('only what is being played is on the page outright', () => {
+    const api = setup(threeStates());
     api.renderBlazinGameBoxes();
 
     const active = api.__written['live-games-list'] || '';
+    assert.strictEqual((active.match(/live-game-box/g) || []).length, 1, 'just the live one');
+    assert.ok(active.includes('Rams @ Seahawks'));
+});
+
+check('the finished one goes to Completed, the unplayed one to Upcoming', () => {
+    const api = setup(threeStates());
+    api.renderBlazinGameBoxes();
+
     const done = api.__written['live-completed-list'] || '';
-    assert.strictEqual((active.match(/live-game-box/g) || []).length, 2,
-        'the live one and the one still to come');
-    assert.strictEqual((done.match(/live-game-box/g) || []).length, 1, 'and the finished one');
-    assert.ok(active.includes('Rams @ Seahawks') && active.includes('Jets @ Dolphins'));
-    assert.ok(done.includes('Bills @ Chiefs'));
-    assert.strictEqual(api.__written['live-completed-count:text'], '(1)', 'counted in the heading');
+    const soon = api.__written['live-upcoming-list'] || '';
+    assert.ok(done.includes('Bills @ Chiefs'), 'finished');
+    assert.ok(soon.includes('Jets @ Dolphins'), 'still to come');
+    assert.ok(!done.includes('Jets @ Dolphins') && !soon.includes('Bills @ Chiefs'),
+        'and neither strays into the other');
 });
 
-check('a game being played still comes before one that has not started', () => {
-    const games = [
-        game(1, 'Rams', 'Seahawks'),                  // still to come
-        inProgress(2, 'Bills', 'Chiefs', 10, 7)
-    ];
-    const api = setup({
-        games, withDom: true,
-        picks: { Stephen: { rams_seahawks: b5('home'), bills_chiefs: b5('away') } }
-    });
+check('each section counts what it holds', () => {
+    const api = setup(threeStates());
     api.renderBlazinGameBoxes();
-    const active = api.__written['live-games-list'] || '';
-    assert.ok(active.indexOf('Bills @ Chiefs') < active.indexOf('Rams @ Seahawks'),
-        'the one being played is first');
+    assert.strictEqual(api.__written['live-completed-count:text'], '(1)');
+    assert.strictEqual(api.__written['live-upcoming-count:text'], '(1)');
 });
 
-check('with everything done, the main list says so', () => {
+check('with nothing being played, the main list says so', () => {
     const games = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
     const api = setup({
         games, withDom: true,
@@ -896,7 +906,7 @@ check('with everything done, the main list says so', () => {
         results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
     });
     api.renderBlazinGameBoxes();
-    assert.ok((api.__written['live-games-list'] || '').includes('Every starred game is done'));
+    assert.ok((api.__written['live-games-list'] || '').includes('No games in progress'));
     assert.ok((api.__written['live-completed-list'] || '').includes('live-game-box'));
 });
 

@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=002f8caa">
+    <link rel="stylesheet" href="styles.css?v=5c155f39">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -611,15 +611,27 @@
                     <!-- Game boxes injected here -->
                 </div>
 
-                <!-- Closed by default; toggleSection remembers it either way -->
-                <div class="live-completed collapsible-section collapsed hidden" id="live-completed-section" data-section="live-completed">
+                <!-- Open by default; toggleSection remembers it either way -->
+                <div class="live-completed collapsible-section hidden" id="live-completed-section" data-section="live-completed">
                     <div class="collapsible-header" onclick="toggleSection('live-completed')">
                         <h3 class="section-header-title">Completed Games <span id="live-completed-count"></span></h3>
-                        <span class="collapse-toggle"><span class="collapse-toggle-icon">+</span></span>
+                        <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
                     </div>
                     <div class="collapsible-content">
                         <div class="live-games-list" id="live-completed-list">
                             <!-- Finished game boxes injected here -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="live-completed collapsible-section hidden" id="live-upcoming-section" data-section="live-upcoming">
+                    <div class="collapsible-header" onclick="toggleSection('live-upcoming')">
+                        <h3 class="section-header-title">Upcoming Games <span id="live-upcoming-count"></span></h3>
+                        <span class="collapse-toggle"><span class="collapse-toggle-icon">&minus;</span></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="live-games-list" id="live-upcoming-list">
+                            <!-- Upcoming game boxes injected here -->
                         </div>
                     </div>
                 </div>
@@ -846,6 +858,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=34f44145"></script>
+    <script src="app.js?v=58c7e0f5"></script>
 </body>
 </html>

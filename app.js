@@ -5503,13 +5503,13 @@ function renderAsIsStandings() {
 }
 
 /**
- * The starred games, split in two: what is still to come or being played,
- * and what is done.
+ * The starred games, in three groups: being played, done, and still to come.
  *
- * A finished game is worth keeping - the score and who was on it still read -
- * but by the end of a Sunday it is most of the list, and burying the two games
- * still running underneath a dozen finished ones is the wrong way round. They
- * go in a section of their own, closed by default.
+ * What is happening now comes first, on its own. A finished game is still
+ * worth reading and so is one about to start, but by the end of a Sunday they
+ * are the whole list between them, and burying the two games actually running
+ * underneath a dozen of them is the wrong way round. Each gets a section of
+ * its own - open by default, and collapsing one is remembered.
  */
 function renderBlazinGameBoxes() {
     const list = document.getElementById('live-games-list');
@@ -5521,34 +5521,39 @@ function renderBlazinGameBoxes() {
 
     const entries = blazinGamesForWeek(currentWeek);
     // liveGameRank: 0 in progress, 1 finished, 2 still to come.
-    const rankOf = entry => liveGameRank(entry.game, weekResults);
-    const active = entries.filter(e => rankOf(e) !== 1)
-        .sort((a, b) => rankOf(a) - rankOf(b) || byKickoff(a, b));
-    const finished = entries.filter(e => rankOf(e) === 1).sort(byKickoff);
+    const inRank = rank => entries.filter(e => liveGameRank(e.game, weekResults) === rank)
+        .sort(byKickoff);
+    const playing = inRank(0);
+    const finished = inRank(1);
+    const upcoming = inRank(2);
 
     if (entries.length === 0) {
         list.innerHTML = '<p class="no-data-message">Nobody has starred a game this week yet.</p>';
-    } else if (active.length === 0) {
-        list.innerHTML = '<p class="no-data-message">Every starred game is done.</p>';
+    } else if (playing.length === 0) {
+        list.innerHTML = '<p class="no-data-message">No games in progress.</p>';
     } else {
-        list.innerHTML = active.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
+        list.innerHTML = playing.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
     }
 
-    renderCompletedGames(finished, weekResults);
+    renderGameSection('live-completed', finished, weekResults);
+    renderGameSection('live-upcoming', upcoming, weekResults);
 }
 
-/** The Completed Games section, hidden entirely until there is one. */
-function renderCompletedGames(finished, weekResults) {
-    const section = document.getElementById('live-completed-section');
-    const list = document.getElementById('live-completed-list');
-    const count = document.getElementById('live-completed-count');
+/**
+ * One of the collapsible game sections, hidden entirely while it is empty.
+ * Ids follow the section name: <id>-section, <id>-list, <id>-count.
+ */
+function renderGameSection(id, entries, weekResults) {
+    const section = document.getElementById(`${id}-section`);
+    const list = document.getElementById(`${id}-list`);
+    const count = document.getElementById(`${id}-count`);
     if (!section || !list) return;
 
-    section.classList.toggle('hidden', finished.length === 0);
+    section.classList.toggle('hidden', entries.length === 0);
     if (count) {
-        count.textContent = finished.length ? `(${finished.length})` : '';
+        count.textContent = entries.length ? `(${entries.length})` : '';
     }
-    list.innerHTML = finished.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
+    list.innerHTML = entries.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
 }
 
 function renderBlazinGameBox({ game, sides }, weekResults) {
