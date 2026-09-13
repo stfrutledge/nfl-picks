@@ -2889,28 +2889,25 @@ function renderLifetimeStandingsTable() {
         const blazinRecord = `${stats.blazinWins}-${stats.blazinLosses}${stats.blazinPushes > 0 ? `-${stats.blazinPushes}` : ''}`;
 
         const lineTotal = stats.lineWins + stats.lineLosses;
-        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : 0;
+        // null, not 0, when there is nothing to average: an empty record
+        // is not a total loss, and pctCellClass reads it that way.
+        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : null;
         const linePct = lineTotal > 0 ? linePctValue.toFixed(1) + '%' : '-';
-        let linePctClass = 'pct';
-        if (linePctValue > 50) linePctClass += ' pct-positive';
-        else if (linePctValue < 50) linePctClass += ' pct-negative';
-        else linePctClass += ' pct-neutral';
+        const linePctClass = pctCellClass(linePctValue);
 
         const suTotal = stats.suWins + stats.suLosses;
-        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : 0;
+        // null, not 0, when there is nothing to average: an empty record
+        // is not a total loss, and pctCellClass reads it that way.
+        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : null;
         const suPct = suTotal > 0 ? suPctValue.toFixed(1) + '%' : '-';
-        let suPctClass = 'pct';
-        if (suPctValue > 50) suPctClass += ' pct-positive';
-        else if (suPctValue < 50) suPctClass += ' pct-negative';
-        else suPctClass += ' pct-neutral';
+        const suPctClass = pctCellClass(suPctValue);
 
         const blazinTotal = stats.blazinWins + stats.blazinLosses;
-        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : 0;
+        // null, not 0, when there is nothing to average: an empty record
+        // is not a total loss, and pctCellClass reads it that way.
+        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : null;
         const blazinPct = blazinTotal > 0 ? blazinPctValue.toFixed(1) + '%' : '-';
-        let blazinPctClass = 'pct';
-        if (blazinPctValue > 50) blazinPctClass += ' pct-positive';
-        else if (blazinPctValue < 50) blazinPctClass += ' pct-negative';
-        else blazinPctClass += ' pct-neutral';
+        const blazinPctClass = pctCellClass(blazinPctValue);
 
         return `
             <tr class="${index === 0 ? 'leader' : ''}" data-picker="${stats.name}">
@@ -3226,30 +3223,27 @@ function renderHistoryStandingsTable(season) {
 
         // ATS percentage
         const lineTotal = stats.lineWins + stats.lineLosses;
-        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : 0;
+        // null, not 0, when there is nothing to average: an empty record
+        // is not a total loss, and pctCellClass reads it that way.
+        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : null;
         const linePct = lineTotal > 0 ? linePctValue.toFixed(1) + '%' : '-';
-        let linePctClass = 'pct';
-        if (linePctValue > 50) linePctClass += ' pct-positive';
-        else if (linePctValue < 50) linePctClass += ' pct-negative';
-        else linePctClass += ' pct-neutral';
+        const linePctClass = pctCellClass(linePctValue);
 
         // Straight Up percentage
         const suTotal = stats.suWins + stats.suLosses;
-        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : 0;
+        // null, not 0, when there is nothing to average: an empty record
+        // is not a total loss, and pctCellClass reads it that way.
+        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : null;
         const suPct = suTotal > 0 ? suPctValue.toFixed(1) + '%' : '-';
-        let suPctClass = 'pct';
-        if (suPctValue > 50) suPctClass += ' pct-positive';
-        else if (suPctValue < 50) suPctClass += ' pct-negative';
-        else suPctClass += ' pct-neutral';
+        const suPctClass = pctCellClass(suPctValue);
 
         // Blazin' 5 percentage
         const blazinTotal = stats.blazinWins + stats.blazinLosses;
-        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : 0;
+        // null, not 0, when there is nothing to average: an empty record
+        // is not a total loss, and pctCellClass reads it that way.
+        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : null;
         const blazinPct = blazinTotal > 0 ? blazinPctValue.toFixed(1) + '%' : '-';
-        let blazinPctClass = 'pct';
-        if (blazinPctValue > 50) blazinPctClass += ' pct-positive';
-        else if (blazinPctValue < 50) blazinPctClass += ' pct-negative';
-        else blazinPctClass += ' pct-neutral';
+        const blazinPctClass = pctCellClass(blazinPctValue);
 
         return `
             <tr class="${index === 0 ? 'leader' : ''}" data-picker="${stats.name}">
@@ -5512,6 +5506,23 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includ
 function recordPercentage(record) {
     const decided = record.wins + record.losses;
     return decided > 0 ? (record.wins / decided) * 100 : null;
+}
+
+/**
+ * The class for a win-percentage cell: green above 50, red below, neutral at
+ * it - and neutral when there is no percentage at all.
+ *
+ * That last case is the one worth spelling out. A picker with nothing scored
+ * has no percentage, and the callers that stood in a 0 for it were painting
+ * an empty record as though it were a total loss - a red dash, or a 0.0% that
+ * the main standings table then rendered green anyway, because its .pct rule
+ * was a flat colour that ignored the number entirely.
+ */
+function pctCellClass(percentage) {
+    if (typeof percentage !== 'number' || Number.isNaN(percentage)) return 'pct pct-neutral';
+    if (percentage > 50) return 'pct pct-positive';
+    if (percentage < 50) return 'pct pct-negative';
+    return 'pct pct-neutral';
 }
 
 /**
@@ -8311,6 +8322,7 @@ function renderStandingsTable(stats, {
         // Format percentages
         const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(2) + '%' : picker.percentage || '-';
         const last3Wk = typeof picker.last3WeekPct === 'number' ? picker.last3WeekPct.toFixed(2) + '%' : picker.last3WeekPct || '-';
+        const pctClass = pctCellClass(picker.percentage);
 
         // Determine push/draw label based on category
         const pushOrDraw = category === 'winner' ? picker.draws || 0 : picker.pushes || 0;
@@ -8321,7 +8333,7 @@ function renderStandingsTable(stats, {
                 <td>${picker.wins || 0}</td>
                 <td>${picker.losses || 0}</td>
                 <td>${pushOrDraw}</td>
-                <td class="pct">${pct}</td>
+                <td class="${pctClass}">${pct}</td>
                 <td>${picker.totalPicks || 0}</td>
                 <td>${last3Wk}</td>
                 <td class="best-week">${picker.bestWeek || '-'}</td>
@@ -8348,15 +8360,7 @@ function renderPlayoffStandingsTable(stats) {
         const pctValue = typeof picker.percentage === 'number' ? picker.percentage : 0;
         const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(1) + '%' : '-';
 
-        // Determine percentage color class
-        let pctClass = 'pct';
-        if (pctValue > 50) {
-            pctClass += ' pct-positive';
-        } else if (pctValue < 50) {
-            pctClass += ' pct-negative';
-        } else {
-            pctClass += ' pct-neutral';
-        }
+        const pctClass = pctCellClass(picker.percentage);
 
         // Calculate wins from records for sorting
         const lineWins = picker.lineWins || 0;

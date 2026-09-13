@@ -4039,9 +4039,26 @@ footer a:hover {
     color: var(--text-primary);
 }
 
+/* Colour comes from the modifier, never from .pct itself - a flat colour here
+   painted every percentage green, 0% included. */
 .standings-table .pct {
     font-weight: 700;
+}
+
+.standings-table .pct-positive {
     color: var(--accent-green);
+    font-weight: 700;
+}
+
+.standings-table .pct-negative {
+    color: var(--accent-red);
+    font-weight: 700;
+}
+
+/* No percentage at all, or exactly even: neither is a result to colour. */
+.standings-table .pct-neutral {
+    color: var(--text-primary);
+    font-weight: 700;
 }
 
 .standings-table .best-week {
@@ -4170,20 +4187,6 @@ footer a:hover {
 }
 
 /* Percentage coloring */
-.standings-table.playoff-standings .pct-positive {
-    color: var(--accent-green);
-    font-weight: 700;
-}
-
-.standings-table.playoff-standings .pct-negative {
-    color: var(--accent-red);
-    font-weight: 700;
-}
-
-.standings-table.playoff-standings .pct-neutral {
-    color: var(--text-primary);
-    font-weight: 700;
-}
 
 /* Sortable column headers */
 .standings-table.playoff-standings th {
@@ -4284,20 +4287,6 @@ footer a:hover {
 }
 
 /* Percentage coloring */
-.standings-table.history-standings .pct-positive {
-    color: var(--accent-green);
-    font-weight: 700;
-}
-
-.standings-table.history-standings .pct-negative {
-    color: var(--accent-red);
-    font-weight: 700;
-}
-
-.standings-table.history-standings .pct-neutral {
-    color: var(--text-primary);
-    font-weight: 700;
-}
 
 /* Sortable column headers */
 .standings-table.history-standings th {

@@ -55,6 +55,7 @@ function makeEnv() {
         PICKERS, FIRST_PLAYOFF_WEEK, LAST_PLAYOFF_WEEK,
         getGameResult, calculateStatsForWeeks, calculatePlayoffStats,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
+        pctCellClass,
         regularSeasonWeekRange, buildCurrentSeasonView, CURRENT_SEASON,
         getSeasonData, seasonData,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, weeklyPicksCache,
@@ -474,6 +475,50 @@ check('the range stops at the end of the regular season', () => {
     const r = api.regularSeasonWeekRange();
     assert.strictEqual(r.first, 1);
     assert.ok(r.last < api.FIRST_PLAYOFF_WEEK, 'playoffs have their own tab');
+});
+
+section('A win percentage is coloured by what it says');
+
+// The standings table used to colour .pct a flat green, so every percentage
+// was green - a picker losing every Blazin' 5 pick read as 0.0% in the same
+// colour as one winning them all. The colour now comes only from the
+// modifier class, and pctCellClass is the one place that picks it.
+
+check('above even is positive', () => {
+    const api = setup({});
+    assert.strictEqual(api.pctCellClass(60), 'pct pct-positive');
+    assert.strictEqual(api.pctCellClass(50.1), 'pct pct-positive');
+});
+
+check('below even is negative, and 0% loudest of all', () => {
+    const api = setup({});
+    assert.strictEqual(api.pctCellClass(0), 'pct pct-negative');
+    assert.strictEqual(api.pctCellClass(49.9), 'pct pct-negative');
+});
+
+check('exactly even is neither', () => {
+    const api = setup({});
+    assert.strictEqual(api.pctCellClass(50), 'pct pct-neutral');
+});
+
+check('no percentage at all is neutral, not a total loss', () => {
+    // recordPercentage returns null on an empty record, and the tables show a
+    // dash. Standing a 0 in for it painted the dash red.
+    const api = setup({});
+    assert.strictEqual(api.recordPercentage({ wins: 0, losses: 0, pushes: 0 }), null);
+    assert.strictEqual(api.pctCellClass(null), 'pct pct-neutral');
+    assert.strictEqual(api.pctCellClass(undefined), 'pct pct-neutral');
+    assert.strictEqual(api.pctCellClass(NaN), 'pct pct-neutral');
+});
+
+check('no .pct rule carries a colour of its own', () => {
+    // The flat colour is what made every percentage green; a modifier cannot
+    // override a rule that is equally specific and later in the file.
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const block = styles.match(/\.standings-table \.pct \{[^}]*\}/);
+    assert.ok(block, 'found the .pct rule');
+    assert.ok(!/color\s*:/.test(block[0]),
+        'colour belongs on .pct-positive/.pct-negative/.pct-neutral, not .pct');
 });
 
 if (failures > 0) {
