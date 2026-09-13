@@ -1633,8 +1633,7 @@ function startLiveScoresRefresh() {
         // Only render if initial load is complete (odds have been fetched)
         // During initial load, renderGames is called after updateOddsFromAPI
         if (initialLoadComplete) {
-            renderGames();
-            renderScoringSummary();
+            refreshLiveViews();
 
             // Sync any final games to Google Sheets
             await syncResultsToGoogleSheets(currentWeek, 'ESPN');
@@ -1645,8 +1644,7 @@ function startLiveScoresRefresh() {
             console.log('Games scheduled or in progress - starting live refresh');
             liveScoresRefreshInterval = setInterval(async () => {
                 await fetchLiveScores();
-                renderGames();
-                renderScoringSummary();
+                refreshLiveViews();
 
                 // Sync any newly final games to Google Sheets
                 await syncResultsToGoogleSheets(currentWeek, 'ESPN');
@@ -4372,6 +4370,7 @@ async function setActiveCategory(category) {
     const recordsAnalysisSection = document.getElementById('records-analysis-section');
     const vsMarketSection = document.getElementById('vs-market-section');
     const historySection = document.getElementById('history-section');
+    const liveSection = document.getElementById('live-section');
     const playoffStandingsSection = document.getElementById('playoff-standings-section');
     const playoffComparisonSection = document.getElementById('playoff-comparison-section');
     const tabLoading = document.getElementById('tab-loading');
@@ -4384,6 +4383,7 @@ async function setActiveCategory(category) {
     recordsAnalysisSection?.classList.add('hidden');
     vsMarketSection?.classList.add('hidden');
     historySection?.classList.add('hidden');
+    liveSection?.classList.add('hidden');
     playoffStandingsSection?.classList.add('hidden');
     playoffComparisonSection?.classList.add('hidden');
     tabLoading?.classList.add('hidden');
@@ -4393,8 +4393,9 @@ async function setActiveCategory(category) {
         destroyAllCharts();
     }
 
-    // Stop live scores refresh when leaving picks tab
-    if (category !== 'make-picks') {
+    // Live scores drive both the pick cards and the Live tab, so the refresh
+    // stops only when neither is on screen.
+    if (category !== 'make-picks' && category !== 'live') {
         stopLiveScoresRefresh();
     }
 
@@ -4403,6 +4404,10 @@ async function setActiveCategory(category) {
         makePicksSection?.classList.remove('hidden');
         startLiveScoresRefresh();
         renderScoringSummary();
+    } else if (category === 'live') {
+        liveSection?.classList.remove('hidden');
+        renderLiveTab();
+        startLiveScoresRefresh();
     } else if (category === 'standings') {
         standingsSubtabs?.classList.remove('hidden');
         // Use the default subcategory (playoffs after Wild Card week is complete)
@@ -4768,8 +4773,11 @@ function describeLine(game) {
  * line seen from the other side of the table and reads as the wrong pick.
  * Falls back to the favourite when there is no side to read it from.
  */
-function describeLineForSide(game, side) {
+function describeLineForSide(game, side, pick = null) {
     if (!side) return describeLine(game);
+    // A pick frozen at its own number is described at that number, not the
+    // board's - the same rule lineForPick() scores by.
+    if (pick) game = { ...game, ...lineForPick(game, pick) };
     if (!hasUsableSpread(game)) return 'no line';
     const spread = Number(game.spread);
     const team = side === 'home' ? game.home : game.away;
@@ -4933,6 +4941,52 @@ function freezeAllCompleteGames() {
 // His picks live in allPicks under the picker name 'Cowherd', which is what
 // gets localStorage, the Backup sheet round trip and the History view for
 // free - none of them know he is special. Entry is admin-only (Stephen).
+
+/**
+ * Redraw whatever the current tab shows from live scores.
+ *
+ * The refresh loop called renderGames()/renderScoringSummary() directly, which
+ * does nothing for the Live tab - the one view where a stale score is the
+ * whole problem.
+ */
+function refreshLiveViews() {
+    if (currentCategory === 'live') {
+        renderLiveTab();
+        return;
+    }
+    renderGames();
+    renderScoringSummary();
+}
+
+/** ESPN statuses that mean the game is being played right now. */
+const LIVE_IN_PROGRESS_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+
+/** Whether a game is being played right now. */
+function isGameInProgress(game) {
+    const live = getLiveGameStatus(game);
+    return Boolean(live && LIVE_IN_PROGRESS_STATUSES.includes(live.status));
+}
+
+/**
+ * The score of a game in progress, shaped like a real result so it can be
+ * scored by the same code - the "as is" standings are exactly the settled
+ * ones with these counted as though the games had ended.
+ *
+ * Only for a game actually in progress: a finished one already has a real
+ * result through getGameResult(), and a scheduled one has nothing to say.
+ * Marked provisional so nothing mistakes it for a settled score.
+ */
+function liveProvisionalResult(game) {
+    if (!isGameInProgress(game)) return null;
+    const live = getLiveGameStatus(game);
+    const { awayScore = 0, homeScore = 0 } = live;
+    return {
+        winner: homeScore > awayScore ? 'home' : (awayScore > homeScore ? 'away' : null),
+        awayScore,
+        homeScore,
+        provisional: true
+    };
+}
 
 /** The one standings column Cowherd appears in. */
 const COWHERD_CATEGORY = 'blazin';
@@ -5184,6 +5238,210 @@ function saveCowherdPanel() {
     return true;
 }
 
+// --- The Live tab ----------------------------------------------------------
+// The week's Blazin' 5 games, who is on which side of each, and where the
+// season table would stand if the afternoon ended right now.
+
+/**
+ * Every game this week that somebody starred, with the pickers on it.
+ *
+ * Cowherd included - the whole point of the tab is watching the group's five
+ * against his. A game nobody starred is left out entirely.
+ */
+function blazinGamesForWeek(week = currentWeek) {
+    const games = getGamesForWeekAndSeason(week, currentSeason) || [];
+    const byPicker = {};
+    PICKERS_WITH_COWHERD.forEach(picker => {
+        byPicker[picker] = getPickerPicksForWeek(week, picker);
+    });
+
+    return games.map(game => {
+        const sides = { away: [], home: [] };
+        PICKERS_WITH_COWHERD.forEach(picker => {
+            const pick = getPicksForGame(byPicker[picker], game);
+            if (!pick.line || !pick.blazin) return;
+            sides[pick.line].push({ picker, pick });
+        });
+        return { game, sides, count: sides.away.length + sides.home.length };
+    }).filter(entry => entry.count > 0);
+}
+
+/**
+ * In progress first, then finished, then still to come; kickoff order within
+ * each. What is happening now is what the tab is for.
+ */
+function liveGameRank(game, weekResults) {
+    if (isGameInProgress(game)) return 0;
+    return getGameResult(game, weekResults) ? 1 : 2;
+}
+
+/**
+ * The Blazin' 5 season table twice: settled, and with games in progress
+ * counted as they stand. Rows carry the move between the two, which is the
+ * only reason to show an "as is" table rather than the ordinary one.
+ */
+function asIsBlazinStandings() {
+    const { first, last } = regularSeasonWeekRange();
+
+    // Equal records share a rank, and the sort falls back to the name.
+    // Without both, five pickers on 0-0 in week 1 get five arbitrary ranks
+    // and the first result of the season reads as a four-place climb.
+    const key = row => `${row.percentage ?? -1}|${row.wins}`;
+    const rank = rows => {
+        const order = Object.values(rows).sort((a, b) =>
+            (b.percentage ?? -1) - (a.percentage ?? -1)
+            || b.wins - a.wins
+            || a.name.localeCompare(b.name));
+        const out = {};
+        let place = 0;
+        order.forEach((row, i) => {
+            if (i === 0 || key(row) !== key(order[i - 1])) place = i + 1;
+            out[row.name] = place;
+        });
+        return { order, rankOf: out };
+    };
+
+    const settled = standingsFromComputed(
+        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD), COWHERD_CATEGORY);
+    const asIs = standingsFromComputed(
+        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD, { includeLive: true }),
+        COWHERD_CATEGORY);
+
+    const settledRank = rank(settled).rankOf;
+    const { order, rankOf } = rank(asIs);
+
+    return order.map(row => ({
+        ...row,
+        rank: rankOf[row.name],
+        // Positive means they have climbed. Null where they were not on the
+        // settled table at all - Cowherd before his first scored pick - which
+        // is a first result rather than a move.
+        move: settledRank[row.name] ? settledRank[row.name] - rankOf[row.name] : null
+    }));
+}
+
+/** Draw the whole Live tab. Cheap enough to redraw on every score refresh. */
+function renderLiveTab() {
+    const section = document.getElementById('live-section');
+    if (!section) return;
+
+    const label = document.getElementById('live-week-label');
+    if (label) {
+        label.textContent = isPlayoffWeek(currentWeek)
+            ? getWeekDisplayName(currentWeek)
+            : `Week ${getWeekDisplayName(currentWeek)}`;
+    }
+
+    renderAsIsStandings();
+    renderBlazinGameBoxes();
+}
+
+/** The "as is" Blazin' 5 table: the season, with today counted as it stands. */
+function renderAsIsStandings() {
+    const tbody = document.getElementById('as-is-standings-body');
+    if (!tbody) return;
+
+    const rows = asIsBlazinStandings();
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="no-data">No scored Blazin\u2019 5 picks yet this season.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(row => {
+        const record = `${row.wins}-${row.losses}${row.pushes ? `-${row.pushes}` : ''}`;
+        const pct = row.percentage === null ? '-' : `${row.percentage.toFixed(1)}%`;
+        // Only a move that actually happened is worth drawing attention to.
+        const move = !row.move
+            ? '<span class="as-is-move flat">&ndash;</span>'
+            : `<span class="as-is-move ${row.move > 0 ? 'up' : 'down'}">`
+              + `${row.move > 0 ? '\u2191' : '\u2193'}${Math.abs(row.move)}</span>`;
+        return `
+            <tr>
+                <td class="as-is-rank">${row.rank}</td>
+                <td class="as-is-name">${row.name}</td>
+                <td>${record}</td>
+                <td>${pct}</td>
+                <td>${move}</td>
+            </tr>`;
+    }).join('');
+}
+
+/** One box per starred game, in progress first. */
+function renderBlazinGameBoxes() {
+    const list = document.getElementById('live-games-list');
+    if (!list) return;
+
+    const weekResults = getResultsForWeekAndSeason(currentWeek, currentSeason) || {};
+    const entries = blazinGamesForWeek(currentWeek).sort((a, b) => {
+        const byState = liveGameRank(a.game, weekResults) - liveGameRank(b.game, weekResults);
+        if (byState !== 0) return byState;
+        return String(a.game.kickoff || '').localeCompare(String(b.game.kickoff || ''));
+    });
+
+    if (entries.length === 0) {
+        list.innerHTML = '<p class="no-data-message">Nobody has starred a game this week yet.</p>';
+        return;
+    }
+
+    list.innerHTML = entries.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
+}
+
+function renderBlazinGameBox({ game, sides }, weekResults) {
+    const live = getLiveGameStatus(game);
+    const result = getGameResult(game, weekResults);
+    const inProgress = isGameInProgress(game);
+    const scored = result || liveProvisionalResult(game);
+
+    let state = 'upcoming';
+    let status = game.time ? `${game.day} ${game.time}` : 'Scheduled';
+    if (inProgress) {
+        state = 'in-progress';
+        const clock = live.status === 'STATUS_HALFTIME' ? 'Half'
+            : live.status === 'STATUS_END_PERIOD' ? `End Q${live.period}`
+            : (live.clock ? `${live.clock} Q${live.period}` : 'Live');
+        status = `${live.awayScore} - ${live.homeScore} (${clock})`;
+    } else if (result) {
+        state = 'final';
+        status = `Final ${result.awayScore} - ${result.homeScore}`;
+    }
+
+    const sideRow = side => {
+        const picks = sides[side];
+        const team = side === 'away' ? game.away : game.home;
+        const line = describeLineForSide(game, side);
+        // Against the game's line. A picker locked at their own number can
+        // differ, which is why their own line is on their chip.
+        const covering = scored && hasUsableSpread(game)
+            && calculateATSWinnerFrom(Number(game.spread), game.favorite, scored) === side;
+
+        const chips = picks.map(({ picker, pick }) => {
+            const own = isPickFrozen(pick) ? describeLineForSide(game, side, pick) : '';
+            return `<span class="live-picker${picker === COWHERD ? ' cowherd' : ''}">`
+                + `${picker}${own ? ` <em>${own}</em>` : ''}</span>`;
+        }).join('');
+
+        return `
+            <div class="live-side${picks.length ? '' : ' empty'}">
+                <div class="live-side-team">
+                    <span class="live-team-name">${team}</span>
+                    <span class="live-team-line">${line.replace(team, '').trim()}</span>
+                    ${covering ? '<span class="live-covering">covering</span>' : ''}
+                </div>
+                <div class="live-pickers">${chips || '<span class="live-nobody">nobody</span>'}</div>
+            </div>`;
+    };
+
+    return `
+        <div class="live-game-box ${state}">
+            <div class="live-game-header">
+                <span class="live-matchup">${game.away} @ ${game.home}</span>
+                <span class="live-status ${state}">${status}</span>
+            </div>
+            ${sideRow('away')}
+            ${sideRow('home')}
+        </div>`;
+}
+
 /** Total a cowherdWeeklyResults()-shaped object, aggregate form included. */
 function totalCowherdRecord(weekly) {
     const total = emptyRecord();
@@ -5216,8 +5474,12 @@ function emptyRecord() {
  *
  * `pickers` is a list rather than PICKERS outright so Cowherd can be scored by
  * the same pass - see COWHERD_CATEGORY for why he is then kept to one column.
+ *
+ * With `includeLive`, a game in progress is scored at the score it is standing
+ * at. That is the whole of the Live tab's "as is" table: the same engine over
+ * the same picks, with the afternoon's games counted as though they had ended.
  */
-function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS) {
+function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includeLive = false } = {}) {
     const stats = {};
     pickers.forEach(picker => {
         stats[picker] = {
@@ -5251,7 +5513,8 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS) {
                     ...getPicksForGame(cachedPicks, game),
                     ...getPicksForGame(localPicks, game)
                 };
-                const result = getGameResult(game, weekResults);
+                const result = getGameResult(game, weekResults)
+                    || (includeLive ? liveProvisionalResult(game) : null);
                 if (!result) return;
 
                 // Scored against this picker's own line: a frozen pick keeps

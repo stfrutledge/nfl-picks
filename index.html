@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=e18734a7">
+    <link rel="stylesheet" href="styles.css?v=0fd31f42">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -65,6 +65,7 @@
             <!-- Main Tabs -->
             <section class="category-tabs">
                 <button class="tab tab-picks active" data-category="make-picks">Make Picks</button>
+                <button class="tab" data-category="live">Live</button>
                 <button class="tab" data-category="standings">Standings</button>
                 <button class="tab" data-category="history" id="history-tab" style="display: none;">History</button>
                 <button class="tab" data-category="vs-market" style="display: none;">vs Market</button>
@@ -583,6 +584,40 @@
                 </div>
             </section>
 
+            <!-- Live: this week's Blazin' 5 games and the as-is table -->
+            <section id="live-section" class="live-section hidden">
+                <div class="live-header">
+                    <h2 class="live-title">Blazin&rsquo; 5 &mdash; <span id="live-week-label">--</span></h2>
+                </div>
+
+                <div class="as-is-panel">
+                    <div class="as-is-heading">
+                        <h3>As is</h3>
+                        <span class="as-is-note">Season Blazin&rsquo; 5, with games in progress counted as they stand</span>
+                    </div>
+                    <div class="as-is-table-container">
+                        <table class="as-is-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Picker</th>
+                                    <th>Record</th>
+                                    <th>Win %</th>
+                                    <th>Move</th>
+                                </tr>
+                            </thead>
+                            <tbody id="as-is-standings-body">
+                                <!-- Rows injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="live-games-list" id="live-games-list">
+                    <!-- Game boxes injected here -->
+                </div>
+            </section>
+
             <!-- History Section (for viewing past seasons) -->
             <section id="history-section" class="history-section hidden">
                 <!-- Season Selector (above standings) -->
@@ -804,6 +839,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=1a3de276"></script>
+    <script src="app.js?v=41cf86a6"></script>
 </body>
 </html>

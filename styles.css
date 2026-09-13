@@ -6799,6 +6799,223 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     }
 }
 
+/* --- Live tab -------------------------------------------------------------
+   The week's starred games and the as-is table. Colour is spent only where it
+   carries information: the live status, and which side is covering. */
+
+.live-section {
+    padding: 30px 40px;
+}
+
+.live-header {
+    margin-bottom: 20px;
+}
+
+.live-title {
+    font-size: 1.3rem;
+    font-weight: 800;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.as-is-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 26px;
+    box-shadow: var(--shadow-sm);
+}
+
+.as-is-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.as-is-heading h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.as-is-note {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.as-is-table-container {
+    overflow-x: auto;
+}
+
+.as-is-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.as-is-table th {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-light);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.as-is-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-light);
+    white-space: nowrap;
+}
+
+.as-is-rank {
+    color: var(--text-light);
+    width: 1%;
+}
+
+.as-is-name {
+    font-weight: 700;
+}
+
+.as-is-move.up { color: var(--accent-green); font-weight: 700; }
+.as-is-move.down { color: var(--accent-red); font-weight: 700; }
+.as-is-move.flat { color: var(--text-light); }
+
+.live-games-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+}
+
+.live-game-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 16px;
+    min-width: 0;
+}
+
+/* Same language as a game card: blue is live, navy is done. */
+.live-game-box.in-progress { border-left-color: var(--live-blue); }
+.live-game-box.final { border-left-color: var(--nfl-blue); }
+.live-game-box.upcoming { opacity: 0.85; }
+
+.live-game-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.live-matchup {
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.live-status {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.live-status.in-progress {
+    color: var(--live-blue);
+}
+
+.live-side {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    border-top: 1px solid var(--border-light);
+}
+
+.live-side.empty {
+    opacity: 0.5;
+}
+
+.live-side-team {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 104px;
+}
+
+.live-team-name {
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+
+.live-team-line {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.live-covering {
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent-green);
+}
+
+.live-pickers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.live-picker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+/* He is the one being played against, so he reads as the opposition. */
+.live-picker.cowherd {
+    border-color: var(--accent-amber);
+    color: var(--accent-amber);
+}
+
+.live-picker em {
+    font-style: normal;
+    font-weight: 600;
+    color: var(--text-light);
+}
+
+.live-nobody {
+    font-size: 0.72rem;
+    color: var(--text-light);
+}
+
+@media (max-width: 600px) {
+    .live-section {
+        padding: 20px 16px;
+    }
+
+    .live-games-list {
+        grid-template-columns: 1fr;
+    }
+
+    .as-is-panel {
+        padding: 14px;
+    }
+}
+
 /* --- Cowherd's Blazin' 5 entry (admin only) -------------------------------
    Five rows of game / side / his number. Deliberately plain: it is a data
    entry form for one person, not part of the picking experience. */

@@ -133,6 +133,18 @@ Every panel scores him at his own line, like everyone else — see "One line per
 
 Run `node test-cowherd-blazin.js`.
 
+## The Live tab
+
+What the group watches on a Sunday: every game somebody starred this week, who is on which side of each, and where the Blazin' 5 season table would stand if the afternoon ended now. Games are ordered in progress first, then finished, then still to come.
+
+**"As is" is not a second scoring path.** It is `calculateStatsForWeeks` with `includeLive`, which adds one source of results: `liveProvisionalResult(game)` hands back the current score of a game *in progress*, shaped like a real result. A scheduled game and a finished one both return null — a finished game already has a real result through `getGameResult()`, and taking a provisional one for either is how an "as is" table starts disagreeing with the real one. The rows carry the move against the settled table, which is the only reason to show this rather than the ordinary standings.
+
+**Tied records share a rank.** Without that, five pickers level on 0-0 in week 1 get five arbitrary ranks and the season's first result reads as a four-place climb. The sort falls back to the name so the order does not wobble between refreshes. A picker absent from the settled table — Cowherd before his first scored pick — shows no move rather than a fabricated one.
+
+Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()` runs only when neither is on screen, and the refresh loop goes through `refreshLiveViews()` rather than calling `renderGames()` directly. A stale score is the whole problem on this tab.
+
+Run `node test-live-tab.js`.
+
 ## Standings
 
 Standings, the trend chart, last-3-week form and best week are **computed from picks + results** by `calculateStatsForWeeks(firstWeek, lastWeek)`, not read from a spreadsheet. `renderDashboard` switches to the computed path whenever `LEGACY_SHEETS_SEASON !== CURRENT_SEASON`, which is every season after 2025.
