@@ -82,7 +82,7 @@ function makeAppEnv({ withDom = false } = {}) {
         isGameInProgress, liveProvisionalResult, blazinGamesForWeek,
         liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
-        renderLiveTab, renderActiveTab, refreshLiveViews, getLiveGameStatus,
+        renderLiveTab, renderActiveTab, getLiveGameStatus, renderDashboard,
         liveRefreshDelay, anyGameInProgress, shouldPollLiveScores,
         LIVE_REFRESH_PLAYING_MS, LIVE_REFRESH_WAITING_MS,
         pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
@@ -791,6 +791,29 @@ check('and leaves it alone when another tab is showing', () => {
 
     api.renderActiveTab();
     assert.ok(!api.__written['live-games-list'], 'no work done for a hidden tab');
+});
+
+check('every tab that shows data is covered by the one redraw path', () => {
+    // Each caller that named tabs itself eventually missed one: the backup
+    // load forgot the Live tab, and the score poll forgot Standings, so a
+    // game going final left the standings where they were.
+    const src = APP.match(/function renderActiveTab\(\)[\s\S]*?\n\}/)[0];
+    ['renderGames', 'renderScoringSummary', 'renderDashboard', 'renderLiveTab']
+        .forEach(fn => assert.ok(src.includes(fn + '('), fn + ' is redrawn'));
+});
+
+check('nothing refreshes by naming tabs on its own any more', () => {
+    assert.doesNotMatch(APP, /function refreshLiveViews/,
+        'one redraw path, not two that can drift apart');
+});
+
+check('the poll reschedules itself even when a refresh throws', () => {
+    // A self-rescheduling timeout that only requeues at the end of its body
+    // stops for good the first time anything in it throws - a failed fetch is
+    // enough. An interval would have kept firing regardless.
+    const src = APP.match(/function scheduleLiveScoresRefresh\(\)[\s\S]*?\n\}/)[0];
+    assert.ok(src.includes('finally'), 'the requeue is in a finally');
+    assert.ok(src.includes('catch'), 'and a throw is caught rather than killing it');
 });
 
 section('In progress first, then finished, then still to come');

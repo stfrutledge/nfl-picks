@@ -1718,7 +1718,7 @@ function startLiveScoresRefresh() {
         // Only render if initial load is complete (odds have been fetched)
         // During initial load, renderGames is called after updateOddsFromAPI
         if (initialLoadComplete) {
-            refreshLiveViews();
+            renderActiveTab();
 
             // Sync any final games to Google Sheets
             await syncResultsToGoogleSheets(currentWeek, 'ESPN');
@@ -1941,23 +1941,33 @@ async function preloadNextWeekIfAvailable() {
  */
 function scheduleLiveScoresRefresh() {
     liveScoresRefreshTimer = setTimeout(async () => {
-        await fetchLiveScores();
-        refreshLiveViews();
+        // Anything in here can throw - a failed fetch, a sync that times out
+        // - and a timeout that reschedules itself only at the end would then
+        // never fire again, stopping the afternoon's updates dead. An interval
+        // would have survived it by firing again regardless, so the rescheduling
+        // goes in a finally.
+        let done = false;
+        try {
+            await fetchLiveScores();
+            renderActiveTab();
 
-        // Sync any newly final games to Google Sheets
-        await syncResultsToGoogleSheets(currentWeek, 'ESPN');
+            // Sync any newly final games to Google Sheets
+            await syncResultsToGoogleSheets(currentWeek, 'ESPN');
 
-        // Stop polling when all games are final
-        if (!shouldPollLiveScores()) {
-            console.log('All games final - stopping live refresh');
-            stopLiveScoresRefresh();
+            // Stop polling when all games are final
+            if (!shouldPollLiveScores()) {
+                console.log('All games final - stopping live refresh');
+                done = true;
+                stopLiveScoresRefresh();
 
-            // Check if next week's games are available and preload them
-            await preloadNextWeekIfAvailable();
-            return;
+                // Check if next week's games are available and preload them
+                await preloadNextWeekIfAvailable();
+            }
+        } catch (error) {
+            console.error('[Live] Refresh failed, will try again:', error);
+        } finally {
+            if (!done) scheduleLiveScoresRefresh();
         }
-
-        scheduleLiveScoresRefresh();
     }, liveRefreshDelay());
 }
 
@@ -5031,24 +5041,16 @@ function freezeAllCompleteGames() {
  * does nothing for the Live tab - the one view where a stale score is the
  * whole problem.
  */
-function refreshLiveViews() {
-    if (currentCategory === 'live') {
-        renderLiveTab();
-        return;
-    }
-    renderGames();
-    renderScoringSummary();
-}
 
 /**
- * Redraw the tab that is showing, after data has landed.
+ * Redraw the tab that is showing, whenever data has landed - a backup load,
+ * a spread fetch, or a live-score poll.
  *
- * The backup load finishes long after the first paint, so every view that
- * renders from picks or results has to be told when it does. Each tab used to
- * be named individually at each of those points, and the Live tab was missed:
- * it drew once on the way in and then kept what it had, so a pick that came
- * back from the sheet a moment later never appeared on it. Anything that
- * finishes loading data calls this rather than naming tabs itself.
+ * Everything that changes what a view shows calls this rather than naming
+ * tabs itself, because every time a caller named them one got missed. The
+ * backup load forgot the Live tab, so picks that arrived a moment after it
+ * was drawn never appeared on it; the score poll forgot Standings, so a game
+ * going final left the table where it was until you switched tabs.
  */
 function renderActiveTab() {
     renderGames();
