@@ -360,16 +360,45 @@ function boxFor(entry, { picks = { Stephen: { rams_seahawks: b5('home') } } } = 
     return api.__written['live-games-list'] || '';
 }
 
-check('a game in progress shows the clock and quarter', () => {
+check('a game in progress shows the clock, quarter and down', () => {
     const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
         awayScore: 10, homeScore: 24,
         situation: { possession: '1', downDistanceText: '3rd & 7 at TB 28' }
     })).entry);
     assert.ok(html.includes('11:37 - 3rd'), 'the clock and quarter are on the box');
     assert.ok(html.includes('live-score-num'), 'and the score has its own row');
-    assert.ok(html.includes('Seahawks ball'), 'with who has the ball');
     assert.ok(html.includes('3rd &amp; 7 at TB 28') || html.includes('3rd & 7 at TB 28'),
         'and the down and distance');
+    assert.ok(!html.includes(' ball</span>'), 'possession is not spelled out');
+});
+
+check('the ball sits under the name of whoever has it', () => {
+    // Home has it: the football goes in the home slot and the away slot stays
+    // empty, rather than being left out, so the two sides keep their baseline.
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '1', downDistanceText: '3rd & 7 at SEA 28' }
+    })).entry);
+    const slots = html.match(/<span class="live-possession-icon"[^>]*>[^<]*</g) || [];
+    assert.strictEqual(slots.length, 2, 'both sides carry a slot');
+    const withBall = slots.filter(s => s.includes('&#127944;'));
+    assert.strictEqual(withBall.length, 1, 'exactly one of them has the ball');
+    assert.ok(withBall[0].includes('Seahawks have the ball'), 'and it is the home side');
+});
+
+check('the away side can have it too', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        situation: { possession: '2', downDistanceText: '1st & 10 at SEA 41' }
+    })).entry);
+    const withBall = (html.match(/<span class="live-possession-icon"[^>]*>&#127944;</g) || []);
+    assert.strictEqual(withBall.length, 1);
+    assert.ok(withBall[0].includes('Rams have the ball'));
+});
+
+check('nobody holds it between drives', () => {
+    const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
+        state: 'STATUS_HALFTIME', shortDetail: 'Halftime', awayScore: 0, homeScore: 7
+    })).entry);
+    assert.ok(!html.includes('&#127944;'), 'no football while nobody has the ball');
 });
 
 check('halftime drops the situation row rather than showing a stale down', () => {
@@ -381,11 +410,15 @@ check('halftime drops the situation row rather than showing a stale down', () =>
     assert.ok(!html.includes('live-situation'), 'but no down, distance or possession');
 });
 
-check('the red zone is marked on the box', () => {
+check('the red zone is not marked on the box', () => {
+    // Still captured off the feed, deliberately not drawn: the tinted row it
+    // used to get was louder than anything else on the tab.
     const html = boxFor(makeAppEnv().liveEntryFromEvent(espnEvent({
         situation: { possession: '2', downDistanceText: '2nd & 4 at SEA 5', isRedZone: true }
     })).entry);
-    assert.ok(html.includes('is-redzone'));
+    assert.ok(!html.includes('redzone'), 'no red-zone styling or label');
+    assert.ok(html.includes('2nd &amp; 4 at SEA 5') || html.includes('2nd & 4 at SEA 5'),
+        'the down still shows');
 });
 
 check('a game still to come has no score row and no situation', () => {

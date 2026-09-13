@@ -6890,15 +6890,31 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
 
 .live-score-side {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 7px;
     min-width: 0;
+}
+
+/* Team name with the possession slot beneath it. The slot keeps its height
+   whether or not the ball is there, so the two sides do not jump as it
+   changes hands. */
+.live-score-teamcol {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
 }
 
 .live-score-team {
     font-size: 0.78rem;
     color: var(--text-secondary);
     white-space: nowrap;
+}
+
+.live-possession-icon {
+    font-size: 0.7rem;
+    line-height: 1;
+    height: 0.8rem;
 }
 
 .live-score-num {
@@ -6912,42 +6928,17 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--text-light);
 }
 
-/* Down, distance and who has the ball. Quiet by default - it changes every
-   few seconds and must not pull the eye off the picks. */
+/* Down and distance. Quiet by default - it changes every few seconds and must
+   not pull the eye off the picks. */
 .live-situation {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
+    justify-content: center;
     margin-bottom: 10px;
-    padding: 5px 8px;
-    border-radius: 5px;
-    background: var(--bg-secondary);
     font-size: 0.72rem;
-}
-
-.live-possession {
-    font-weight: 800;
-    color: var(--text-primary);
-    white-space: nowrap;
 }
 
 .live-down {
     color: var(--text-secondary);
-}
-
-/* The one situation worth looking up for. */
-.live-situation.is-redzone {
-    background: rgba(220, 38, 38, 0.10);
-}
-
-.live-redzone {
-    font-size: 0.62rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--accent-red);
-    white-space: nowrap;
 }
 
 .live-side {

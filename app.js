@@ -5424,18 +5424,32 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
         status = 'Final';
     }
 
+    // Who has the ball, shown as a football under their name on the score
+    // rather than spelled out: the score row already names both teams.
+    const hasBall = side => inProgress && detail?.possession === side;
+    const teamCol = side => {
+        const team = side === 'away' ? game.away : game.home;
+        // The slot is always rendered, empty or not, so the two sides stay on
+        // the same baseline as possession changes hands.
+        return `<span class="live-score-teamcol">
+                <span class="live-score-team">${team}</span>
+                <span class="live-possession-icon"${hasBall(side) ? ` title="${team} have the ball"` : ''}>`
+            + `${hasBall(side) ? '&#127944;' : ''}</span>
+            </span>`;
+    };
+
     // The score gets its own row once there is one, rather than being folded
     // into the status line where the clock now lives.
     const score = scored ? `
         <div class="live-score">
             <span class="live-score-side">
-                <span class="live-score-team">${game.away}</span>
+                ${teamCol('away')}
                 <span class="live-score-num">${scored.awayScore}</span>
             </span>
             <span class="live-score-sep">&ndash;</span>
             <span class="live-score-side">
                 <span class="live-score-num">${scored.homeScore}</span>
-                <span class="live-score-team">${game.home}</span>
+                ${teamCol('home')}
             </span>
         </div>` : '';
 
@@ -5443,13 +5457,9 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
     // dropped rather than left showing a stale one.
     const downText = detail?.downDistance
         || (detail?.shortDownDistance ? detail.shortDownDistance : '');
-    const possessing = detail?.possession === 'home' ? game.home
-        : detail?.possession === 'away' ? game.away : '';
-    const situation = (inProgress && (downText || possessing)) ? `
-        <div class="live-situation${detail?.isRedZone ? ' is-redzone' : ''}">
-            ${possessing ? `<span class="live-possession">${possessing} ball</span>` : ''}
-            ${downText ? `<span class="live-down">${downText}</span>` : ''}
-            ${detail?.isRedZone ? '<span class="live-redzone">red zone</span>' : ''}
+    const situation = (inProgress && downText) ? `
+        <div class="live-situation">
+            <span class="live-down">${downText}</span>
         </div>` : '';
 
     const sideRow = side => {

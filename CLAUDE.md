@@ -145,10 +145,11 @@ Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()`
 
 **The box carries the clock, the score and the situation.** `liveEntryFromEvent()` is the only place the ESPN scoreboard's layout is known, which is what makes it testable without a fetch. Two things it settles:
 
-- **Possession arrives as a team id** and is resolved to `'home'`/`'away'` there, once — the ids mean nothing anywhere else in the app.
+- **Possession arrives as a team id** and is resolved to `'home'`/`'away'` there, once — the ids mean nothing anywhere else in the app. It is drawn as a football under that team's name on the score row, never spelled out: the row already names both teams. The empty slot is still rendered for the other side so the two do not jump as the ball changes hands.
+- **`isRedZone` is captured and deliberately not drawn.** It had a tinted row and a label, which was the loudest thing on the tab for the least reason. The field stays because it costs nothing and the feed gives it.
 - **The status text is ESPN's own `shortDetail`** (`11:37 - 3rd`, `Halftime`, `Final`), which already reads correctly in every state and is better than anything built from clock and period. The exception is a game still to come, which keeps the app's own kickoff time: ESPN's short form for one is a US time string.
 
-Down, distance and possession are absent between drives and at the half, so the row showing them is dropped rather than left stale. They come through `liveCacheEntry()` rather than `getLiveGameStatus()`, which prefers the status embedded in the schedule — a snapshot from whenever it was fetched, carrying no situation at all.
+Down and distance are absent between drives and at the half, so the row showing them is dropped rather than left stale, and no football is drawn. They come through `liveCacheEntry()` rather than `getLiveGameStatus()`, which prefers the status embedded in the schedule — a snapshot from whenever it was fetched, carrying no situation at all.
 
 **A line is printed beside a name only where it differs from the one on the row** (`pickLineDiffers`). "Locked" is the wrong test and was the first one used: a locked pick usually locked at the number that is still up, and most of Cowherd's match the book, so nearly every chip repeated the number already printed above it. On the real week 1 that was 29 chips carrying a line where 2 of them said anything.
 
