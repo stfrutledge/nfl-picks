@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=b6058f21">
+    <link rel="stylesheet" href="styles.css?v=2fa1c300">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -303,16 +303,10 @@
                 </div>
             </section>
 
-            <!-- SECONDARY: Performance & Insights -->
+            <!-- SECONDARY: Standings -->
             <section class="consolidated-section performance-insights-section hidden" id="performance-insights-section">
                 <div class="consolidated-header">
-                    <h2 class="consolidated-title">Performance & Insights</h2>
-                </div>
-                <div class="consolidated-tabs">
-                    <button class="consolidated-tab active" data-panel="standings-panel">Standings</button>
-                    <button class="consolidated-tab" data-panel="charts-panel">Charts</button>
-                    <button class="consolidated-tab" data-panel="insights-panel">Insights</button>
-                    <button class="consolidated-tab" data-panel="patterns-panel">Patterns</button>
+                    <h2 class="consolidated-title">Standings</h2>
                 </div>
                 <div class="consolidated-content">
                     <!-- Standings Panel -->
@@ -338,51 +332,10 @@
                             </table>
                         </div>
                     </div>
-                    <!-- Charts Panel -->
-                    <div class="consolidated-panel" id="charts-panel">
-                        <div class="charts-grid-content">
-                            <div class="chart-container">
-                                <div class="chart-header">
-                                    <h3>Weekly Performance Trend</h3>
-                                    <button class="chart-zoom-btn" id="toggle-trend-zoom" title="Toggle zoom level">Zoom In</button>
-                                </div>
-                                <canvas id="trend-chart"></canvas>
-                            </div>
-                            <div class="chart-container" id="standings-chart-container">
-                                <h3>Favorites vs Underdogs</h3>
-                                <canvas id="standings-chart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Insights Panel -->
-                    <div class="consolidated-panel" id="insights-panel">
-                        <div class="insights-grid" id="insights-grid">
-                            <div class="insight-card consensus" id="consensus-card"></div>
-                            <div class="insight-card lone-wolf" id="lone-wolf-card"></div>
-                        </div>
-                        <h4 class="insights-section-title">Group Performance</h4>
-                        <div class="group-stats-grid" id="group-stats-grid"></div>
-                    </div>
-                    <!-- Patterns Panel -->
-                    <div class="consolidated-panel" id="patterns-panel">
-                        <div class="patterns-controls">
-                            <div class="patterns-filters">
-                                <select id="patterns-picker-filter" class="patterns-filter-select">
-                                    <option value="all">All Pickers</option>
-                                </select>
-                                <div class="patterns-type-filters">
-                                    <button class="pattern-type-btn active" data-type="all">All</button>
-                                    <button class="pattern-type-btn" data-type="team">Teams</button>
-                                    <button class="pattern-type-btn" data-type="primetime">Primetime</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="patterns-grid" id="patterns-grid"></div>
-                    </div>
                 </div>
             </section>
 
-            <!-- TERTIARY: Records & Analysis -->
+            <!-- TERTIARY: Records & Analysis (records, charts, insights, patterns) -->
             <section class="consolidated-section records-analysis-section hidden" id="records-analysis-section">
                 <div class="consolidated-header">
                     <h2 class="consolidated-title">Records & Analysis</h2>
@@ -390,6 +343,9 @@
                 <div class="consolidated-tabs">
                     <button class="consolidated-tab active" data-panel="blazin-records-panel">Blazin' 5 Records</button>
                     <button class="consolidated-tab" data-panel="team-records-panel">Team Records</button>
+                    <button class="consolidated-tab" data-panel="charts-panel">Charts</button>
+                    <button class="consolidated-tab" data-panel="insights-panel">Insights</button>
+                    <button class="consolidated-tab" data-panel="patterns-panel">Patterns</button>
                 </div>
                 <div class="consolidated-content">
                     <!-- Blazin' 5 Records Panel -->
@@ -464,6 +420,47 @@
                                 <tbody id="team-records-body"></tbody>
                             </table>
                         </div>
+                    </div>
+                    <!-- Charts Panel -->
+                    <div class="consolidated-panel" id="charts-panel">
+                        <div class="charts-grid-content">
+                            <div class="chart-container">
+                                <div class="chart-header">
+                                    <h3>Weekly Performance Trend</h3>
+                                    <button class="chart-zoom-btn" id="toggle-trend-zoom" title="Toggle zoom level">Zoom In</button>
+                                </div>
+                                <canvas id="trend-chart"></canvas>
+                            </div>
+                            <div class="chart-container" id="standings-chart-container">
+                                <h3>Favorites vs Underdogs</h3>
+                                <canvas id="standings-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Insights Panel -->
+                    <div class="consolidated-panel" id="insights-panel">
+                        <div class="insights-grid" id="insights-grid">
+                            <div class="insight-card consensus" id="consensus-card"></div>
+                            <div class="insight-card lone-wolf" id="lone-wolf-card"></div>
+                        </div>
+                        <h4 class="insights-section-title">Group Performance</h4>
+                        <div class="group-stats-grid" id="group-stats-grid"></div>
+                    </div>
+                    <!-- Patterns Panel -->
+                    <div class="consolidated-panel" id="patterns-panel">
+                        <div class="patterns-controls">
+                            <div class="patterns-filters">
+                                <select id="patterns-picker-filter" class="patterns-filter-select">
+                                    <option value="all">All Pickers</option>
+                                </select>
+                                <div class="patterns-type-filters">
+                                    <button class="pattern-type-btn active" data-type="all">All</button>
+                                    <button class="pattern-type-btn" data-type="team">Teams</button>
+                                    <button class="pattern-type-btn" data-type="primetime">Primetime</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="patterns-grid" id="patterns-grid"></div>
                     </div>
                 </div>
             </section>
@@ -858,6 +855,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=c29e2517"></script>
+    <script src="app.js?v=9f171309"></script>
 </body>
 </html>

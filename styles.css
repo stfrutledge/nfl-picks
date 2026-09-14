@@ -3978,6 +3978,13 @@ footer a:hover {
     padding: 24px;
 }
 
+/* A single-panel section has no tab strip, so the content carries the divider
+   the tabs would have drawn under the title. */
+.consolidated-header + .consolidated-content {
+    margin-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
 .consolidated-panel {
     display: none;
 }

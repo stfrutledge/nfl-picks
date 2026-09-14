@@ -6147,18 +6147,14 @@ function renderDashboard() {
     playoffStandingsSection?.classList.add('hidden');
     playoffComparisonSection?.classList.add('hidden');
 
-    // Show all panels for non-playoff tabs
-    document.getElementById('trend-chart-container')?.classList.remove('hidden');
-    document.querySelector('.insights-panel')?.classList.remove('hidden');
-    document.querySelector('.patterns-panel')?.classList.remove('hidden');
-    document.querySelector('.group-stats-panel')?.classList.remove('hidden');
-
     // Show sections for non-playoff tabs
     performanceInsightsSection?.classList.remove('hidden');
     recordsAnalysisSection?.classList.remove('hidden');
 
-    // SECONDARY: Performance & Insights - render all panels
+    // SECONDARY: the standings table on its own
     renderStandingsTable(stats);
+
+    // TERTIARY: the charts, insights and patterns that sit with the records
     renderTrendChart(weeklyData, currentSubcategory);
     // Lone wolf, universal agreement, group stats and favourites-vs-underdogs
     // still come from the workbook, so they stay blank on a computed season
@@ -6192,24 +6188,37 @@ function renderDashboard() {
         teamRecordsTab?.classList.add('hidden');
         renderBlazinTeamPickRecords();
         renderBlazinSpreadRecords();
-        // Make sure Blazin records panel is active
-        if (blazinRecordsTab && !blazinRecordsTab.classList.contains('active')) {
-            blazinRecordsTab.click();
-        }
     } else if (currentSubcategory === 'line') {
         // Show Team Records tab, hide Blazin' 5 Records tab
         blazinRecordsTab?.classList.add('hidden');
         teamRecordsTab?.classList.remove('hidden');
         renderTeamPickRecords();
-        // Make sure Team records panel is active
-        if (teamRecordsTab && !teamRecordsTab.classList.contains('active')) {
-            teamRecordsTab.click();
-        }
     } else {
         // Winner tab - hide both record tabs
         blazinRecordsTab?.classList.add('hidden');
         teamRecordsTab?.classList.add('hidden');
     }
+
+    activateFirstVisibleConsolidatedTab(recordsAnalysisSection);
+}
+
+/**
+ * Keep a consolidated section on a tab that is actually up.
+ *
+ * The two records tabs come and go with the subcategory, so the active one can
+ * be hidden out from under the panel it is showing. Only a hidden active tab
+ * moves the section: the section also holds Charts, Insights and Patterns now,
+ * and re-rendering must not pull somebody off one of those and back onto
+ * whichever records table the subcategory happens to imply.
+ */
+function activateFirstVisibleConsolidatedTab(section) {
+    if (!section) return;
+
+    const tabs = Array.from(section.querySelectorAll('.consolidated-tab'));
+    const active = tabs.find(tab => tab.classList.contains('active'));
+    if (active && !active.classList.contains('hidden')) return;
+
+    tabs.find(tab => !tab.classList.contains('hidden'))?.click();
 }
 
 /**
