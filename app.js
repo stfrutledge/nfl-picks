@@ -11843,6 +11843,13 @@ async function loadAllResultsFromBackup() {
     } catch (error) {
         console.error('[Results Load] Failed to load results from Google Sheets backup:', error);
     }
+
+    // Same reason as the picks load: draw it now rather than when the slowest
+    // sibling in the background block settles. Results are not cached locally,
+    // so every load starts with none of them - which is what keeps Cowherd out
+    // of the Blazin’ 5 table, since cowherdBelongsIn() wants a scored pick and
+    // an unscored season gives him none.
+    if (initialLoadComplete) renderActiveTab();
 }
 
 /**
