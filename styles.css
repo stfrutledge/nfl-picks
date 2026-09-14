@@ -3835,10 +3835,21 @@ footer a:hover {
     line-height: 1;
 }
 
+/* No cap when open.
+
+   This was max-height: 2000px, which is the usual trick for animating a
+   collapse - but max-height with overflow: hidden is a cap as well as an
+   animation, and anything taller than it was simply cut off with no way to
+   reach the rest. On a phone the game boxes stack one per row, so a dozen
+   completed games clear 2000px easily and the section just stopped partway
+   down. Any long section had the same bug.
+
+   none cannot be animated from, so the slide goes and the fade stays. A
+   section that cannot be read is worse than one that does not slide. */
 .collapsible-content {
     overflow: hidden;
-    transition: max-height 0.3s ease, opacity 0.2s ease;
-    max-height: 2000px;
+    transition: opacity 0.2s ease;
+    max-height: none;
     opacity: 1;
 }
 
@@ -6855,7 +6866,7 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     margin-top: 24px;
 }
 
-.live-completed .collapsible-content {
+.live-completed .collapsible-content > .live-games-list {
     padding-top: 14px;
 }
 

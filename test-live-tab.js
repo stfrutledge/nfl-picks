@@ -944,11 +944,39 @@ check('the poll reschedules itself even when a refresh throws', () => {
     assert.ok(src.includes('catch'), 'and a throw is caught rather than killing it');
 });
 
+section('A long section can be scrolled to the end of');
+
+check('an open collapsible section caps its height at nothing', () => {
+    // max-height with overflow: hidden is a cap as well as an animation. At
+    // 2000px a dozen completed game boxes - one per row on a phone - were cut
+    // off with no way to reach the rest of them.
+    // Exactly that selector, not every rule mentioning it.
+    const open = rulesFor('.collapsible-content')
+        .find(block => block.split('{')[0].trim() === '.collapsible-content');
+    assert.ok(open, 'found the open-state rule');
+    const cap = open.match(/max-height:\s*([^;]+);/);
+    assert.ok(cap, 'it says what its max-height is');
+    assert.strictEqual(cap[1].trim(), 'none', 'and it is uncapped');
+});
+
+check('a closed one is still closed', () => {
+    const closed = rulesFor('.collapsible-content')
+        .find(block => block.split('{')[0].trim() === '.collapsible-section.collapsed .collapsible-content');
+    assert.ok(closed, 'found the collapsed rule');
+    assert.ok(/max-height:\s*0/.test(closed), 'it still shuts');
+});
+
 section('A finished game recedes');
 
-/** The rule blocks in styles.css whose selector mentions `token`. */
+/**
+ * The rule blocks in styles.css whose selector mentions `token`.
+ *
+ * Comments are stripped first: one sitting above a rule would otherwise be
+ * read as part of that rule's selector.
+ */
 function rulesFor(token) {
-    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '');
     return (styles.match(/[^{}]+\{[^{}]*\}/g) || [])
         .filter(block => block.split('{')[0].includes(token));
 }
