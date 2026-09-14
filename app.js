@@ -5053,6 +5053,7 @@ function freezeAllCompleteGames() {
  * going final left the table where it was until you switched tabs.
  */
 function renderActiveTab() {
+    updateLiveTabVisibility();
     renderGames();
     renderScoringSummary();
     if (currentCategory === 'standings') renderDashboard();
@@ -5418,6 +5419,62 @@ function renderLiveTab() {
 
     renderAsIsStandings();
     renderBlazinGameBoxes();
+}
+
+// The Live tab is only up while the week's games are on: from an hour before
+// the first kickoff to an hour after the last game should have finished.
+//
+// Nothing records when a game actually ended, so the far edge is the last
+// kickoff plus a generous allowance for the game itself. A game that runs
+// past it is caught separately - a game still being played keeps the tab up
+// whatever the clock says, which is the case the allowance would get wrong.
+const LIVE_WINDOW_BUFFER_MS = 60 * 60 * 1000;
+const LIVE_WINDOW_GAME_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * When the Live tab should be up for a week, or null when that cannot be
+ * known yet - a schedule that has not loaded has no kickoffs to read.
+ */
+function liveWindow(week = CURRENT_NFL_WEEK) {
+    const games = getGamesForWeekAndSeason(week, currentSeason) || [];
+    const kickoffs = games.map(game => Date.parse(game.kickoff)).filter(Number.isFinite);
+    if (kickoffs.length === 0) return null;
+
+    return {
+        opens: Math.min(...kickoffs) - LIVE_WINDOW_BUFFER_MS,
+        closes: Math.max(...kickoffs) + LIVE_WINDOW_GAME_MS + LIVE_WINDOW_BUFFER_MS
+    };
+}
+
+/**
+ * Whether the Live tab belongs on screen.
+ *
+ * Unknown counts as open. Hiding a tab the reader wants during a slate is a
+ * worse failure than showing one on a Wednesday, and the schedule usually
+ * arrives a moment later and settles it either way.
+ */
+function isLiveWindowOpen(now = Date.now(), week = CURRENT_NFL_WEEK) {
+    const games = getGamesForWeekAndSeason(week, currentSeason) || [];
+    if (games.some(isGameInProgress)) return true;
+
+    const window = liveWindow(week);
+    if (!window) return true;
+    return now >= window.opens && now <= window.closes;
+}
+
+/**
+ * Put the Live tab up or take it down. Anyone left standing on it when it
+ * goes is moved off, rather than left looking at a tab that is not there.
+ */
+function updateLiveTabVisibility() {
+    const tab = document.querySelector('.tab[data-category="live"]');
+    if (!tab) return;
+
+    const open = isLiveWindowOpen();
+    tab.style.display = open ? '' : 'none';
+    if (!open && currentCategory === 'live') {
+        setActiveCategory('make-picks');
+    }
 }
 
 // Which pickers have their week's picks open on the as-is table. Kept outside

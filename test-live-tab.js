@@ -33,6 +33,13 @@ function node(id, written) {
 function makeAppEnv({ withDom = false } = {}) {
     const store = new Map();
     const written = {};
+    // Stable per id: a test that looks an element up twice has to see the
+    // same one, or nothing set on it is observable.
+    const nodes = new Map();
+    const nodeFor = id => {
+        if (!nodes.has(id)) nodes.set(id, node(id, written));
+        return nodes.get(id);
+    };
     const env = {
         localStorage: {
             getItem: k => (store.has(k) ? store.get(k) : null),
@@ -43,8 +50,8 @@ function makeAppEnv({ withDom = false } = {}) {
         },
         document: {
             addEventListener: () => {},
-            getElementById: id => (withDom ? node(id, written) : null),
-            querySelector: sel => (withDom ? node(sel, written) : null),
+            getElementById: id => (withDom ? nodeFor(id) : null),
+            querySelector: sel => (withDom ? nodeFor(sel) : null),
             querySelectorAll: () => [],
             createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {}, remove() {} }),
             head: { appendChild: () => {} },
@@ -84,6 +91,8 @@ function makeAppEnv({ withDom = false } = {}) {
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
         renderLiveTab, renderActiveTab, getLiveGameStatus, renderDashboard,
         liveRefreshDelay, anyGameInProgress, shouldPollLiveScores,
+        liveWindow, isLiveWindowOpen, updateLiveTabVisibility,
+        LIVE_WINDOW_BUFFER_MS, LIVE_WINDOW_GAME_MS,
         LIVE_REFRESH_PLAYING_MS, LIVE_REFRESH_WAITING_MS,
         pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
         liveEntryFromEvent, liveCacheEntry,
@@ -92,6 +101,7 @@ function makeAppEnv({ withDom = false } = {}) {
         toggleAsIsDetail, asIsPickDetail, asIsExpanded,
         __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
+        __category: () => currentCategory,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
             if ('currentWeek' in s) currentWeek = s.currentWeek;
@@ -108,6 +118,7 @@ function makeAppEnv({ withDom = false } = {}) {
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
         env.confirm, env.addEventListener, env.matchMedia);
     api.__written = written;
+    api.__node = nodeFor;
     return api;
 }
 
@@ -785,6 +796,100 @@ check('a move is drawn only when there is one', () => {
     assert.ok(api.formatPositionMove(-1).includes('move-down'), 'a drop');
     assert.ok(api.formatPositionMove(0).includes('move-none'), 'level');
     assert.ok(api.formatPositionMove(null).includes('move-none'), 'nothing to compare');
+});
+
+section('The Live tab is only up while the games are on');
+
+const HOUR = 60 * 60 * 1000;
+
+/** A slate kicking off at 18:00 UTC, the last game at 01:20 the next day. */
+function slate() {
+    const first = Date.parse('2026-09-13T18:00:00Z');
+    const last = Date.parse('2026-09-14T01:20:00Z');
+    const games = [
+        { ...game(1, 'Rams', 'Seahawks'), kickoff: new Date(first).toISOString() },
+        { ...game(2, 'Bills', 'Chiefs'), kickoff: new Date(last).toISOString() }
+    ];
+    return { games, first, last };
+}
+
+check('the window opens an hour before the first kickoff', () => {
+    const { games, first } = slate();
+    const api = setup({ games });
+    const w = api.liveWindow(WEEK);
+    assert.strictEqual(w.opens, first - HOUR);
+    assert.strictEqual(api.LIVE_WINDOW_BUFFER_MS, HOUR, 'an hour, either side');
+});
+
+check('and closes an hour after the last game should have ended', () => {
+    const { games, last } = slate();
+    const api = setup({ games });
+    assert.strictEqual(api.liveWindow(WEEK).closes,
+        last + api.LIVE_WINDOW_GAME_MS + HOUR);
+});
+
+check('it is down well before the first game', () => {
+    const { games, first } = slate();
+    const api = setup({ games });
+    assert.strictEqual(api.isLiveWindowOpen(first - 3 * HOUR, WEEK), false);
+});
+
+check('up from the hour before it', () => {
+    const { games, first } = slate();
+    const api = setup({ games });
+    assert.strictEqual(api.isLiveWindowOpen(first - HOUR, WEEK), true, 'on the hour');
+    assert.strictEqual(api.isLiveWindowOpen(first - HOUR - 1, WEEK), false, 'a moment before');
+});
+
+check('up through the afternoon', () => {
+    const { games, first } = slate();
+    const api = setup({ games });
+    assert.strictEqual(api.isLiveWindowOpen(first + 2 * HOUR, WEEK), true);
+});
+
+check('and down again the next morning', () => {
+    const { games, last } = slate();
+    const api = setup({ games });
+    const closes = last + api.LIVE_WINDOW_GAME_MS + HOUR;
+    assert.strictEqual(api.isLiveWindowOpen(closes, WEEK), true, 'on the hour');
+    assert.strictEqual(api.isLiveWindowOpen(closes + 1, WEEK), false, 'a moment after');
+    assert.strictEqual(api.isLiveWindowOpen(closes + 24 * HOUR, WEEK), false, 'and the day after');
+});
+
+check('a game running long keeps it up whatever the clock says', () => {
+    // The far edge is guesswork - nothing records when a game actually ended.
+    // One still being played is the case that guess would get wrong.
+    const { games, last } = slate();
+    const stillOn = [...games, inProgress(3, 'Jets', 'Dolphins', 10, 7)];
+    const api = setup({ games: stillOn });
+    const wellPast = last + 12 * HOUR;
+    assert.strictEqual(api.isLiveWindowOpen(wellPast, WEEK), true);
+});
+
+check('the tab itself comes down with the window', () => {
+    const { games, first } = slate();
+    const api = setup({ games, withDom: true });
+    const tab = api.__node('.tab[data-category="live"]');
+
+    api.__setState({ currentCategory: 'standings' });
+    api.updateLiveTabVisibility();
+    assert.strictEqual(tab.style.display, 'none', 'down outside the window');
+});
+
+check('and nobody is left standing on a tab that is not there', () => {
+    const { games } = slate();
+    const api = setup({ games, withDom: true });
+    api.__setState({ currentCategory: 'live' });
+    api.updateLiveTabVisibility();
+    assert.notStrictEqual(api.__category(), 'live', 'moved off it');
+});
+
+check('a week with no schedule yet leaves it up', () => {
+    // Unknown is not the same as closed, and hiding the tab during a slate is
+    // the worse way to be wrong.
+    const api = setup({ games: [] });
+    assert.strictEqual(api.liveWindow(WEEK), null, 'nothing to read');
+    assert.strictEqual(api.isLiveWindowOpen(Date.now(), WEEK), true);
 });
 
 section('How often the scores are fetched');

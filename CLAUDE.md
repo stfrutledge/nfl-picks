@@ -161,6 +161,10 @@ Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()`
 
 Down and distance are absent between drives and at the half, so the row showing them is dropped rather than left stale, and no football is drawn.
 
+**The tab is only up while the week’s games are on**: from an hour before the first kickoff to an hour after the last game should have finished. Nothing records when a game actually ended, so the far edge is the last kickoff plus `LIVE_WINDOW_GAME_MS`; a game still being played keeps the tab up whatever the clock says, which is the case that allowance would get wrong. An unreadable schedule counts as open - hiding the tab during a slate is a worse way to be wrong than showing it on a Wednesday, and the schedule usually lands a moment later and settles it. Anyone standing on the tab when it goes is moved to Make Picks.
+
+In practice that is Thursday evening to Tuesday morning: the tab is down for about two days a week.
+
 **The scores are fetched every 30s while a game is being played**, and every 2 minutes otherwise. Two rates because `shouldPollLiveScores()` stays true on nothing but scheduled games, which is most of the week — `anyGameInProgress()` is the narrower test that picks the faster one. It is a timeout that reschedules itself rather than a fixed interval, so the rate can change between fetches and a slow fetch cannot overlap the one behind it.
 
 **`getLiveGameStatus()` reads the cache before the game's own fields.** A game carries ESPN's status and score from whenever its schedule was fetched, and that snapshot used to win — so every score froze the moment its game kicked off and only moved again on a reload, while the 2-minute poll updated a cache nothing read. The snapshot is the fallback now, which is what covers a week the scoreboard is not carrying.
