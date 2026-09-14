@@ -4856,17 +4856,14 @@ footer a:hover {
     background: var(--bg-secondary);
 }
 
-/* The standings section is a title over a table that already frames itself,
-   so the panel chrome drew a second box around the first and nothing else.
-   The margins stay, so it still lines up with Records & Analysis below it. */
+/* The standings section is now a bare table - no title, no tab strip, and a
+   table container that draws its own frame - so the panel chrome would only
+   box what is already boxed. The margins stay, so it still lines up with
+   Records & Analysis below it. */
 .performance-insights-section {
     background: none;
     border: none;
     border-radius: 0;
-}
-
-.performance-insights-section .consolidated-header {
-    padding: 0 0 16px;
 }
 
 .performance-insights-section .consolidated-content {
@@ -4902,10 +4899,6 @@ footer a:hover {
 
     .consolidated-content {
         padding: 16px;
-    }
-
-    .performance-insights-section .consolidated-header {
-        padding: 0 0 12px;
     }
 
     .performance-insights-section .consolidated-content {
