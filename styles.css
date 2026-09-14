@@ -4864,6 +4864,9 @@ footer a:hover {
     background: none;
     border: none;
     border-radius: 0;
+    /* Matches the 30px the section already leaves below the table. Without a
+       heading or a frame the table otherwise sits flush on the subtab bar. */
+    margin-top: 30px;
 }
 
 .performance-insights-section .consolidated-content {
@@ -4899,6 +4902,10 @@ footer a:hover {
 
     .consolidated-content {
         padding: 16px;
+    }
+
+    .performance-insights-section {
+        margin-top: 20px;
     }
 
     .performance-insights-section .consolidated-content {
