@@ -11769,6 +11769,17 @@ async function loadAllPicksFromBackup() {
     } catch (error) {
         console.error('[Picks Load] Failed to load picks from Google Sheets backup:', error);
     }
+
+    // Draw what landed, rather than leaving it sitting in memory until the
+    // slowest of the background loads settles. This is the only source for a
+    // pick made anywhere but this browser - all of Cowherd’s, on every device
+    // but the one they were typed into - so the wait was the difference
+    // between his five being up and the panel looking empty.
+    //
+    // Not gated on having merged anything: a week the sheet has cleared is
+    // also news. Guarded on initialLoadComplete because changeWeek() awaits
+    // this before its own render during boot.
+    if (initialLoadComplete) renderActiveTab();
 }
 
 /**
