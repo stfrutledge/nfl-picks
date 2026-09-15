@@ -2767,6 +2767,80 @@ footer a:hover {
     cursor: not-allowed;
 }
 
+/* Blazin' 5 running count.
+   Sticky under the tab bar, because the stars are spread down a long list of
+   game cards and the whole point is not having to scroll back up to count them.
+   --tabs-height is measured in app.js; the fallback matches the desktop tabs. */
+.blazin-progress {
+    position: sticky;
+    top: var(--tabs-height, 56px);
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 14px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.blazin-progress-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-light);
+}
+
+.blazin-progress-pips {
+    display: flex;
+    gap: 3px;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.blazin-pip {
+    color: var(--border-color);
+    transition: color 0.2s ease;
+}
+
+.blazin-pip.filled {
+    color: #f59e0b;
+}
+
+.blazin-progress-count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.blazin-progress.complete {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.blazin-progress.complete .blazin-progress-count {
+    color: #b45309;
+}
+
+[data-theme="dark"] .blazin-progress.complete .blazin-progress-count {
+    color: #fbbf24;
+}
+
+@media (max-width: 768px) {
+    .blazin-progress {
+        gap: 8px;
+        padding: 8px 12px;
+    }
+
+    .blazin-progress-count {
+        font-size: 0.75rem;
+    }
+}
+
 .game-matchup-line strong {
     font-size: 1.1em;
     color: var(--text-primary);
@@ -3672,6 +3746,10 @@ footer a:hover {
 
     .make-picks-section {
         padding: 0 !important;
+    }
+
+    .blazin-progress {
+        position: static;
     }
 
     .games-list {

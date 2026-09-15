@@ -20,7 +20,22 @@ function makeStar(key, { active = false, locked = false } = {}) {
     };
 }
 
-function makeEnv(stars) {
+// A stand-in for one of the Blazin' 5 counter's elements.
+function makeNode() {
+    const classes = new Set();
+    return {
+        innerHTML: '',
+        textContent: '',
+        classList: {
+            add: c => classes.add(c),
+            remove: c => classes.delete(c),
+            contains: c => classes.has(c),
+            toggle: (c, on) => (on ? classes.add(c) : classes.delete(c))
+        }
+    };
+}
+
+function makeEnv(stars, nodes = {}) {
     const store = new Map();
     const env = {
         localStorage: {
@@ -32,7 +47,7 @@ function makeEnv(stars) {
         },
         document: {
             addEventListener: () => {},
-            getElementById: () => null,
+            getElementById: id => nodes[id] || null,
             querySelector: () => null,
             // Only the star lookup matters here; everything else sees nothing.
             querySelectorAll: sel => (sel === '.blazin-star' ? stars.current : []),
@@ -65,7 +80,7 @@ function makeEnv(stars) {
     const exports = `;return ({
         CURRENT_SEASON, FIRST_PLAYOFF_WEEK,
         pickKey, getPicksForGame, getPickerPicksForWeek, countBlazinPicks,
-        updateBlazinStarStates,
+        updateBlazinStarStates, updateBlazinProgress,
         weeklyPicksCache, NFL_GAMES_BY_WEEK,
         __state: () => ({ allPicks, currentWeek, currentPicker }),
         __setState: s => {
@@ -97,9 +112,15 @@ function keyOf([away, home]) {
     return `${away.toLowerCase()}_${home.toLowerCase()}`;
 }
 
-function setup({ picks = {}, cached = null, filter = 'all', week = WEEK, starOpts = {} } = {}) {
+function setup({ picks = {}, cached = null, filter = 'all', week = WEEK, starOpts = {},
+                picker = 'Stephen' } = {}) {
     const stars = { current: [] };
-    const { api } = makeEnv(stars);
+    const nodes = {
+        'blazin-progress': makeNode(),
+        'blazin-progress-pips': makeNode(),
+        'blazin-progress-count': makeNode()
+    };
+    const { api } = makeEnv(stars, nodes);
 
     api.NFL_GAMES_BY_WEEK[week] = TEAMS.map(([away, home], i) => ({
         id: i + 1, away, home, spread: 3, favorite: 'home',
@@ -107,7 +128,7 @@ function setup({ picks = {}, cached = null, filter = 'all', week = WEEK, starOpt
     }));
     api.__setState({
         currentWeek: week,
-        currentPicker: 'Stephen',
+        currentPicker: picker,
         currentGameFilter: filter,
         allPicks: { [week]: { Stephen: { ...picks } } }
     });
@@ -119,7 +140,12 @@ function setup({ picks = {}, cached = null, filter = 'all', week = WEEK, starOpt
         return makeStar(k, starOpts[k] || {});
     });
 
-    return { api, stars: stars.current };
+    return { api, stars: stars.current, nodes };
+}
+
+/** How many of the counter's five pips are filled in. */
+function filledPips(nodes) {
+    return (nodes['blazin-progress-pips'].innerHTML.match(/blazin-pip filled/g) || []).length;
 }
 
 function fiveStarredPicks() {
@@ -258,6 +284,65 @@ check('the count is zero in a playoff week', () => {
         picks: { rams_seahawks: { line: 'home', blazin: true } }
     });
     assert.strictEqual(t.api.countBlazinPicks(19, 'Stephen'), 0);
+});
+
+section('The running count above the games list');
+
+check('it reports how many of the five are spent', () => {
+    const picks = {};
+    TEAMS.slice(0, 2).forEach(tm => { picks[keyOf(tm)] = { line: 'home', blazin: true }; });
+    const t = setup({ picks });
+    t.api.updateBlazinProgress();
+    assert.match(t.nodes['blazin-progress-count'].textContent, /2 of 5 picked/);
+    assert.match(t.nodes['blazin-progress-count'].textContent, /3 to go/);
+    assert.strictEqual(filledPips(t.nodes), 2);
+    assert.strictEqual(t.nodes['blazin-progress'].classList.contains('hidden'), false);
+});
+
+check('it reads complete once all five are made', () => {
+    const t = setup({ picks: fiveStarredPicks() });
+    t.api.updateBlazinProgress();
+    assert.strictEqual(t.nodes['blazin-progress-count'].textContent, 'All 5 picked');
+    assert.strictEqual(filledPips(t.nodes), 5);
+    assert.strictEqual(t.nodes['blazin-progress'].classList.contains('complete'), true);
+});
+
+check('starting from nothing it counts zero, not blank', () => {
+    const t = setup({ picks: { rams_seahawks: { line: 'home' } } });
+    t.api.updateBlazinProgress();
+    assert.match(t.nodes['blazin-progress-count'].textContent, /0 of 5 picked/);
+    assert.strictEqual(filledPips(t.nodes), 0);
+});
+
+check('the orphan keys that do not count toward the cap do not count here either', () => {
+    const t = setup({
+        picks: {
+            rams_seahawks: { line: 'home' },
+            1: { blazin: true }, 2: { blazin: true }, 3: { blazin: true }
+        }
+    });
+    t.api.updateBlazinProgress();
+    assert.match(t.nodes['blazin-progress-count'].textContent, /0 of 5 picked/);
+});
+
+check('it is hidden in a playoff week', () => {
+    const t = setup({ week: 19, picks: { rams_seahawks: { line: 'home', blazin: true } } });
+    t.api.updateBlazinProgress();
+    assert.strictEqual(t.nodes['blazin-progress'].classList.contains('hidden'), true);
+});
+
+check('it is hidden until a picker is chosen', () => {
+    const t = setup({ picker: '' });
+    t.api.updateBlazinProgress();
+    assert.strictEqual(t.nodes['blazin-progress'].classList.contains('hidden'), true);
+});
+
+check('refreshing the stars refreshes the count with them', () => {
+    // handleBlazinToggle updates buttons in place rather than re-rendering, so
+    // the counter has to ride along on updateBlazinStarStates or it goes stale.
+    const t = setup({ picks: fiveStarredPicks() });
+    t.api.updateBlazinStarStates();
+    assert.strictEqual(t.nodes['blazin-progress-count'].textContent, 'All 5 picked');
 });
 
 if (failures > 0) {

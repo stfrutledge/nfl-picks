@@ -220,6 +220,7 @@ All critical accessibility violations have been fixed.
 - Remember Selected Picker - Persists in localStorage
 - Live Scoring Summary - Real-time ESPN scores
 - Blazin' 5 Selector - Star button with 5-pick limit
+- Blazin' 5 Running Count - Sticky tally above the games list so pickers can see how many of their five are spent
 - Sticky Tabs and Back to Top - Fixed navigation
 
 **UX Polish**

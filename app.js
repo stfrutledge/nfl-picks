@@ -2509,6 +2509,7 @@ function init() {
     setupHistoryBlazinRecords();
     setupPatternFilters();
     setupPlayoffComparisonControls();
+    trackTabsHeight();
     loadPicksFromStorage();
 
     // Show loading state
@@ -4902,6 +4903,48 @@ function applyFreeze(game, week = currentWeek, picker = currentPicker) {
     allPicks[week][picker][pickKey(game)] = frozen;
 
     return frozen;
+}
+
+/**
+ * The running Blazin' 5 count above the games list.
+ *
+ * The stars sit one per game card, so by the time a picker is near the bottom
+ * of the week they have no way of knowing how many they have already spent
+ * without scrolling back up - the cap only announces itself once the sixth
+ * star is already disabled. This shows the tally the whole way down.
+ *
+ * Reads the count fresh each call rather than tracking it, so it cannot drift
+ * from the picks: see getPickerPicksForWeek.
+ */
+function updateBlazinProgress() {
+    const bar = document.getElementById('blazin-progress');
+    if (!bar) return;
+
+    // Nothing to count without a picker, and there is no Blazin' 5 in the playoffs.
+    if (!currentPicker || isPlayoffWeek(currentWeek)) {
+        bar.classList.add('hidden');
+        return;
+    }
+
+    const used = countBlazinPicks(currentWeek, currentPicker);
+    const left = blazinRemaining(currentWeek, currentPicker);
+
+    bar.classList.remove('hidden');
+    bar.classList.toggle('complete', left === 0);
+
+    const pips = document.getElementById('blazin-progress-pips');
+    if (pips) {
+        pips.innerHTML = Array.from({ length: MAX_BLAZIN_PICKS }, (_, i) =>
+            `<span class="blazin-pip${i < used ? ' filled' : ''}">${i < used ? '★' : '☆'}</span>`
+        ).join('');
+    }
+
+    const count = document.getElementById('blazin-progress-count');
+    if (count) {
+        count.textContent = left === 0
+            ? `All ${MAX_BLAZIN_PICKS} picked`
+            : `${used} of ${MAX_BLAZIN_PICKS} picked · ${left} to go`;
+    }
 }
 
 /** Blazin' picks still to be allocated this week. */
@@ -9371,6 +9414,8 @@ function renderGames() {
     const gamesList = document.getElementById('games-list');
     if (!gamesList) return;
 
+    updateBlazinProgress();
+
     let weekGames = getGamesForWeekAndSeason(currentWeek, currentSeason);
     const pickerPicks = getPickerPicksForWeek(currentWeek, currentPicker);
     // For historical seasons, all weeks are historical; for current season, check against CURRENT_NFL_WEEK
@@ -9998,6 +10043,8 @@ function updateFreezeControls() {
 function updateBlazinStarStates() {
     const pickerPicks = getPickerPicksForWeek(currentWeek, currentPicker);
     const blazinCount = countBlazinPicks(currentWeek, currentPicker);
+
+    updateBlazinProgress();
 
     document.querySelectorAll('.blazin-star').forEach(starBtn => {
         const isActive = starBtn.classList.contains('active');
@@ -14059,6 +14106,28 @@ function renderWeeklyBreakdown(pickerData, marketReturns) {
 }
 
 // Initialize when DOM is ready
+/**
+ * Publish the sticky tab bar's height as --tabs-height, so anything that parks
+ * under it (the Blazin' 5 counter) lands flush instead of guessing at a number
+ * that changes with the viewport - the tabs are shorter on mobile.
+ */
+function trackTabsHeight() {
+    const tabs = document.querySelector('.category-tabs');
+    if (!tabs) return;
+
+    const measure = () => {
+        const height = Math.round(tabs.getBoundingClientRect().height);
+        if (height > 0) document.documentElement.style.setProperty('--tabs-height', height + 'px');
+    };
+
+    measure();
+    if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(measure).observe(tabs);
+    } else {
+        window.addEventListener('resize', measure);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', init);
 
 /**

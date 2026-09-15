@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=35e0ce4e">
+    <link rel="stylesheet" href="styles.css?v=bfa21a33">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -522,6 +522,13 @@
                     </div>
                 </div>
 
+                <!-- Blazin' 5 running count (hidden in the playoffs / with no picker) -->
+                <div class="blazin-progress hidden" id="blazin-progress" aria-live="polite">
+                    <span class="blazin-progress-label">Blazin&rsquo; 5</span>
+                    <span class="blazin-progress-pips" id="blazin-progress-pips" aria-hidden="true"></span>
+                    <span class="blazin-progress-count" id="blazin-progress-count"></span>
+                </div>
+
                 <!-- Games List -->
                 <div class="games-list" id="games-list">
                     <!-- Games will be injected here -->
@@ -852,6 +859,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=a1a9e569"></script>
+    <script src="app.js?v=94adff38"></script>
 </body>
 </html>
