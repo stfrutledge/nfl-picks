@@ -1998,7 +1998,13 @@ footer a:hover {
         padding-left: 16px !important;
         padding-right: 16px !important;
         max-width: 100%;
+        /* clip, not hidden: hidden on one axis makes the other axis a scroll
+           container, which parents the sticky Blazin' 5 bar to this section
+           instead of the viewport - so it never sticks. clip crops the same
+           way without creating that container. hidden stays first as the
+           fallback for anything that does not know clip. */
         overflow-x: hidden;
+        overflow-x: clip;
     }
 
     .standings-subtabs {
@@ -2750,10 +2756,24 @@ footer a:hover {
     letter-spacing: 0.02em;
 }
 
-.blazin-star:hover:not(:disabled) {
-    border-color: #ea580c;
-    color: #ea580c;
-    background: rgba(234, 88, 12, 0.08);
+/* Hover lives behind a real pointer. On touch the emulated hover sticks to the
+   button after the tap and paints over the state the tap just set, so the star
+   looked unchanged until you tapped some other card and released it.
+
+   The unselected hover also has to exclude .active: :hover:not(:disabled) is a
+   more specific selector than .active, so without the exclusion it wins on a
+   selected star and shows the outline treatment instead of the filled one. */
+@media (hover: hover) {
+    .blazin-star:hover:not(:disabled):not(.active) {
+        border-color: #ea580c;
+        color: #ea580c;
+        background: rgba(234, 88, 12, 0.08);
+    }
+
+    .blazin-star.active:hover:not(:disabled) {
+        background: #ea580c;
+        border-color: #ea580c;
+    }
 }
 
 .blazin-star.active {
