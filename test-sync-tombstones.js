@@ -71,7 +71,8 @@ function makeEnv() {
             if ('currentWeek' in s) currentWeek = s.currentWeek;
             if ('currentPicker' in s) currentPicker = s.currentPicker;
             if ('allPicks' in s) allPicks = s.allPicks;
-        }
+        },
+        __setCleared: c => { clearedPicks = c; }
     });`;
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
@@ -153,8 +154,22 @@ await check('a game deselected down to nothing is sent as blank', async () => {
     assert.strictEqual(row.linePick, '', 'the removed pick is recorded, not omitted');
 });
 
-await check('the payload still reports cleared=false', async () => {
+await check('the payload reports the cleared flag, it does not assert one', async () => {
+    // This sync lands 5s after whatever scheduled it. Clear Picks writes
+    // cleared=true and then schedules one, so the hardcoded cleared: false
+    // this used to send arrived afterwards and switched off the guard that
+    // stops another device restoring the week from backup.
     const t = setup({ picks: {} });
+    t.api.__setCleared({ [WEEK]: { Stephen: true } });
+    await t.api.syncPicksToGoogleSheets(false);
+    assert.strictEqual(syncOf(t.sent).body.cleared, true,
+        'a cleared week must not be un-cleared by its own follow-up sync');
+});
+
+await check('a week that was not cleared still reports false', async () => {
+    // The lift has to travel too: a device that picks without having seen the
+    // clear must un-clear the week, not have its picks suppressed on reload.
+    const t = setup({ picks: { rams_seahawks: { line: 'home' } } });
     await t.api.syncPicksToGoogleSheets(false);
     assert.strictEqual(syncOf(t.sent).body.cleared, false);
 });

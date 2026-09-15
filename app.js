@@ -9809,7 +9809,8 @@ function handlePickSelect(e) {
         localStorage.setItem(CLEARED_PICKS_KEY, JSON.stringify(clearedPicks));
     }
 
-    // Save to localStorage (this will also sync cleared=false to Google Sheets)
+    // Save to localStorage. The debounced sync reads the flag deleted just
+    // above, so it carries the lift to the sheet with the picks.
     savePicksToStorage();
 
     // Check if all picks are complete for the week (only when making a pick, not deselecting)
@@ -11261,7 +11262,17 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         week: toSheetWeek(week),
         picker: picker,
         picks: formattedPicks,
-        cleared: false  // Always reset cleared flag when syncing picks
+        // Report the flag as it actually stands, rather than asserting a
+        // constant. This sync lands 5s after whatever scheduled it, so the
+        // hardcoded false it used to send arrived after Clear Picks had
+        // written true and switched the guard back off - the guard whose only
+        // job is telling another device not to restore the week just cleared.
+        //
+        // Reading the flag keeps both directions right: a clear reinforces it,
+        // and the pick that lifts it locally lifts it here too, so a device
+        // that picks without having seen the clear still un-clears the week
+        // instead of having its picks suppressed on the next load.
+        cleared: Boolean(clearedPicks[week]?.[picker])
     };
 
     console.log('[Sync] Syncing picks to Google Sheets:', payload);
