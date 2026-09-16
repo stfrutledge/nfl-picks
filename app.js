@@ -2508,6 +2508,7 @@ function init() {
     setupBlazinTeamRecordsDropdown();
     setupHistoryBlazinRecords();
     setupPatternFilters();
+    syncPickerDropdowns(false);
     setupPlayoffComparisonControls();
     trackTabsHeight();
     loadPicksFromStorage();
@@ -3862,6 +3863,38 @@ async function loadAllPlayoffSchedules() {
 }
 
 /**
+ * Every other picker dropdown that follows the Make Picks selection.
+ * history-blazin-picker is deliberately left out: it keeps its own
+ * group-wide "All" default.
+ */
+const LINKED_PICKER_DROPDOWNS = [
+    'team-records-picker',
+    'blazin-records-picker',
+    'patterns-picker-filter',
+    'history-picker-dropdown'
+];
+
+/**
+ * Point the Records & Analysis / History picker dropdowns at whoever is
+ * selected in Make Picks, so the whole page is showing the same player.
+ * @param {boolean} render - fire each dropdown's change handler to redraw its panel
+ */
+function syncPickerDropdowns(render = true) {
+    if (!currentPicker) return;
+
+    LINKED_PICKER_DROPDOWNS.forEach(id => {
+        if (id === 'patterns-picker-filter') populatePatternsPickerOptions();
+        const dropdown = document.getElementById(id);
+        if (!dropdown) return;
+        // Pre-2023 seasons have no Jason/Daniel, so the option may not exist
+        const hasPicker = Array.from(dropdown.options).some(o => o.value === currentPicker);
+        if (!hasPicker || dropdown.value === currentPicker) return;
+        dropdown.value = currentPicker;
+        if (render) dropdown.dispatchEvent(new Event('change'));
+    });
+}
+
+/**
  * Setup picker selection dropdown
  */
 function setupPickerButtons() {
@@ -3894,6 +3927,7 @@ function setupPickerButtons() {
         // Re-render games with current picker's selections
         renderGames();
         renderScoringSummary();
+        syncPickerDropdowns();
     });
 
     // Setup picker navigation buttons
@@ -3920,6 +3954,7 @@ function setupPickerNavigation() {
             updatePickerNavButtons();
             renderGames();
             renderScoringSummary();
+            syncPickerDropdowns();
         }
     });
 
@@ -3933,6 +3968,7 @@ function setupPickerNavigation() {
             updatePickerNavButtons();
             renderGames();
             renderScoringSummary();
+            syncPickerDropdowns();
         }
     });
 
@@ -7998,6 +8034,20 @@ function renderInsights(loneWolf, consensus) {
 }
 
 /**
+ * Populate the Patterns picker filter options (once)
+ */
+function populatePatternsPickerOptions() {
+    const pickerFilter = document.getElementById('patterns-picker-filter');
+    if (!pickerFilter || pickerFilter.options.length > 1) return;
+    PICKERS.forEach(picker => {
+        const option = document.createElement('option');
+        option.value = picker;
+        option.textContent = picker;
+        pickerFilter.appendChild(option);
+    });
+}
+
+/**
  * Render Pattern Insights panel
  */
 function renderPatternsPanel() {
@@ -8005,15 +8055,7 @@ function renderPatternsPanel() {
     const pickerFilter = document.getElementById('patterns-picker-filter');
     if (!grid) return;
 
-    // Populate picker filter options if not already done
-    if (pickerFilter && pickerFilter.options.length <= 1) {
-        PICKERS.forEach(picker => {
-            const option = document.createElement('option');
-            option.value = picker;
-            option.textContent = picker;
-            pickerFilter.appendChild(option);
-        });
-    }
+    populatePatternsPickerOptions();
 
     // Get current filter values
     const selectedPicker = pickerFilter ? pickerFilter.value : 'all';
