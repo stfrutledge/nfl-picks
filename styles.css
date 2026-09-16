@@ -1906,6 +1906,11 @@ header h1 {
     min-width: 45px;
 }
 
+/* Lifetime detail rows carry the season too, so they need the extra room */
+.game-week.with-season {
+    min-width: 82px;
+}
+
 .game-matchup {
     flex: 1;
     color: var(--text-primary);

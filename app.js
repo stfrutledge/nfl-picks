@@ -7253,7 +7253,7 @@ function renderHistoryBlazinTeamRecords(picker = null) {
             teamRecords[team].wins += record.wins;
             teamRecords[team].losses += record.losses;
             teamRecords[team].pushes += record.pushes;
-            teamRecords[team].games.push(...(record.games || []));
+            teamRecords[team].games.push(...(record.games || []).map(g => ({ ...g, season })));
         });
     });
 
@@ -7275,7 +7275,7 @@ function renderHistoryBlazinTeamRecords(picker = null) {
         const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
         const teamId = 'hist-blazin-' + team.replace(/[^a-zA-Z0-9]/g, '');
 
-        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+        const sortedGames = [...games].sort((a, b) => (a.season || 0) - (b.season || 0) || a.week - b.week);
 
         const gameDetailsHtml = sortedGames.map(g => {
             const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
@@ -7287,7 +7287,7 @@ function renderHistoryBlazinTeamRecords(picker = null) {
 
             return `
                 <div class="game-detail-row ${outcomeClass}">
-                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-week${isLifetime ? ' with-season' : ''}">${isLifetime ? g.season + ' ' : ''}Wk ${g.week}</span>
                     <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
                     <span class="game-spread">${spreadText}</span>
                     <span class="game-picked">Picked: ${pickedNormalized}</span>
@@ -7473,7 +7473,7 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
             records[key].wins += record.wins;
             records[key].losses += record.losses;
             records[key].pushes += record.pushes;
-            records[key].games.push(...(record.games || []));
+            records[key].games.push(...(record.games || []).map(g => ({ ...g, season })));
         });
     });
 
@@ -7501,7 +7501,7 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
         const pctClass = pct >= 50 ? 'positive' : pct < 50 ? 'negative' : 'neutral';
         const spreadId = 'hist-spread-' + spread.replace(/[^a-zA-Z0-9]/g, '');
 
-        const sortedGames = [...games].sort((a, b) => a.week - b.week);
+        const sortedGames = [...games].sort((a, b) => (a.season || 0) - (b.season || 0) || a.week - b.week);
 
         const gameDetailsHtml = sortedGames.map(g => {
             const outcomeClass = g.outcome === 'win' ? 'outcome-win' : g.outcome === 'loss' ? 'outcome-loss' : 'outcome-push';
@@ -7513,7 +7513,7 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
 
             return `
                 <div class="game-detail-row ${outcomeClass}">
-                    <span class="game-week">Wk ${g.week}</span>
+                    <span class="game-week${isLifetime ? ' with-season' : ''}">${isLifetime ? g.season + ' ' : ''}Wk ${g.week}</span>
                     <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
                     <span class="game-spread">${spreadText}</span>
                     <span class="game-picked">Picked: ${pickedNormalized} (${g.pickedSpread})</span>
