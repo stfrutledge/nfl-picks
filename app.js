@@ -6192,6 +6192,82 @@ function groupRecordHasPicks(record) {
 }
 
 /**
+ * Each picker's line record split by which side of the price they took - the
+ * shape the retired stats workbook handed over as `favoritesVsUnderdogs`.
+ *
+ * Favourite or underdog is decided by **the line the pick is graded at**, not
+ * the one on the board now: a pick frozen with the Seahawks at -3 is a
+ * favourite pick even if they have since drifted to +1. lineForPick() is what
+ * knows the difference, and it is the same line atsWinnerForPick() scores by,
+ * so the two can never disagree about which bucket a win belongs in.
+ *
+ * A pick'em belongs to neither. It is a real line - see "A missing line is
+ * null, never 0" - but nobody is favoured at it, so counting it as a dog pick
+ * (which `favorite === 'home'` on a 0 would quietly do) would be inventing a
+ * price that was never there. Games with no usable line are skipped for the
+ * same reason they are skipped everywhere else: unscored, not a push.
+ */
+function favoritesVsUnderdogsFromPicks() {
+    const data = { favorites: {}, underdogs: {} };
+    PICKERS.forEach(picker => {
+        data.favorites[picker] = emptyRecord();
+        data.underdogs[picker] = emptyRecord();
+    });
+
+    const { first, last } = regularSeasonWeekRange();
+    for (let week = first; week <= last; week++) {
+        const weekGames = getGamesForWeekAndSeason(week, currentSeason);
+        if (!weekGames || weekGames.length === 0) continue;
+
+        const weekResults = getResultsForWeekAndSeason(week, currentSeason);
+        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
+        const cachedWeek = Number(currentSeason) === CURRENT_SEASON
+            ? (weeklyPicksCache[week] || weeklyPicksCache[String(week)])
+            : null;
+
+        weekGames.forEach(game => {
+            const result = getGameResult(game, weekResults);
+            if (!result) return;
+
+            PICKERS.forEach(picker => {
+                const pick = pickFromSources(
+                    game, seasonPicks[picker], cachedWeek?.picks?.[picker]);
+                if (!pick.line) return;
+
+                const line = lineForPick(game, pick);
+                if (!hasUsableLine(line.spread)) return;   // no price to take a side of
+                if (Number(line.spread) === 0) return;     // pick'em: nobody is favoured
+
+                const ats = atsWinnerForPick(game, pick, result);
+                if (!ats) return;
+
+                const bucket = line.favorite === pick.line ? 'favorites' : 'underdogs';
+                const outcome = ats === 'push' ? 'pushes'
+                    : (pick.line === ats ? 'wins' : 'losses');
+                data[bucket][picker][outcome]++;
+            });
+        });
+    }
+
+    ['favorites', 'underdogs'].forEach(bucket => {
+        PICKERS.forEach(picker => {
+            const record = data[bucket][picker];
+            record.percentage = recordPercentage(record);
+            record.totalPicks = record.wins + record.losses + record.pushes;
+        });
+    });
+
+    return data;
+}
+
+/** Whether either side of the favourites/underdogs split holds a pick. */
+function favUnderdogHasPicks(data) {
+    if (!data) return false;
+    return ['favorites', 'underdogs'].some(bucket =>
+        PICKERS.some(picker => (data[bucket]?.[picker]?.totalPicks || 0) > 0));
+}
+
+/**
  * { picker: [{week, pct}] } - the shape renderTrendChart expects.
  *
  * `pct` is the record **from the start of the season up to and including that
@@ -6480,11 +6556,17 @@ function renderDashboard() {
     // Only show Favorites vs Underdogs chart on Line Picks tab
     const standingsChartContainer = document.getElementById('standings-chart-container');
     if (standingsChartContainer) {
-        if (currentSubcategory === 'line') {
-            standingsChartContainer.classList.remove('hidden');
-            renderFavUnderdogChart(dashboardData?.favoritesVsUnderdogs);
-        } else {
-            standingsChartContainer.classList.add('hidden');
+        // Line Picks only - the split is about which side of a price was taken,
+        // which the straight-up and Blazin' 5 tabs are not asking about.
+        const favUnderdog = currentSubcategory !== 'line' ? null
+            : (computeLocally ? favoritesVsUnderdogsFromPicks() : dashboardData?.favoritesVsUnderdogs);
+        // Hidden until there is something to plot: renderFavUnderdogChart()
+        // returns early on empty data, which used to leave an empty chart box
+        // sitting on the tab all season.
+        const showChart = favUnderdogHasPicks(favUnderdog);
+        standingsChartContainer.classList.toggle('hidden', !showChart);
+        if (showChart) {
+            renderFavUnderdogChart(favUnderdog);
         }
     }
 

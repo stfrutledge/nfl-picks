@@ -223,16 +223,43 @@ function renderFavUnderdogChart(favUnderdogData) {
     }
 
     const labels = PICKERS;
-    const favData = labels.map(p => favUnderdogData.favorites[p]?.percentage || 0);
-    const undData = labels.map(p => favUnderdogData.underdogs[p]?.percentage || 0);
+    // null, not 0: a picker who has not taken a favourite yet has no
+    // percentage, and a 0% bar says they took some and lost every one.
+    // Chart.js draws nothing for null, which is the honest answer.
+    const pct = (bucket, p) => {
+        const value = favUnderdogData[bucket][p]?.percentage;
+        return typeof value === 'number' ? value : null;
+    };
+    const favData = labels.map(p => pct('favorites', p));
+    const undData = labels.map(p => pct('underdogs', p));
 
     // Destroy existing chart
     if (standingsChart) {
         standingsChart.destroy();
     }
 
+    // The line every bar on this chart is really being read against. Drawn
+    // rather than left to the reader to find between the 40% and 60% ticks.
+    const breakEvenLine = {
+        id: 'breakEvenLine',
+        afterDatasetsDraw(chart) {
+            const { ctx: c, chartArea, scales } = chart;
+            const y = scales.y.getPixelForValue(50);
+            c.save();
+            c.strokeStyle = colors.text;
+            c.setLineDash([4, 4]);
+            c.lineWidth = 1;
+            c.beginPath();
+            c.moveTo(chartArea.left, y);
+            c.lineTo(chartArea.right, y);
+            c.stroke();
+            c.restore();
+        }
+    };
+
     standingsChart = new Chart(ctx, {
         type: 'bar',
+        plugins: [breakEvenLine],
         data: {
             labels: labels,
             datasets: [
@@ -326,8 +353,15 @@ function renderFavUnderdogChart(favUnderdogData) {
                             return value + '%';
                         }
                     },
-                    min: 40,
-                    max: 60
+                    // Bars are read from their base, so this axis starts at 0
+                    // and cannot be fitted to the data the way the trend line's
+                    // is. It was pinned to 40-60%, which cut the top off every
+                    // bar above 60 and drew nothing at all below 40 - a picker
+                    // 0-4 on underdogs had no bar, the same as one who had not
+                    // taken any. The 50% line is the one worth seeing against,
+                    // so it is marked rather than implied by the floor.
+                    min: 0,
+                    max: 100
                 }
             }
         }
