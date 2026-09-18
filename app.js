@@ -7529,7 +7529,10 @@ function renderHistoryBlazinTeamRecords(picker = null) {
     const seasonValue = seasonDropdown?.value;
     const isLifetime = seasonValue === 'lifetime';
     const seasons = isLifetime ? AVAILABLE_SEASONS : [parseInt(seasonValue) || 2024];
-    const analysisType = analysisTypeDropdown?.value || 'involved';
+    // Matches the dropdown's own default (Team Picked) - the fallback only
+    // applies when the element is missing, and disagreeing with the markup
+    // would render a table the selector does not describe.
+    const analysisType = analysisTypeDropdown?.value || 'picked';
 
     // Get records based on analysis type (aggregate across all seasons for lifetime)
     let teamRecords = {};
