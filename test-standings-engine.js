@@ -57,6 +57,8 @@ function makeEnv() {
         hasUsableLine, hasUsableSpread, signedSpreadDisplay,
         priorSeasonStats, yearChangeFor, AVAILABLE_SEASONS, normalizeSeasonPicks,
         formatPercent, statValueClass,
+        COWHERD, COWHERD_CATEGORY, PICKERS_WITH_COWHERD, cowherdWeeklyResults,
+        __window: window,
         applySavedSpreads, saveSpread,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         pctCellClass,
@@ -883,6 +885,98 @@ check('no caller builds a percentage by hand any more', () => {
         'the inline formatter is gone');
     assert.ok(!/parseFloat\(picker\.last3WeekPct\)/.test(src),
         'the parseFloat colour test is gone');
+});
+
+section("Cowherd's Year Chg comes from his archived record");
+
+// He was the one row with a permanently blank Year Chg. Every other picker's
+// prior season is re-scored from the archive's stored picks - but Cowherd's
+// picks are not in there. The offseason archive keeps his week-by-week RECORD
+// in COWHERD_<year>_RESULTS instead, because his picks get cleared with
+// everyone else's and the record is the part that cannot be re-derived.
+//
+// So he scored 0-0 for last season and yearChangeFor() correctly read that as
+// 'no comparison' - while the data sat in the same archive file, one global
+// away.
+
+function seedCowherdArchive(api, weekly) {
+    // historical-<year>.js assigns both globals to window at the bottom of the
+    // file; cowherdWeeklyResults() reads the second one.
+    const prior = api.CURRENT_SEASON - 1;
+    api.seasonData[prior] = { games: {}, results: {}, picks: {}, __pickKeysNormalized: true };
+    api.__window['COWHERD_' + prior + '_RESULTS'] = weekly;
+    return prior;
+}
+
+check('his prior record is read from COWHERD_<year>_RESULTS', () => {
+    const api = setup({});
+    seedCowherdArchive(api, { 1: { wins: 3, losses: 2, pushes: 0 } });
+    const prior = api.priorSeasonStats(1, 1, api.PICKERS_WITH_COWHERD);
+    assert.deepStrictEqual(prior[api.COWHERD].blazin, { wins: 3, losses: 2, pushes: 0 });
+});
+
+check('only the weeks in range are summed', () => {
+    const api = setup({});
+    seedCowherdArchive(api, {
+        1: { wins: 3, losses: 2, pushes: 0 },
+        2: { wins: 1, losses: 4, pushes: 0 },
+        3: { wins: 2, losses: 2, pushes: 1 },
+        4: { wins: 5, losses: 0, pushes: 0 }   // out of range, must not count
+    });
+    const prior = api.priorSeasonStats(1, 3, api.PICKERS_WITH_COWHERD);
+    assert.deepStrictEqual(prior[api.COWHERD].blazin, { wins: 6, losses: 8, pushes: 1 });
+});
+
+check('he gets a real Year Chg, like everybody else', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })] },
+        picks: { 1: { Cowherd: { rams_seahawks: { line: 'away', blazin: true } } } }  // loss -> 0%
+    });
+    seedCowherdArchive(api, { 1: { wins: 1, losses: 1, pushes: 0 } });                // 50% last year
+    const cur = api.calculateStatsForWeeks(1, 1, api.PICKERS_WITH_COWHERD);
+    const rows = api.standingsFromComputed(cur, api.COWHERD_CATEGORY,
+        api.priorSeasonStats(1, 1, api.PICKERS_WITH_COWHERD));
+    assert.strictEqual(rows.Cowherd.yearChange, '▼50.0%');
+});
+
+check('a season with no Cowherd block leaves him blank rather than 0-0', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })] },
+        picks: { 1: { Cowherd: { rams_seahawks: { line: 'home', blazin: true } } } }
+    });
+    const prior = api.CURRENT_SEASON - 1;
+    api.seasonData[prior] = { games: {}, results: {}, picks: {}, __pickKeysNormalized: true };
+    // no COWHERD_<year>_RESULTS - an archive from before his picks were tracked
+    const rows = api.standingsFromComputed(
+        api.calculateStatsForWeeks(1, 1, api.PICKERS_WITH_COWHERD),
+        api.COWHERD_CATEGORY, api.priorSeasonStats(1, 1, api.PICKERS_WITH_COWHERD));
+    assert.strictEqual(rows.Cowherd.yearChange, '',
+        'no record to compare against is blank, not a fabricated 0%');
+});
+
+check('filling his record does not disturb anyone else', () => {
+    const api = setup({});
+    const prior = api.CURRENT_SEASON - 1;
+    api.seasonData[prior] = {
+        games: { 1: [{ id: 1, away: 'Rams', home: 'Seahawks', spread: 3, favorite: 'home' }] },
+        results: { 1: { 1: { winner: 'home', awayScore: 10, homeScore: 20 } } },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home', blazin: true } } } },
+        __pickKeysNormalized: true
+    };
+    api.__window['COWHERD_' + prior + '_RESULTS'] = { 1: { wins: 3, losses: 2, pushes: 0 } };
+    const stats = api.priorSeasonStats(1, 1, api.PICKERS_WITH_COWHERD);
+    assert.deepStrictEqual(stats.Stephen.blazin, { wins: 1, losses: 0, pushes: 0 },
+        'still scored from the archive picks');
+    assert.deepStrictEqual(stats[api.COWHERD].blazin, { wins: 3, losses: 2, pushes: 0 });
+});
+
+check('his line/winner columns stay empty - Blazin is all he has', () => {
+    const api = setup({});
+    seedCowherdArchive(api, { 1: { wins: 3, losses: 2, pushes: 0 } });
+    const prior = api.priorSeasonStats(1, 1, api.PICKERS_WITH_COWHERD);
+    assert.deepStrictEqual(prior[api.COWHERD].line, { wins: 0, losses: 0, pushes: 0 });
+    assert.deepStrictEqual(prior[api.COWHERD].winner, { wins: 0, losses: 0, pushes: 0 });
+    assert.strictEqual(api.COWHERD_CATEGORY, 'blazin');
 });
 
 if (failures > 0) {

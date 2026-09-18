@@ -5944,7 +5944,43 @@ function priorSeasonStats(firstWeek, lastWeek, pickers = PICKERS) {
     const prior = CURRENT_SEASON - 1;
     if (!AVAILABLE_SEASONS.includes(prior)) return null;
     if (!getSeasonData(prior)) return null;
-    return calculateStatsForWeeks(firstWeek, lastWeek, pickers, { season: prior });
+
+    const stats = calculateStatsForWeeks(firstWeek, lastWeek, pickers, { season: prior });
+    applyCowherdPriorRecord(stats, prior, firstWeek, lastWeek);
+    return stats;
+}
+
+/**
+ * Put Cowherd's archived record into a prior season's stats, in place.
+ *
+ * Every other picker's history is re-scored from the archive's stored picks.
+ * Cowherd's are NOT in there: the offseason archive keeps his week-by-week
+ * record in COWHERD_<year>_RESULTS instead, because his picks are cleared with
+ * everyone else's and his record is the one thing that cannot be re-derived
+ * afterwards (see the offseason checklist).
+ *
+ * So scoring him the normal way found no picks, gave him an empty record, and
+ * yearChangeFor() read that as "no comparison available" - which is why his was
+ * the one row with a blank Year Chg while the data sat in the same archive file.
+ *
+ * cowherdWeeklyResults() is the single source for his history; this only sums
+ * the weeks in range. Blazin' 5 is the only column he has (COWHERD_CATEGORY),
+ * so it is the only one there is anything to fill.
+ */
+function applyCowherdPriorRecord(stats, season, firstWeek, lastWeek) {
+    if (!stats[COWHERD]) return;
+    const weekly = cowherdWeeklyResults(season);
+    if (!weekly) return;
+
+    const record = emptyRecord();
+    for (let week = firstWeek; week <= lastWeek; week++) {
+        const w = weekly[week] || weekly[String(week)];
+        if (!w) continue;
+        record.wins += w.wins || 0;
+        record.losses += w.losses || 0;
+        record.pushes += w.pushes || 0;
+    }
+    stats[COWHERD][COWHERD_CATEGORY] = record;
 }
 
 /**

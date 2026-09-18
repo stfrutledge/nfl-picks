@@ -290,13 +290,41 @@ Three things worth keeping:
   every page load between July and the archive landing would show an error
   nobody can act on.
 
-Mid-week the comparison sets a half-played week against a finished one. That is
-deliberate - the alternative, dropping the week in progress, answers a different
-question than "the same point last year" - and it settles once the week does.
+**Both sides are the same WEEK RANGE, not the same amount of football.** The
+range is `regularSeasonWeekRange()` - weeks 1 to `CURRENT_NFL_WEEK` - applied to
+each season. It is a strict season-to-date reading and is deliberately left that
+way; the alternative, intersecting the weeks each picker actually played,
+answers a subtly different question. Two consequences to expect rather than
+treat as bugs:
+
+- **Mid-week it sets a half-played week against a finished one**, and settles
+  when the week does.
+- **A picker whose week is not in yet is compared short.** Their side covers the
+  weeks they have, the prior season covers the whole range. Cowherd hits this
+  routinely: his five are transcribed off the show by hand, often days late, so
+  he sits a week behind for part of most weeks. In week 2 of 2026 that showed
+  him as `▼30.0%` - his 2026 week 1 (1-4, 20%) against his 2025 weeks 1-2 (5-5,
+  50%) - when week 1 against week 1 alone would have been `▼40.0%`. Neither is
+  wrong; they answer different questions. It corrects itself when his picks go
+  in.
 
 The **Live tab's as-is table does not carry this column**, and calls
 `standingsFromComputed` without a prior season. See "The as-is column set".
 
+
+
+**Cowherd is filled in separately.** Every other picker's prior season is
+re-scored from the archive's stored picks; his are not in there. The offseason
+archive keeps his week-by-week record in `COWHERD_<year>_RESULTS` instead,
+because his picks are cleared with everyone else's and the record is the part
+that cannot be re-derived - see the offseason checklist.
+
+`applyCowherdPriorRecord()` sums the weeks in range out of
+`cowherdWeeklyResults(season)`, which stays the single source for his history.
+Without it he scored 0-0 for last season and `yearChangeFor()` read that as "no
+comparison", so his was the one row with a permanently blank Year Chg while the
+data sat in the same archive file. An archive with no Cowherd block still leaves
+him blank, which is the honest answer rather than a fabricated 0%.
 
 ### Last 3-Wk
 
