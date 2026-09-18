@@ -113,6 +113,18 @@ let historical2024Loading = null; // Promise for loading in progress
 // Track if spreads are still loading in background
 let spreadsLoading = true;
 
+// Whether the standings on screen are still filling in.
+//
+// They are computed from picks + results + every played week's schedule and
+// lines, and none of that is cached locally - results deliberately so, since
+// they change too often for a stored copy to be trusted. The first paint is
+// therefore a real calculation over a partial dataset: the records climb for
+// a few seconds as the background loads land. The table stays up, because a
+// partial record is still worth reading and hiding it only makes the wait
+// longer, but it is marked so nobody takes an in-progress number as final.
+// Cleared once the background block in loadFromGoogleSheets() settles.
+let standingsProvisional = true;
+
 // Available weeks (1-18 for regular season)
 const TOTAL_WEEKS = 18;
 
@@ -4323,26 +4335,56 @@ async function loadFromGoogleSheets() {
 
             // Load all background data in parallel
             console.log('[Background] Syncing all background data...');
+            // Season standings are computed from picks + results once the
+            // legacy stats workbook is out of date, which needs every played
+            // week's schedule, not just the one on screen.
+            const schedulesReady = LEGACY_SHEETS_SEASON !== CURRENT_SEASON
+                ? preloadSeasonSchedules()
+                : Promise.resolve();
+            const resultsReady = loadAllResultsFromBackup();
+
+            // A result is filed against a game, so the standings need both: the
+            // sheet's rows AND the schedules to hang them on.
+            const standingsReady = Promise.all([schedulesReady, resultsReady])
+                .then(() => {
+                    applyPendingSheetResults();
+                    renderActiveTab();
+                });
+
+            // Writing down what ESPN knows and the sheet does not. Deliberately
+            // NOT awaited with the rest, and deliberately chained AFTER the
+            // results load rather than beside it:
+            //
+            //   - beside it, the schedule preload won the race on every load,
+            //     so backfill read an empty NFL_RESULTS_BY_WEEK, concluded the
+            //     sheet held nothing, and rewrote a week of results that were
+            //     already there. saveResults() writes a row at a time, so that
+            //     was ~30s in one request, on every single page load.
+            //   - awaited, that request also held up the final render, which is
+            //     what made a cold load take half a minute to settle.
+            //
+            // It is a write-out: nothing on screen is waiting for it.
+            standingsReady
+                .then(() => backfillResults())
+                .catch(err => console.error('[Results] Backfill failed:', err));
+
+            // .catch, not a bare await: one failed background load used to
+            // reject the whole block and skip everything below it, leaving
+            // spreadsLoading true for the rest of the session - and the
+            // standings marked provisional for ever. The numbers are as good
+            // as they are going to get either way, so finish the pass.
             await Promise.all([
                 loadAllPicksFromBackup(),
-                loadAllResultsFromBackup(),
                 loadAllWeeklyDataForBlazin(),
                 // Year Chg is a delta against last season, and getSeasonData()
                 // is synchronous - so the archive has to be in before the
                 // standings render or the column silently stays blank.
                 loadPriorSeasonForComparison(),
-                // Season standings are computed from picks + results once the
-                // legacy stats workbook is out of date, which needs every
-                // played week's schedule, not just the one on screen.
-                LEGACY_SHEETS_SEASON !== CURRENT_SEASON
-                    ? preloadSeasonSchedules()
-                        // Write down anything ESPN knows and the sheet does not,
-                        // before rendering standings off it.
-                        .then(() => backfillResults())
-                        .then(() => renderActiveTab())
-                    : Promise.resolve(),
+                standingsReady,
                 prefetchAndSaveSpreads()
-            ]);
+            ]).catch(err => {
+                console.error('[Background] A background load failed:', err);
+            });
 
             console.log(`[Background] All data synced: ${(performance.now() - bgStart).toFixed(0)}ms`);
 
@@ -4358,6 +4400,10 @@ async function loadFromGoogleSheets() {
             // scored without spreads, so the standings and the as-is table
             // have to be recomputed now that they are in.
             spreadsLoading = false;
+            // Everything the standings are computed from is in, so the numbers
+            // stop moving here - drop the marking before the last render.
+            standingsProvisional = false;
+            updateProvisionalIndicator();
             renderActiveTab();
         }, 100);
 
@@ -4443,6 +4489,10 @@ async function setActiveCategory(category) {
             loadHistorySeason(AVAILABLE_SEASONS[0]);
         }
     }
+
+    // renderDashboard() only runs for Standings, so leaving the tab needs its
+    // own call to take the marking off the body.
+    updateProvisionalIndicator();
 }
 
 /**
@@ -5040,6 +5090,48 @@ function renderActiveTab() {
     renderScoringSummary();
     if (currentCategory === 'standings') renderDashboard();
     if (currentCategory === 'live') renderLiveTab();
+    if (currentCategory === 'history') refreshLiveHistoryView();
+}
+
+/** Guards refreshLiveHistoryView() against overlapping rebuilds. */
+let historyRefreshInFlight = false;
+
+/**
+ * Rebuild the History tab when the data behind it changes.
+ *
+ * The season in progress has no archive file, so loadSeasonData() assembles it
+ * on the spot from NFL_GAMES_BY_WEEK (buildCurrentSeasonView). Open History
+ * while the background loads are still running and it was built from a
+ * half-empty schedule - and nothing rebuilt it afterwards, so it stayed blank
+ * until the tab was switched away and back. renderActiveTab() already fires on
+ * every arrival; this hooks History onto it.
+ *
+ * Only the live season: an archived one is a static file and cannot change
+ * under us, and Lifetime spans them all.
+ */
+async function refreshLiveHistoryView() {
+    if (currentCategory !== 'history' || historyRefreshInFlight) return;
+
+    const seasonDropdown = document.getElementById('history-season-dropdown');
+    if (Number(seasonDropdown?.value) !== CURRENT_SEASON) return;
+
+    const weekDropdown = document.getElementById('history-week-dropdown');
+    const week = weekDropdown?.value;
+
+    historyRefreshInFlight = true;
+    try {
+        await loadHistorySeason(CURRENT_SEASON);
+
+        // loadHistorySeason() rebuilds the week list and drops back to week 1,
+        // so put the reader back on the week they were looking at.
+        if (week && weekDropdown && [...weekDropdown.options].some(o => o.value === week)) {
+            weekDropdown.value = week;
+            renderHistoryWeek(Number(week));
+            updateHistoryWeekDisplay(Number(week));
+        }
+    } finally {
+        historyRefreshInFlight = false;
+    }
 }
 
 /** ESPN statuses that mean the game is being played right now. */
@@ -6169,9 +6261,37 @@ function calculatePlayoffStats() {
 }
 
 /**
+ * Show or clear the "still loading" marking on the standings.
+ *
+ * Driven by standingsProvisional, and scoped to the Standings tab - every
+ * other tab either reads archived data or shows the current week only, so
+ * neither is waiting on the background block.
+ */
+function updateProvisionalIndicator() {
+    const show = standingsProvisional && currentCategory === 'standings';
+    document.body.classList.toggle('standings-provisional', show);
+
+    const overlay = document.getElementById('provisional-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    // Moved into the panel holding whichever standings table is on screen, so
+    // the circle sits over that table rather than over the middle of the
+    // window. The playoff table lives in its own section.
+    const host = document.querySelector('#playoff-standings-section:not(.hidden) .standings-panel')
+        || document.getElementById('standings-panel');
+    if (host && overlay.parentElement !== host) host.appendChild(overlay);
+}
+
+/**
  * Render the full dashboard
  */
 function renderDashboard() {
+    // Before the guard below: the marking has to come off even on the render
+    // that bails out, or it outlives the data it describes.
+    updateProvisionalIndicator();
+
     // dashboardData only exists when the legacy workbook was loaded. A computed
     // season has none and must still render, so bail only when there is neither.
     if (!dashboardData && !usingComputedStandings()) return;
@@ -11839,6 +11959,69 @@ async function loadAllPicksFromBackup() {
 }
 
 /**
+ * Results the sheet sent for a week whose schedule had not loaded yet, kept by
+ * matchup key until it has.
+ *
+ * NFL_RESULTS_BY_WEEK is keyed by game id, so a result can only be filed once
+ * its week's games exist. The sheet read and the schedule preload run
+ * concurrently, so for a past week the results usually arrive first - and they
+ * used to be dropped on the floor, which left backfillResults() believing the
+ * sheet held nothing and rewriting a whole week of results on every page load.
+ */
+let pendingSheetResults = {};
+
+/**
+ * File one result from the sheet against its game, or park it until the week's
+ * schedule is in.
+ *
+ * @returns {boolean} whether it was filed
+ */
+function fileSheetResult(week, rawKey, data, games = getGamesForWeek(week)) {
+    // normalizePickKey/pickKey, not a raw toLowerCase comparison: the Apps
+    // Script composes its key from the team-name columns without going through
+    // TEAM_NAME_MAP, so an alias on either side would never match.
+    const gameKey = normalizePickKey(rawKey);
+    const game = (games || []).find(g => pickKey(g) === gameKey);
+
+    if (!game) {
+        if (!pendingSheetResults[week]) pendingSheetResults[week] = {};
+        pendingSheetResults[week][gameKey] = data;
+        return false;
+    }
+
+    if (!NFL_RESULTS_BY_WEEK[week]) NFL_RESULTS_BY_WEEK[week] = {};
+    NFL_RESULTS_BY_WEEK[week][game.id] = {
+        winner: data.winner,
+        awayScore: data.awayScore,
+        homeScore: data.homeScore
+    };
+    if (pendingSheetResults[week]) delete pendingSheetResults[week][gameKey];
+    return true;
+}
+
+/**
+ * File everything that was parked, now that more schedules are loaded.
+ *
+ * Must run before backfillResults(), which works out what the sheet is missing
+ * from what has been filed.
+ */
+function applyPendingSheetResults() {
+    let filed = 0;
+    for (const week of Object.keys(pendingSheetResults)) {
+        const weekNum = Number(week);
+        const games = getGamesForWeek(weekNum);
+        if (!games || games.length === 0) continue;
+        for (const [gameKey, data] of Object.entries(pendingSheetResults[week])) {
+            if (fileSheetResult(weekNum, gameKey, data, games)) filed++;
+        }
+    }
+    if (filed > 0) {
+        console.log(`[Results Load] Filed ${filed} parked result(s) once their schedules loaded`);
+    }
+    return filed;
+}
+
+/**
  * Load ALL results from Google Sheets backup in one API call
  * This fetches results for all weeks at once and merges into NFL_RESULTS_BY_WEEK
  */
@@ -11863,36 +12046,27 @@ async function loadAllResultsFromBackup() {
 
         if (result.results && Object.keys(result.results).length > 0) {
             let totalResults = 0;
+            let parked = 0;
             for (const sheetWeek in result.results) {
                 const weekNum = fromSheetWeek(sheetWeek);
                 if (weekNum === null) continue; // row belongs to another season
 
-                if (!NFL_RESULTS_BY_WEEK[weekNum]) {
-                    NFL_RESULTS_BY_WEEK[weekNum] = {};
-                }
+                // Hoisted: the lookup used to rebuild the week's game list once
+                // per result row.
+                const games = getGamesForWeek(weekNum);
 
                 for (const gameKey in result.results[sheetWeek]) {
-                    const resultData = result.results[sheetWeek][gameKey];
-
-                    // Find the game by matchup key to get the game ID
-                    const games = getGamesForWeek(weekNum);
-                    const matchingGame = games.find(g => {
-                        const key = `${g.away.toLowerCase()}_${g.home.toLowerCase()}`;
-                        return key === gameKey;
-                    });
-
-                    if (matchingGame) {
-                        // Use game ID as the key (consistent with existing code)
-                        NFL_RESULTS_BY_WEEK[weekNum][matchingGame.id] = {
-                            winner: resultData.winner,
-                            awayScore: resultData.awayScore,
-                            homeScore: resultData.homeScore
-                        };
+                    // Parked rather than discarded when the week's schedule is
+                    // not in yet; applyPendingSheetResults() files it after.
+                    if (fileSheetResult(weekNum, gameKey, result.results[sheetWeek][gameKey], games)) {
                         totalResults++;
+                    } else {
+                        parked++;
                     }
                 }
             }
-            console.log(`[Results Load] Loaded ${totalResults} results across ${result.weekCount} weeks from Google Sheets backup`);
+            const parkedNote = parked > 0 ? `, ${parked} awaiting their schedules` : '';
+            console.log(`[Results Load] Loaded ${totalResults} results across ${result.weekCount} weeks from Google Sheets backup${parkedNote}`);
         } else {
             console.log('[Results Load] No results in response');
         }

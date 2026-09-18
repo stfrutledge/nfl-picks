@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=20c27627">
+    <link rel="stylesheet" href="styles.css?v=39f224bf">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -78,6 +78,14 @@
                 <button class="subtab" data-subcategory="winner">Straight Up</button>
                 <button class="subtab" data-subcategory="playoffs" id="playoffs-subtab" style="display: none;">Playoffs</button>
             </section>
+
+            <!-- Sits over the faded standings while they are still filling in.
+                 Shown while standingsProvisional is set; see
+                 updateProvisionalIndicator(). -->
+            <div class="provisional-overlay hidden" id="provisional-overlay" role="status" aria-live="polite">
+                <span class="provisional-spinner" aria-hidden="true"></span>
+                <span class="provisional-label">Updating&hellip; picks, results and lines are still loading</span>
+            </div>
 
             <!-- Loading State with Skeleton Screens -->
             <section class="loading-state" id="loading-state">
@@ -849,6 +857,6 @@
     <script src="charts.js?v=b40d8e25"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=0b7cf183"></script>
+    <script src="app.js?v=c5383094"></script>
 </body>
 </html>
