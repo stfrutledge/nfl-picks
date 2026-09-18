@@ -55,6 +55,7 @@ function makeEnv() {
         PICKERS, FIRST_PLAYOFF_WEEK, LAST_PLAYOFF_WEEK,
         getGameResult, calculateStatsForWeeks, calculatePlayoffStats,
         hasUsableLine, hasUsableSpread, signedSpreadDisplay,
+        priorSeasonStats, yearChangeFor, AVAILABLE_SEASONS, normalizeSeasonPicks,
         applySavedSpreads, saveSpread,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         pctCellClass,
@@ -627,6 +628,154 @@ check('a blank saved spread is never copied onto a game', () => {
     api.applySavedSpreads();
     assert.strictEqual(api.hasUsableSpread(api.NFL_GAMES_BY_WEEK[1][0]), false,
         'a blank cell is not a line and must leave the game unscoreable');
+});
+
+section('Year Chg: this season against the same point last year');
+
+// The column existed since the workbook days and had been blank all of 2026:
+// standingsFromComputed hardcoded yearChange to ''. The workbook fed it from
+// CSV column 10 (parser.js) and the computed engine never replaced it.
+//
+// It is now the same engine run twice - calculateStatsForWeeks takes a season -
+// so last season is scored exactly the way this one is, over the same weeks.
+
+// A tiny archived season to compare against. Two weeks, one game each.
+function archive(year, api, { wins }) {
+    const games = {
+        1: [{ id: 1, away: 'Rams', home: 'Seahawks', spread: 3, favorite: 'home' }],
+        2: [{ id: 1, away: 'Jets', home: 'Bills', spread: 3, favorite: 'home' }]
+    };
+    // home covers in week 1, home fails to cover in week 2.
+    const results = {
+        1: { 1: { winner: 'home', awayScore: 10, homeScore: 20 } },
+        2: { 1: { winner: 'home', awayScore: 20, homeScore: 21 } }
+    };
+    // `wins` picks the covering side in week 1; the other picker takes the dog.
+    const picks = {
+        1: { Stephen: { rams_seahawks: { line: wins ? 'home' : 'away' } } },
+        2: { Stephen: { jets_bills: { line: 'away' } } }   // away covers -> win
+    };
+    api.seasonData[year] = { games, results, picks, __pickKeysNormalized: true };
+}
+
+check('calculateStatsForWeeks can score a season other than the live one', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'away' } } } }   // a LOSS this season
+    });
+    archive(api.CURRENT_SEASON - 1, api, { wins: true });                // a WIN last season
+
+    const live = api.calculateStatsForWeeks(1, 1).Stephen.line;
+    const past = api.calculateStatsForWeeks(1, 1, undefined,
+        { season: api.CURRENT_SEASON - 1 }).Stephen.line;
+    assert.deepStrictEqual(live, { wins: 0, losses: 1, pushes: 0 }, 'live season');
+    assert.deepStrictEqual(past, { wins: 1, losses: 0, pushes: 0 }, 'archived season');
+});
+
+check('the week range applies to the archived season too', () => {
+    const api = setup({});
+    archive(api.CURRENT_SEASON - 1, api, { wins: true });
+    const one = api.calculateStatsForWeeks(1, 1, undefined, { season: api.CURRENT_SEASON - 1 });
+    const both = api.calculateStatsForWeeks(1, 2, undefined, { season: api.CURRENT_SEASON - 1 });
+    assert.deepStrictEqual(one.Stephen.line, { wins: 1, losses: 0, pushes: 0 });
+    assert.deepStrictEqual(both.Stephen.line, { wins: 2, losses: 0, pushes: 0 },
+        'week 2 is a second win, so the range really is being honoured');
+});
+
+check('priorSeasonStats is null until the archive is loaded', () => {
+    const api = setup({});
+    assert.strictEqual(api.priorSeasonStats(1, 1), null,
+        'nothing loaded - no comparison, rather than a comparison against zero');
+    archive(api.CURRENT_SEASON - 1, api, { wins: true });
+    assert.ok(api.priorSeasonStats(1, 1), 'loaded - a comparison is available');
+});
+
+check('Year Chg is the win-percentage delta over the same weeks', () => {
+    // This season: 1 from 2 = 50%. Last season: 2 from 2 = 100%. Down 50.
+    const api = setup({
+        weeks: {
+            1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })],
+            2: [game(1, 'Jets', 'Bills', { completed: true, awayScore: 20, homeScore: 21 })]
+        },
+        picks: {
+            1: { Stephen: { rams_seahawks: { line: 'home' } } },  // covers -> win
+            2: { Stephen: { jets_bills: { line: 'home' } } }      // does not cover -> loss
+        }
+    });
+    archive(api.CURRENT_SEASON - 1, api, { wins: true });
+    const rows = api.standingsFromComputed(
+        api.calculateStatsForWeeks(1, 2), 'line', api.priorSeasonStats(1, 2));
+    assert.strictEqual(rows.Stephen.yearChange, '▼50.0%');
+});
+
+check('a climb reads as an up arrow', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home' } } } }   // 100% this season
+    });
+    archive(api.CURRENT_SEASON - 1, api, { wins: false });               // 0% in week 1 last season
+    const rows = api.standingsFromComputed(
+        api.calculateStatsForWeeks(1, 1), 'line', api.priorSeasonStats(1, 1));
+    assert.strictEqual(rows.Stephen.yearChange, '▲100.0%');
+});
+
+check('level reads as even, not as a fall', () => {
+    // The old class logic had no branch for level and the card view defaulted
+    // everything that was not an up arrow to 'down'.
+    const api = setup({});
+    assert.strictEqual(api.yearChangeFor({ wins: 1, losses: 1, pushes: 0 },
+                                         { wins: 2, losses: 2, pushes: 0 }), 'even');
+});
+
+check('no comparison is blank, never a zero', () => {
+    const api = setup({});
+    const rec = { wins: 1, losses: 1, pushes: 0 };
+    const empty = { wins: 0, losses: 0, pushes: 0 };
+    assert.strictEqual(api.yearChangeFor(rec, null), '', 'no prior season');
+    assert.strictEqual(api.yearChangeFor(rec, empty), '',
+        'prior season has nothing decided - a picker who was not playing');
+    assert.strictEqual(api.yearChangeFor(empty, rec), '',
+        'nothing decided yet this season');
+    // Blank matters: the card view drops the whole row on a falsy yearChange,
+    // and a '0.0%' would claim they held level when nobody knows.
+});
+
+check('standings still render with no prior season at all', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home' } } } }
+    });
+    const rows = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'line');
+    assert.strictEqual(rows.Stephen.yearChange, '', 'blank, and nothing thrown');
+    assert.strictEqual(rows.Stephen.wins, 1, 'the rest of the row is unaffected');
+});
+
+check('each category is compared against its own counterpart', () => {
+    // Blazin' against Blazin', not against the line record.
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })] },
+        picks: { 1: { Stephen: { rams_seahawks: { line: 'home', blazin: true } } } }
+    });
+    archive(api.CURRENT_SEASON - 1, api, { wins: false });
+    const prior = api.priorSeasonStats(1, 1);
+    const line = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'line', prior);
+    const blazin = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'blazin', prior);
+    assert.strictEqual(line.Stephen.yearChange, '▲100.0%', 'line: 100% vs 0%');
+    assert.strictEqual(blazin.Stephen.yearChange, '',
+        'no starred picks in the archive, so no Blazin comparison to draw');
+});
+
+check('the sheet cache is not merged into an archived season', () => {
+    // weeklyPicksCache holds the LIVE season's rows. Merged into an archive its
+    // keys would land on that year's games and invent picks nobody made.
+    const api = setup({
+        cache: { 1: { picks: { Stephen: { rams_seahawks: { line: 'away' } } } } }
+    });
+    archive(api.CURRENT_SEASON - 1, api, { wins: true });
+    const past = api.calculateStatsForWeeks(1, 1, undefined,
+        { season: api.CURRENT_SEASON - 1 }).Stephen.line;
+    assert.deepStrictEqual(past, { wins: 1, losses: 0, pushes: 0 },
+        "the archive's own pick wins; the cached 'away' must not override it");
 });
 
 if (failures > 0) {

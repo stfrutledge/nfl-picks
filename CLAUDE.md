@@ -253,6 +253,50 @@ Two things the engine depends on:
 - **Results.** The **Results sheet is the source of truth**, not ESPN. ESPN is an upstream we don't control — it can go down, rate-limit, or stop serving a past season — so a score is only really ours once it is written to the sheet. `backfillResults()` sweeps every week on start and persists any final result the sheet is missing; `syncResultsToGoogleSheets()` does the same for one week as live scores refresh. `getGameResult()` reads stored first, and falls back to the live cache and the game's own ESPN fields **only** to cover the gap between a game going final and the backfill persisting it. `saveResults()` upserts on week + matchup, so re-running the backfill is harmless and the sheet stays at one row per game. Never gate the sweep on `CURRENT_NFL_WEEK`: if that is wrong or lagging, a finished week is skipped and its scores are lost the moment ESPN drops them.
 - **Schedules.** A week can only be scored if its games are loaded, and schedules are otherwise fetched lazily per week. `preloadSeasonSchedules()` loads the whole played season in the background on start, so standings are not limited to the weeks you happened to visit.
 
+
+### Year Chg
+
+**This season's win percentage minus last season's over the same weeks.**
+Shown as `▲9.2%` / `▼16.7%`, or `even`.
+
+It is the same engine run twice: `calculateStatsForWeeks` takes a `season`
+option, so last season is scored exactly the way this one is - same
+`atsWinnerForPick`, same frozen-line handling, same everything. It is not a
+second scoring path and must not become one. `priorSeasonStats(first, last)`
+is the wrapper; `standingsFromComputed(computed, category, prior)` fills the
+cell, comparing each category against its own counterpart.
+
+Until September 2026 the column was **blank all season**, for every picker.
+It came from the retired stats workbook (`parser.js` reads it from CSV column
+10), and when standings moved to the computed engine `last3WeekPct` and
+`bestWeek` were reimplemented while this one was left hardcoded to `''`. The
+header, the CSS and the arrow formatting were all still in place, so it looked
+implemented and rendered a dash.
+
+Three things worth keeping:
+
+- **Blank is not zero.** No prior season loaded, or either side holding no
+  decided picks, gives `''` - and the card view drops the row entirely on a
+  falsy value. A `0.0%` would claim the picker held level when the truth is
+  that nobody knows. `even` is only for a genuine measured tie.
+- **`getSeasonData()` is synchronous**, so the archive has to be in before the
+  standings render or the column silently stays blank.
+  `loadPriorSeasonForComparison()` runs in the background `Promise.all` on
+  start for exactly that reason.
+- **A missing archive is the expected state for part of the year.**
+  `CURRENT_SEASON` rolls over on July 1st and the season just finished is not
+  archived until somebody does it by hand, so `loadSeasonData(season, { quiet:
+  true })` skips the toast and the loading overlay for this probe. Without that
+  every page load between July and the archive landing would show an error
+  nobody can act on.
+
+Mid-week the comparison sets a half-played week against a finished one. That is
+deliberate - the alternative, dropping the week in progress, answers a different
+question than "the same point last year" - and it settles once the week does.
+
+The **Live tab's as-is table does not carry this column**, and calls
+`standingsFromComputed` without a prior season. See "The as-is column set".
+
 `calculatePlayoffStats()` is the same engine over weeks 19-22, flattened into the combined Line + Straight Up + Over/Under record the playoff table shows.
 
 Still fed by the workbook, so still blank for a new season: the group-overall panel, lone wolf, universal agreement and favourites-vs-underdogs. Those need the same treatment (`parseNFLPicksCSV` is what they come from). `node test-standings-engine.js` covers the parts that are done.

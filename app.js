@@ -2355,7 +2355,7 @@ function buildCurrentSeasonView() {
     return { games, results, picks, season: CURRENT_SEASON, isLive: true };
 }
 
-async function loadSeasonData(rawSeason) {
+async function loadSeasonData(rawSeason, { quiet = false } = {}) {
     // Season values come off <select> elements, so they arrive as strings as
     // often as numbers, and '2026' === 2026 is false. Coerce once here rather
     // than trust every caller: getting this wrong sent the current season to
@@ -2392,8 +2392,12 @@ async function loadSeasonData(rawSeason) {
         return seasonDataLoading[season];
     }
 
-    // Show loading indicator
-    showLoadingState(`Loading ${season} season...`);
+    // Show loading indicator. Not for a background probe: the standings do not
+    // wait on it, so a full-screen overlay for a column would be a lie about
+    // what is blocking - and hiding it again would pull an overlay somebody
+    // else put up.
+    const releaseLoadingState = () => { if (!quiet) hideLoadingState(); };
+    if (!quiet) showLoadingState(`Loading ${season} season...`);
 
     // Create loading promise
     seasonDataLoading[season] = new Promise((resolve, reject) => {
@@ -2406,20 +2410,26 @@ async function loadSeasonData(rawSeason) {
             if (window[dataKey]) {
                 seasonData[season] = normalizeSeasonPicks(window[dataKey], season);
                 console.log(`Loaded ${season} season data`);
-                hideLoadingState();
+                releaseLoadingState();
                 resolve(seasonData[season]);
             } else {
                 console.error(`${dataKey} not found after loading script`);
-                hideLoadingState();
+                releaseLoadingState();
                 reject(new Error(`Season data not found`));
             }
             delete seasonDataLoading[season];
         };
 
         script.onerror = () => {
-            console.error(`Failed to load historical-${season}.js - the season is not archived yet`);
-            hideLoadingState();
-            showToast(`Failed to load ${season} season data`, 'error');
+            // quiet: a background probe, not something anybody asked for. The
+            // season rolls over on July 1st and the year just finished is not
+            // archived until someone does it by hand, so for those weeks a
+            // missing archive is the expected state - shouting about it on every
+            // page load would train people to ignore the toast.
+            const msg = `historical-${season}.js did not load - the season is not archived yet`;
+            if (quiet) console.log(`[Season] ${msg}`); else console.error(msg);
+            releaseLoadingState();
+            if (!quiet) showToast(`Failed to load ${season} season data`, 'error');
             delete seasonDataLoading[season];
             reject(new Error(`Failed to load season data`));
         };
@@ -4317,6 +4327,10 @@ async function loadFromGoogleSheets() {
                 loadAllPicksFromBackup(),
                 loadAllResultsFromBackup(),
                 loadAllWeeklyDataForBlazin(),
+                // Year Chg is a delta against last season, and getSeasonData()
+                // is synchronous - so the archive has to be in before the
+                // standings render or the column silently stays blank.
+                loadPriorSeasonForComparison(),
                 // Season standings are computed from picks + results once the
                 // legacy stats workbook is out of date, which needs every
                 // played week's schedule, not just the one on screen.
@@ -5780,7 +5794,7 @@ function emptyRecord() {
  * at. That is the whole of the Live tab's "as is" table: the same engine over
  * the same picks, with the afternoon's games counted as though they had ended.
  */
-function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includeLive = false } = {}) {
+function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includeLive = false, season = currentSeason } = {}) {
     const stats = {};
     pickers.forEach(picker => {
         stats[picker] = {
@@ -5793,12 +5807,16 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includ
 
     for (let week = firstWeek; week <= lastWeek; week++) {
         const weekStr = String(week);
-        const weekGames = getGamesForWeekAndSeason(week, currentSeason);
+        const weekGames = getGamesForWeekAndSeason(week, season);
         if (!weekGames || weekGames.length === 0) continue;
 
-        const weekResults = getResultsForWeekAndSeason(week, currentSeason);
-        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
-        const cachedWeek = weeklyPicksCache[week] || weeklyPicksCache[weekStr];
+        const weekResults = getResultsForWeekAndSeason(week, season);
+        const seasonPicks = getPicksForWeekAndSeason(week, season) || {};
+        // The sheet cache holds the live season only, so it must not be merged
+        // into an archived one - its keys would land on the wrong games.
+        const cachedWeek = Number(season) === CURRENT_SEASON
+            ? (weeklyPicksCache[week] || weeklyPicksCache[weekStr])
+            : null;
 
         pickers.forEach(picker => {
             const weekly = {
@@ -5887,10 +5905,52 @@ function pctCellClass(percentage) {
 }
 
 /**
+ * Last season's record over the SAME week range, scored by the same engine.
+ *
+ * Returns null when there is nothing to compare against - the first season, or
+ * an archive that has not been loaded (getSeasonData is synchronous and only
+ * sees what loadSeasonData has already pulled in; startup kicks that off).
+ *
+ * Mid-week the comparison is honest but not flattering to read: week 3 half
+ * played is being set against week 3 finished. It settles once the week does,
+ * and the alternative - dropping the week in progress - answers a different
+ * question than "the same point last year".
+ */
+function priorSeasonStats(firstWeek, lastWeek, pickers = PICKERS) {
+    const prior = CURRENT_SEASON - 1;
+    if (!AVAILABLE_SEASONS.includes(prior)) return null;
+    if (!getSeasonData(prior)) return null;
+    return calculateStatsForWeeks(firstWeek, lastWeek, pickers, { season: prior });
+}
+
+/**
+ * The Year Chg cell: this season's win percentage minus last season's over the
+ * same weeks, as '\u25b22.4%' / '\u25bc1.1%'.
+ *
+ * Blank - not a zero and not a dash - whenever there is no comparison to make:
+ * no prior season loaded, or either side holding no decided picks. The card
+ * view keys off a blank to drop the row entirely, and a 0.0% would claim the
+ * picker held level when the truth is that nobody knows.
+ */
+function yearChangeFor(currentRecord, priorRecord) {
+    if (!priorRecord) return '';
+    const now = recordPercentage(currentRecord);
+    const before = recordPercentage(priorRecord);
+    if (now === null || before === null) return '';
+
+    const delta = now - before;
+    const size = Math.abs(delta).toFixed(1) + '%';
+    if (Math.abs(delta) < 0.05) return 'even';
+    return (delta > 0 ? '\u25b2' : '\u25bc') + size;
+}
+
+/**
  * Shape one category of calculateStatsForWeeks output for renderStandingsTable.
  * category is 'line', 'blazin', 'winner' or 'ou'.
+ *
+ * `prior` is the same shape for last season over the same weeks, or null.
  */
-function standingsFromComputed(computed, category) {
+function standingsFromComputed(computed, category, prior = null) {
     const out = {};
     Object.keys(computed).forEach(picker => {
         const s = computed[picker];
@@ -5916,9 +5976,7 @@ function standingsFromComputed(computed, category) {
             totalPicks: rec.wins + rec.losses + rec.pushes,
             last3WeekPct: last3Pct,
             bestWeek: best ? String(best.week) : '',
-            // Year-over-year needs the previous season loaded; left blank until
-            // there is a prior computed season to compare against.
-            yearChange: ''
+            yearChange: yearChangeFor(rec, prior?.[picker]?.[category] || null)
         };
     });
     return out;
@@ -5960,6 +6018,17 @@ function cowherdBelongsIn(picker, category, record) {
  * already in NFL_GAMES_BY_WEEK are skipped, and loadWeekSchedule serves from
  * its own per-week localStorage cache, so this is cheap after the first run.
  */
+async function loadPriorSeasonForComparison() {
+    const prior = CURRENT_SEASON - 1;
+    // AVAILABLE_SEASONS runs back to 2016, so this is really asking "is there a
+    // season before this one at all". A year that is in the list but not yet
+    // archived resolves to null, which the Year Chg column reads as no
+    // comparison - loadSeasonData already swallows the 404.
+    if (!AVAILABLE_SEASONS.includes(prior)) return null;
+    if (getSeasonData(prior)) return getSeasonData(prior);
+    return loadSeasonData(prior, { quiet: true });
+}
+
 async function preloadSeasonSchedules() {
     const { first, last } = regularSeasonWeekRange();
     const missing = [];
@@ -6052,8 +6121,12 @@ function renderDashboard() {
     const computed = computeLocally
         ? calculateStatsForWeeks(range.first, range.last, PICKERS_WITH_COWHERD)
         : null;
+    // Same weeks, last season - what the Year Chg column is a delta against.
+    const prior = computeLocally
+        ? priorSeasonStats(range.first, range.last, PICKERS_WITH_COWHERD)
+        : null;
     const useComputed = category => {
-        stats = standingsFromComputed(computed, category);
+        stats = standingsFromComputed(computed, category, prior);
         weeklyData = weeklySeriesFromComputed(computed, category);
     };
 
@@ -8448,7 +8521,11 @@ async function loadAllWeeklyDataForBlazin(weeksToLoad = null) {
 function renderPickerCard(picker, index, isCompact = false) {
     const rankClass = index < 3 ? `rank-${index + 1}` : '';
     const colorClass = `color-${picker.name.toLowerCase()}`;
-    const yearChangeClass = picker.yearChange?.includes('▲') ? 'up' : 'down';
+    // Level is not a fall, and a blank means there is nothing to compare
+    // against - neither should be painted red.
+    const yearChangeClass = picker.yearChange?.includes('▲') ? 'up'
+        : picker.yearChange?.includes('▼') ? 'down'
+        : '';
     const pctClass = picker.percentage >= 50 ? 'positive' : 'negative';
     const compactClass = isCompact ? 'compact' : '';
     const isPlayoffs = currentSubcategory === 'playoffs';
@@ -8740,6 +8817,8 @@ function renderStandingsTable(stats, {
         } else if (yearChange.includes('\u25bc') || yearChange.includes('-')) {
             yearChangeClass = 'negative';
         }
+        // 'even' carries neither class: level is not a fall, and the legacy
+        // workbook never produced the value so nothing covered it before.
 
         // Format percentages
         const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(2) + '%' : picker.percentage || '-';
