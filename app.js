@@ -5881,10 +5881,34 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includ
     return stats;
 }
 
+/** How many weeks the Last 3-Wk column averages, and the minimum it needs. */
+const LAST_3_WEEK_WINDOW = 3;
+
 /** Win percentage over decided picks; pushes are excluded, not counted as losses. */
 function recordPercentage(record) {
     const decided = record.wins + record.losses;
     return decided > 0 ? (record.wins / decided) * 100 : null;
+}
+
+/**
+ * A percentage for display, or '-' when there is not one.
+ *
+ * The callers used to inline this as `pct?.toFixed ? pct.toFixed(2) : pct || '-'`
+ * with a literal '%' after it, so a null rendered as '-%'.
+ */
+function formatPercent(pct, digits = 2) {
+    return typeof pct === 'number' && !Number.isNaN(pct) ? pct.toFixed(digits) + '%' : '-';
+}
+
+/**
+ * positive/negative for a .stat-value, and neither when there is no number.
+ *
+ * parseFloat(null) >= 50 is false, so the old inline test painted every absent
+ * percentage red - the same mistake pctCellClass() exists to avoid.
+ */
+function statValueClass(pct) {
+    if (typeof pct !== 'number' || Number.isNaN(pct)) return '';
+    return pct >= 50 ? 'positive' : 'negative';
 }
 
 /**
@@ -5960,8 +5984,16 @@ function standingsFromComputed(computed, category, prior = null) {
             .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
             .filter(w => w.pct !== null);
 
-        const last3 = weekly.slice(-3);
-        const last3Pct = last3.length
+        // Null until there are three weeks to average. With one or two it was
+        // averaging whatever it had, which in week 1 is arithmetically the
+        // season percentage sitting in the column to its left - the same number
+        // twice, presented as two different measurements. A dash says "not yet",
+        // which is the truth.
+        //
+        // Three of the PICKER'S OWN scored weeks, not three weeks of calendar:
+        // somebody who has played twice has no three-week form either.
+        const last3 = weekly.slice(-LAST_3_WEEK_WINDOW);
+        const last3Pct = last3.length === LAST_3_WEEK_WINDOW
             ? last3.reduce((n, w) => n + w.pct, 0) / last3.length
             : null;
         const best = weekly.reduce((b, w) => (b === null || w.pct > b.pct ? w : b), null);
@@ -8554,8 +8586,8 @@ function renderPickerCard(picker, index, isCompact = false) {
         </div>
         <div class="stat-row">
             <span class="stat-label">Last 3 Weeks</span>
-            <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
-                ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
+            <span class="stat-value ${statValueClass(picker.last3WeekPct)}">
+                ${formatPercent(picker.last3WeekPct)}
             </span>
         </div>
         <div class="stat-row">
@@ -8620,8 +8652,8 @@ function renderPickerCard(picker, index, isCompact = false) {
                 </div>
                 <div class="stat-row">
                     <span class="stat-label">Last 3 Weeks</span>
-                    <span class="stat-value ${parseFloat(picker.last3WeekPct) >= 50 ? 'positive' : 'negative'}">
-                        ${picker.last3WeekPct?.toFixed ? picker.last3WeekPct.toFixed(2) : picker.last3WeekPct || '-'}%
+                    <span class="stat-value ${statValueClass(picker.last3WeekPct)}">
+                        ${formatPercent(picker.last3WeekPct)}
                     </span>
                 </div>
                 <div class="stat-row">
@@ -8822,7 +8854,7 @@ function renderStandingsTable(stats, {
 
         // Format percentages
         const pct = typeof picker.percentage === 'number' ? picker.percentage.toFixed(2) + '%' : picker.percentage || '-';
-        const last3Wk = typeof picker.last3WeekPct === 'number' ? picker.last3WeekPct.toFixed(2) + '%' : picker.last3WeekPct || '-';
+        const last3Wk = formatPercent(picker.last3WeekPct);
         const pctClass = pctCellClass(picker.percentage);
 
         // Determine push/draw label based on category

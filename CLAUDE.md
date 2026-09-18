@@ -297,6 +297,32 @@ question than "the same point last year" - and it settles once the week does.
 The **Live tab's as-is table does not carry this column**, and calls
 `standingsFromComputed` without a prior season. See "The as-is column set".
 
+
+### Last 3-Wk
+
+**The mean of the last three weekly percentages, and a dash until there are
+three.** `LAST_3_WEEK_WINDOW` is both the window and the minimum.
+
+It used to average whatever it had. With one week played, the mean of one
+week's percentage *is* the season percentage - so in week 1 the column sat
+directly beside `%` showing the identical number, reading as a second
+independent measurement of form when it was the same measurement twice. Weeks 1
+to 3 now show `-`, and week 4 is the first real reading.
+
+Three of the **picker's own scored weeks**, not three weeks of calendar:
+`byWeek` only holds weeks they played, so somebody who has turned up twice by
+week 3 has no three-week form either. (It follows that a picker with gaps
+averages their last three *played* weeks rather than the last three weeks of
+the season - the label is approximate for them, and it has always worked that
+way.)
+
+**A dash is a dash.** Both card renderers and the table cell go through
+`formatPercent()` and `statValueClass()`. Inline, the card view appended a
+literal `%` outside the expression - so a null rendered `-%` - and coloured it
+with `parseFloat(picker.last3WeekPct) >= 50`, which is `false` for a null and
+painted every absent percentage red. That is the same mistake `pctCellClass()`
+was written to avoid; see "no percentage at all is neutral".
+
 `calculatePlayoffStats()` is the same engine over weeks 19-22, flattened into the combined Line + Straight Up + Over/Under record the playoff table shows.
 
 Still fed by the workbook, so still blank for a new season: the group-overall panel, lone wolf, universal agreement and favourites-vs-underdogs. Those need the same treatment (`parseNFLPicksCSV` is what they come from). `node test-standings-engine.js` covers the parts that are done.

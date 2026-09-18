@@ -56,6 +56,7 @@ function makeEnv() {
         getGameResult, calculateStatsForWeeks, calculatePlayoffStats,
         hasUsableLine, hasUsableSpread, signedSpreadDisplay,
         priorSeasonStats, yearChangeFor, AVAILABLE_SEASONS, normalizeSeasonPicks,
+        formatPercent, statValueClass,
         applySavedSpreads, saveSpread,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         pctCellClass,
@@ -797,6 +798,91 @@ check('the standings Year Chg cell is a plain centred table cell', () => {
     assert.ok(block, 'found the rule');
     assert.ok(/text-align:\s*center/.test(block[0]), 'centred, like its header');
     assert.ok(!/display:\s*flex/.test(block[0]), 'a table cell, not a flex row');
+});
+
+section('Last 3-Wk needs three weeks');
+
+// With one or two weeks it used to average whatever it had. In week 1 the mean
+// of one week's percentage IS the season percentage, so the column sat next to
+// the % column showing the identical number, presented as a second,
+// independent measurement of form.
+
+function weeksOf(api, outcomes) {
+    // outcomes: array of true (win) / false (loss), one per week.
+    const weeks = {}, picks = {};
+    outcomes.forEach((win, i) => {
+        const wk = i + 1;
+        weeks[wk] = [game(wk, 'Rams', 'Seahawks',
+            { completed: true, awayScore: 10, homeScore: 20 })];   // home -3 covers
+        picks[wk] = { Stephen: { rams_seahawks: { line: win ? 'home' : 'away' } } };
+    });
+    return setup({ weeks, picks });
+}
+
+check('one week played is a dash, not the season percentage again', () => {
+    const api = weeksOf(null, [true]);
+    const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 1), 'line').Stephen;
+    assert.strictEqual(row.percentage, 100, 'the season figure is real');
+    assert.strictEqual(row.last3WeekPct, null, 'the three-week figure is not');
+});
+
+check('two weeks played is still a dash', () => {
+    const api = weeksOf(null, [true, false]);
+    const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 2), 'line').Stephen;
+    assert.strictEqual(row.percentage, 50);
+    assert.strictEqual(row.last3WeekPct, null);
+});
+
+check('three weeks played is the first real reading', () => {
+    const api = weeksOf(null, [true, false, true]);
+    const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 3), 'line').Stephen;
+    assert.strictEqual(Math.round(row.last3WeekPct), 67, 'mean of 100, 0, 100');
+});
+
+check('it keeps sliding once it has started', () => {
+    const api = weeksOf(null, [true, true, false, false]);
+    const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 4), 'line').Stephen;
+    assert.strictEqual(Math.round(row.last3WeekPct), 33,
+        'weeks 2-4 only: 100, 0, 0 - week 1 has dropped out');
+});
+
+check('three of the PICKERS OWN weeks, not three of calendar', () => {
+    // Week 3 of the season, but this picker only turned up for two of them.
+    const w = n => [game(n, 'Rams', 'Seahawks', { completed: true, awayScore: 10, homeScore: 20 })];
+    const api = setup({
+        weeks: { 1: w(1), 2: w(2), 3: w(3) },
+        picks: {
+            1: { Stephen: { rams_seahawks: { line: 'home' } } },
+            3: { Stephen: { rams_seahawks: { line: 'home' } } }
+        }
+    });
+    const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 3), 'line').Stephen;
+    assert.strictEqual(row.last3WeekPct, null,
+        'two scored weeks is no three-week form, whatever week the season is in');
+});
+
+check('a dash is a dash, not a red -%', () => {
+    // The card view appended a literal '%' outside the expression, so a null
+    // rendered '-%'; and parseFloat(null) >= 50 is false, so it painted it red.
+    const api = setup({});
+    assert.strictEqual(api.formatPercent(null), '-');
+    assert.strictEqual(api.formatPercent(undefined), '-');
+    assert.strictEqual(api.formatPercent(NaN), '-');
+    assert.strictEqual(api.formatPercent(66.666), '66.67%');
+    assert.strictEqual(api.statValueClass(null), '', 'no number, no colour');
+    assert.strictEqual(api.statValueClass(NaN), '');
+    assert.strictEqual(api.statValueClass(60), 'positive');
+    assert.strictEqual(api.statValueClass(40), 'negative');
+});
+
+check('no caller builds a percentage by hand any more', () => {
+    // Both card renderers and the table cell go through formatPercent, so the
+    // '-%' cannot come back in one of them and not the others.
+    const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+    assert.ok(!/last3WeekPct\?\.toFixed/.test(src),
+        'the inline formatter is gone');
+    assert.ok(!/parseFloat\(picker\.last3WeekPct\)/.test(src),
+        'the parseFloat colour test is gone');
 });
 
 if (failures > 0) {
