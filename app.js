@@ -6154,6 +6154,43 @@ function standingsFromComputed(computed, category, prior = null) {
     return out;
 }
 
+/** The category keys renderGroupStats() and the stats workbook both use. */
+const GROUP_OVERALL_KEYS = { line: 'linePicks', blazin: 'blazin5', winner: 'winnerPicks' };
+
+/**
+ * The five pickers' records in each category, added together - the shape the
+ * retired stats workbook used to hand over as `groupOverall`.
+ *
+ * How the group did as one, which is a different question from the standings:
+ * sixteen line picks a week across five people is the sample the "are we any
+ * good at this" number wants.
+ *
+ * Cowherd is left out. He is what the group plays against, and he makes five
+ * picks a week to their sixteen, so folding him in would move the group's own
+ * number by his form - the same reasoning cowherdBelongsIn() applies to the
+ * standings.
+ */
+function groupOverallFromComputed(computed) {
+    const out = {};
+    Object.entries(GROUP_OVERALL_KEYS).forEach(([category, key]) => {
+        const total = emptyRecord();
+        PICKERS.forEach(picker => {
+            const record = computed?.[picker]?.[category];
+            if (!record) return;
+            total.wins += record.wins;
+            total.losses += record.losses;
+            total.pushes += record.pushes;
+        });
+        out[key] = { ...total, percentage: recordPercentage(total) };
+    });
+    return out;
+}
+
+/** Whether a group record has anything in it yet. */
+function groupRecordHasPicks(record) {
+    return Boolean(record) && (record.wins + record.losses + record.pushes) > 0;
+}
+
 /**
  * { picker: [{week, pct}] } - the shape renderTrendChart expects.
  *
@@ -6428,9 +6465,15 @@ function renderDashboard() {
     renderPatternsPanel();
     // Heading and grid together: the heading on its own over an empty grid
     // reads as a panel that failed to load rather than one with nothing to say.
-    const groupOverall = dashboardData?.groupOverall;
-    document.getElementById('group-performance-section')?.classList.toggle('hidden', !groupOverall);
-    if (groupOverall) {
+    // Hidden on the subtab's own record, not on the object: a season can have
+    // line picks scored and no Blazin' 5 yet.
+    const groupOverall = computeLocally
+        ? groupOverallFromComputed(computed)
+        : dashboardData?.groupOverall;
+    const groupRecord = groupOverall?.[GROUP_OVERALL_KEYS[currentSubcategory]];
+    document.getElementById('group-performance-section')
+        ?.classList.toggle('hidden', !groupRecordHasPicks(groupRecord));
+    if (groupRecordHasPicks(groupRecord)) {
         renderGroupStats(groupOverall);
     }
 
@@ -8679,8 +8722,12 @@ function renderGroupStats(groupOverall) {
         if (!data) return '';
 
         const total = data.wins + data.losses + data.pushes;
-        const percentage = data.percentage || 0;
-        const isWinning = percentage >= 50;
+        // formatPercent, not `data.percentage || 0`: a record of nothing but
+        // pushes has no percentage, and calling it 0.0% paints the group red
+        // for a set of picks none of which lost.
+        const percentage = data.percentage;
+        const pctClass = typeof percentage !== 'number' ? ''
+            : (percentage >= 50 ? 'positive' : 'negative');
         const pushText = data.pushes > 0 ? `-${data.pushes}` : '';
 
         return `
@@ -8688,8 +8735,8 @@ function renderGroupStats(groupOverall) {
                 <div class="group-stat-header">
                     <span class="group-stat-label">${cat.label}</span>
                 </div>
-                <div class="group-stat-percentage ${isWinning ? 'positive' : 'negative'}">
-                    ${percentage.toFixed(1)}%
+                <div class="group-stat-percentage ${pctClass}">
+                    ${formatPercent(percentage, 1)}
                 </div>
                 <div class="group-stat-record">
                     ${data.wins}-${data.losses}${pushText}
