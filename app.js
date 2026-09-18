@@ -6142,13 +6142,33 @@ function standingsFromComputed(computed, category, prior = null) {
     return out;
 }
 
-/** { picker: [{week, pct}] } - the shape renderTrendChart expects. */
+/**
+ * { picker: [{week, pct}] } - the shape renderTrendChart expects.
+ *
+ * `pct` is the record **from the start of the season up to and including that
+ * week**, not the week on its own. The chart is a season tracking where each
+ * point is the standing at that moment, which is the same number the standings
+ * table shows once the last week is in.
+ *
+ * A per-week percentage was the wrong series for it. The Blazin' 5 is five
+ * picks, so a week can only ever be 0, 20, 40, 60, 80 or 100 - the line spent
+ * every week at an extreme and said nothing about how a season was going. It
+ * also put most points outside the chart's own default 30-70% window.
+ */
 function weeklySeriesFromComputed(computed, category) {
     const out = {};
     Object.keys(computed).forEach(picker => {
         if (!cowherdBelongsIn(picker, category, computed[picker][category])) return;
+        const running = emptyRecord();
         out[picker] = computed[picker].byWeek
-            .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
+            .map(w => {
+                running.wins += w[category].wins;
+                running.losses += w[category].losses;
+                running.pushes += w[category].pushes;
+                return { week: w.week, pct: recordPercentage(running) };
+            })
+            // Weeks before the picker's first decided pick have no percentage
+            // to plot - a gap, not a 0%.
             .filter(w => w.pct !== null);
     });
     return out;

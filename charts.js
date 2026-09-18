@@ -54,14 +54,20 @@ function renderTrendChart(weeklyData, category) {
     // Determine which pickers to show
     const pickers = category === 'blazin' ? PICKERS_WITH_COWHERD : PICKERS;
 
-    // Get all weeks
-    const allWeeks = new Set();
+    // The axis is the whole regular season, not the weeks played so far.
+    // Growing a column a week rescaled the chart every Tuesday, and two weeks
+    // of picks drawn edge to edge read as a finished season rather than as the
+    // start of one. Unplayed weeks carry null, so the lines simply stop where
+    // the season has got to.
+    const played = new Set();
     pickers.forEach(picker => {
         if (weeklyData[picker]) {
-            weeklyData[picker].forEach(d => allWeeks.add(d.week));
+            weeklyData[picker].forEach(d => played.add(d.week));
         }
     });
-    const weeks = Array.from(allWeeks).sort((a, b) => a - b);
+    const seasonWeeks = typeof TOTAL_WEEKS === 'number' ? TOTAL_WEEKS : 18;
+    const lastWeek = Math.max(seasonWeeks, ...played, 0);
+    const weeks = Array.from({ length: lastWeek }, (_, i) => i + 1);
 
     // Build datasets
     const datasets = pickers.map(picker => {
@@ -82,6 +88,15 @@ function renderTrendChart(weeklyData, category) {
             fill: false
         };
     });
+
+    // The zoomed window is fitted to the data rather than a fixed 30-70%.
+    // Fixed, it silently clipped: a picker sitting at 20% or 80% - ordinary in
+    // the Blazin' 5, and every picker in the opening weeks - had their line
+    // drawn off the top or bottom of the chart with nothing to say so.
+    const values = datasets.flatMap(d => d.data).filter(v => v !== null);
+    const pad = 5;
+    const zoomMin = values.length ? Math.max(0, Math.floor((Math.min(...values) - pad) / 5) * 5) : 0;
+    const zoomMax = values.length ? Math.min(100, Math.ceil((Math.max(...values) + pad) / 5) * 5) : 100;
 
     // Destroy existing chart
     if (trendChart) {
@@ -167,8 +182,8 @@ function renderTrendChart(weeklyData, category) {
                             return value + '%';
                         }
                     },
-                    min: trendChartZoomed ? 30 : 0,
-                    max: trendChartZoomed ? 70 : 100
+                    min: trendChartZoomed ? zoomMin : 0,
+                    max: trendChartZoomed ? zoomMax : 100
                 }
             }
         }
@@ -184,8 +199,8 @@ function renderTrendChart(weeklyData, category) {
 
             // Update chart Y-axis
             if (trendChart) {
-                trendChart.options.scales.y.min = trendChartZoomed ? 30 : 0;
-                trendChart.options.scales.y.max = trendChartZoomed ? 70 : 100;
+                trendChart.options.scales.y.min = trendChartZoomed ? zoomMin : 0;
+                trendChart.options.scales.y.max = trendChartZoomed ? zoomMax : 100;
                 trendChart.update();
             }
         };
