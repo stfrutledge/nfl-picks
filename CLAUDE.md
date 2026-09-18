@@ -44,7 +44,12 @@ Two things worth knowing:
 
 ## Google Apps Script
 
-The deployed Apps Script URL for syncing picks to Google Sheets is configured in `app.js` as `APPS_SCRIPT_URL`. The script source code is in `google-apps-script-simple.js`.
+The Apps Script URL the client actually talks to lives in the **Cloudflare Worker**
+env var `APPS_SCRIPT_URL` - `app.js` never fetches it directly, and its own
+`APPS_SCRIPT_URL` is only the flag for "is the Backup sheet configured".
+Redeploying to a new URL therefore means updating the worker, not just the repo;
+keep the constant in `app.js` in step anyway, or the next person reads a URL that
+has not been live for months. The script source code is in `google-apps-script-simple.js`.
 
 **The repo copy is the source of record, not the running code.** Editing `google-apps-script-simple.js` changes nothing on its own — the script has to be pasted into the Apps Script editor (Extensions > Apps Script) and redeployed as a new version of the existing web app deployment, or the client keeps talking to the old one. `node test-sheet-reader.js` covers the read path locally so a change can be checked before it is deployed.
 
@@ -111,6 +116,66 @@ picks a second time on top of the locked `0.75`, and its `border-color`
 swallowed the blue FINAL stripe.
 
 Run `node test-line-freezing.js`.
+
+## A missing line is `null`, never `0`
+
+`0` is a **pick'em** - a real line, and the only one where ATS and straight up
+are the same bet. A game whose line has not loaded carries `null`. These were
+the same value until September 2026 and it was the worst kind of bug: not a
+crash, just a wrong number that changed between page loads.
+
+Games parsed from the ESPN scoreboard have no odds attached, so
+`fetchNFLSchedule` fills in a placeholder. That placeholder used to be
+`spread: 0, favorite: 'home'`. `hasUsableLine(0)` is `true` - deliberately, so a
+genuine pick'em scores - so a game that was merely *waiting* for its line was
+scored anyway, **straight up**, instead of being skipped. Daniel's week 1
+Blazin' 5 read 3-2 with the lines in and 4-1 without them, because Lions -7
+winning by 1 is the only one of his five where the two disagree.
+
+Two rules keep them apart:
+
+- **`hasUsableLine(raw)` is the only test for "is there a line here?"** Not
+  `!game.spread`, not `game.spread === 0`, not `spread > 0`. Fourteen sites used
+  those and every one of them read a pick'em as missing data - which is the same
+  bug pointing the other way: a real pick'em was never saved, never synced, and
+  overwritten by the next number that came along.
+- **Nothing writes a `0` it does not mean.** The ESPN placeholder is `null`,
+  `syncPicksToGoogleSheets` writes a **blank** spread cell rather than `0` for a
+  game with no line, and `exportHistoricalData` archives `null`. A fake `0`
+  persisted anywhere is read back as a pick'em for ever.
+
+On display the two are equally distinct: `signedSpreadDisplay(game, side)` gives
+`PK` for a pick'em and `''` for no line, and is what both game-card renderers,
+the share text and the picks summary read a number through.
+
+`SCHEDULE_CACHE_VERSION` was bumped to 8 with this change - cached schedules
+written before it hold `spread: 0` for every game, which the new rules would
+read as a slate of pick'ems.
+
+## Past weeks need their lines fetched too
+
+`prefetchAndSaveSpreads()` covers `currentWeek` and `currentWeek + 1`, and
+nothing else. Standings are computed over **every played week**, so every past
+week needs a line source as well.
+
+`loadWeekSchedule()` therefore calls `loadSpreadsFromGoogleSheets(week)` for any
+week it loads, not just playoff weeks as it did originally. Without it the only
+source for a past week's lines was `nfl_saved_spreads_<season>` in localStorage,
+which is **per device** - so a phone that first opened the site in week 3 had no
+week 1 lines at all and scored week 1 straight up, while a laptop that was there
+at the time scored it correctly. Same data, two different records.
+
+Callers that load the spreads themselves pass `skipSpreadsLoad`.
+
+The other half of that bug was an ordering one. `preloadSeasonSchedules()` and
+`prefetchAndSaveSpreads()` run concurrently in the background `Promise.all` on
+start, and the first **replaces** the game objects that the second writes lines
+onto - so whether a past week ended up with its lines depended on which promise
+settled last, and the same device could disagree with itself between refreshes.
+`applySavedSpreads()` runs once more after that `Promise.all`, so the final
+render is the same whichever order they finished in.
+
+`node test-standings-engine.js` covers both, including Daniel's real week 1 card.
 
 ## Cowherd's Blazin' 5
 

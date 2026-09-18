@@ -54,6 +54,8 @@ function makeEnv() {
     const exports = `;return ({
         PICKERS, FIRST_PLAYOFF_WEEK, LAST_PLAYOFF_WEEK,
         getGameResult, calculateStatsForWeeks, calculatePlayoffStats,
+        hasUsableLine, hasUsableSpread, signedSpreadDisplay,
+        applySavedSpreads, saveSpread,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         pctCellClass,
         regularSeasonWeekRange, buildCurrentSeasonView, CURRENT_SEASON,
@@ -519,6 +521,112 @@ check('no .pct rule carries a colour of its own', () => {
     assert.ok(block, 'found the .pct rule');
     assert.ok(!/color\s*:/.test(block[0]),
         'colour belongs on .pct-positive/.pct-negative/.pct-neutral, not .pct');
+});
+
+section("A placeholder is not a pick'em");
+
+// The bug this section exists for: games parsed from ESPN carry no line, and
+// the placeholder used to be spread: 0. A real pick'em is also 0, so a game
+// whose line had not loaded was indistinguishable from one holding a genuine
+// pick'em - and was therefore SCORED, straight up, rather than skipped.
+//
+// Daniel's real 2026 week 1 Blazin' 5 is the card that surfaced it. Four of his
+// five land the same way either way; Lions -7 winning by 1 is the one that does
+// not. With the lines in he went 3-2. Scored as pick'ems he 'went' 4-1, and the
+// dashboard showed whichever of the two had won the race to render.
+const DANIEL_W1 = [
+    { id: 1, away: 'Buccaneers', home: 'Bengals', spread: 3.5, favorite: 'home',
+      completed: true, awayScore: 27, homeScore: 33 },   // CIN by 6, covers -3.5
+    { id: 2, away: 'Saints', home: 'Lions', spread: 7, favorite: 'home',
+      completed: true, awayScore: 30, homeScore: 31 },   // DET by 1, does NOT cover -7
+    { id: 3, away: 'Jets', home: 'Titans', spread: 1.5, favorite: 'home',
+      completed: true, awayScore: 23, homeScore: 10 },   // TEN lost outright
+    { id: 4, away: 'Bills', home: 'Texans', spread: 1.5, favorite: 'away',
+      completed: true, awayScore: 36, homeScore: 31 },   // BUF by 5, covers -1.5
+    { id: 5, away: 'Broncos', home: 'Chiefs', spread: 2.5, favorite: 'home',
+      completed: true, awayScore: 10, homeScore: 31 }    // KC by 21, covers -2.5
+];
+const DANIEL_W1_PICKS = { 1: { Daniel: {
+    buccaneers_bengals: { line: 'home', winner: 'home', blazin: true },
+    saints_lions:       { line: 'home', winner: 'home', blazin: true },
+    jets_titans:        { line: 'home', winner: 'home', blazin: true },
+    bills_texans:       { line: 'away', winner: 'away', blazin: true },
+    broncos_chiefs:     { line: 'home', winner: 'home', blazin: true }
+} } };
+
+check("Daniel's real week 1 Blazin' 5 is 3-2 against the lines", () => {
+    const api = setup({ weeks: { 1: DANIEL_W1 }, picks: DANIEL_W1_PICKS });
+    const s = api.calculateStatsForWeeks(1, 1).Daniel;
+    assert.deepStrictEqual(s.blazin, { wins: 3, losses: 2, pushes: 0 });
+});
+
+check('the same card with no lines is unscored, not 4-1', () => {
+    // spread: null is what a game parsed from ESPN now carries. Were it 0, the
+    // Lions pick would be graded straight up, DET 31-30 would count as a win
+    // and the Blazin' record would read 4-1.
+    const noLines = DANIEL_W1.map(g => ({ ...g, spread: null, favorite: null }));
+    const api = setup({ weeks: { 1: noLines }, picks: DANIEL_W1_PICKS });
+    const s = api.calculateStatsForWeeks(1, 1).Daniel;
+    assert.deepStrictEqual(s.blazin, { wins: 0, losses: 0, pushes: 0 },
+        'no line means no line record');
+    assert.deepStrictEqual(s.winner, { wins: 4, losses: 1, pushes: 0 },
+        'straight up needs no line and really is 4-1 - the number that leaked');
+});
+
+check('a game ESPN gave no odds for does not come out as a pick em', () => {
+    // Guards the placeholder itself. Source-level, because the value is written
+    // where the ESPN payload is parsed and nothing else can observe it.
+    const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+    assert.ok(!/spread: 0,\s*\/\/ Will be updated from Odds API/.test(src),
+        'the ESPN game placeholder must not be 0');
+    assert.ok(/spread: null,/.test(src), 'it should be null');
+});
+
+check('hasUsableLine separates a pick em from an absent line', () => {
+    const api = setup({});
+    assert.strictEqual(api.hasUsableLine(0), true, '0 is a pick em, which is a line');
+    assert.strictEqual(api.hasUsableLine(null), false);
+    assert.strictEqual(api.hasUsableLine(undefined), false);
+    assert.strictEqual(api.hasUsableLine(''), false, 'a blank sheet cell is not a line');
+    assert.strictEqual(api.hasUsableLine('3.5'), true, 'the sheet hands back strings');
+});
+
+check('a pick em prints as PK and a missing line prints as nothing', () => {
+    const api = setup({});
+    const pickem = { away: 'Rams', home: 'Seahawks', spread: 0, favorite: 'home' };
+    const noLine = { away: 'Rams', home: 'Seahawks', spread: null, favorite: null };
+    const laid   = { away: 'Rams', home: 'Seahawks', spread: 3.5, favorite: 'home' };
+    assert.strictEqual(api.signedSpreadDisplay(pickem, 'home'), 'PK');
+    assert.strictEqual(api.signedSpreadDisplay(pickem, 'away'), 'PK');
+    assert.strictEqual(api.signedSpreadDisplay(noLine, 'home'), '',
+        'blank - not "0" and not "+0"');
+    assert.strictEqual(api.signedSpreadDisplay(laid, 'home'), '-3.5');
+    assert.strictEqual(api.signedSpreadDisplay(laid, 'away'), '+3.5');
+});
+
+check('applySavedSpreads fills a line-less game and leaves a real pick em alone', () => {
+    const api = setup({ weeks: { 1: [
+        { id: 1, away: 'Saints', home: 'Lions', spread: null, favorite: null },
+        { id: 2, away: 'Rams', home: 'Seahawks', spread: 0, favorite: 'home' }
+    ] } });
+    api.saveSpread(1, 'Saints', 'Lions', 7, 'home');
+    api.saveSpread(1, 'Rams', 'Seahawks', 6, 'away');
+    api.applySavedSpreads();
+    const [lions, hawks] = api.NFL_GAMES_BY_WEEK[1];
+    assert.strictEqual(lions.spread, 7, 'the game with no line takes the saved one');
+    assert.strictEqual(lions.favorite, 'home');
+    assert.strictEqual(hawks.spread, 0, 'a real pick em is a line and is not overwritten');
+    assert.strictEqual(hawks.favorite, 'home');
+});
+
+check('a blank saved spread is never copied onto a game', () => {
+    const api = setup({ weeks: { 1: [
+        { id: 1, away: 'Saints', home: 'Lions', spread: null, favorite: null }
+    ] } });
+    api.saveSpread(1, 'Saints', 'Lions', '', '');
+    api.applySavedSpreads();
+    assert.strictEqual(api.hasUsableSpread(api.NFL_GAMES_BY_WEEK[1][0]), false,
+        'a blank cell is not a line and must leave the game unscoreable');
 });
 
 if (failures > 0) {

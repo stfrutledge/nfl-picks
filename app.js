@@ -7,7 +7,12 @@
 const WORKER_PROXY_URL = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
 
 // Google Apps Script URL (legacy - now proxied through worker)
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCHuKNnwrPzu1noWrJS7i4BGo5UUnKKFQ_uN0hljS0KSfigusJQjuyearqRt-xGx31/exec';
+// Not fetched directly - every call goes through WORKER_PROXY_URL/sync, and the
+// worker holds the live URL in its own APPS_SCRIPT_URL env var. This is the
+// flag for "is the Backup sheet configured at all", and a record of which
+// deployment the worker should be pointed at. Keep the two in step: a stale
+// value here is invisible until somebody trusts it.
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1xNy3GxkpU3PIviAJJd7BiCUUTUt7lf_9GWAOI5yXaWxv-9VJDQLUl8-3rL-oc-5f/exec';
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
@@ -617,7 +622,7 @@ function liveCacheEntry(game) {
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 7; // Increment to invalidate all caches (v7 pins ESPN fetches to CURRENT_SEASON)
+const SCHEDULE_CACHE_VERSION = 8; // Increment to invalidate all caches (v8 stores a missing line as null, not 0)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -878,8 +883,12 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     home: getTeamNickname(homeTeam.team.displayName),
                     awayFull: awayTeam.team.displayName,
                     homeFull: homeTeam.team.displayName,
-                    spread: 0, // Will be updated from Odds API
-                    favorite: 'home', // Default, will be updated from Odds API
+                    // No line yet. This MUST NOT be 0: a real pick'em is 0, and
+                    // a placeholder that looks like one is scored as a pick'em
+                    // rather than skipped - which silently grades a line pick
+                    // straight up. hasUsableLine() is what tells them apart.
+                    spread: null,
+                    favorite: null,
                     day: getDayName(gameDate),
                     time: formatGameTime(event.date),
                     kickoff: event.date,
@@ -917,13 +926,22 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
  * Load schedule for a week, merging ESPN data with existing spreads
  */
 async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = false) {
+    // Pull this week's lines from the sheet before the games are built, so the
+    // spread-application below has something to apply.
+    //
+    // This used to run for PLAYOFF weeks only. Every past regular-season week
+    // therefore had no line source but this device's localStorage, because
+    // prefetchAndSaveSpreads() only ever covers the current week and the next
+    // one - so a phone that was not here in week 1 scored week 1 with no lines
+    // at all, and graded every line pick straight up.
+    //
+    // Callers that load the spreads themselves pass skipSpreadsLoad.
+    if (!skipSpreadsLoad) {
+        await loadSpreadsFromGoogleSheets(week);
+    }
+
     // For playoff weeks, fetch from ESPN
     if (isPlayoffWeek(week)) {
-        // Try to load spreads from Google Sheets backup first (ensures we have spreads even for completed games)
-        // Skip on initial load for faster startup - spreads will load in background
-        if (!skipSpreadsLoad) {
-            await loadSpreadsFromGoogleSheets(week);
-        }
         const savedSpreads = getSavedSpreads();
         const weekStr = String(week);
 
@@ -934,8 +952,8 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
             gameList.forEach(game => {
                 const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
 
-                // Only apply if game spread is 0 or missing
-                if (!game.spread || game.spread === 0) {
+                // Only apply if the game has no usable line of its own
+                if (!hasUsableSpread(game)) {
                     // Try saved spreads first (from localStorage - uses string keys)
                     if (savedSpreads[week] && savedSpreads[week][key]) {
                         game.spread = savedSpreads[week][key].spread;
@@ -1078,9 +1096,9 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                 if (espnMatch) {
                     const key = `${histGame.away.toLowerCase()}_${histGame.home.toLowerCase()}`;
                     // Use saved spread if historical spread is missing
-                    let spread = histGame.spread || espnMatch.spread;
-                    let favorite = histGame.favorite || espnMatch.favorite;
-                    if ((!spread || spread === 0) && savedSpreads[week] && savedSpreads[week][key]) {
+                    let spread = hasUsableLine(histGame.spread) ? histGame.spread : espnMatch.spread;
+                    let favorite = hasUsableLine(histGame.spread) ? histGame.favorite : espnMatch.favorite;
+                    if (!hasUsableLine(spread) && savedSpreads[week] && savedSpreads[week][key]) {
                         spread = savedSpreads[week][key].spread;
                         favorite = savedSpreads[week][key].favorite;
                     }
@@ -1124,7 +1142,7 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
     existingGames.forEach(game => {
         // Create a key based on team matchup
         const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-        if (game.spread && game.spread > 0) {
+        if (hasUsableLine(game.spread)) {
             existingSpreads[key] = { spread: game.spread, favorite: game.favorite };
         }
     });
@@ -1143,8 +1161,8 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                 game.favorite = existingSpreads[key].favorite;
                 console.log(`[Schedule] Preserved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
-            // Apply saved spreads for games that still have spread: 0 (from previous API fetches)
-            if ((!game.spread || game.spread === 0) && savedSpreads[week] && savedSpreads[week][key]) {
+            // Apply saved spreads for games still without a line (from previous API fetches)
+            if (!hasUsableSpread(game) && hasUsableLine(savedSpreads[week]?.[key]?.spread)) {
                 game.spread = savedSpreads[week][key].spread;
                 game.favorite = savedSpreads[week][key].favorite;
                 if (savedSpreads[week][key].overUnder) {
@@ -1152,9 +1170,9 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                 }
                 console.log(`[Schedule] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
-            // Apply hardcoded fallback spreads for games still at 0 (use parseInt for numeric key lookup)
+            // Apply hardcoded fallback spreads for games still without a line (use parseInt for numeric key lookup)
             const weekNum = parseInt(week);
-            if ((!game.spread || game.spread === 0) && FALLBACK_SPREADS[weekNum] && FALLBACK_SPREADS[weekNum][key]) {
+            if (!hasUsableSpread(game) && FALLBACK_SPREADS[weekNum] && FALLBACK_SPREADS[weekNum][key]) {
                 game.spread = FALLBACK_SPREADS[weekNum][key].spread;
                 game.favorite = FALLBACK_SPREADS[weekNum][key].favorite;
                 console.log(`[Schedule] Applied fallback spread for ${game.away} @ ${game.home}: ${game.spread}`);
@@ -1330,8 +1348,8 @@ function saveSpread(week, awayTeam, homeTeam, spread, favorite, overUnder = null
 }
 
 /**
- * Apply saved spreads to games that have spread: 0
- * This ensures completed games show their original spreads
+ * Apply saved spreads to games that carry no usable line of their own.
+ * This ensures completed games show their original spreads.
  */
 function applySavedSpreads() {
     const saved = getSavedSpreads();
@@ -1344,13 +1362,14 @@ function applySavedSpreads() {
             const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
 
             // If game has a spread but we don't have it saved, save it now (preserves spreads before games complete)
-            if (game.spread && game.spread > 0 && (!saved[week] || !saved[week][key])) {
+            if (hasUsableLine(game.spread) && (!saved[week] || !saved[week][key])) {
                 saveSpread(week, game.away, game.home, game.spread, game.favorite, game.overUnder);
                 console.log(`[Spreads] Auto-saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
 
-            // Apply saved spread if game spread is 0
-            if ((!game.spread || game.spread === 0) && saved[week] && saved[week][key]) {
+            // Apply a saved line to a game that has none. A blank sheet cell reads
+            // as '', which is not a line and must not be copied onto the game.
+            if (!hasUsableSpread(game) && hasUsableLine(saved[week]?.[key]?.spread)) {
                 game.spread = saved[week][key].spread;
                 game.favorite = saved[week][key].favorite;
                 if (saved[week][key].overUnder && (!game.overUnder || game.overUnder === 0)) {
@@ -1435,8 +1454,8 @@ async function fetchNFLOdds(forceRefresh = false) {
 function hasHardcodedSpreads(week) {
     const games = NFL_GAMES_BY_WEEK[week];
     if (!games || games.length === 0) return false;
-    // Check if at least one game has a non-zero spread
-    return games.some(g => g.spread && g.spread > 0);
+    // Check if at least one game carries a usable line
+    return games.some(g => hasUsableLine(g.spread));
 }
 
 /**
@@ -1628,7 +1647,7 @@ function applyOddsData(oddsData) {
         const weekNum = parseInt(week); // Convert to number for FALLBACK_SPREADS lookup
         if (!games || !FALLBACK_SPREADS[weekNum]) return;
         games.forEach(game => {
-            if (!game.spread || game.spread === 0) {
+            if (!hasUsableSpread(game)) {
                 const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
                 if (FALLBACK_SPREADS[weekNum][key]) {
                     game.spread = FALLBACK_SPREADS[weekNum][key].spread;
@@ -1646,7 +1665,7 @@ function applyOddsData(oddsData) {
     Object.entries(NFL_GAMES_BY_WEEK).forEach(([week, games]) => {
         if (games && games.length > 0) {
             // Only re-cache if any game has a spread (to preserve the data)
-            const hasSpread = games.some(g => g.spread && g.spread > 0);
+            const hasSpread = games.some(g => hasUsableLine(g.spread));
             if (hasSpread) {
                 cacheSchedule(parseInt(week), games);
             }
@@ -1817,7 +1836,8 @@ async function prefetchAndSaveSpreads() {
         .filter(week => !NFL_GAMES_BY_WEEK[week] || NFL_GAMES_BY_WEEK[week].length === 0)
         .map(week => {
             console.log(`[Prefetch] Loading schedule for week ${week}...`);
-            return loadWeekSchedule(week);
+            // Spreads are loaded for every week in this list just below.
+            return loadWeekSchedule(week, false, true);
         });
 
     if (schedulePromises.length > 0) {
@@ -1863,8 +1883,8 @@ async function prefetchAndSaveSpreads() {
         // Check if we have spreads saved for all games in this week
         let missingSpreadGames = games.filter(game => {
             const key = `${game.away.toLowerCase()}_${game.home.toLowerCase()}`;
-            const hasSaved = saved[week] && saved[week][key] && saved[week][key].spread > 0;
-            const hasGame = game.spread && game.spread > 0;
+            const hasSaved = hasUsableLine(saved[week]?.[key]?.spread);
+            const hasGame = hasUsableLine(game.spread);
             return !hasSaved && !hasGame;
         });
 
@@ -3084,11 +3104,9 @@ function renderHistoryWeek(week) {
         const result = results[game.id] || results[gameIdStr];
         const gameComplete = !!result;
 
-        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
-        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
-        const spreadMissing = !game.spread || game.spread === 0;
-        const awaySpreadDisplay = spreadMissing ? '' : (awaySpread > 0 ? `+${awaySpread}` : awaySpread);
-        const homeSpreadDisplay = spreadMissing ? '' : (homeSpread > 0 ? `+${homeSpread}` : homeSpread);
+        const spreadMissing = !hasUsableSpread(game);
+        const awaySpreadDisplay = signedSpreadDisplay(game, 'away');
+        const homeSpreadDisplay = signedSpreadDisplay(game, 'home');
         const awaySpreadWithParens = spreadMissing ? '' : `(${awaySpreadDisplay})`;
         const homeSpreadWithParens = spreadMissing ? '' : `(${homeSpreadDisplay})`;
 
@@ -4314,6 +4332,14 @@ async function loadFromGoogleSheets() {
 
             console.log(`[Background] All data synced: ${(performance.now() - bgStart).toFixed(0)}ms`);
 
+            // preloadSeasonSchedules() and prefetchAndSaveSpreads() run
+            // concurrently above, and the first REPLACES the game objects the
+            // second writes lines onto. Landing in that order left past weeks
+            // holding no line, which is why a record could differ between two
+            // loads of the same page. Re-apply once here, when both are done,
+            // so the last render is the same whichever order they finished in.
+            applySavedSpreads();
+
             // Mark spreads as loaded and re-render once. Line picks cannot be
             // scored without spreads, so the standings and the as-is table
             // have to be recomputed now that they are in.
@@ -4729,6 +4755,21 @@ function freezeEligibility(game, week = currentWeek, picker = currentPicker) {
 function freezableGames(week = currentWeek, picker = currentPicker) {
     return getGamesForWeekAndSeason(week, currentSeason)
         .filter(game => freezeEligibility(game, week, picker).canFreeze);
+}
+
+/**
+ * One side's number as it appears on a game card: "+3.5", "-7", "PK", or ''
+ * when there is no line to show.
+ *
+ * A pick'em is 0, which is a real line and prints as PK. A game whose line has
+ * not loaded carries null and prints as nothing - the two used to be the same
+ * value and a pick'em therefore rendered blank.
+ */
+function signedSpreadDisplay(game, side) {
+    if (!hasUsableSpread(game)) return '';
+    const spread = Number(game.spread);
+    if (spread === 0) return 'PK';
+    return game.favorite === side ? `-${spread}` : `+${spread}`;
 }
 
 /** A line as a player reads it: "Seahawks -3", "Pick'em". Names the favourite. */
@@ -9387,17 +9428,10 @@ function renderGames() {
                 { ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite }, linePick)
             : '';
 
-        const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
-        const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
-
         // Show loading indicator if spread is missing and still loading
-        const spreadMissing = !game.spread || game.spread === 0;
-        const awaySpreadDisplay = spreadMissing
-            ? ''
-            : (awaySpread > 0 ? `+${awaySpread}` : awaySpread);
-        const homeSpreadDisplay = spreadMissing
-            ? ''
-            : (homeSpread > 0 ? `+${homeSpread}` : homeSpread);
+        const spreadMissing = !hasUsableSpread(game);
+        const awaySpreadDisplay = signedSpreadDisplay(game, 'away');
+        const homeSpreadDisplay = signedSpreadDisplay(game, 'home');
         // For game matchup line, show spread in parentheses only if available
         const awaySpreadWithParens = spreadMissing
             ? (spreadsLoading ? '<span class="spread-loading"></span>' : '')
@@ -10710,8 +10744,8 @@ function renderSuperBowlPicksSummary(scoringTable, weekGames, weekPicks, cachedW
     }
 
     const game = weekGames[0]; // Super Bowl is just one game
-    const spread = game.spread || 0;
-    const overUnder = game.overUnder || 0;
+    const spread = hasUsableSpread(game) ? Number(game.spread) : null;
+    const overUnder = hasUsableLine(game.overUnder) ? Number(game.overUnder) : null;
 
     let headerHtml = `
         <thead>
@@ -10914,13 +10948,7 @@ function exportAllPicks() {
                 const winnerTeam = winnerPick === 'away' ? game.away : winnerPick === 'home' ? game.home : null;
 
                 // Calculate spread for display
-                let spreadDisplay = '';
-                if (linePick) {
-                    const spread = linePick === 'away'
-                        ? (game.favorite === 'away' ? -game.spread : game.spread)
-                        : (game.favorite === 'home' ? -game.spread : game.spread);
-                    spreadDisplay = spread > 0 ? `+${spread}` : spread;
-                }
+                const spreadDisplay = linePick ? signedSpreadDisplay(game, linePick) : '';
 
                 // Count picks
                 if (linePick) linePicks++;
@@ -10971,16 +10999,14 @@ function copyPicksToClipboard() {
 
         if (gamePicks.line || gamePicks.winner) {
             pickCount++;
-            const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
-            const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
-
             text += `${game.away} @ ${game.home}\n`;
 
             if (gamePicks.line) {
                 const lineTeam = gamePicks.line === 'away' ? game.away : game.home;
-                const spread = gamePicks.line === 'away' ? awaySpread : homeSpread;
-                const spreadStr = spread > 0 ? `+${spread}` : spread;
-                text += `  ATS: ${lineTeam} (${spreadStr})\n`;
+                const spreadStr = signedSpreadDisplay(game, gamePicks.line);
+                text += spreadStr
+                    ? `  ATS: ${lineTeam} (${spreadStr})\n`
+                    : `  ATS: ${lineTeam}\n`;
             }
 
             if (gamePicks.winner) {
@@ -11039,11 +11065,8 @@ function exportAllPicksToClipboard() {
 
                 // Line pick with spread
                 const lineTeam = gamePicks.line === 'away' ? game.away : game.home;
-                const awaySpread = game.favorite === 'away' ? -game.spread : game.spread;
-                const homeSpread = game.favorite === 'home' ? -game.spread : game.spread;
-                const spread = gamePicks.line === 'away' ? awaySpread : homeSpread;
-                const spreadStr = spread > 0 ? `+${spread}` : spread;
-                parts.push(`${lineTeam} (${spreadStr})`);
+                const spreadStr = signedSpreadDisplay(game, gamePicks.line);
+                parts.push(spreadStr ? `${lineTeam} (${spreadStr})` : lineTeam);
 
                 // Winner pick
                 if (gamePicks.winner) {
@@ -11267,9 +11290,13 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         // The spread columns record the line this pick is GRADED against, not
         // whatever the game currently shows - so a frozen pick carries its own
         // number into the sheet and the row stays a faithful record of it.
+        // A game with no line yet must write a BLANK spread cell, not 0: 0 is a
+        // real pick'em, and a fake one persisted here would be read back as a
+        // line and scored as one for ever.
         const line = lineForPick(game, pickData);
-        const awaySpread = line.favorite === 'away' ? -line.spread : line.spread;
-        const homeSpread = line.favorite === 'home' ? -line.spread : line.spread;
+        const graded = hasUsableLine(line.spread) ? Number(line.spread) : null;
+        const awaySpread = graded === null ? '' : (line.favorite === 'away' ? -graded : graded);
+        const homeSpread = graded === null ? '' : (line.favorite === 'home' ? -graded : graded);
 
         // Convert 'away'/'home' to actual team names; blank means "no pick",
         // which is what makes this row a tombstone.
@@ -11468,7 +11495,7 @@ async function loadSpreadsFromGoogleSheets(week) {
                     saved[week][key] = data;
                 } else {
                     // Future weeks: only use Google Sheets if localStorage is missing or has spread=0
-                    if (!saved[week][key] || !saved[week][key].spread || saved[week][key].spread === 0) {
+                    if (!hasUsableLine(saved[week]?.[key]?.spread)) {
                         saved[week][key] = data;
                     }
                 }
@@ -13984,8 +14011,10 @@ window.exportHistoricalData = function() {
                 id: g.id,
                 away: g.away,
                 home: g.home,
-                spread: g.spread || 0,
-                favorite: g.favorite || 'home'
+                // null, not 0: an archived season must not come back with its
+                // missing lines indistinguishable from its pick'ems.
+                spread: hasUsableLine(g.spread) ? Number(g.spread) : null,
+                favorite: hasUsableLine(g.spread) ? (g.favorite || null) : null
             }));
         }
     }
