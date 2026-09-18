@@ -971,8 +971,8 @@ header h1 {
     border-radius: 0 0 8px 8px;
 }
 
-.year-change,
-.betting-winnings {
+.year-comparison .year-change,
+.year-comparison .betting-winnings {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -982,11 +982,11 @@ header h1 {
     font-weight: 600;
 }
 
-.year-change {
+.year-comparison .year-change {
     border-bottom: 1px solid var(--border-color);
 }
 
-.betting-winnings {
+.year-comparison .betting-winnings {
     border-top: none;
 }
 
@@ -1002,19 +1002,19 @@ header h1 {
     font-weight: 700;
 }
 
-.year-change.up .comparison-value {
+.year-comparison .year-change.up .comparison-value {
     color: var(--accent-green);
 }
 
-.year-change.down .comparison-value {
+.year-comparison .year-change.down .comparison-value {
     color: #dc2626;
 }
 
-.betting-winnings.positive .comparison-value {
+.year-comparison .betting-winnings.positive .comparison-value {
     color: var(--accent-green);
 }
 
-.betting-winnings.negative .comparison-value {
+.year-comparison .betting-winnings.negative .comparison-value {
     color: #dc2626;
 }
 

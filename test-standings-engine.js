@@ -778,6 +778,27 @@ check('the sheet cache is not merged into an archived season', () => {
         "the archive's own pick wins; the cached 'away' must not override it");
 });
 
+check('the card rules for a year comparison stay off the standings table', () => {
+    // .year-change is on two unrelated things: the picker card's label+value
+    // row, and the standings table's <td>. Unscoped, the card's
+    // `display: flex; justify-content: space-between` reached the cell, where
+    // it overrode display: table-cell and pinned the lone text child left -
+    // 47px off centre at desktop width, under a centred header, with
+    // text-align: center powerless to do anything about it.
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const unscoped = styles.match(/^\.(year-change|betting-winnings)[^{]*\{/gm) || [];
+    assert.deepStrictEqual(unscoped, [],
+        'scope these to .year-comparison - they must not reach .standings-table td');
+});
+
+check('the standings Year Chg cell is a plain centred table cell', () => {
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const block = styles.match(/\.standings-table \.year-change \{[^}]*\}/);
+    assert.ok(block, 'found the rule');
+    assert.ok(/text-align:\s*center/.test(block[0]), 'centred, like its header');
+    assert.ok(!/display:\s*flex/.test(block[0]), 'a table cell, not a flex row');
+});
+
 if (failures > 0) {
     console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
     process.exit(1);
