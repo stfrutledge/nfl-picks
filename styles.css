@@ -1364,6 +1364,91 @@ header h1 {
     font-size: 0.8rem;
 }
 
+/* The games behind the consensus record, collapsed by default. Rows reuse
+   .game-detail-row so they read the same as the lone wolf and team records
+   expansions rather than as a third way of listing games. */
+.consensus-toggle {
+    margin-top: 12px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.consensus-toggle:hover {
+    border-color: var(--nfl-blue);
+    color: var(--nfl-blue);
+    background: rgba(1, 51, 105, 0.05);
+}
+
+.consensus-games {
+    margin-top: 12px;
+}
+
+/* .game-detail-row is laid out for the full-width team records expansion. In
+   a half-width insight card that single line wraps to four, so the same row is
+   stacked here instead: matchup over the pick, week and outcome either side. */
+.consensus-games .team-details-container {
+    max-height: 260px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.consensus-games .game-detail-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "week matchup outcome"
+        "week picked  spread";
+    column-gap: 10px;
+    row-gap: 2px;
+    font-size: 0.75rem;
+}
+
+.consensus-games .game-week {
+    grid-area: week;
+    align-self: center;
+}
+
+.consensus-games .game-matchup {
+    grid-area: matchup;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.consensus-games .game-picked {
+    grid-area: picked;
+}
+
+.consensus-games .game-spread {
+    grid-area: spread;
+    justify-self: end;
+}
+
+.consensus-games .game-outcome {
+    grid-area: outcome;
+    justify-self: end;
+}
+
+/* Everybody on the same side at different locked numbers, landing on
+   different outcomes - a consensus game with no single group result. */
+.game-detail-row.outcome-split {
+    border-left-color: var(--text-light);
+}
+
+.outcome-split .game-outcome {
+    color: var(--text-light);
+}
+
 /* Lone Wolf Card */
 .lone-wolf-image {
     width: 60px;

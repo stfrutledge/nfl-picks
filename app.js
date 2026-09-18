@@ -2124,6 +2124,21 @@ function getPicksForGame(pickerPicks, game) {
 }
 
 /**
+ * One picker's pick for one game, from the two places a pick can be.
+ *
+ * What is stored locally wins over what came back from the sheet: the local
+ * copy is this device's own edit, the cache is what the backup held when it was
+ * last read. The two are merged rather than chosen between, so a pick split
+ * across them - a line here, the Blazin' star there - comes back whole.
+ */
+function pickFromSources(game, localPicks, cachedPicks) {
+    return {
+        ...getPicksForGame(cachedPicks, game),
+        ...getPicksForGame(localPicks, game)
+    };
+}
+
+/**
  * Convert one picker's picks for a week from game-id keys to matchup keys.
  *
  * Idempotent: keys that are already valid matchup keys for this week pass
@@ -5920,10 +5935,7 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includ
             const cachedPicks = cachedWeek?.picks?.[picker] || {};
 
             weekGames.forEach(game => {
-                const pick = {
-                    ...getPicksForGame(cachedPicks, game),
-                    ...getPicksForGame(localPicks, game)
-                };
+                const pick = pickFromSources(game, localPicks, cachedPicks);
                 const result = getGameResult(game, weekResults)
                     || (includeLive ? liveProvisionalResult(game) : null);
                 if (!result) return;
@@ -6405,15 +6417,21 @@ function renderDashboard() {
 
     // TERTIARY: the charts, insights and patterns that sit with the records
     renderTrendChart(weeklyData, currentSubcategory);
-    // Lone wolf, universal agreement, group stats and favourites-vs-underdogs
-    // still come from the workbook, so they stay blank on a computed season
-    // until they get the same treatment as the standings table.
-    if (dashboardData) {
-        renderInsights(dashboardData.loneWolf, dashboardData.universalAgreement);
-    }
+    // Lone wolf and consensus are both computed from picks + results, like the
+    // standings are, so neither is behind the dashboardData gate that used to
+    // blank the whole Insights panel. Group stats and favourites-vs-underdogs
+    // are still the workbook's and stay blank until they get the same
+    // treatment as the standings table.
+    renderInsights(computeLocally
+        ? calculateConsensusRecord(currentSubcategory)
+        : dashboardData?.universalAgreement);
     renderPatternsPanel();
-    if (dashboardData?.groupOverall) {
-        renderGroupStats(dashboardData.groupOverall);
+    // Heading and grid together: the heading on its own over an empty grid
+    // reads as a panel that failed to load rather than one with nothing to say.
+    const groupOverall = dashboardData?.groupOverall;
+    document.getElementById('group-performance-section')?.classList.toggle('hidden', !groupOverall);
+    if (groupOverall) {
+        renderGroupStats(groupOverall);
     }
 
     // Only show Favorites vs Underdogs chart on Line Picks tab
@@ -8243,21 +8261,195 @@ function toggleLoneWolfDetails(pickerId) {
 }
 
 /**
- * Render Group Insights section (Lone Wolf + Consensus)
+ * Toggle the list of games behind the consensus record.
+ *
+ * Collapsed by default: the card's job is the headline number, and on a full
+ * season the Straight Up list runs to dozens of games.
  */
-function renderInsights(loneWolf, consensus) {
-    // Render Consensus card
+function toggleConsensusGames() {
+    const games = document.getElementById('consensus-games');
+    const button = document.getElementById('consensus-toggle');
+    if (!games) return;
+
+    const nowHidden = games.classList.toggle('hidden');
+    if (button) {
+        const count = games.querySelectorAll('.game-detail-row').length;
+        button.textContent = nowHidden
+            ? `Show the ${count} game${count === 1 ? '' : 's'}`
+            : 'Hide games';
+    }
+}
+
+/**
+ * The side a pick takes in a category, or null when it takes none.
+ *
+ * The Blazin' 5 is a line pick with a star on it, so a game only counts as
+ * agreement there when everybody starred it AND took the same side.
+ */
+function consensusSideFor(pick, category) {
+    if (category === 'winner') return pick.winner || null;
+    if (category === 'blazin' && !pick.blazin) return null;
+    return pick.line || null;
+}
+
+/**
+ * The group's record on games where all five pickers took the same side.
+ *
+ * Computed from picks + results, like the standings. It used to be read out of
+ * the retired stats workbook (`universalAgreement`), which is why the card was
+ * blank from the 2026 season on.
+ *
+ * Cowherd is not in it: PICKERS is the five players, and he picks five games a
+ * week against their sixteen, so "all of us agreed" cannot mean him.
+ *
+ * **A consensus game is still scored one pick at a time.** Everybody taking the
+ * same side does not mean everybody is on the same number - one may have locked
+ * at -3 while the rest ride at -6.5 - so each pick goes through
+ * atsWinnerForPick() and the game counts only when all five got the same
+ * outcome. The rest are counted as `split` and reported rather than quietly
+ * folded in, because there is no single group result to record. Reading the
+ * line off the game instead would be the bug calculateATSWinner() was deleted
+ * for; see "One line per pick" in CLAUDE.md.
+ *
+ * @returns {{wins, losses, pushes, games, split, percentage}|null} null when no
+ *          game has qualified yet, which is the card's cue to stay hidden.
+ *          `games` is every qualifying game, for the card's expanded list.
+ */
+function calculateConsensusRecord(category = currentSubcategory) {
+    const record = { wins: 0, losses: 0, pushes: 0, games: [], split: 0 };
+    const { first, last } = regularSeasonWeekRange();
+
+    for (let week = first; week <= last; week++) {
+        const weekGames = getGamesForWeekAndSeason(week, currentSeason);
+        if (!weekGames || weekGames.length === 0) continue;
+
+        const weekResults = getResultsForWeekAndSeason(week, currentSeason);
+        const seasonPicks = getPicksForWeekAndSeason(week, currentSeason) || {};
+        const cachedWeek = Number(currentSeason) === CURRENT_SEASON
+            ? (weeklyPicksCache[week] || weeklyPicksCache[String(week)])
+            : null;
+
+        weekGames.forEach(game => {
+            const result = getGameResult(game, weekResults);
+            if (!result) return;
+
+            let side = null;
+            const outcomes = [];
+            const lines = [];
+
+            for (const picker of PICKERS) {
+                const pick = pickFromSources(
+                    game, seasonPicks[picker], cachedWeek?.picks?.[picker]);
+
+                const taken = consensusSideFor(pick, category);
+                if (!taken) return;                 // somebody sat this one out
+                if (side === null) side = taken;
+                else if (side !== taken) return;    // not unanimous
+
+                if (category === 'winner') {
+                    outcomes.push(pick.winner === result.winner ? 'wins' : 'losses');
+                } else {
+                    const ats = atsWinnerForPick(game, pick, result);
+                    if (!ats) return;               // no usable line yet - unscored
+                    outcomes.push(ats === 'push' ? 'pushes'
+                        : (pick.line === ats ? 'wins' : 'losses'));
+                    lines.push(describeLineForSide(game, side, pick));
+                }
+            }
+
+            if (outcomes.length !== PICKERS.length) return;
+
+            const agreed = outcomes.every(o => o === outcomes[0]);
+            if (agreed) record[outcomes[0]]++; else record.split++;
+
+            record.games.push({
+                week,
+                away: game.away,
+                home: game.home,
+                awayScore: result.awayScore,
+                homeScore: result.homeScore,
+                side,
+                picked: side === 'home' ? game.home : game.away,
+                // One line only when all five were graded at the same number.
+                // They can hold different ones and still land on the same
+                // outcome, and printing one of them would be a claim about the
+                // other four.
+                line: lines.length && lines.every(l => l === lines[0]) ? lines[0]
+                    : (lines.length ? 'mixed lines' : ''),
+                outcome: agreed
+                    ? { wins: 'win', losses: 'loss', pushes: 'push' }[outcomes[0]]
+                    : 'split'
+            });
+        });
+    }
+
+    if (record.games.length === 0) return null;
+    record.games.sort((a, b) => a.week - b.week);
+    return { ...record, percentage: recordPercentage(record) };
+}
+
+/**
+ * Render Group Insights section (Lone Wolf + Consensus)
+ *
+ * Lone wolf is computed here from picks + results, so it needs nothing passed
+ * in and works on a computed season. It used to take a `loneWolf` argument off
+ * the retired stats workbook, which the body had already stopped reading -
+ * dead, but it made the whole panel look like workbook data and is why it was
+ * gated behind one.
+ *
+ * `consensus` is still the workbook's, and is absent from the season after
+ * LEGACY_SHEETS_SEASON. That card stays blank until it gets the same treatment
+ * the standings table did.
+ */
+function renderInsights(consensus) {
+    // Render Consensus card. Hidden outright without the numbers rather than
+    // left as an empty box beside a full lone wolf card.
     const consensusCard = document.getElementById('consensus-card');
+    consensusCard?.classList.toggle('hidden', !consensus);
     if (consensusCard && consensus) {
+        const pct = consensus.percentage;
+        // formatPercent, not toFixed: a consensus game that is all pushes has
+        // no percentage, and `null?.toFixed(1)` renders the word "undefined".
+        const pctClass = typeof pct !== 'number' ? '' : (pct >= 50 ? 'positive' : 'negative');
+
+        const what = currentSubcategory === 'winner' ? 'the same winner'
+            : currentSubcategory === 'blazin' ? "the same Blazin' 5 pick"
+            : 'the same side of the line';
+        // Split games are consensus games with no single group outcome - the
+        // five were on the same side at different locked numbers. Named rather
+        // than dropped, so the count adds up against the record beside it.
+        const splitNote = consensus.split > 0
+            ? ` ${consensus.split} of ${consensus.games.length} graded at different locked lines and are not counted.`
+            : '';
+
+        const gameRows = consensus.games.map(g => `
+            <div class="game-detail-row outcome-${g.outcome}">
+                <span class="game-week">Wk ${g.week}</span>
+                <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                <span class="game-spread">${g.line}</span>
+                <span class="game-picked">All 5: ${g.picked}</span>
+                <span class="game-outcome">${g.outcome.toUpperCase()}</span>
+            </div>
+        `).join('');
+
+        const count = consensus.games.length;
         consensusCard.innerHTML = `
             <div class="insight-header">
                 <span class="insight-title">When We All Agree</span>
             </div>
             <div class="insight-stat">
-                <span class="insight-percentage ${consensus.percentage >= 50 ? 'positive' : 'negative'}">${consensus.percentage?.toFixed(1)}%</span>
+                <span class="insight-percentage ${pctClass}">${formatPercent(pct, 1)}</span>
                 <span class="insight-record">${consensus.wins}-${consensus.losses}-${consensus.pushes}</span>
             </div>
-            <p class="insight-description">Group record when all 5 pickers choose the same line</p>
+            <p class="insight-description">Group record when all ${PICKERS.length} pickers take ${what}.${splitNote}</p>
+            <button class="consensus-toggle" id="consensus-toggle" onclick="toggleConsensusGames()">
+                Show the ${count} game${count === 1 ? '' : 's'}
+            </button>
+            <div class="consensus-games hidden" id="consensus-games">
+                <div class="team-details-container">
+                    ${gameRows}
+                </div>
+            </div>
         `;
     }
 

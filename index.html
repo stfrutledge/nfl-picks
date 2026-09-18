@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=39f224bf">
+    <link rel="stylesheet" href="styles.css?v=6e125213">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -448,8 +448,12 @@
                             <div class="insight-card consensus" id="consensus-card"></div>
                             <div class="insight-card lone-wolf" id="lone-wolf-card"></div>
                         </div>
-                        <h4 class="insights-section-title">Group Performance</h4>
-                        <div class="group-stats-grid" id="group-stats-grid"></div>
+                        <!-- Hidden wholesale when there is nothing to put in it;
+                             see the groupOverall branch in renderDashboard(). -->
+                        <div id="group-performance-section">
+                            <h4 class="insights-section-title">Group Performance</h4>
+                            <div class="group-stats-grid" id="group-stats-grid"></div>
+                        </div>
                     </div>
                     <!-- Patterns Panel -->
                     <div class="consolidated-panel" id="patterns-panel">
@@ -857,6 +861,6 @@
     <script src="charts.js?v=2e2f2414"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=bef723f5"></script>
+    <script src="app.js?v=24bd589a"></script>
 </body>
 </html>
