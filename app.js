@@ -4998,10 +4998,40 @@ function applyFreeze(game, week = currentWeek, picker = currentPicker) {
  *
  * Reads the count fresh each call rather than tracking it, so it cannot drift
  * from the picks: see getPickerPicksForWeek.
+ *
+ * The bar is a reminder, so once all five are placed it has nothing left to
+ * say and stops being sticky (.released) - but not instantly. The picker has
+ * just placed the fifth star, usually well down the page, and the bar is the
+ * confirmation that they are done; yanking it out of view at that moment
+ * reads as a glitch. So the fifth star holds it for BLAZIN_COMPLETE_HOLD_MS
+ * (noteBlazinCompleted), after which a timer lets it go. A week that is
+ * already complete when it comes on screen - a page load, switching to a
+ * picker who finished earlier - is released straight away: nobody just did
+ * anything that needs confirming.
  */
-function updateBlazinProgress() {
+const BLAZIN_COMPLETE_HOLD_MS = 60 * 1000;
+let blazinCompletedAt = null;   // when the fifth star was placed on this device
+let blazinCompletedFor = null;  // `${week}|${picker}` it was placed for
+let blazinReleaseTimer = null;
+
+/** Call when a star click has just made the current picker's week complete. */
+function noteBlazinCompleted(now = Date.now()) {
+    blazinCompletedAt = now;
+    blazinCompletedFor = `${currentWeek}|${currentPicker}`;
+}
+
+function blazinHoldRemaining(now = Date.now()) {
+    if (blazinCompletedAt === null) return 0;
+    if (blazinCompletedFor !== `${currentWeek}|${currentPicker}`) return 0;
+    return Math.max(0, BLAZIN_COMPLETE_HOLD_MS - (now - blazinCompletedAt));
+}
+
+function updateBlazinProgress(now = Date.now()) {
     const bar = document.getElementById('blazin-progress');
     if (!bar) return;
+
+    clearTimeout(blazinReleaseTimer);
+    blazinReleaseTimer = null;
 
     // Nothing to count without a picker, and there is no Blazin' 5 in the playoffs.
     if (!currentPicker || isPlayoffWeek(currentWeek)) {
@@ -5011,9 +5041,26 @@ function updateBlazinProgress() {
 
     const used = countBlazinPicks(currentWeek, currentPicker);
     const left = blazinRemaining(currentWeek, currentPicker);
+    const complete = left === 0;
 
     bar.classList.remove('hidden');
-    bar.classList.toggle('complete', left === 0);
+    bar.classList.toggle('complete', complete);
+
+    if (!complete) {
+        // A star came back out: the reminder is live again, and whatever
+        // completion was noted no longer describes this week.
+        if (blazinCompletedFor === `${currentWeek}|${currentPicker}`) {
+            blazinCompletedAt = null;
+            blazinCompletedFor = null;
+        }
+        bar.classList.remove('released');
+    } else {
+        const hold = blazinHoldRemaining(now);
+        bar.classList.toggle('released', hold === 0);
+        if (hold > 0) {
+            blazinReleaseTimer = setTimeout(() => updateBlazinProgress(), hold);
+        }
+    }
 
     const pips = document.getElementById('blazin-progress-pips');
     if (pips) {
@@ -10860,6 +10907,12 @@ function handleBlazinToggle(e) {
     btn.classList.toggle('active', newBlazin);
     btn.innerHTML = `<span class="blazin-label">B5</span>${newBlazin ? '★' : '☆'}`;
     btn.title = newBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5';
+
+    // The fifth star: keep the tally in view a while as confirmation before it
+    // stops following the picker down the page. See updateBlazinProgress.
+    if (newBlazin && blazinRemaining() === 0) {
+        noteBlazinCompleted();
+    }
 
     // Enable/disable the other star buttons based on the new count
     updateBlazinStarStates();

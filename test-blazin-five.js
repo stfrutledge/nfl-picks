@@ -81,6 +81,10 @@ function makeEnv(stars, nodes = {}) {
         CURRENT_SEASON, FIRST_PLAYOFF_WEEK,
         pickKey, getPicksForGame, getPickerPicksForWeek, countBlazinPicks,
         updateBlazinStarStates, updateBlazinProgress,
+        noteBlazinCompleted, BLAZIN_COMPLETE_HOLD_MS,
+        // The release timer is a real setTimeout; a held bar would otherwise
+        // keep this process alive for a minute after the checks are done.
+        __cancelBlazinRelease: () => clearTimeout(blazinReleaseTimer),
         weeklyPicksCache, NFL_GAMES_BY_WEEK,
         __state: () => ({ allPicks, currentWeek, currentPicker }),
         __setState: s => {
@@ -358,6 +362,97 @@ check('the completed tally is not see-through', () => {
         'the opaque page background must be part of it');
     assert.ok(!/^\s*rgba\(/.test(background[1]),
         'a translucent colour on its own is what made it see-through');
+});
+
+check('a released tally stops being sticky; a merely complete one does not', () => {
+    // It is there to remind a picker to place all five. Once they have, it
+    // has nothing left to say and should scroll away with the top of the list
+    // rather than sit over the cards for the rest of the page - but the
+    // moment of release is the JS's call (see the hold below), not the CSS's.
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const base = styles.match(/\.blazin-progress \{[^}]*\}/);
+    const complete = styles.match(/\.blazin-progress\.complete \{[^}]*\}/);
+    const released = styles.match(/\.blazin-progress\.released \{[^}]*\}/);
+    assert.ok(base && /position\s*:\s*sticky/.test(base[0]), 'the bar is sticky while picks are outstanding');
+    assert.ok(complete && !/position\s*:/.test(complete[0]), 'complete only colours it');
+    assert.ok(released && /position\s*:\s*static/.test(released[0]), 'released is what lets it go');
+});
+
+// The fifth star is usually placed well down the page, and the bar is the
+// confirmation. So it holds for a minute before it is released, and only when
+// the completion happened here and now - not on a page load of a finished week.
+const T0 = 1_700_000_000_000;
+
+check('the hold is a minute', () => {
+    const { api } = setup({});
+    assert.strictEqual(api.BLAZIN_COMPLETE_HOLD_MS, 60 * 1000);
+});
+
+check('a week that is already complete when shown is released straight away', () => {
+    const { api, nodes } = setup({ picks: fiveStarredPicks() });
+    api.updateBlazinProgress(T0);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('complete'), true);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), true,
+        'nobody just did anything that needs confirming');
+});
+
+check('the fifth star holds the bar for a minute, then lets it go', () => {
+    const { api, nodes } = setup({ picks: fiveStarredPicks() });
+    api.noteBlazinCompleted(T0);
+
+    api.updateBlazinProgress(T0 + 1000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('complete'), true);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), false, 'still held at 1s');
+
+    api.updateBlazinProgress(T0 + 59_000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), false, 'still held at 59s');
+
+    api.updateBlazinProgress(T0 + 60_000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), true, 'released at 60s');
+    api.__cancelBlazinRelease();
+});
+
+check('taking a star back out ends the hold, and it does not come back on its own', () => {
+    const picks = fiveStarredPicks();
+    const { api, nodes } = setup({ picks });
+    api.noteBlazinCompleted(T0);
+    api.updateBlazinProgress(T0 + 1000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), false);
+
+    // Fourth star comes out.
+    const s = api.__state();
+    delete s.allPicks[WEEK].Stephen[keyOf(TEAMS[0])].blazin;
+    api.updateBlazinProgress(T0 + 2000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('complete'), false);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), false, 'sticky again: a pick is outstanding');
+
+    // Goes back in without a fresh note (the click handler is what notes it).
+    s.allPicks[WEEK].Stephen[keyOf(TEAMS[0])].blazin = true;
+    api.updateBlazinProgress(T0 + 3000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('complete'), true);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), true,
+        'the earlier completion was forgotten when the star came out');
+    api.__cancelBlazinRelease();
+});
+
+check('the hold belongs to the picker and week it was made for', () => {
+    const { api, nodes } = setup({ picks: fiveStarredPicks() });
+    api.noteBlazinCompleted(T0);
+    api.updateBlazinProgress(T0 + 1000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), false);
+
+    // Switch to a picker who finished earlier: their bar was not just completed.
+    const s = api.__state();
+    s.allPicks[WEEK].Sean = fiveStarredPicks();
+    api.__setState({ currentPicker: 'Sean' });
+    api.updateBlazinProgress(T0 + 2000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), true);
+
+    // And back: Stephen's minute is still running.
+    api.__setState({ currentPicker: 'Stephen' });
+    api.updateBlazinProgress(T0 + 3000);
+    assert.strictEqual(nodes['blazin-progress'].classList.contains('released'), false);
+    api.__cancelBlazinRelease();
 });
 
 if (failures > 0) {

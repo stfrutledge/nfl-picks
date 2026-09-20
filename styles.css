@@ -2927,14 +2927,22 @@ footer a:hover {
     color: var(--text-secondary);
 }
 
-/* The tint is layered OVER the opaque page background, not used as the
-   background. This bar is sticky: with a bare translucent colour the game
-   cards scroll through underneath it and it reads as a smeared orange strip. */
+/* Complete: all five placed. The tint is layered OVER the opaque page
+   background rather than used as the background - a bare translucent colour
+   let the cards show through the sticky bar. */
 .blazin-progress.complete {
     border-color: #f59e0b;
     background:
         linear-gradient(rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.08)),
         var(--bg-primary);
+}
+
+/* Released: the bar has done its job. It exists to nag a picker into placing
+   all five stars; a minute after the fifth goes in (updateBlazinProgress) it
+   stops following them down the page and scrolls away with the top of the
+   list like any other heading. */
+.blazin-progress.released {
+    position: static;
 }
 
 .blazin-progress.complete .blazin-progress-count {
