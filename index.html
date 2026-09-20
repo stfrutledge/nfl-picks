@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=fdf395f0">
+    <link rel="stylesheet" href="styles.css?v=c1169796">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -666,12 +666,28 @@
                             <!-- Options populated by JavaScript -->
                         </select>
                     </div>
+
+                    <!-- What the standings table below covers: the season so
+                         far (the whole of it, once it is over) or one week of
+                         it. Hidden on Lifetime, which has no weeks. -->
+                    <div class="history-scope" id="history-scope">
+                        <div class="history-scope-toggle" role="group" aria-label="Standings scope">
+                            <button class="subtab active" data-history-scope="season" id="history-scope-season">Season to Date</button>
+                            <button class="subtab" data-history-scope="week" id="history-scope-week">Individual Weeks</button>
+                        </div>
+                        <div class="history-scope-week hidden" id="history-standings-week-selector">
+                            <label for="history-standings-week">Week:</label>
+                            <select id="history-standings-week" class="week-dropdown">
+                                <!-- Options populated by JavaScript -->
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- History Standings Table -->
                 <section class="history-standings-section" id="history-standings-section">
                     <div class="consolidated-header">
-                        <h2 class="consolidated-title"><span id="history-standings-title">2024</span> Season Standings</h2>
+                        <h2 class="consolidated-title"><span id="history-standings-title">2024</span> <span id="history-standings-scope-label">Season</span> Standings</h2>
                     </div>
                     <div class="standings-table-container">
                         <table class="standings-table history-standings" id="history-standings-table">
@@ -877,6 +893,6 @@
     <script src="charts.js?v=70009325"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=6bbd72b5"></script>
+    <script src="app.js?v=7ff30949"></script>
 </body>
 </html>

@@ -2787,6 +2787,19 @@ function setupSeasonDropdown() {
         });
     }
 
+    // Standings scope: the season so far, or one week of it.
+    document.querySelectorAll('[data-history-scope]').forEach(btn => {
+        btn.addEventListener('click', () => setHistoryStandingsScope(btn.dataset.historyScope));
+    });
+    const historyStandingsWeekDropdown = document.getElementById('history-standings-week');
+    if (historyStandingsWeekDropdown) {
+        historyStandingsWeekDropdown.addEventListener('change', (e) => {
+            historyStandingsWeek = parseInt(e.target.value);
+            const season = historySelectedSeason();
+            if (season) renderHistoryStandingsTable(season);
+        });
+    }
+
     // History picker dropdown
     const historyPickerDropdown = document.getElementById('history-picker-dropdown');
     if (historyPickerDropdown) {
@@ -2950,7 +2963,11 @@ async function loadHistorySeason(season) {
     renderHistoryWeek(1);
     updateHistoryWeekDisplay(1);
 
-    // Render season standings table
+    // Season standings table, at whichever scope the reader had it on.
+    // The scope and week live in module state rather than in the controls,
+    // so the live-season refresh that comes back through here keeps them.
+    updateHistoryScopeControls(season);
+    populateHistoryStandingsWeeks(season);
     renderHistoryStandingsTable(season);
 
     // Render Blazin' 5 records tables
@@ -2980,6 +2997,7 @@ async function loadLifetimeHistory() {
         if (selectionRow) selectionRow.style.display = 'none';
         if (historyContent) historyContent.style.display = 'none';
     }
+    updateHistoryScopeControls(null);
 
     // Update picker dropdown to include all pickers across all seasons
     const allPickers = new Set();
@@ -3340,24 +3358,100 @@ function renderHistoryWeek(week) {
     }).join('');
 }
 
+// What the History standings table covers: 'season' is every week of the
+// chosen season so far, 'week' is the one week in historyStandingsWeek.
+// Module state, not read back off the controls, so the live-season refresh
+// (which rebuilds the controls through loadHistorySeason) keeps the reader
+// where they were.
+let historyStandingsScope = 'season';
+let historyStandingsWeek = null;
+
+/** The season the History tab is on, or null for Lifetime. */
+function historySelectedSeason() {
+    const value = document.getElementById('history-season-dropdown')?.value;
+    const season = Number(value);
+    return value && !isNaN(season) ? season : null;
+}
+
 /**
- * Render history standings table showing season totals
+ * The weeks of a season that have anything to stand on: at least one result.
+ * A week of games still to be played has a row of dashes and nothing else,
+ * which is not worth a place in the list.
  */
-function renderHistoryStandingsTable(season) {
-    const tbody = document.getElementById('history-standings-table-body');
-    const titleSpan = document.getElementById('history-standings-title');
-    if (!tbody) return;
-
-    if (titleSpan) {
-        titleSpan.textContent = season;
-    }
-
-    if (!getSeasonData(season)) {
-        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No data available</td></tr>';
-        return;
-    }
-
+function historyStandingsWeeks(season) {
     const data = getSeasonData(season);
+    if (!data) return [];
+    const results = data.results || {};
+    return Object.keys(data.games || {})
+        .map(Number)
+        .filter(week => !isNaN(week)
+            && Object.keys(results[week] || results[String(week)] || {}).length > 0)
+        .sort((a, b) => a - b);
+}
+
+/**
+ * Fill the standings week dropdown for a season. The chosen week is kept
+ * where the season still has it; otherwise the latest week, which for the
+ * season in progress is the one just played.
+ */
+function populateHistoryStandingsWeeks(season) {
+    const dropdown = document.getElementById('history-standings-week');
+    const weeks = historyStandingsWeeks(season);
+    if (!weeks.includes(historyStandingsWeek)) {
+        historyStandingsWeek = weeks.length ? weeks[weeks.length - 1] : null;
+    }
+    if (!dropdown) return;
+    dropdown.innerHTML = weeks.map(week =>
+        `<option value="${week}"${week === historyStandingsWeek ? ' selected' : ''}>${historyWeekName(week)}</option>`
+    ).join('');
+}
+
+/** "Week 3", or the round's name in the playoffs. */
+function historyWeekName(week) {
+    return isPlayoffWeek(week) ? PLAYOFF_WEEKS[week].name : `Week ${week}`;
+}
+
+/**
+ * The toggle and week dropdown, matched to the season: "Season to Date"
+ * while a season is being played, "Full Season" once it is over, and the
+ * whole thing hidden on Lifetime, which has no weeks to choose between.
+ */
+function updateHistoryScopeControls(season) {
+    const scope = document.getElementById('history-scope');
+    if (!scope) return;
+    scope.classList.toggle('hidden', !season);
+    const seasonBtn = document.getElementById('history-scope-season');
+    if (seasonBtn && season) {
+        seasonBtn.textContent = Number(season) === CURRENT_SEASON ? 'Season to Date' : 'Full Season';
+    }
+    document.querySelectorAll('[data-history-scope]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.historyScope === historyStandingsScope);
+    });
+    document.getElementById('history-standings-week-selector')
+        ?.classList.toggle('hidden', historyStandingsScope !== 'week');
+}
+
+/** Switch the standings table between the season and one week of it. */
+function setHistoryStandingsScope(scope) {
+    if (scope !== 'season' && scope !== 'week') return;
+    historyStandingsScope = scope;
+    const season = historySelectedSeason();
+    updateHistoryScopeControls(season);
+    if (season) renderHistoryStandingsTable(season);
+}
+
+/**
+ * Each picker's ATS, Blazin' 5 and straight-up record for a season - or,
+ * given a week, for that week alone. The one pass behind the History
+ * standings table at either scope, so the two can never disagree.
+ *
+ * Cowherd is scored from his own weekly record. The 2022 and earlier
+ * archives hold his as a season aggregate with no weeks in it, so there he
+ * is on the season table and absent from any week's.
+ */
+function historyStandingsStats(season, week = null) {
+    const data = getSeasonData(season);
+    if (!data) return null;
     const games = data.games || {};
     const results = data.results || {};
     const picks = data.picks || {};
@@ -3377,8 +3471,9 @@ function renderHistoryStandingsTable(season) {
         };
     });
 
-    // Iterate through all weeks
-    Object.keys(games).forEach(weekKey => {
+    // Iterate through the weeks in scope
+    const weekKeys = week === null ? Object.keys(games) : [String(week)];
+    weekKeys.forEach(weekKey => {
         const weekNum = parseInt(weekKey);
         if (isNaN(weekNum)) return;
 
@@ -3440,17 +3535,52 @@ function renderHistoryStandingsTable(season) {
     // Cowherd has a Blazin' 5 record and nothing else, whether it comes from
     // the season's archive or, for the season in progress, from the picks
     // entered so far.
-    const cowherdTotal = totalCowherdRecord(cowherdWeeklyResults(season));
+    const cowherdWeekly = cowherdWeeklyResults(season);
+    const cowherdTotal = week === null
+        ? totalCowherdRecord(cowherdWeekly)
+        : (cowherdWeekly && !cowherdWeekly.aggregate && cowherdWeekly[week]) || emptyRecord();
     if (cowherdTotal.wins + cowherdTotal.losses + cowherdTotal.pushes > 0) {
         pickerStats[COWHERD] = {
             name: COWHERD,
             lineWins: 0, lineLosses: 0, linePushes: 0,
             suWins: 0, suLosses: 0,
-            blazinWins: cowherdTotal.wins,
-            blazinLosses: cowherdTotal.losses,
-            blazinPushes: cowherdTotal.pushes,
+            blazinWins: cowherdTotal.wins || 0,
+            blazinLosses: cowherdTotal.losses || 0,
+            blazinPushes: cowherdTotal.pushes || 0,
             totalWins: 0, totalLosses: 0, totalPushes: 0
         };
+    }
+
+    return pickerStats;
+}
+
+/**
+ * Render the History standings table: the season's totals, or one week's
+ * when the scope toggle is on Individual Weeks.
+ */
+function renderHistoryStandingsTable(season) {
+    const tbody = document.getElementById('history-standings-table-body');
+    const titleSpan = document.getElementById('history-standings-title');
+    const scopeLabel = document.getElementById('history-standings-scope-label');
+    if (!tbody) return;
+
+    const week = historyStandingsScope === 'week' ? historyStandingsWeek : null;
+
+    if (titleSpan) {
+        titleSpan.textContent = season;
+    }
+    if (scopeLabel) {
+        scopeLabel.textContent = week === null ? 'Season' : historyWeekName(week);
+    }
+
+    const pickerStats = historyStandingsStats(season, week);
+    if (!pickerStats) {
+        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No data available</td></tr>';
+        return;
+    }
+    if (historyStandingsScope === 'week' && week === null) {
+        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No weeks played yet</td></tr>';
+        return;
     }
 
     // Sort by Blazin' 5 percentage descending, then by Blazin' wins

@@ -280,6 +280,14 @@ In practice that is Thursday evening to Tuesday morning: the tab is down for abo
 
 Run `node test-live-tab.js`.
 
+## History
+
+The standings table on the History tab has two scopes, switched by the toggle beside the season dropdown: the season (labelled **Season to Date** while it is being played and **Full Season** once it is archived) or **Individual Weeks**, which adds a week dropdown and shows one week's records alone. Both come from `historyStandingsStats(season, week)` - the season table is the sum of the week tables, so they cannot disagree. The week list is `historyStandingsWeeks()`: only weeks with at least one result, since a week still to be played is a row of dashes.
+
+The scope and week are module state (`historyStandingsScope`, `historyStandingsWeek`), not read back off the controls. `refreshLiveHistoryView` rebuilds the History tab through `loadHistorySeason` while a live season is being watched, and reading the controls would have dropped the reader back to the season table on every refresh. Lifetime hides the toggle: there are no weeks to choose between. Cowherd's row comes from `cowherdWeeklyResults`; the 2022 and earlier archives hold his as a season aggregate with no weeks in it, so there he is on the season table and absent from every week's.
+
+`node test-history-weeks.js` covers it.
+
 ## Standings
 
 Standings, the trend chart, last-3-week form and best week are **computed from picks + results** by `calculateStatsForWeeks(firstWeek, lastWeek)`, not read from a spreadsheet. `renderDashboard` switches to the computed path whenever `LEGACY_SHEETS_SEASON !== CURRENT_SEASON`, which is every season after 2025.
