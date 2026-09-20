@@ -94,12 +94,14 @@ function makeAppEnv({ withDom = false } = {}) {
         liveWindow, isLiveWindowOpen, updateLiveTabVisibility,
         LIVE_WINDOW_BUFFER_MS, LIVE_WINDOW_GAME_MS,
         LIVE_REFRESH_PLAYING_MS, LIVE_REFRESH_WAITING_MS,
-        pickLineDiffers, signedLineForPick, renderBlazinGameBoxes,
+        pickLineDiffers, signedLineForPick, renderBlazinGameBoxes, renderBlazinGameBox,
         liveEntryFromEvent, liveCacheEntry,
         rankStandings, asIsPositionChange, formatPositionMove,
         renderAsIsStandings, CURRENT_NFL_WEEK,
         toggleAsIsDetail, asIsPickDetail, asIsExpanded,
         asIsWeekRecord, formatWeekRecord, weekRecordTone,
+        setLiveSubcategory, LIVE_SUBCATEGORIES,
+        __liveSubcategory: () => liveSubcategory,
         __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __category: () => currentCategory,
@@ -588,6 +590,155 @@ function weekOfPicks() {
         results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
     };
 }
+
+section('The Live tab has the same three tables as Standings');
+
+// One picker, three different records from the same afternoon:
+//   Rams @ Seahawks, final 20-24, Seahawks -3.  Stephen: Rams on the line
+//     (loses ATS by a point), Seahawks to win (wins SU). Not starred.
+//   Bills @ Chiefs, live 30-20, Chiefs -3.  Stephen: Bills on the line and to
+//     win, starred - covering and winning as it stands.
+//   Jets @ Dolphins, not started.  Stephen: Dolphins on the line, unstarred.
+// Blazin' 1-0-0, Line 1-1-0 (one pending), Straight Up 2-0-0.
+function threeRecords() {
+    return {
+        games: [
+            finalGame(1, 'Rams', 'Seahawks', 20, 24),
+            inProgress(2, 'Bills', 'Chiefs', 30, 20),
+            game(3, 'Jets', 'Dolphins')
+        ],
+        withDom: true,
+        picks: {
+            Stephen: {
+                rams_seahawks: { line: 'away', winner: 'home' },
+                bills_chiefs: b5('away'),
+                jets_dolphins: { line: 'home' }
+            }
+        },
+        results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    };
+}
+
+check('each category scores the week by its own rule', () => {
+    const api = setup(threeRecords());
+    const rec = cat => api.formatWeekRecord(api.asIsWeekRecord(WEEK, cat).Stephen);
+    assert.strictEqual(rec('blazin'), '1-0-0', 'only the starred game');
+    assert.strictEqual(rec('line'), '1-1-0', 'every line pick, starred or not; the unstarted one is not counted');
+    assert.strictEqual(rec('winner'), '2-0-0', 'the winner, not the line');
+});
+
+check('switching the sub-tab redraws the table, the title and the note', () => {
+    const api = setup(threeRecords());
+    api.asIsExpanded.clear();
+
+    api.setLiveSubcategory('line');
+    assert.strictEqual(api.__liveSubcategory(), 'line');
+    assert.strictEqual(api.__written['live-title-category:text'], 'Line Picks');
+    assert.match(api.__written['as-is-note:text'] || '', /^Season line picks/);
+    let stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
+    assert.match(stephen, /week-record[^>]*>1-1-0</, 'the Line Picks week');
+
+    api.setLiveSubcategory('winner');
+    assert.strictEqual(api.__written['live-title-category:text'], 'Straight Up');
+    stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
+    assert.match(stephen, /week-record[^>]*>2-0-0</, 'the Straight Up week');
+
+    api.setLiveSubcategory('blazin');
+    assert.strictEqual(api.__written['live-title-category:text'], 'Blazin’ 5');
+    stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
+    assert.match(stephen, /week-record[^>]*>1-0-0</, 'back to the Blazin’ 5 week');
+});
+
+check('an unknown sub-tab name is ignored', () => {
+    const api = setup(threeRecords());
+    api.setLiveSubcategory('line');
+    api.setLiveSubcategory('bogus');
+    assert.strictEqual(api.__liveSubcategory(), 'line');
+    api.setLiveSubcategory('blazin');
+});
+
+check('the detail rows follow the category', () => {
+    const api = setup(threeRecords());
+    const rows = cat => api.asIsPickDetail('Stephen', cat).split('game-detail-row').slice(1);
+
+    assert.strictEqual(rows('blazin').length, 1, 'the starred game only');
+    assert.strictEqual(rows('line').length, 3, 'every line pick, the unstarted one pending');
+    assert.strictEqual(rows('winner').length, 2, 'the two games with a winner picked');
+
+    const su = api.asIsPickDetail('Stephen', 'winner');
+    assert.ok(su.includes('Picked: Seahawks') && su.includes('Picked: Bills'), 'names the team picked to win');
+    assert.ok(!/Seahawks [+-]\d/.test(su) && !/Bills [+-]\d/.test(su), 'no line on a straight-up row');
+    assert.strictEqual((su.match(/>WIN</g) || []).length, 2, 'both winning as they stand');
+
+    const line = api.asIsPickDetail('Stephen', 'line');
+    assert.ok(line.includes('Rams +3'), 'the line is shown on a line row');
+    assert.ok(line.includes('>LOSS<'), 'Rams +3 lost by four');
+});
+
+check('Cowherd is on the Blazin’ 5 table and off the other two', () => {
+    const api = setup(threeRecords());
+    api.saveCowherdPicks(WEEK, [{ key: 'bills_chiefs', side: 'away', spread: 3 }]);
+    assert.ok(api.asIsWeekRecord(WEEK, 'blazin').Cowherd, 'his five are Blazin’ 5 picks');
+    assert.ok(!api.asIsWeekRecord(WEEK, 'line').Cowherd);
+    assert.ok(!api.asIsWeekRecord(WEEK, 'winner').Cowherd);
+});
+
+check('and on the Blazin’ 5 game boxes only', () => {
+    const api = setup(threeRecords());
+    api.saveCowherdPicks(WEEK, [{ key: 'bills_chiefs', side: 'away', spread: 3 }]);
+    const names = cat => api.blazinGamesForWeek(WEEK, cat)
+        .flatMap(e => [...e.sides.away, ...e.sides.home].map(p => p.picker));
+    assert.ok(names('blazin').includes('Cowherd'), 'he is played against on the starred games');
+    assert.ok(!names('line').includes('Cowherd'), 'his picks are stored as line picks, but he is not in Line Picks');
+    assert.ok(!names('winner').includes('Cowherd'));
+});
+
+check('the game boxes follow the category too', () => {
+    const api = setup(threeRecords());
+    // Blazin': the one starred game. Line: all three. Straight Up: the two
+    // with a winner picked.
+    assert.strictEqual(api.blazinGamesForWeek(WEEK, 'blazin').length, 1);
+    assert.strictEqual(api.blazinGamesForWeek(WEEK, 'line').length, 3);
+    assert.strictEqual(api.blazinGamesForWeek(WEEK, 'winner').length, 2);
+
+    // Sides come from the pick the category is about: Rams on the line,
+    // Seahawks to win - the same game, opposite sides.
+    const lineEntry = api.blazinGamesForWeek(WEEK, 'line').find(e => e.game.id === 1);
+    const suEntry = api.blazinGamesForWeek(WEEK, 'winner').find(e => e.game.id === 1);
+    assert.strictEqual(lineEntry.sides.away[0].picker, 'Stephen', 'Rams +3 on the line');
+    assert.strictEqual(suEntry.sides.home[0].picker, 'Stephen', 'Seahawks to win');
+});
+
+check('a straight-up box carries no line', () => {
+    const api = setup(threeRecords());
+    const results = api.NFL_RESULTS_BY_WEEK[WEEK];
+    const entry = api.blazinGamesForWeek(WEEK, 'winner').find(e => e.game.id === 1);
+    const su = api.renderBlazinGameBox(entry, results, 'winner');
+    assert.ok(su.includes('live-team-name">Seahawks<'), 'names the team');
+    assert.ok(!/live-team-line">[^<]*[+-]\d/.test(su), 'no spread on either side');
+    assert.ok(!/<em>/.test(su), 'and no picker’s own number');
+
+    const lineEntry = api.blazinGamesForWeek(WEEK, 'line').find(e => e.game.id === 1);
+    const ats = api.renderBlazinGameBox(lineEntry, results, 'line');
+    assert.ok(/live-team-line">-3</.test(ats), 'the line row still shows the number');
+});
+
+check('the boxes are drawn for every sub-tab', () => {
+    const api = setup(threeRecords());
+    api.setLiveSubcategory('winner');
+    const drawn = ['live-games-list', 'live-completed-list', 'live-upcoming-list']
+        .map(id => api.__written[id] || '').join('');
+    assert.ok(drawn.includes('live-game-box'), 'Straight Up gets game boxes');
+    assert.ok(!drawn.includes('starred a game'), 'and not the Blazin’ 5 empty message');
+    api.setLiveSubcategory('blazin');
+});
+
+check('the empty message names the category', () => {
+    const api = setup(threeRecords());
+    assert.ok(api.asIsPickDetail('Daniel', 'blazin').includes('No Blazin'));
+    assert.ok(api.asIsPickDetail('Daniel', 'line').includes('No line picks'));
+    assert.ok(api.asIsPickDetail('Daniel', 'winner').includes('No straight-up picks'));
+});
 
 section('This week’s record sits in a box beside the name');
 

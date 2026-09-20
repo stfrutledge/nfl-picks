@@ -2554,8 +2554,12 @@ async function loadSeasonData(rawSeason, { quiet = false } = {}) {
 const dashboard = document.getElementById('dashboard');
 const leaderboard = document.getElementById('leaderboard');
 const tabs = document.querySelectorAll('.tab');
-const subtabs = document.querySelectorAll('.subtab');
+// The Standings strip's buttons only. The Live tab has a strip of the same
+// class; catching its buttons here would hand them to setActiveSubcategory
+// with no subcategory and toggle their highlight from the wrong tab.
+const subtabs = document.querySelectorAll('#standings-subtabs .subtab');
 const standingsSubtabs = document.getElementById('standings-subtabs');
+const liveSubtabs = document.getElementById('live-subtabs');
 
 // Initialize picks storage for all weeks and pickers
 function initializePicksStorage() {
@@ -3871,6 +3875,13 @@ function setupTabs() {
             setActiveSubcategory(subcategory);
         });
     });
+
+    // And for the Live tab's strip
+    document.querySelectorAll('#live-subtabs .subtab').forEach(subtab => {
+        subtab.addEventListener('click', () => {
+            setLiveSubcategory(subtab.dataset.liveSubcategory);
+        });
+    });
 }
 
 /**
@@ -4534,6 +4545,7 @@ async function setActiveCategory(category) {
 
     // FIRST: Hide ALL sections to ensure clean slate
     standingsSubtabs?.classList.add('hidden');
+    liveSubtabs?.classList.add('hidden');
     leaderboard?.classList.add('hidden');
     makePicksSection?.classList.add('hidden');
     performanceInsightsSection?.classList.add('hidden');
@@ -4562,6 +4574,7 @@ async function setActiveCategory(category) {
         startLiveScoresRefresh();
         renderScoringSummary();
     } else if (category === 'live') {
+        liveSubtabs?.classList.remove('hidden');
         liveSection?.classList.remove('hidden');
         renderLiveTab();
         startLiveScoresRefresh();
@@ -5565,19 +5578,28 @@ function saveCowherdPanel() {
  * Cowherd included - the whole point of the tab is watching the group's five
  * against his. A game nobody starred is left out entirely.
  */
-function blazinGamesForWeek(week = currentWeek) {
+function blazinGamesForWeek(week = currentWeek, category = COWHERD_CATEGORY) {
     const games = getGamesForWeekAndSeason(week, currentSeason) || [];
     const byPicker = {};
     PICKERS_WITH_COWHERD.forEach(picker => {
         byPicker[picker] = getPickerPicksForWeek(week, picker);
     });
 
+    // Which side a picker is on depends on what is being watched: the line
+    // for Blazin' 5 and Line Picks (the first is the starred subset of the
+    // second), the winner for Straight Up.
+    const straightUp = category === 'winner';
+    // Cowherd's five are Blazin' 5 picks and nothing else - the same gate that
+    // keeps him off the Line Picks and Straight Up tables (cowherdBelongsIn).
+    const pickers = category === COWHERD_CATEGORY ? PICKERS_WITH_COWHERD : PICKERS;
     return games.map(game => {
         const sides = { away: [], home: [] };
-        PICKERS_WITH_COWHERD.forEach(picker => {
+        pickers.forEach(picker => {
             const pick = getPicksForGame(byPicker[picker], game);
-            if (!pick.line || !pick.blazin) return;
-            sides[pick.line].push({ picker, pick });
+            const side = straightUp ? pick.winner : pick.line;
+            if (!side) return;
+            if (category === 'blazin' && !pick.blazin) return;
+            sides[side].push({ picker, pick });
         });
         return { game, sides, count: sides.away.length + sides.home.length };
     }).filter(entry => entry.count > 0);
@@ -5620,10 +5642,35 @@ function liveGameRank(game, weekResults) {
 }
 
 
+// Which record the Live tab is showing: the same three the Standings tab has,
+// each with games in progress counted as they stand. Separate from
+// currentSubcategory on purpose - the two tabs are looked at for different
+// reasons and should not drag each other about.
+const LIVE_SUBCATEGORIES = {
+    blazin: { label: 'Blazin’ 5', note: 'Season Blazin’ 5' },
+    line:   { label: 'Line Picks',    note: 'Season line picks, starred or not' },
+    winner: { label: 'Straight Up',   note: 'Season straight-up picks' }
+};
+let liveSubcategory = 'blazin';
+
+/** Switch the Live tab between its three tables. An unknown name is ignored. */
+function setLiveSubcategory(subcategory) {
+    if (!LIVE_SUBCATEGORIES[subcategory]) return;
+    liveSubcategory = subcategory;
+    document.querySelectorAll('#live-subtabs .subtab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.liveSubcategory === subcategory);
+    });
+    renderLiveTab();
+}
+
 /** Draw the whole Live tab. Cheap enough to redraw on every score refresh. */
 function renderLiveTab() {
     const section = document.getElementById('live-section');
     if (!section) return;
+
+    const view = LIVE_SUBCATEGORIES[liveSubcategory];
+    const title = document.getElementById('live-title-category');
+    if (title) title.textContent = view.label;
 
     const label = document.getElementById('live-week-label');
     if (label) {
@@ -5632,8 +5679,16 @@ function renderLiveTab() {
             : `Week ${getWeekDisplayName(currentWeek)}`;
     }
 
-    renderAsIsStandings();
-    renderBlazinGameBoxes();
+    const note = document.getElementById('as-is-note');
+    if (note) {
+        note.textContent = `${view.note}, with games in progress counted as they stand. `
+            + 'Move is against the end of last week.';
+    }
+
+    renderAsIsStandings(liveSubcategory);
+    // The game boxes follow the record: starred games, every game with a line
+    // pick on it, or every game with a winner picked.
+    renderBlazinGameBoxes(liveSubcategory);
 }
 
 // The Live tab is only up while the week's games are on: from an hour before
@@ -5704,30 +5759,42 @@ function toggleAsIsDetail(picker) {
 }
 
 /**
- * One picker's Blazin' 5 for the current week: what they took, at what line,
- * and where it stands.
+ * One picker's picks in one category for the current week: what they took, at
+ * what line where a line is what is being played, and where each stands.
  *
  * This week only. The table above is a season record, and the reason to open
  * a row is to see what is behind today's movement in it.
+ *
+ * Blazin' 5 and Line Picks are both against the spread - the first is the
+ * starred subset of the second. Straight Up is the winner, and has no line
+ * to show. The same rules calculateStatsForWeeks scores by, so a row here
+ * always agrees with the table it opened from.
  */
-function asIsPickDetail(picker) {
+function asIsPickDetail(picker, category = liveSubcategory) {
     const games = getGamesForWeekAndSeason(currentWeek, currentSeason) || [];
     const weekResults = getResultsForWeekAndSeason(currentWeek, currentSeason) || {};
     const picks = getPickerPicksForWeek(currentWeek, picker);
+    const straightUp = category === 'winner';
 
     const rows = games.map(game => {
         const pick = getPicksForGame(picks, game);
-        if (!pick.line || !pick.blazin) return null;
+        const side = straightUp ? pick.winner : pick.line;
+        if (!side) return null;
+        if (category === 'blazin' && !pick.blazin) return null;
 
         const settled = getGameResult(game, weekResults);
         const result = settled || liveProvisionalResult(game);
-        const ats = result ? atsWinnerForPick(game, pick, result) : null;
 
         // A game in progress is scored as it stands, and said to be so - the
         // same claim the table above makes about the record.
-        const outcome = !ats ? 'pending'
-            : ats === 'push' ? 'push'
-            : ats === pick.line ? 'win' : 'loss';
+        let outcome;
+        if (straightUp) {
+            // A tied game in progress has no leader yet: pending, not a push.
+            outcome = !result?.winner ? 'pending' : result.winner === side ? 'win' : 'loss';
+        } else {
+            const ats = result ? atsWinnerForPick(game, pick, result) : null;
+            outcome = !ats ? 'pending' : ats === 'push' ? 'push' : ats === side ? 'win' : 'loss';
+        }
         const label = outcome === 'pending' ? '&ndash;' : outcome.toUpperCase();
 
         const live = getLiveGameStatus(game);
@@ -5736,7 +5803,8 @@ function asIsPickDetail(picker) {
         const matchup = result
             ? `${game.away} ${result.awayScore} @ ${game.home} ${result.homeScore}`
             : `${game.away} @ ${game.home}`;
-        const picked = pick.line === 'away' ? game.away : game.home;
+        const picked = side === 'away' ? game.away : game.home;
+        const line = straightUp ? '' : describeLineForSide(game, side, pick);
 
         // Same shape as the Team Records detail, down to the class names, so
         // the two read as one thing rather than two takes on it.
@@ -5744,14 +5812,16 @@ function asIsPickDetail(picker) {
             <div class="game-detail-row outcome-${outcome}${settled || outcome === 'pending' ? '' : ' outcome-provisional'}">
                 <span class="game-week">${status}</span>
                 <span class="game-matchup">${matchup}</span>
-                <span class="game-spread">${describeLineForSide(game, pick.line, pick)}</span>
+                <span class="game-spread">${line}</span>
                 <span class="game-picked">Picked: ${picked}</span>
                 <span class="game-outcome"${settled || outcome === 'pending' ? '' : ' title="As it stands"'}>${label}</span>
             </div>`;
     }).filter(Boolean);
 
     if (rows.length === 0) {
-        return '<p class="as-is-no-picks">No Blazin&rsquo; 5 picks for this week.</p>';
+        const what = category === 'blazin' ? 'Blazin&rsquo; 5'
+            : straightUp ? 'straight-up' : 'line';
+        return `<p class="as-is-no-picks">No ${what} picks for this week.</p>`;
     }
     return rows.join('');
 }
@@ -5796,17 +5866,17 @@ function rankStandings(rows) {
  * against: week 1 has no last week, and a picker with nothing scored before
  * now has not moved, they have arrived.
  */
-function asIsPositionChange({ first, last } = regularSeasonWeekRange()) {
+function asIsPositionChange({ first, last } = regularSeasonWeekRange(), category = COWHERD_CATEGORY) {
     const now = rankStandings(standingsFromComputed(
         calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD, { includeLive: true }),
-        COWHERD_CATEGORY));
+        category));
 
     if (last <= first) return {};
 
     // Last week is settled, so no live results belong in it.
     const before = rankStandings(standingsFromComputed(
         calculateStatsForWeeks(first, last - 1, PICKERS_WITH_COWHERD),
-        COWHERD_CATEGORY));
+        category));
 
     const moves = {};
     Object.keys(now).forEach(name => {
@@ -5824,35 +5894,36 @@ function asIsPositionChange({ first, last } = regularSeasonWeekRange()) {
  * which is what Last 3-Wk, Best Week and Year Chg describe, says nothing
  * about where an afternoon is heading.
  */
-function renderAsIsStandings() {
+function renderAsIsStandings(category = liveSubcategory) {
     const { first, last } = regularSeasonWeekRange();
     const computed = calculateStatsForWeeks(
         first, last, PICKERS_WITH_COWHERD, { includeLive: true });
-    renderStandingsTable(standingsFromComputed(computed, COWHERD_CATEGORY), {
+    renderStandingsTable(standingsFromComputed(computed, category), {
         tableId: 'as-is-standings-table',
         tbodyId: 'as-is-standings-body',
-        category: COWHERD_CATEGORY,
+        category,
         setTitle: false,
         columns: 'as-is',
-        positionChange: asIsPositionChange(),
+        positionChange: asIsPositionChange(undefined, category),
         // currentWeek, not `last`: it is the week the detail rows open onto,
         // and the box is the summary of what is behind them.
-        weekRecord: asIsWeekRecord(currentWeek)
+        weekRecord: asIsWeekRecord(currentWeek, category)
     });
 }
 
 /**
- * Each picker's Blazin' 5 record for one week alone, live games counted as
- * they stand - the small W-L-P beside the name on the as-is table.
+ * Each picker's record in one category for one week alone, live games counted
+ * as they stand - the small W-L-P beside the name on the as-is table.
  *
  * The table is a season record; this is what this week has done to it. Same
  * engine, same includeLive, narrowed to the one week, so the two can never
- * disagree about a game.
+ * disagree about a game. Cowherd falls out of the non-Blazin' categories here
+ * the same way he does from the table (cowherdBelongsIn).
  */
-function asIsWeekRecord(week) {
+function asIsWeekRecord(week, category = COWHERD_CATEGORY) {
     return standingsFromComputed(
         calculateStatsForWeeks(week, week, PICKERS_WITH_COWHERD, { includeLive: true }),
-        COWHERD_CATEGORY);
+        category);
 }
 
 /** "1-2-0": a record as the box reads it. A picker with nothing scored is 0-0-0. */
@@ -5885,7 +5956,7 @@ function weekRecordTone(record) {
  * underneath a dozen of them is the wrong way round. Each gets a section of
  * its own - open by default, and collapsing one is remembered.
  */
-function renderBlazinGameBoxes() {
+function renderBlazinGameBoxes(category = liveSubcategory) {
     const list = document.getElementById('live-games-list');
     if (!list) return;
 
@@ -5893,7 +5964,7 @@ function renderBlazinGameBoxes() {
     const byKickoff = (a, b) =>
         String(a.game.kickoff || '').localeCompare(String(b.game.kickoff || ''));
 
-    const entries = blazinGamesForWeek(currentWeek);
+    const entries = blazinGamesForWeek(currentWeek, category);
     // liveGameRank: 0 in progress, 1 finished, 2 still to come.
     const inRank = rank => entries.filter(e => liveGameRank(e.game, weekResults) === rank)
         .sort(byKickoff);
@@ -5902,22 +5973,25 @@ function renderBlazinGameBoxes() {
     const upcoming = inRank(2);
 
     if (entries.length === 0) {
-        list.innerHTML = '<p class="no-data-message">Nobody has starred a game this week yet.</p>';
+        const nothing = category === 'blazin' ? 'Nobody has starred a game this week yet.'
+            : category === 'winner' ? 'No straight-up picks this week yet.'
+            : 'No line picks this week yet.';
+        list.innerHTML = `<p class="no-data-message">${nothing}</p>`;
     } else if (playing.length === 0) {
         list.innerHTML = '<p class="no-data-message">No games in progress.</p>';
     } else {
-        list.innerHTML = playing.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
+        list.innerHTML = playing.map(entry => renderBlazinGameBox(entry, weekResults, category)).join('');
     }
 
-    renderGameSection('live-completed', finished, weekResults);
-    renderGameSection('live-upcoming', upcoming, weekResults);
+    renderGameSection('live-completed', finished, weekResults, category);
+    renderGameSection('live-upcoming', upcoming, weekResults, category);
 }
 
 /**
  * One of the collapsible game sections, hidden entirely while it is empty.
  * Ids follow the section name: <id>-section, <id>-list, <id>-count.
  */
-function renderGameSection(id, entries, weekResults) {
+function renderGameSection(id, entries, weekResults, category = liveSubcategory) {
     const section = document.getElementById(`${id}-section`);
     const list = document.getElementById(`${id}-list`);
     const count = document.getElementById(`${id}-count`);
@@ -5927,10 +6001,10 @@ function renderGameSection(id, entries, weekResults) {
     if (count) {
         count.textContent = entries.length ? `(${entries.length})` : '';
     }
-    list.innerHTML = entries.map(entry => renderBlazinGameBox(entry, weekResults)).join('');
+    list.innerHTML = entries.map(entry => renderBlazinGameBox(entry, weekResults, category)).join('');
 }
 
-function renderBlazinGameBox({ game, sides }, weekResults) {
+function renderBlazinGameBox({ game, sides }, weekResults, category = liveSubcategory) {
     const live = getLiveGameStatus(game);
     // The cache, not the schedule: down, distance and possession only exist
     // here, and its clock is as fresh as the last poll.
@@ -5993,14 +6067,18 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
             <span class="live-down">${downText}</span>
         </div>` : '';
 
+    // Straight Up is about who wins, so its rows carry no line and a picker's
+    // own number never comes into it.
+    const straightUp = category === 'winner';
     const sideRow = side => {
         const picks = sides[side];
         const team = side === 'away' ? game.away : game.home;
-        const line = describeLineForSide(game, side);
+        const line = straightUp ? '' : describeLineForSide(game, side).replace(team, '').trim();
 
         const chips = picks.map(({ picker, pick }) => {
             // Only where it is not the number already on the row.
-            const own = pickLineDiffers(game, pick) ? signedLineForPick(game, pick, side) : '';
+            const own = !straightUp && pickLineDiffers(game, pick)
+                ? signedLineForPick(game, pick, side) : '';
             return `<span class="live-picker${picker === COWHERD ? ' cowherd' : ''}">`
                 + `${picker}${own ? ` <em>${own}</em>` : ''}</span>`;
         }).join('');
@@ -6009,7 +6087,7 @@ function renderBlazinGameBox({ game, sides }, weekResults) {
             <div class="live-side${picks.length ? '' : ' empty'}">
                 <div class="live-side-team">
                     <span class="live-team-name">${team}</span>
-                    <span class="live-team-line">${line.replace(team, '').trim()}</span>
+                    <span class="live-team-line">${line}</span>
                 </div>
                 <div class="live-pickers">${chips}</div>
             </div>`;

@@ -7050,13 +7050,11 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--text-primary);
 }
 
+/* No chrome. The table frames itself and the section title is the heading, so
+   a panel here drew a second box around the first - the same thing the
+   Standings tab stopped doing. Only the spacing below is kept. */
 .as-is-panel {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 18px 20px;
     margin-bottom: 26px;
-    box-shadow: var(--shadow-sm);
 }
 
 .as-is-heading {
@@ -7065,12 +7063,6 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     align-items: baseline;
     gap: 10px;
     margin-bottom: 12px;
-}
-
-.as-is-heading h3 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 800;
 }
 
 .as-is-note {
@@ -7407,7 +7399,7 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     }
 
     .as-is-panel {
-        padding: 14px;
+        margin-bottom: 20px;
     }
 }
 
