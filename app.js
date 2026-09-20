@@ -5950,10 +5950,21 @@ function asIsWeekRecord(week, category = COWHERD_CATEGORY) {
         category);
 }
 
-/** "1-2-0": a record as the box reads it. A picker with nothing in play is 0-0-0. */
+/** "1-2-0": a record as the box reads it. Nothing in play reads 0-0-0. */
 function formatWeekRecord(record) {
     const r = record || {};
     return `${r.wins || 0}-${r.losses || 0}-${r.pushes || 0}`;
+}
+
+/**
+ * Whether a picker has anything in play at all. Nothing is a plain 0-0-0,
+ * and there is no box for that: a row of grey 0-0-0s (Cowherd's, whenever
+ * his five are done; everyone's, between slates) says nothing the empty
+ * space does not, and the box is meant to be read as a signal.
+ */
+function weekRecordInPlay(record) {
+    const r = record || {};
+    return (r.wins || 0) + (r.losses || 0) + (r.pushes || 0) > 0;
 }
 
 /**
@@ -9524,9 +9535,10 @@ function renderStandingsTable(stats, {
             // cell, not a flex cell: a td that stops being a table-cell
             // breaks the column it sits in. The box sits at the cell's right
             // edge, which is one line down the whole column.
+            // No box at all for a picker with nothing in play.
             const record = weekRecord ? weekRecord[picker.name] : null;
             const tone = weekRecordTone(record);
-            const week = weekRecord ? `
+            const week = weekRecord && weekRecordInPlay(record) ? `
                         <span class="week-record${tone ? ' ' + tone : ''}" title="Games in progress, as they stand">`
                             + `${formatWeekRecord(record)}</span>` : '';
             return `

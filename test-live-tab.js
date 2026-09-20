@@ -99,7 +99,7 @@ function makeAppEnv({ withDom = false } = {}) {
         rankStandings, asIsPositionChange, formatPositionMove,
         renderAsIsStandings, CURRENT_NFL_WEEK,
         toggleAsIsDetail, asIsPickDetail, asIsExpanded,
-        asIsWeekRecord, formatWeekRecord, weekRecordTone,
+        asIsWeekRecord, formatWeekRecord, weekRecordTone, weekRecordInPlay,
         setLiveSubcategory, LIVE_SUBCATEGORIES,
         __liveSubcategory: () => liveSubcategory,
         __setLiveScores: c => { liveScoresCache = c; },
@@ -807,17 +807,25 @@ check('each row carries the W-L-P of the games in play', () => {
     api.renderAsIsStandings();
     const body = api.__written['as-is-standings-body'] || '';
     // Sean took the Rams +3 in a game the Seahawks won by four - but that
-    // game is over, so it is the table's business, not the box's: 0-0-0.
+    // game is over, so it is the table's business, not the box's. Nothing
+    // in play means no box at all, not a grey 0-0-0.
     const sean = (body.split('as-is-name">Sean<')[1] || '').split('</tr>')[0];
     assert.ok(sean, 'found Sean’s row');
-    assert.match(sean, /week-record[^>]*>0-0-0</, 'nothing of his is in play');
+    assert.ok(!sean.includes('week-record'), 'nothing of his is in play, so no box');
     // Stephen has the Bills covering as they stand: 1-0-0.
     const stephen = (body.split('as-is-name">Stephen<')[1] || '').split('</tr>')[0];
     assert.match(stephen, /week-record[^>]*>1-0-0</, 'his live cover, and only that');
-    // Every row has one, in W-L-P form.
+    // Only the rows with something in play carry one: Stephen's, and no other.
     const boxes = body.match(/week-record[^>]*>\d+-\d+-\d+</g) || [];
-    const rows = body.match(/class="as-is-row/g) || [];
-    assert.strictEqual(boxes.length, rows.length, 'one box per row');
+    assert.strictEqual(boxes.length, 1, 'one box, on the one row with a game running');
+});
+
+check('nothing in play is no box; a push in play still is', () => {
+    const api = setup(weekOfPicks());
+    assert.strictEqual(api.weekRecordInPlay({ wins: 0, losses: 0, pushes: 0 }), false);
+    assert.strictEqual(api.weekRecordInPlay(undefined), false);
+    assert.strictEqual(api.weekRecordInPlay({ wins: 0, losses: 0, pushes: 1 }), true, 'a push is a game in play');
+    assert.strictEqual(api.weekRecordInPlay({ wins: 1, losses: 0, pushes: 0 }), true);
 });
 
 check('it is the games in play alone, not the week or the season', () => {
@@ -859,12 +867,12 @@ check('the box is green above 50%, red below, blue dead on it', () => {
     assert.strictEqual(api.weekRecordTone(undefined), '');
 
     // And on the rendered rows: Stephen 1-0-0 green; Sean, with nothing in
-    // play, gets the plain box.
+    // play, has no box.
     api.asIsExpanded.clear();
     api.renderAsIsStandings();
     const body = api.__written['as-is-standings-body'] || '';
     assert.match(body.split('as-is-name">Stephen<')[1] || '', /week-record above"[^>]*>1-0-0</);
-    assert.match(body.split('as-is-name">Sean<')[1] || '', /week-record"[^>]*>0-0-0</);
+    assert.ok(!((body.split('as-is-name">Sean<')[1] || '').split('</tr>')[0]).includes('week-record'));
 
     // Solid blocks: the colour is the background, and the digits are white.
     ['.week-record.above', '.week-record.below', '.week-record.level'].forEach(sel => {
