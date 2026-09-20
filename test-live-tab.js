@@ -99,6 +99,7 @@ function makeAppEnv({ withDom = false } = {}) {
         rankStandings, asIsPositionChange, formatPositionMove,
         renderAsIsStandings, CURRENT_NFL_WEEK,
         toggleAsIsDetail, asIsPickDetail, asIsExpanded,
+        asIsWeekRecord, formatWeekRecord, weekRecordTone,
         __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __category: () => currentCategory,
@@ -587,6 +588,71 @@ function weekOfPicks() {
         results: { 1: { awayScore: 20, homeScore: 24, winner: 'home' } }
     };
 }
+
+section('This week’s record sits in a box beside the name');
+
+check('each row carries the current week’s W-L-P', () => {
+    const api = setup(weekOfPicks());
+    api.asIsExpanded.clear();
+    api.renderAsIsStandings();
+    const body = api.__written['as-is-standings-body'] || '';
+    // Sean took the Rams +3 in a game the Seahawks won by four: 0-1-0.
+    const sean = (body.split('as-is-name">Sean<')[1] || '').split('</tr>')[0];
+    assert.ok(sean, 'found Sean’s row');
+    assert.match(sean, /week-record[^>]*>0-1-0</, 'his week reads 0-1-0');
+    // Every row has one, in W-L-P form.
+    const boxes = body.match(/week-record[^>]*>\d+-\d+-\d+</g) || [];
+    const rows = body.match(/class="as-is-row/g) || [];
+    assert.strictEqual(boxes.length, rows.length, 'one box per row');
+});
+
+check('it is this week alone, not the season', () => {
+    const api = setup(weekOfPicks());
+    const week = api.asIsWeekRecord(WEEK);
+    assert.strictEqual(api.formatWeekRecord(week.Sean), '0-1-0');
+    assert.strictEqual(api.formatWeekRecord(week.Stephen), '2-0-0', 'settled win plus the live cover; the unstarted game is not counted');
+    assert.strictEqual(api.formatWeekRecord(undefined), '0-0-0', 'nothing scored is 0-0-0, not blank');
+    // A week with nothing in it scores nobody.
+    assert.strictEqual(api.formatWeekRecord(api.asIsWeekRecord(WEEK + 1).Sean), '0-0-0');
+});
+
+check('the box is green above 50%, red below, blue dead on it', () => {
+    const api = setup(weekOfPicks());
+    const tone = (wins, losses, pushes = 0) => api.weekRecordTone({ wins, losses, pushes });
+    assert.strictEqual(tone(2, 0), 'above');
+    assert.strictEqual(tone(0, 1), 'below');
+    assert.strictEqual(tone(1, 1), 'level');
+    assert.strictEqual(tone(1, 1, 3), 'level', 'pushes do not count, as in the % column');
+    assert.strictEqual(tone(0, 0), '', 'nothing decided: no opinion, plain box');
+    assert.strictEqual(tone(0, 0, 2), '', 'all pushes is still nothing decided');
+    assert.strictEqual(api.weekRecordTone(undefined), '');
+
+    // And on the rendered rows: Stephen 2-0-0 green, Sean 0-1-0 red.
+    api.asIsExpanded.clear();
+    api.renderAsIsStandings();
+    const body = api.__written['as-is-standings-body'] || '';
+    assert.match(body.split('as-is-name">Stephen<')[1] || '', /week-record above"[^>]*>2-0-0</);
+    assert.match(body.split('as-is-name">Sean<')[1] || '', /week-record below"[^>]*>0-1-0</);
+
+    // Solid blocks: the colour is the background, and the digits are white.
+    ['.week-record.above', '.week-record.below', '.week-record.level'].forEach(sel => {
+        const rule = rulesFor(sel).find(b => b.split('{')[0].trim() === sel) || '';
+        assert.ok(/background:\s*var\(--/.test(rule), sel + ' fills the box');
+    });
+    const level = rulesFor('.week-record.level').find(b => b.split('{')[0].trim() === '.week-record.level') || '';
+    assert.ok(/background:\s*var\(--live-blue\)/.test(level), 'level is the Live tab’s blue');
+    const shared = rulesFor('.week-record.above').find(b => /\.week-record\.below/.test(b.split('{')[0])) || '';
+    assert.ok(/color:\s*#fff/.test(shared), 'white digits on all three');
+});
+
+check('the boxes line up on the right edge of the name column', () => {
+    const cell = rulesFor('.as-is-name-cell').find(b => b.split('{')[0].trim() === '.as-is-name-cell') || '';
+    assert.ok(/display:\s*flex/.test(cell) && /justify-content:\s*space-between/.test(cell),
+        'name left, box pushed to the right edge');
+    const box = rulesFor('.week-record').find(b => b.split('{')[0].trim() === '.week-record') || '';
+    assert.ok(/min-width:/.test(box), 'a fixed minimum width so 0-0-0 and 10-2-1 are the same box');
+    assert.ok(/tabular-nums/.test(box), 'digits of equal width');
+});
 
 check('a row is closed until it is opened', () => {
     const api = setup(weekOfPicks());

@@ -5834,8 +5834,46 @@ function renderAsIsStandings() {
         category: COWHERD_CATEGORY,
         setTitle: false,
         columns: 'as-is',
-        positionChange: asIsPositionChange()
+        positionChange: asIsPositionChange(),
+        // currentWeek, not `last`: it is the week the detail rows open onto,
+        // and the box is the summary of what is behind them.
+        weekRecord: asIsWeekRecord(currentWeek)
     });
+}
+
+/**
+ * Each picker's Blazin' 5 record for one week alone, live games counted as
+ * they stand - the small W-L-P beside the name on the as-is table.
+ *
+ * The table is a season record; this is what this week has done to it. Same
+ * engine, same includeLive, narrowed to the one week, so the two can never
+ * disagree about a game.
+ */
+function asIsWeekRecord(week) {
+    return standingsFromComputed(
+        calculateStatsForWeeks(week, week, PICKERS_WITH_COWHERD, { includeLive: true }),
+        COWHERD_CATEGORY);
+}
+
+/** "1-2-0": a record as the box reads it. A picker with nothing scored is 0-0-0. */
+function formatWeekRecord(record) {
+    const r = record || {};
+    return `${r.wins || 0}-${r.losses || 0}-${r.pushes || 0}`;
+}
+
+/**
+ * Which way the box is coloured: 'above' 50% is green, 'below' is red, dead
+ * on 50% is blue. Same arithmetic as the % column (recordPercentage - pushes
+ * do not count), so the box and the column never disagree. Nothing decided
+ * yet is '' - the plain box, since there is nothing to have an opinion about.
+ */
+function weekRecordTone(record) {
+    const r = record || { wins: 0, losses: 0 };
+    const pct = recordPercentage({ wins: r.wins || 0, losses: r.losses || 0 });
+    if (pct === null) return '';
+    if (pct > 50) return 'above';
+    if (pct < 50) return 'below';
+    return 'level';
 }
 
 /**
@@ -9344,7 +9382,8 @@ function renderStandingsTable(stats, {
     category = currentSubcategory,
     setTitle = true,
     columns = 'season',
-    positionChange = null
+    positionChange = null,
+    weekRecord = null
 } = {}) {
     const tbody = document.getElementById(tbodyId);
     const thead = document.querySelector(`#${tableId} thead`);
@@ -9373,11 +9412,22 @@ function renderStandingsTable(stats, {
                 ? picker.percentage.toFixed(2) + '%' : '-';
             const move = positionChange ? positionChange[picker.name] : null;
             const open = asIsExpanded.has(picker.name);
+            // This week's record in a box beside the name. A div inside the
+            // cell, not a flex cell: a td that stops being a table-cell
+            // breaks the column it sits in. The box sits at the cell's right
+            // edge, which is one line down the whole column.
+            const record = weekRecord ? weekRecord[picker.name] : null;
+            const tone = weekRecordTone(record);
+            const week = weekRecord ? `
+                        <span class="week-record${tone ? ' ' + tone : ''}" title="This week, as it stands">`
+                            + `${formatWeekRecord(record)}</span>` : '';
             return `
                 <tr class="as-is-row ${open ? 'open' : ''} ${index === 0 ? 'leader' : ''}"
                     onclick="toggleAsIsDetail('${picker.name}')"
                     title="Show this week&rsquo;s picks">
-                    <td class="picker-name">${picker.name}</td>
+                    <td class="picker-name"><div class="as-is-name-cell">
+                        <span class="as-is-name">${picker.name}</span>${week}
+                    </div></td>
                     <td>${picker.wins || 0}</td>
                     <td>${picker.losses || 0}</td>
                     <td>${picker.pushes || 0}</td>
