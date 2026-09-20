@@ -5931,21 +5931,26 @@ function renderAsIsStandings(category = liveSubcategory) {
 }
 
 /**
- * Each picker's record in one category for one week alone, live games counted
- * as they stand - the small W-L-P beside the name on the as-is table.
+ * Each picker's record in one category over the games being played right now
+ * (a delay included), as they stand - the small W-L-P beside the name on the
+ * as-is table.
  *
- * The table is a season record; this is what this week has done to it. Same
- * engine, same includeLive, narrowed to the one week, so the two can never
- * disagree about a game. Cowherd falls out of the non-Blazin' categories here
+ * The table is a season record; this is what the games on at this moment are
+ * doing to it. Settled games are left out on purpose: the table already has
+ * them, and the point of the box is to show what is still moving. It read the
+ * whole week until September 2026, which by late Sunday was mostly finished
+ * games and said nothing about the two still running. Same engine, narrowed
+ * to the one week and to live games only, so the box and the table can never
+ * disagree about a score. Cowherd falls out of the non-Blazin' categories here
  * the same way he does from the table (cowherdBelongsIn).
  */
 function asIsWeekRecord(week, category = COWHERD_CATEGORY) {
     return standingsFromComputed(
-        calculateStatsForWeeks(week, week, PICKERS_WITH_COWHERD, { includeLive: true }),
+        calculateStatsForWeeks(week, week, PICKERS_WITH_COWHERD, { liveOnly: true }),
         category);
 }
 
-/** "1-2-0": a record as the box reads it. A picker with nothing scored is 0-0-0. */
+/** "1-2-0": a record as the box reads it. A picker with nothing in play is 0-0-0. */
 function formatWeekRecord(record) {
     const r = record || {};
     return `${r.wins || 0}-${r.losses || 0}-${r.pushes || 0}`;
@@ -6162,8 +6167,12 @@ function emptyRecord() {
  * With `includeLive`, a game in progress is scored at the score it is standing
  * at. That is the whole of the Live tab's "as is" table: the same engine over
  * the same picks, with the afternoon's games counted as though they had ended.
+ *
+ * With `liveOnly`, only those games are scored - the settled ones are left
+ * out. That is the box beside each name on that table: what the games being
+ * played right now are doing to the record, on its own.
  */
-function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includeLive = false, season = currentSeason } = {}) {
+function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includeLive = false, liveOnly = false, season = currentSeason } = {}) {
     const stats = {};
     pickers.forEach(picker => {
         stats[picker] = {
@@ -6198,8 +6207,9 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includ
 
             weekGames.forEach(game => {
                 const pick = pickFromSources(game, localPicks, cachedPicks);
-                const result = getGameResult(game, weekResults)
-                    || (includeLive ? liveProvisionalResult(game) : null);
+                const result = liveOnly ? liveProvisionalResult(game)
+                    : (getGameResult(game, weekResults)
+                        || (includeLive ? liveProvisionalResult(game) : null));
                 if (!result) return;
 
                 // Scored against this picker's own line: a frozen pick keeps
@@ -9510,14 +9520,14 @@ function renderStandingsTable(stats, {
                 ? picker.percentage.toFixed(2) + '%' : '-';
             const move = positionChange ? positionChange[picker.name] : null;
             const open = asIsExpanded.has(picker.name);
-            // This week's record in a box beside the name. A div inside the
+            // The games in play, as they stand, in a box beside the name. A div inside the
             // cell, not a flex cell: a td that stops being a table-cell
             // breaks the column it sits in. The box sits at the cell's right
             // edge, which is one line down the whole column.
             const record = weekRecord ? weekRecord[picker.name] : null;
             const tone = weekRecordTone(record);
             const week = weekRecord ? `
-                        <span class="week-record${tone ? ' ' + tone : ''}" title="This week, as it stands">`
+                        <span class="week-record${tone ? ' ' + tone : ''}" title="Games in progress, as they stand">`
                             + `${formatWeekRecord(record)}</span>` : '';
             return `
                 <tr class="as-is-row ${open ? 'open' : ''} ${index === 0 ? 'leader' : ''}"

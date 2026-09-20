@@ -7113,7 +7113,7 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     cursor: pointer;
 }
 
-/* Name on the left, this week's W-L-P in a box on the right of the same cell.
+/* Name on the left, the in-play W-L-P in a box on the right of the same cell.
    The box is pushed to the cell's right edge, so every row's box lines up on
    the column's one edge whatever the length of the name. */
 .as-is-name-cell {

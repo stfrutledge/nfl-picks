@@ -676,9 +676,10 @@ function threeRecords() {
 check('each category scores the week by its own rule', () => {
     const api = setup(threeRecords());
     const rec = cat => api.formatWeekRecord(api.asIsWeekRecord(WEEK, cat).Stephen);
+    // The box is the games in play only: the settled Rams game is left out.
     assert.strictEqual(rec('blazin'), '1-0-0', 'only the starred game');
-    assert.strictEqual(rec('line'), '1-1-0', 'every line pick, starred or not; the unstarted one is not counted');
-    assert.strictEqual(rec('winner'), '2-0-0', 'the winner, not the line');
+    assert.strictEqual(rec('line'), '1-0-0', 'the live line pick; settled and unstarted ones are not counted');
+    assert.strictEqual(rec('winner'), '1-0-0', 'the winner, not the line');
 });
 
 check('switching the sub-tab redraws the table, the title and the note', () => {
@@ -690,17 +691,17 @@ check('switching the sub-tab redraws the table, the title and the note', () => {
     assert.strictEqual(api.__written['live-title-category:text'], 'Line Picks');
     assert.match(api.__written['as-is-note:text'] || '', /^Season line picks/);
     let stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
-    assert.match(stephen, /week-record[^>]*>1-1-0</, 'the Line Picks week');
+    assert.match(stephen, /week-record[^>]*>1-0-0</, 'the Line Picks in play');
 
     api.setLiveSubcategory('winner');
     assert.strictEqual(api.__written['live-title-category:text'], 'Straight Up');
     stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
-    assert.match(stephen, /week-record[^>]*>2-0-0</, 'the Straight Up week');
+    assert.match(stephen, /week-record[^>]*>1-0-0</, 'the Straight Up in play');
 
     api.setLiveSubcategory('blazin');
     assert.strictEqual(api.__written['live-title-category:text'], 'Blazin’ 5');
     stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
-    assert.match(stephen, /week-record[^>]*>1-0-0</, 'back to the Blazin’ 5 week');
+    assert.match(stephen, /week-record[^>]*>1-0-0</, 'back to the Blazin’ 5 in play');
 });
 
 check('an unknown sub-tab name is ignored', () => {
@@ -794,31 +795,56 @@ check('the empty message names the category', () => {
     assert.ok(api.asIsPickDetail('Daniel', 'winner').includes('No straight-up picks'));
 });
 
-section('This week’s record sits in a box beside the name');
+section('The games in play sit in a box beside the name');
 
-check('each row carries the current week’s W-L-P', () => {
+// The box is what is happening now, not the week: by late Sunday the week is
+// mostly finished games, which the table already has, and the box's job is to
+// show what the two still running are doing to it.
+
+check('each row carries the W-L-P of the games in play', () => {
     const api = setup(weekOfPicks());
     api.asIsExpanded.clear();
     api.renderAsIsStandings();
     const body = api.__written['as-is-standings-body'] || '';
-    // Sean took the Rams +3 in a game the Seahawks won by four: 0-1-0.
+    // Sean took the Rams +3 in a game the Seahawks won by four - but that
+    // game is over, so it is the table's business, not the box's: 0-0-0.
     const sean = (body.split('as-is-name">Sean<')[1] || '').split('</tr>')[0];
     assert.ok(sean, 'found Sean’s row');
-    assert.match(sean, /week-record[^>]*>0-1-0</, 'his week reads 0-1-0');
+    assert.match(sean, /week-record[^>]*>0-0-0</, 'nothing of his is in play');
+    // Stephen has the Bills covering as they stand: 1-0-0.
+    const stephen = (body.split('as-is-name">Stephen<')[1] || '').split('</tr>')[0];
+    assert.match(stephen, /week-record[^>]*>1-0-0</, 'his live cover, and only that');
     // Every row has one, in W-L-P form.
     const boxes = body.match(/week-record[^>]*>\d+-\d+-\d+</g) || [];
     const rows = body.match(/class="as-is-row/g) || [];
     assert.strictEqual(boxes.length, rows.length, 'one box per row');
 });
 
-check('it is this week alone, not the season', () => {
+check('it is the games in play alone, not the week or the season', () => {
     const api = setup(weekOfPicks());
     const week = api.asIsWeekRecord(WEEK);
-    assert.strictEqual(api.formatWeekRecord(week.Sean), '0-1-0');
-    assert.strictEqual(api.formatWeekRecord(week.Stephen), '2-0-0', 'settled win plus the live cover; the unstarted game is not counted');
+    assert.strictEqual(api.formatWeekRecord(week.Sean), '0-0-0', 'his one pick is settled');
+    assert.strictEqual(api.formatWeekRecord(week.Stephen), '1-0-0', 'the live cover; neither the settled win nor the unstarted game is counted');
     assert.strictEqual(api.formatWeekRecord(undefined), '0-0-0', 'nothing scored is 0-0-0, not blank');
     // A week with nothing in it scores nobody.
     assert.strictEqual(api.formatWeekRecord(api.asIsWeekRecord(WEEK + 1).Sean), '0-0-0');
+});
+
+check('a delayed game is in play and counts; a finished one drops out', () => {
+    const games = [
+        delayed(1, 'Browns', 'Buccaneers', 23, 19),      // Bucs -3, Browns up 4: away covers
+        finalGame(2, 'Rams', 'Seahawks', 20, 24)
+    ];
+    const api = setup({
+        games,
+        picks: { Stephen: { browns_buccaneers: b5('away'), rams_seahawks: b5('home') } },
+        results: { 2: { awayScore: 20, homeScore: 24, winner: 'home' } }
+    });
+    assert.strictEqual(api.formatWeekRecord(api.asIsWeekRecord(WEEK).Stephen), '1-0-0');
+    // Once the delayed game goes final it leaves the box too.
+    games[0].status = 'STATUS_FINAL'; games[0].completed = true;
+    api.NFL_RESULTS_BY_WEEK[WEEK][1] = { awayScore: 23, homeScore: 19, winner: 'away' };
+    assert.strictEqual(api.formatWeekRecord(api.asIsWeekRecord(WEEK).Stephen), '0-0-0');
 });
 
 check('the box is green above 50%, red below, blue dead on it', () => {
@@ -832,12 +858,13 @@ check('the box is green above 50%, red below, blue dead on it', () => {
     assert.strictEqual(tone(0, 0, 2), '', 'all pushes is still nothing decided');
     assert.strictEqual(api.weekRecordTone(undefined), '');
 
-    // And on the rendered rows: Stephen 2-0-0 green, Sean 0-1-0 red.
+    // And on the rendered rows: Stephen 1-0-0 green; Sean, with nothing in
+    // play, gets the plain box.
     api.asIsExpanded.clear();
     api.renderAsIsStandings();
     const body = api.__written['as-is-standings-body'] || '';
-    assert.match(body.split('as-is-name">Stephen<')[1] || '', /week-record above"[^>]*>2-0-0</);
-    assert.match(body.split('as-is-name">Sean<')[1] || '', /week-record below"[^>]*>0-1-0</);
+    assert.match(body.split('as-is-name">Stephen<')[1] || '', /week-record above"[^>]*>1-0-0</);
+    assert.match(body.split('as-is-name">Sean<')[1] || '', /week-record"[^>]*>0-0-0</);
 
     // Solid blocks: the colour is the background, and the digits are white.
     ['.week-record.above', '.week-record.below', '.week-record.level'].forEach(sel => {
