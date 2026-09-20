@@ -90,7 +90,7 @@ function makeAppEnv({ withDom = false } = {}) {
         liveGameRank, calculateStatsForWeeks, regularSeasonWeekRange,
         standingsFromComputed, saveCowherdPicks, pickKey, describeLineForSide,
         renderLiveTab, renderActiveTab, getLiveGameStatus, renderDashboard,
-        liveRefreshDelay, anyGameInProgress, shouldPollLiveScores,
+        liveRefreshDelay, anyGameInProgress, shouldPollLiveScores, liveClockLabel,
         liveWindow, isLiveWindowOpen, updateLiveTabVisibility,
         LIVE_WINDOW_BUFFER_MS, LIVE_WINDOW_GAME_MS,
         LIVE_REFRESH_PLAYING_MS, LIVE_REFRESH_WAITING_MS,
@@ -213,6 +213,45 @@ check('a tied game in progress names no winner', () => {
     const g = inProgress(1, 'Rams', 'Seahawks', 21, 21);
     const api = setup({ games: [g] });
     assert.strictEqual(api.liveProvisionalResult(g).winner, null);
+});
+
+section('A game in a delay is still on');
+
+// Browns at Buccaneers, 2026-09-20: a weather delay at 2:00 in the 4th came
+// through as STATUS_DELAYED, which the app had never heard of. Neither playing
+// nor finished, the game fell off the Live tab's playing list into "Upcoming"
+// with no score, and its card went from the score to LOCKED. The score stands
+// and the game resumes, so a delay is in-progress everywhere that asks.
+const delayed = (id, away, home, awayScore, homeScore, extra = {}) =>
+    game(id, away, home, { status: 'STATUS_DELAYED', awayScore, homeScore, period: 4, clock: '2:00', ...extra });
+
+check('a delayed game counts as in progress', () => {
+    const g = delayed(1, 'Browns', 'Buccaneers', 23, 19);
+    const api = setup({ games: [g] });
+    assert.strictEqual(api.isGameInProgress(g), true);
+    assert.deepStrictEqual(api.liveProvisionalResult(g),
+        { winner: 'away', awayScore: 23, homeScore: 19, provisional: true });
+});
+
+check('and ranks with the games being played, not the ones to come', () => {
+    const g = delayed(1, 'Browns', 'Buccaneers', 23, 19);
+    const api = setup({ games: [g] });
+    assert.strictEqual(api.liveGameRank(g, {}), 0);
+});
+
+check('and keeps the poll alive, since it will resume', () => {
+    const api = makeAppEnv();
+    api.__setLiveScores({ 'Cleveland Browns@Tampa Bay Buccaneers': { status: 'STATUS_DELAYED' } });
+    assert.strictEqual(api.shouldPollLiveScores(), true);
+    assert.strictEqual(api.anyGameInProgress(), true);
+});
+
+check('the badge says Delayed rather than showing a frozen clock', () => {
+    const api = makeAppEnv();
+    assert.strictEqual(api.liveClockLabel({ status: 'STATUS_DELAYED', clock: '2:00', period: 4 }), 'Delayed');
+    assert.strictEqual(api.liveClockLabel({ status: 'STATUS_IN_PROGRESS', clock: '2:00', period: 4 }), '2:00 Q4');
+    assert.strictEqual(api.liveClockLabel({ status: 'STATUS_HALFTIME' }), 'Half');
+    assert.strictEqual(api.liveClockLabel({ status: 'STATUS_END_PERIOD', period: 3 }), 'End Q3');
 });
 
 section('The as-is table is the settled one with today counted in');
@@ -501,6 +540,21 @@ check('no side is marked as covering, in any state', () => {
     const done = api.__written['live-completed-list'] || '';
     assert.ok(!done.includes('covering'), 'and not once it is over');
     assert.ok(done.includes('live-score-num'), 'the score is still there');
+});
+
+check('a delayed game keeps its score row and sits with the games being played', () => {
+    const games = [game(1, 'Rams', 'Seahawks')];
+    const api = setup({ games, picks: { Stephen: { rams_seahawks: b5('home') } }, withDom: true });
+    api.__setLiveScores({ 'Los Angeles Rams@Seattle Seahawks': makeAppEnv().liveEntryFromEvent(espnEvent({
+        awayScore: 23, homeScore: 19, state: 'STATUS_DELAYED', shortDetail: 'Delayed', period: 4, clock: '2:00',
+        situation: { possession: '2', downDistanceText: '2nd & 4 at SEA 28' }
+    })).entry });
+    api.renderBlazinGameBoxes();
+    const playing = api.__written['live-games-list'] || '';
+    assert.ok(playing.includes('live-score-num'), 'the score is on the box');
+    assert.ok(playing.includes('Delayed'), 'and the status says why the clock is not moving');
+    assert.ok(!playing.includes('No games in progress'), 'it is in the playing list');
+    assert.ok(!(api.__written['live-upcoming-list'] || '').includes('live-score-box'), 'and not in upcoming');
 });
 
 check('a game still to come has no score row and no situation', () => {

@@ -1767,10 +1767,9 @@ function shouldPollLiveScores() {
     if (scores.length === 0) return false;
 
     for (const scoreData of scores) {
-        // Keep polling if any game is in progress
-        if (scoreData.status === 'STATUS_IN_PROGRESS' ||
-            scoreData.status === 'STATUS_HALFTIME' ||
-            scoreData.status === 'STATUS_END_PERIOD') {
+        // Keep polling if any game is in progress (a delay included - it
+        // resumes, and the resumption is exactly what the poll is for)
+        if (LIVE_IN_PROGRESS_STATUSES.includes(scoreData.status)) {
             return true;
         }
         // Also keep polling if games are scheduled (to catch when they start)
@@ -5288,8 +5287,27 @@ async function refreshLiveHistoryView() {
     }
 }
 
-/** ESPN statuses that mean the game is being played right now. */
-const LIVE_IN_PROGRESS_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+/**
+ * ESPN statuses that mean the game has kicked off and is not over.
+ *
+ * STATUS_DELAYED is a weather (or other) stoppage: the score stands, the
+ * clock is frozen, and the game will resume. It is what ESPN reported for
+ * Browns at Buccaneers on 2026-09-20, stopped at 2:00 in the 4th - and
+ * without it here a game in a delay is neither playing nor finished, so it
+ * dropped out of the Live tab's playing list into "Upcoming" with no score,
+ * and its card showed LOCKED instead of the score. This is the one list;
+ * anything deciding "is this game on right now" reads it.
+ */
+const LIVE_IN_PROGRESS_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_DELAYED'];
+
+/** How a live status reads on a badge, where ESPN's own wording is not to hand. */
+function liveClockLabel(live) {
+    if (!live) return '';
+    if (live.status === 'STATUS_DELAYED') return 'Delayed';
+    if (live.status === 'STATUS_HALFTIME') return 'Half';
+    if (live.status === 'STATUS_END_PERIOD') return `End Q${live.period}`;
+    return live.clock ? `${live.clock} Q${live.period}` : 'Live';
+}
 
 /** Whether a game is being played right now. */
 function isGameInProgress(game) {
@@ -5799,7 +5817,8 @@ function asIsPickDetail(picker, category = liveSubcategory) {
 
         const live = getLiveGameStatus(game);
         const status = settled ? 'Final'
-            : (isGameInProgress(game) && live?.clock ? live.clock : (game.time || ''));
+            : (isGameInProgress(game) && live?.status === 'STATUS_DELAYED' ? 'Delayed'
+                : isGameInProgress(game) && live?.clock ? live.clock : (game.time || ''));
         const matchup = result
             ? `${game.away} ${result.awayScore} @ ${game.home} ${result.homeScore}`
             : `${game.away} @ ${game.home}`;
@@ -6022,6 +6041,7 @@ function renderBlazinGameBox({ game, sides }, weekResults, category = liveSubcat
         status = detail?.statusDetail
             || (live.status === 'STATUS_HALFTIME' ? 'Halftime'
                 : live.status === 'STATUS_END_PERIOD' ? `End of ${live.period}`
+                : live.status === 'STATUS_DELAYED' ? 'Delayed'
                 : (live.clock ? `${live.clock} - Q${live.period}` : 'Live'));
     } else if (result) {
         state = 'final';
@@ -10265,8 +10285,7 @@ function renderGames() {
 
         // Get live score data if available
         const liveData = getLiveGameStatus(game);
-        const inProgressStatuses = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
-        const isInProgress = liveData && inProgressStatuses.includes(liveData.status);
+        const isInProgress = liveData && LIVE_IN_PROGRESS_STATUSES.includes(liveData.status);
         const isFinal = liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed);
 
         // Game is locked if: isGameLocked returns true OR game is final from live data
@@ -10375,14 +10394,7 @@ function renderGames() {
         if (isFinal || isHistoricalWeek) {
             statusBadge = `<span class="status-badge final">FINAL</span>`;
         } else if (isInProgress) {
-            let clockDisplay;
-            if (liveData.status === 'STATUS_HALFTIME') {
-                clockDisplay = 'Half';
-            } else if (liveData.status === 'STATUS_END_PERIOD') {
-                clockDisplay = `End Q${liveData.period}`;
-            } else {
-                clockDisplay = liveData.clock ? `${liveData.clock} Q${liveData.period}` : 'Live';
-            }
+            const clockDisplay = liveClockLabel(liveData);
             statusBadge = `<span class="status-badge in-progress">${liveData.awayScore} - ${liveData.homeScore} (${clockDisplay})</span>`;
         } else if (locked) {
             statusBadge = '<span class="locked-badge">LOCKED</span>';
