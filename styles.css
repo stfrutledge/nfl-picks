@@ -7277,10 +7277,15 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     color: var(--text-secondary);
 }
 
+/* Two columns that never trade places: the team and its line on the left, the
+   pickers on the right. The row itself must NOT wrap - with a crowded side
+   (Eagles -7 with five names on it) the whole picker block used to drop under
+   the team name. The pickers wrap inside their own column instead, stacking to
+   the right of the team, and the team sits level with the first row of them. */
 .live-side {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-wrap: nowrap;
+    align-items: flex-start;
     gap: 8px;
     padding: 7px 0;
     border-top: 1px solid var(--border-light);
@@ -7297,6 +7302,8 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     align-items: baseline;
     gap: 6px;
     min-width: 104px;
+    flex: 0 0 auto;
+    padding-top: 3px; /* centre the text against a chip's height */
 }
 
 .live-team-name {
@@ -7314,6 +7321,8 @@ details.how-it-works-box[open] .how-it-works-toggle::before {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
+    flex: 1 1 auto;
+    min-width: 0; /* lets the column shrink so the chips wrap here, not the row */
 }
 
 .live-picker {

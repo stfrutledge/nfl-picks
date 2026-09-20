@@ -1179,6 +1179,28 @@ check('the three states rank in that order', () => {
     assert.strictEqual(api.liveGameRank(game(2, 'Bills', 'Chiefs'), {}), 2);
 });
 
+section('The pickers stay to the right of the team');
+
+// Eagles -7 with five names on it: the whole picker block used to drop onto
+// the next line, under the team name and the number. The row must not wrap;
+// the pickers wrap inside their own column, stacking to the right.
+const exactRule = sel => rulesFor(sel).find(block => block.split('{')[0].trim() === sel) || '';
+
+check('the side row itself never wraps', () => {
+    const row = exactRule('.live-side');
+    assert.ok(row, 'found the .live-side rule');
+    assert.ok(/flex-wrap:\s*nowrap/.test(row), 'a wrapping row is what put the names under the team');
+});
+
+check('the team column keeps its width and the pickers take the rest', () => {
+    const team = exactRule('.live-side-team');
+    const pickers = exactRule('.live-pickers');
+    assert.ok(/flex:\s*0 0 auto/.test(team), 'the team block does not shrink or grow');
+    assert.ok(/flex:\s*1 1 auto/.test(pickers), 'the pickers fill what is left');
+    assert.ok(/min-width:\s*0/.test(pickers), 'and can shrink below their content, so the chips wrap here');
+    assert.ok(/flex-wrap:\s*wrap/.test(pickers), 'stacking inside their own column');
+});
+
 if (failures > 0) {
     console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
     process.exit(1);
