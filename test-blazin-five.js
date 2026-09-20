@@ -345,6 +345,21 @@ check('refreshing the stars refreshes the count with them', () => {
     assert.strictEqual(t.nodes['blazin-progress-count'].textContent, 'All 5 picked');
 });
 
+check('the completed tally is not see-through', () => {
+    // The bar is sticky, so a bare translucent background lets the game cards
+    // scroll through it - a smeared orange strip once all five were picked.
+    // The tint has to sit on top of the opaque page background.
+    const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+    const block = styles.match(/\.blazin-progress\.complete \{[^}]*\}/);
+    assert.ok(block, 'found the .blazin-progress.complete rule');
+    const background = block[0].match(/background\s*:([^;]*);/);
+    assert.ok(background, 'it sets a background');
+    assert.ok(/var\(--bg-primary\)/.test(background[1]),
+        'the opaque page background must be part of it');
+    assert.ok(!/^\s*rgba\(/.test(background[1]),
+        'a translucent colour on its own is what made it see-through');
+});
+
 if (failures > 0) {
     console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
     process.exit(1);

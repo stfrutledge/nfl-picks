@@ -2927,9 +2927,14 @@ footer a:hover {
     color: var(--text-secondary);
 }
 
+/* The tint is layered OVER the opaque page background, not used as the
+   background. This bar is sticky: with a bare translucent colour the game
+   cards scroll through underneath it and it reads as a smeared orange strip. */
 .blazin-progress.complete {
     border-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.08);
+    background:
+        linear-gradient(rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.08)),
+        var(--bg-primary);
 }
 
 .blazin-progress.complete .blazin-progress-count {
