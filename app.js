@@ -4011,6 +4011,18 @@ function setupTabs() {
             setLiveSubcategory(subtab.dataset.liveSubcategory);
         });
     });
+
+    // Standings table scope: the season so far, or one week of it.
+    document.querySelectorAll('[data-standings-scope]').forEach(btn => {
+        btn.addEventListener('click', () => setStandingsScope(btn.dataset.standingsScope));
+    });
+    const standingsWeekDropdown = document.getElementById('standings-week');
+    if (standingsWeekDropdown) {
+        standingsWeekDropdown.addEventListener('change', (e) => {
+            standingsWeek = parseInt(e.target.value);
+            renderDashboard();
+        });
+    }
 }
 
 /**
@@ -6845,6 +6857,69 @@ function updateProvisionalIndicator() {
 /**
  * Render the full dashboard
  */
+// What the Standings tab's table covers: 'season' is every week so far,
+// 'week' is the one week in standingsWeek. Module state, as on the History
+// tab: renderDashboard runs again on every live-score refresh and would
+// otherwise have to read the controls back to stay where the reader put it.
+let standingsScope = 'season';
+let standingsWeek = null;
+
+/** The current season's weeks with a result in them - the ones worth a table. */
+function standingsWeeks() {
+    return historyStandingsWeeks(CURRENT_SEASON).filter(w => w < FIRST_PLAYOFF_WEEK);
+}
+
+/**
+ * Fill the Standings tab's week dropdown. The chosen week is kept while it
+ * is still on offer; otherwise the latest, which is the week just played.
+ */
+function populateStandingsWeeks() {
+    const dropdown = document.getElementById('standings-week');
+    const weeks = standingsWeeks();
+    if (!weeks.includes(standingsWeek)) {
+        standingsWeek = weeks.length ? weeks[weeks.length - 1] : null;
+    }
+    if (!dropdown) return;
+    const html = weeks.map(week =>
+        `<option value="${week}"${week === standingsWeek ? ' selected' : ''}>${historyWeekName(week)}</option>`
+    ).join('');
+    // Only when it has changed: this runs on every refresh, and rewriting an
+    // open dropdown closes it under the reader.
+    if (dropdown.innerHTML !== html) dropdown.innerHTML = html;
+}
+
+/**
+ * The toggle and week dropdown. Hidden on the Playoffs sub-tab, whose table
+ * is the combined playoff record and not one of the weekly ones.
+ */
+function updateStandingsScopeControls() {
+    document.getElementById('standings-scope')
+        ?.classList.toggle('hidden', currentSubcategory === 'playoffs');
+    document.querySelectorAll('[data-standings-scope]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.standingsScope === standingsScope);
+    });
+    document.getElementById('standings-week-selector')
+        ?.classList.toggle('hidden', standingsScope !== 'week');
+}
+
+/** Switch the Standings tab's table between the season and one week of it. */
+function setStandingsScope(scope) {
+    if (scope !== 'season' && scope !== 'week') return;
+    standingsScope = scope;
+    renderDashboard();
+}
+
+/**
+ * One week's record in a category, shaped for renderStandingsTable. The same
+ * engine as the season table over the one week, so the season is the sum of
+ * the weeks. Last 3-Wk, Best Week and Year Chg are season measures and are
+ * not shown for a week; the 'week' column set leaves them out.
+ */
+function standingsWeekStats(week, category) {
+    return standingsFromComputed(
+        calculateStatsForWeeks(week, week, PICKERS_WITH_COWHERD), category);
+}
+
 function renderDashboard() {
     // Before the guard below: the marking has to come off even on the render
     // that bails out, or it outlives the data it describes.
@@ -6921,6 +6996,7 @@ function renderDashboard() {
 
     // Playoffs tab: show leaderboard cards and playoff standings table, hide other sections
     if (currentSubcategory === 'playoffs') {
+        updateStandingsScopeControls();
         performanceInsightsSection?.classList.add('hidden');
         recordsAnalysisSection?.classList.add('hidden');
         playoffStandingsSection?.classList.remove('hidden');
@@ -6938,8 +7014,17 @@ function renderDashboard() {
     performanceInsightsSection?.classList.remove('hidden');
     recordsAnalysisSection?.classList.remove('hidden');
 
-    // SECONDARY: the standings table on its own
-    renderStandingsTable(stats);
+    // SECONDARY: the standings table on its own, at the chosen scope. The
+    // cards above and the charts below stay on the season.
+    populateStandingsWeeks();
+    updateStandingsScopeControls();
+    if (standingsScope === 'week' && computeLocally) {
+        renderStandingsTable(
+            standingsWeek === null ? {} : standingsWeekStats(standingsWeek, currentSubcategory),
+            { columns: 'week', week: standingsWeek });
+    } else {
+        renderStandingsTable(stats);
+    }
 
     // TERTIARY: the charts, insights and patterns that sit with the records
     renderTrendChart(weeklyData, currentSubcategory);
@@ -9632,13 +9717,49 @@ function renderStandingsTable(stats, {
     setTitle = true,
     columns = 'season',
     positionChange = null,
-    weekRecord = null
+    weekRecord = null,
+    week = null
 } = {}) {
     const tbody = document.getElementById(tbodyId);
     const thead = document.querySelector(`#${tableId} thead`);
     if (!tbody || !thead) return;
 
     const sorted = getSortedPickers(stats);
+
+    // One week of the season: the record and nothing that describes a
+    // season's shape. Empty when no week has been played yet.
+    if (columns === 'week') {
+        thead.innerHTML = `
+            <tr>
+                <th>Picker</th>
+                <th>Win</th>
+                <th>Loss</th>
+                <th>Push</th>
+                <th>%</th>
+                <th>Total</th>
+            </tr>
+        `;
+        if (week === null) {
+            tbody.innerHTML = '<tr><td colspan="6" class="no-data">No weeks played yet</td></tr>';
+            return;
+        }
+        tbody.innerHTML = sorted.map((picker, index) => {
+            const pct = typeof picker.percentage === 'number'
+                ? picker.percentage.toFixed(2) + '%' : '-';
+            const pushOrDraw = category === 'winner' ? picker.draws || 0 : picker.pushes || 0;
+            return `
+                <tr class="${index === 0 ? 'leader' : ''}" data-picker="${picker.name}">
+                    <td class="picker-name">${picker.name}</td>
+                    <td>${picker.wins || 0}</td>
+                    <td>${picker.losses || 0}</td>
+                    <td>${pushOrDraw}</td>
+                    <td class="${pctCellClass(picker.percentage)}">${pct}</td>
+                    <td>${picker.totalPicks || 0}</td>
+                </tr>
+            `;
+        }).join('');
+        return;
+    }
 
     // The Live tab's table: the record, and how far it has moved since last
     // week. No Last 3-Wk, Best Week or Year Chg - they describe the shape of a

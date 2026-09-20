@@ -288,6 +288,8 @@ The scope and week are module state (`historyStandingsScope`, `historyStandingsW
 
 `node test-history-weeks.js` covers it.
 
+The Standings tab has the same toggle over its own table (`standingsScope`, `standingsWeek`, `setStandingsScope`), rendered through `renderDashboard` with the `week` column set of `renderStandingsTable` - the record alone, since Last 3-Wk, Best Week and Year Chg describe a season. Only the table is scoped: the leaderboard cards, charts and records around it stay on the season. The toggle is hidden on the Playoffs sub-tab, whose table is the combined playoff record. `node test-standings-weeks.js` covers it.
+
 ## Standings
 
 Standings, the trend chart, last-3-week form and best week are **computed from picks + results** by `calculateStatsForWeeks(firstWeek, lastWeek)`, not read from a spreadsheet. `renderDashboard` switches to the computed path whenever `LEGACY_SHEETS_SEASON !== CURRENT_SEASON`, which is every season after 2025.

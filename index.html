@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=c1169796">
+    <link rel="stylesheet" href="styles.css?v=f0acef1a">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -326,6 +326,21 @@
                 <div class="consolidated-content">
                     <!-- Standings Panel -->
                     <div class="consolidated-panel active" id="standings-panel">
+                        <!-- What the table covers: the season so far, or one
+                             week of it. The cards and charts around it stay
+                             on the season. Hidden on the Playoffs sub-tab. -->
+                        <div class="scope-row standings-scope-row" id="standings-scope">
+                            <div class="scope-toggle" role="group" aria-label="Standings scope">
+                                <button class="subtab active" data-standings-scope="season" id="standings-scope-season">Season to Date</button>
+                                <button class="subtab" data-standings-scope="week" id="standings-scope-week">Individual Weeks</button>
+                            </div>
+                            <div class="scope-week hidden" id="standings-week-selector">
+                                <label for="standings-week">Week:</label>
+                                <select id="standings-week" class="week-dropdown">
+                                    <!-- Options populated by JavaScript -->
+                                </select>
+                            </div>
+                        </div>
                         <div class="standings-table-container">
                             <table class="standings-table" id="standings-table">
                                 <thead>
@@ -670,12 +685,12 @@
                     <!-- What the standings table below covers: the season so
                          far (the whole of it, once it is over) or one week of
                          it. Hidden on Lifetime, which has no weeks. -->
-                    <div class="history-scope" id="history-scope">
-                        <div class="history-scope-toggle" role="group" aria-label="Standings scope">
+                    <div class="scope-row" id="history-scope">
+                        <div class="scope-toggle" role="group" aria-label="Standings scope">
                             <button class="subtab active" data-history-scope="season" id="history-scope-season">Season to Date</button>
                             <button class="subtab" data-history-scope="week" id="history-scope-week">Individual Weeks</button>
                         </div>
-                        <div class="history-scope-week hidden" id="history-standings-week-selector">
+                        <div class="scope-week hidden" id="history-standings-week-selector">
                             <label for="history-standings-week">Week:</label>
                             <select id="history-standings-week" class="week-dropdown">
                                 <!-- Options populated by JavaScript -->
@@ -893,6 +908,6 @@
     <script src="charts.js?v=70009325"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=7ff30949"></script>
+    <script src="app.js?v=bbe62734"></script>
 </body>
 </html>

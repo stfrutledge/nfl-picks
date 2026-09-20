@@ -4454,37 +4454,43 @@ body.standings-provisional #records-analysis-section {
     margin-bottom: 16px;
 }
 
-/* Season-or-week toggle for the standings table, with the week dropdown
-   beside it while weeks are chosen. Same pill buttons as the sub-tabs. */
-.history-scope {
+/* Season-or-week toggle for a standings table, with the week dropdown
+   beside it while weeks are chosen. Same pill buttons as the sub-tabs.
+   Shared by the History and Standings tabs. */
+.scope-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 12px;
 }
 
-.history-scope.hidden {
+.scope-row.hidden {
     display: none;
 }
 
-.history-scope-toggle {
+.scope-toggle {
     display: flex;
     gap: 8px;
 }
 
-.history-scope-week {
+.scope-week {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.history-scope-week.hidden {
+.scope-week.hidden {
     display: none;
 }
 
-.history-scope-week label {
+.scope-week label {
     font-weight: 600;
     color: var(--text-secondary);
+}
+
+/* On the Standings tab the row sits directly over the table it scopes. */
+.standings-scope-row {
+    padding: 0 0 12px;
 }
 
 .history-season-row .season-selector {
