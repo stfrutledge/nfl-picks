@@ -59,7 +59,8 @@ function makeEnv() {
         formatPercent, statValueClass,
         COWHERD, COWHERD_CATEGORY, PICKERS_WITH_COWHERD, cowherdWeeklyResults,
         __window: window,
-        applySavedSpreads, saveSpread,
+        applySavedSpreads, saveSpread, getSavedSpreads, loadSpreadsFromGoogleSheets,
+        CURRENT_NFL_WEEK,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         pctCellClass,
         regularSeasonWeekRange, buildCurrentSeasonView, CURRENT_SEASON,
@@ -97,10 +98,21 @@ function setup({ weeks = {}, picks = {}, results = {}, cache = null } = {}) {
 }
 
 let failures = 0, total = 0;
+// A check may be async (it returns a promise); the tally at the bottom waits
+// for those before deciding the exit code.
+const pending = [];
 function check(name, fn) {
     total++;
-    try { fn(); console.log(`  ok  ${name}`); }
-    catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+    const fail = e => { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); };
+    try {
+        const r = fn();
+        if (r && typeof r.then === 'function') {
+            pending.push(r.then(() => console.log(`  ok  ${name}`), fail));
+            return;
+        }
+        console.log(`  ok  ${name}`);
+    }
+    catch (e) { fail(e); }
 }
 function section(name) { console.log(`\n${name}`); }
 
@@ -633,6 +645,97 @@ check('a blank saved spread is never copied onto a game', () => {
         'a blank cell is not a line and must leave the game unscoreable');
 });
 
+// The Seahawks -10 that would not go away. One device captured next week's
+// lookahead line, kept it through the injury news that took it to -3.5, and
+// then painted it on Sunday because a saved line only ever filled a blank.
+section('A saved line replaces a stale one until kickoff');
+
+const HOUR = 60 * 60 * 1000;
+function upcomingWeek(api) { return String(api.CURRENT_NFL_WEEK); }
+
+check('an upcoming game takes the saved line when it differs', () => {
+    const api = setup({});
+    const week = upcomingWeek(api);
+    api.NFL_GAMES_BY_WEEK[week] = [{
+        id: 1, away: 'Seahawks', home: 'Cardinals', spread: 10, favorite: 'away',
+        kickoff: new Date(Date.now() + 6 * HOUR).toISOString()
+    }];
+    api.saveSpread(week, 'Seahawks', 'Cardinals', 3.5, 'away', 40.5);
+    api.applySavedSpreads();
+    const game = api.NFL_GAMES_BY_WEEK[week][0];
+    assert.strictEqual(game.spread, 3.5, 'the fresher saved line wins before kickoff');
+    assert.strictEqual(game.favorite, 'away');
+    assert.strictEqual(game.overUnder, 40.5, 'a missing total is filled in too');
+});
+
+check('a saved line can flip the favourite before kickoff', () => {
+    const api = setup({});
+    const week = upcomingWeek(api);
+    api.NFL_GAMES_BY_WEEK[week] = [{
+        id: 1, away: 'Rams', home: 'Giants', spread: 1.5, favorite: 'home',
+        kickoff: new Date(Date.now() + 6 * HOUR).toISOString()
+    }];
+    api.saveSpread(week, 'Rams', 'Giants', 1.5, 'away');
+    api.applySavedSpreads();
+    assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].favorite, 'away',
+        'same number, other side - still a different line');
+});
+
+check('a game that has kicked off keeps the line it has', () => {
+    const api = setup({});
+    const week = upcomingWeek(api);
+    api.NFL_GAMES_BY_WEEK[week] = [{
+        id: 1, away: 'Seahawks', home: 'Cardinals', spread: 3.5, favorite: 'away',
+        kickoff: new Date(Date.now() - 1 * HOUR).toISOString()
+    }];
+    api.saveSpread(week, 'Seahawks', 'Cardinals', 4.5, 'away');
+    api.applySavedSpreads();
+    assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].spread, 3.5,
+        'the line is fixed at kickoff, whatever the sheet says afterwards');
+});
+
+check('a past week keeps its line even with a kickoff in the future', () => {
+    // Defensive: a bad kickoff on an archived game must not reopen its line.
+    const api = setup({});
+    const week = String(api.CURRENT_NFL_WEEK - 1);
+    if (Number(week) < 1) return; // nothing before week 1 to protect
+    api.NFL_GAMES_BY_WEEK[week] = [{
+        id: 1, away: 'Saints', home: 'Lions', spread: 7, favorite: 'home',
+        kickoff: new Date(Date.now() + 6 * HOUR).toISOString()
+    }];
+    api.saveSpread(week, 'Saints', 'Lions', 2, 'home');
+    api.applySavedSpreads();
+    assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].spread, 7);
+});
+
+check('a game with no kickoff is left alone', () => {
+    const api = setup({});
+    const week = upcomingWeek(api);
+    api.NFL_GAMES_BY_WEEK[week] = [
+        { id: 1, away: 'Saints', home: 'Lions', spread: 7, favorite: 'home' }
+    ];
+    api.saveSpread(week, 'Saints', 'Lions', 2, 'home');
+    api.applySavedSpreads();
+    assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].spread, 7,
+        'without a kickoff we cannot know the line is still open, so do not guess');
+});
+
+check('the sheet replaces a local line for a future week too', async () => {
+    const api = setup({});
+    const week = String(api.CURRENT_NFL_WEEK + 1);
+    api.saveSpread(week, 'Seahawks', 'Cardinals', 10, 'away');
+    api.__window.fetch = async () => ({
+        json: async () => ({
+            week: `x_${week}`, count: 1, lastUpdated: new Date().toISOString(),
+            spreads: { seahawks_cardinals: { spread: 3.5, favorite: 'away', overUnder: 40.5 } }
+        })
+    });
+    await api.loadSpreadsFromGoogleSheets(Number(week));
+    const saved = api.getSavedSpreads();
+    assert.strictEqual(saved[week].seahawks_cardinals.spread, 3.5,
+        'the sheet is refreshed by whoever last hit the API; the local copy is not fresher');
+});
+
 section('Year Chg: this season against the same point last year');
 
 // The column existed since the workbook days and had been blank all of 2026:
@@ -979,8 +1082,10 @@ check('his line/winner columns stay empty - Blazin is all he has', () => {
     assert.strictEqual(api.COWHERD_CATEGORY, 'blazin');
 });
 
-if (failures > 0) {
-    console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
-    process.exit(1);
-}
-console.log(`\nALL ${total} CHECKS PASSED\n`);
+Promise.all(pending).then(() => {
+    if (failures > 0) {
+        console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
+        process.exit(1);
+    }
+    console.log(`\nALL ${total} CHECKS PASSED\n`);
+});

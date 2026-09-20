@@ -1360,8 +1360,31 @@ function saveSpread(week, awayTeam, homeTeam, spread, favorite, overUnder = null
 }
 
 /**
- * Apply saved spreads to games that carry no usable line of their own.
- * This ensures completed games show their original spreads.
+ * True while a game's line can still legitimately change: it is in the current
+ * week or later and its kickoff is known and still ahead. Once a game has
+ * kicked off its line is fixed for grading, and a game whose kickoff we do not
+ * know is left alone rather than guessed at.
+ */
+function lineStillOpen(game, week) {
+    if (parseInt(week) < CURRENT_NFL_WEEK) return false;
+    if (!game.kickoff) return false;
+    return new Date(game.kickoff) > new Date();
+}
+
+/**
+ * Apply saved spreads to the games in memory.
+ *
+ * A game with no line takes the saved one - that is how a completed game keeps
+ * showing the spread it was played at. A game that has NOT kicked off also
+ * takes the saved one when it differs: the saved bucket is refreshed from the
+ * shared sheet, so it is as fresh as the last device to hit the Odds API,
+ * whereas the game object may be carrying whatever this device stored a week
+ * ago. Seahawks -10 (the lookahead line before Darnold's injury) sat on one
+ * screen through a whole Sunday of everyone else seeing -3.5 because this only
+ * ever filled in a blank.
+ *
+ * A game that has kicked off keeps the line it has: the same rule as
+ * applyOddsData(), which stops writing spreads at kickoff.
  */
 function applySavedSpreads() {
     const saved = getSavedSpreads();
@@ -1379,17 +1402,24 @@ function applySavedSpreads() {
                 console.log(`[Spreads] Auto-saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
             }
 
-            // Apply a saved line to a game that has none. A blank sheet cell reads
-            // as '', which is not a line and must not be copied onto the game.
-            if (!hasUsableSpread(game) && hasUsableLine(saved[week]?.[key]?.spread)) {
-                game.spread = saved[week][key].spread;
-                game.favorite = saved[week][key].favorite;
-                if (saved[week][key].overUnder && (!game.overUnder || game.overUnder === 0)) {
-                    game.overUnder = saved[week][key].overUnder;
-                }
-                appliedCount++;
-                console.log(`[Spreads] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
+            // A blank sheet cell reads as '', which is not a line and must not
+            // be copied onto the game.
+            const savedLine = saved[week]?.[key];
+            if (!hasUsableLine(savedLine?.spread)) return;
+
+            const differs = Number(savedLine.spread) !== Number(game.spread)
+                || savedLine.favorite !== game.favorite;
+            const takeSaved = !hasUsableSpread(game)
+                || (differs && lineStillOpen(game, week));
+            if (!takeSaved) return;
+
+            game.spread = savedLine.spread;
+            game.favorite = savedLine.favorite;
+            if (savedLine.overUnder && (!game.overUnder || game.overUnder === 0)) {
+                game.overUnder = savedLine.overUnder;
             }
+            appliedCount++;
+            console.log(`[Spreads] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
         });
     });
 
@@ -12078,9 +12108,16 @@ async function syncSpreadsToGoogleSheets() {
 }
 
 /**
- * Load spreads from Google Sheets backup
- * For current/past weeks: Google Sheets is authoritative (allows manual corrections)
- * For future weeks: localStorage takes priority (avoids unnecessary overwrites)
+ * Load spreads from Google Sheets backup.
+ *
+ * The sheet is authoritative for every week, future ones included. It is
+ * rewritten by whichever device last hit the Odds API, so it is never older
+ * than this device's own copy - and it is where a manual correction lands.
+ * Future weeks used to keep the local value instead ("avoids unnecessary
+ * overwrites"), which meant a line captured for next week never moved on this
+ * device until it triggered an API refresh itself. That is how one screen
+ * showed the pre-injury Seahawks -10 all Sunday while the sheet said -3.5.
+ *
  * Returns { spreads, lastUpdated } or null if failed
  */
 async function loadSpreadsFromGoogleSheets(week) {
@@ -12097,19 +12134,8 @@ async function loadSpreadsFromGoogleSheets(week) {
                 saved[week] = {};
             }
 
-            const weekNum = parseInt(week);
-            const isCurrentOrPastWeek = weekNum <= CURRENT_NFL_WEEK;
-
             for (const [key, data] of Object.entries(result.spreads)) {
-                if (isCurrentOrPastWeek) {
-                    // Current/past weeks: Google Sheets is authoritative (allows manual corrections)
-                    saved[week][key] = data;
-                } else {
-                    // Future weeks: only use Google Sheets if localStorage is missing or has spread=0
-                    if (!hasUsableLine(saved[week]?.[key]?.spread)) {
-                        saved[week][key] = data;
-                    }
-                }
+                saved[week][key] = data;
             }
 
             localStorage.setItem(SAVED_SPREADS_KEY, JSON.stringify(saved));

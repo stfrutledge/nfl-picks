@@ -177,6 +177,40 @@ render is the same whichever order they finished in.
 
 `node test-standings-engine.js` covers both, including Daniel's real week 1 card.
 
+## A saved line replaces a stale one until kickoff
+
+Week 2, 2026: one screen showed Seahawks -10 all Sunday while everyone else
+saw -3.5. Both were real DraftKings numbers - -10 was the lookahead line, and
+it collapsed after Darnold was hurt in week 1. The device had captured next
+week's line during week 1 (`prefetchAndSaveSpreads` covers `currentWeek + 1`)
+into `nfl_saved_spreads_<season>`, which never expires, and three rules then
+conspired to keep it:
+
+- the sheet was only authoritative for current/past weeks, so for a *future*
+  week the local copy won over the sheet's fresher number;
+- a future week never triggers the Odds API on its own, so nothing refreshed it
+  unless this device happened to be the first visitor of a day;
+- on Sunday the critical path (`loadWeekSchedule(currentWeek, true, true)`)
+  painted the local copy onto the fresh ESPN games before the sheet was read,
+  and `applySavedSpreads()` only ever filled a *blank* - a game already holding
+  a line kept it, however old.
+
+Two rules now:
+
+- **The sheet wins for every week**, future ones included
+  (`loadSpreadsFromGoogleSheets`). It is rewritten by whichever device last
+  hit the API and is where a manual correction lands, so it is never older
+  than one device's copy.
+- **`applySavedSpreads()` replaces a differing line on any game whose kickoff
+  is known and still ahead** (`lineStillOpen`). A game that has kicked off
+  keeps the line it has, same as `applyOddsData()`; a game with no kickoff is
+  left alone rather than guessed at. Completed games still take a saved line
+  when they have none - that part is unchanged.
+
+`applyOddsData()` remains the only thing that writes a *new* number into the
+system; this only moves numbers the sheet already holds onto the games in
+memory. `node test-standings-engine.js` has the -10 case.
+
 ## Cowherd's Blazin' 5
 
 The group plays against Colin Cowherd's Blazin' 5, so his five picks are entered by hand each week and scored by the same engine as everyone else's. Entry is the admin-only panel on the Make Picks tab (`#cowherd-panel`, gated by `.admin-only`, so Stephen only).
