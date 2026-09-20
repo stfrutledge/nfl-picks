@@ -35,6 +35,10 @@ It needs no storage: the decision is made at the one moment both the balance and
 
 On a cache hit, `X-Cache-Duration` is passed through as stored rather than recomputed — it records the window that entry was actually given.
 
+**The worker's window is a ceiling, not the cadence.** What actually decides when lines move is the client gate in `prefetchAndSaveSpreads`, `spreadsNeedRefresh()`: a device asks the worker for odds only when the Spreads tab is stale, and everyone else that day reads the tab. Stale means *more than 3 hours old* (`GAME_DAY_REFRESH_MS`) on a day when a current-week game has still to kick off, and *not from today* otherwise. Game days are read off the week's kickoffs, not a weekday list. It was once-a-day flat until September 2026, which is why a Wednesday injury did not reach a screen until Thursday's first visitor. Expect roughly 15 fetches a week, ~200 credits a month.
+
+**Only fresh lines go to the sheet.** `updateOddsFromAPI()` returns true only when the lines came from the worker on that call; every fallback (this device's cached odds, hardcoded spreads) applies what it can and returns false. `prefetchAndSaveSpreads` and the admin refresh button both sync spreads to the sheet only on true. Before this the sync ran unconditionally, so a device holding a week-old lookahead line and a dead worker would have written that line over everyone's.
+
 Two things worth knowing:
 
 - **`h2h` is fetched but never displayed.** `formatMoneyline()` exists and is called from nowhere. It is a third of the cost, kept deliberately because the moneylines are the input a straight-up winnings feature would need.

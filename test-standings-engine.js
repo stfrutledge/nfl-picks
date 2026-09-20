@@ -61,6 +61,7 @@ function makeEnv() {
         __window: window,
         applySavedSpreads, saveSpread, getSavedSpreads, loadSpreadsFromGoogleSheets,
         CURRENT_NFL_WEEK,
+        spreadsNeedRefresh, GAME_DAY_REFRESH_MS, updateOddsFromAPI, cacheOdds,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
         pctCellClass,
         regularSeasonWeekRange, buildCurrentSeasonView, CURRENT_SEASON,
@@ -70,6 +71,7 @@ function makeEnv() {
             if ('allPicks' in s) allPicks = s.allPicks;
             if ('currentWeek' in s) currentWeek = s.currentWeek;
             if ('currentPicker' in s) currentPicker = s.currentPicker;
+            if ('currentCategory' in s) currentCategory = s.currentCategory;
         }
     });`;
     const fn = new Function(
@@ -718,6 +720,82 @@ check('a game with no kickoff is left alone', () => {
     api.applySavedSpreads();
     assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].spread, 7,
         'without a kickoff we cannot know the line is still open, so do not guess');
+});
+
+section('When a load spends an Odds API fetch');
+
+// Fixed clock: a Sunday at 10:00 local. Kickoffs are built relative to it.
+const SUNDAY_10AM = (() => { const d = new Date(2026, 8, 20, 10, 0, 0); return d; })();
+const at = (h, base = SUNDAY_10AM) => new Date(base.getTime() + h * HOUR);
+const kickoffAt = h => ({ id: 1, away: 'Seahawks', home: 'Cardinals', kickoff: at(h).toISOString() });
+
+check('no timestamp, or an unreadable one, always refreshes', () => {
+    const api = setup({});
+    assert.strictEqual(api.spreadsNeedRefresh(null, [kickoffAt(6)], SUNDAY_10AM), true);
+    assert.strictEqual(api.spreadsNeedRefresh('not a date', [kickoffAt(6)], SUNDAY_10AM), true);
+});
+
+check('a game still to kick off today: refresh once the sheet is over 3h old', () => {
+    const api = setup({});
+    const games = [kickoffAt(6)];
+    assert.strictEqual(api.spreadsNeedRefresh(at(-2).toISOString(), games, SUNDAY_10AM), false,
+        'two hours old is recent enough');
+    assert.strictEqual(api.spreadsNeedRefresh(at(-4).toISOString(), games, SUNDAY_10AM), true,
+        'four hours old is not');
+    assert.strictEqual(api.GAME_DAY_REFRESH_MS, 3 * HOUR);
+});
+
+check('every game already kicked off: back to once a day', () => {
+    const api = setup({});
+    const games = [kickoffAt(-1), kickoffAt(-4)];
+    assert.strictEqual(api.spreadsNeedRefresh(at(-5).toISOString(), games, SUNDAY_10AM), false,
+        'five hours old but updated today, and no line left to catch');
+    assert.strictEqual(api.spreadsNeedRefresh(at(-12).toISOString(), games, SUNDAY_10AM), true,
+        'yesterday - daily rule still applies');
+});
+
+check('a game tomorrow does not make today a game day', () => {
+    const api = setup({});
+    const games = [kickoffAt(20)];
+    assert.strictEqual(api.spreadsNeedRefresh(at(-5).toISOString(), games, SUNDAY_10AM), false);
+});
+
+check('a game with no kickoff is ignored', () => {
+    const api = setup({});
+    const games = [{ id: 1, away: 'Saints', home: 'Lions' }];
+    assert.strictEqual(api.spreadsNeedRefresh(at(-5).toISOString(), games, SUNDAY_10AM), false);
+    assert.strictEqual(api.spreadsNeedRefresh(at(-5).toISOString(), null, SUNDAY_10AM), false);
+});
+
+section('Only fresh lines are reported as fresh');
+
+// The sync-on-failure hole: prefetch used to push this device's local bucket to
+// the shared sheet after the odds refresh whether or not the refresh worked. A
+// stale device with a dead worker would have overwritten everyone's lines.
+
+check('a failed fetch with nothing cached reports false', async () => {
+    const api = setup({});
+    api.__setState({ currentCategory: 'standings' });
+    api.__window.fetch = async () => { throw new Error('worker down'); };
+    assert.strictEqual(await api.updateOddsFromAPI(true), false);
+});
+
+check('a failed fetch that falls back to this device\'s cached odds reports false', async () => {
+    const api = setup({});
+    api.__setState({ currentCategory: 'standings' });
+    api.cacheOdds([]);
+    api.__window.fetch = async () => { throw new Error('worker down'); };
+    assert.strictEqual(await api.updateOddsFromAPI(true), false,
+        'it applied something, but not something fit to push to the sheet');
+});
+
+check('lines from the worker report true', async () => {
+    const api = setup({});
+    api.__setState({ currentCategory: 'standings' });
+    api.__window.fetch = async () => ({
+        ok: true, json: async () => [], headers: { get: () => null }
+    });
+    assert.strictEqual(await api.updateOddsFromAPI(true), true);
 });
 
 check('the sheet replaces a local line for a future week too', async () => {

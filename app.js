@@ -1445,10 +1445,13 @@ function isNFLGameDay() {
  * Uses DraftKings as the primary source
  */
 async function fetchNFLOdds(forceRefresh = false) {
+    // Returns { games, fresh } or null. `fresh` is true only when the lines came
+    // from the worker on this call; false means this device's own localStorage
+    // copy, which may be up to a day old and must never be pushed to the sheet.
     // Check cache first unless force refresh
     if (!forceRefresh) {
         const cached = getCachedOdds();
-        if (cached) return cached;
+        if (cached) return { games: cached, fresh: false };
     }
 
     try {
@@ -1476,7 +1479,7 @@ async function fetchNFLOdds(forceRefresh = false) {
         // Cache the results
         cacheOdds(games);
 
-        return games;
+        return { games, fresh: true };
     } catch (error) {
         console.warn('[Odds API] Fetch failed:', error.message);
 
@@ -1484,7 +1487,7 @@ async function fetchNFLOdds(forceRefresh = false) {
         const staleCache = localStorage.getItem(ODDS_CACHE_KEY);
         if (staleCache) {
             console.log('[Odds API] Using stale cache due to fetch error');
-            return JSON.parse(staleCache).data;
+            return { games: JSON.parse(staleCache).data, fresh: false };
         }
         return null;
     }
@@ -1513,6 +1516,11 @@ function hasHardcodedSpreads(week) {
  * This ensures playoff weeks also conserve API calls after the first fetch.
  *
  * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
+ * @returns {Promise<boolean>} true only when lines FROM THE WORKER were applied
+ *   on this call. Every fallback - this device's cached odds, hardcoded
+ *   spreads - applies what it can and returns false, because those numbers
+ *   may be a day old and the caller must not push them to the shared sheet.
+ *   The admin refresh button and prefetchAndSaveSpreads both gate on it.
  */
 async function updateOddsFromAPI(forceRefresh = false) {
     const cached = getCachedOdds();
@@ -1528,34 +1536,37 @@ async function updateOddsFromAPI(forceRefresh = false) {
         // Priority 1: Use cached odds if available (applies to playoffs too)
         if (cached) {
             console.log(`[Odds API] Non-game day - using cached odds${isPlayoff ? ' (playoff week)' : ''}`);
-            return applyOddsData(cached);
+            applyOddsData(cached);
+            return false;
         }
         // Priority 2: Use fallback spreads for regular season
         if (hasFallbackSpreads) {
             console.log('[Odds API] Non-game day with fallback spreads - skipping API call');
-            return true;
+            return false;
         }
         // No cache and no fallbacks - need to fetch (first load of playoff week)
         console.log(`[Odds API] Non-game day but no cached odds${isPlayoff ? ' for playoff week' : ''} - fetching from API`);
     }
 
     // Fetch odds from API (will use cache if valid)
-    const oddsData = await fetchNFLOdds(forceRefresh);
-    if (!oddsData) {
+    const fetched = await fetchNFLOdds(forceRefresh);
+    if (!fetched) {
         console.warn('[Odds API] Could not fetch odds');
         // Fall back to cached data or hardcoded spreads
         if (cached) {
             console.log('[Odds API] API failed, using stale cached odds');
-            return applyOddsData(cached);
-        }
-        if (hasFallbackSpreads) {
+            applyOddsData(cached);
+        } else if (hasFallbackSpreads) {
             console.log('[Odds API] API failed, using hardcoded fallback spreads');
-            return true;
         }
         return false;
     }
 
-    return applyOddsData(oddsData);
+    applyOddsData(fetched.games);
+    if (!fetched.fresh) {
+        console.log('[Odds API] Applied this device\'s cached odds - not fresh, not for syncing');
+    }
+    return fetched.fresh;
 }
 
 /**
@@ -1852,16 +1863,46 @@ async function checkAndAdvanceWeekIfNeeded() {
  * This ensures spreads are captured before games start
  * Falls back to Google Sheets backup if spreads are missing locally
  */
+/** True when two instants fall on the same calendar day in this device's timezone. */
+function sameLocalDay(a, b) {
+    return a.getFullYear() === b.getFullYear() &&
+           a.getMonth() === b.getMonth() &&
+           a.getDate() === b.getDate();
+}
+
+// How stale the sheet's lines may get on a day with a game still to kick off.
+// The worker's own cache floor is 2h, so asking more often than that is wasted.
+const GAME_DAY_REFRESH_MS = 3 * 60 * 60 * 1000;
+
 /**
- * Check if a timestamp is from today (in local timezone)
+ * Should this load spend an Odds API fetch on the current week?
+ *
+ * Once a day used to be the whole rule - the first visitor refreshes, everyone
+ * else reads the sheet. Cheap, but a Wednesday injury did not reach anyone
+ * until Thursday's first visitor, and Sunday's number was whatever the morning
+ * caught. So on a day when a current-week game is still to kick off, refresh
+ * once the sheet is more than GAME_DAY_REFRESH_MS old; otherwise stay daily.
+ *
+ * "Game day" is read off the week's own kickoffs rather than a fixed list of
+ * weekdays, so Saturday slates, holiday Fridays and playoff weekends count and
+ * a quiet Thursday does not. A game that has already kicked off does not count
+ * either: its line is fixed, so there is nothing left to catch.
+ *
+ * Cost at this rate: roughly 15 fetches a week, ~200 credits a month of the
+ * 500. The worker's pacer still backstops it if that ever runs hot.
  */
-function isFromToday(timestamp) {
-    if (!timestamp) return false;
-    const date = new Date(timestamp);
-    const today = new Date();
-    return date.getFullYear() === today.getFullYear() &&
-           date.getMonth() === today.getMonth() &&
-           date.getDate() === today.getDate();
+function spreadsNeedRefresh(lastUpdated, games, now = new Date()) {
+    if (!lastUpdated) return true;
+    const updated = new Date(lastUpdated);
+    if (isNaN(updated.getTime())) return true;
+
+    const lineStillToCatch = (games || []).some(g => {
+        if (!g.kickoff) return false;
+        const kickoff = new Date(g.kickoff);
+        return kickoff > now && sameLocalDay(kickoff, now);
+    });
+    if (lineStillToCatch) return now - updated > GAME_DAY_REFRESH_MS;
+    return !sameLocalDay(updated, now);
 }
 
 async function prefetchAndSaveSpreads() {
@@ -1911,14 +1952,14 @@ async function prefetchAndSaveSpreads() {
 
         const weekNum = parseInt(week);
 
-        // For current week: check if spreads need daily refresh
+        // For current week: daily, or every few hours on a day with a game to come
         if (weekNum === CURRENT_NFL_WEEK && !needsOddsApiRefresh) {
             const lastUpdated = sheetResult?.lastUpdated;
-            if (!isFromToday(lastUpdated)) {
-                console.log(`[Prefetch] Week ${week} spreads last updated: ${lastUpdated || 'never'} - needs daily refresh`);
+            if (spreadsNeedRefresh(lastUpdated, games)) {
+                console.log(`[Prefetch] Week ${week} spreads last updated: ${lastUpdated || 'never'} - refreshing`);
                 needsOddsApiRefresh = true;
             } else {
-                console.log(`[Prefetch] Week ${week} spreads were already updated today (${lastUpdated})`);
+                console.log(`[Prefetch] Week ${week} spreads are recent enough (${lastUpdated})`);
             }
         }
 
@@ -1943,12 +1984,20 @@ async function prefetchAndSaveSpreads() {
         }
     }
 
-    // If we need fresh spreads (first visitor of day or missing spreads), call Odds API
+    // If we need fresh spreads (sheet too old, or lines missing), call Odds API
     if (needsOddsApiRefresh) {
-        console.log(`[Prefetch] Fetching fresh spreads from Odds API (daily refresh)...`);
-        await updateOddsFromAPI(true);
-        // Sync to Google Sheets so subsequent visitors today don't need to call the API
-        await syncSpreadsToGoogleSheets();
+        console.log(`[Prefetch] Fetching fresh spreads from Odds API...`);
+        const fresh = await updateOddsFromAPI(true);
+        // Push to the sheet ONLY when the lines actually came from the worker,
+        // so later visitors read them instead of fetching again. On a failed
+        // fetch the local bucket still holds whatever this device stored last
+        // time - a week-old lookahead line, say - and pushing that would
+        // overwrite the sheet's fresher numbers for everyone.
+        if (fresh) {
+            await syncSpreadsToGoogleSheets();
+        } else {
+            console.warn('[Prefetch] Odds refresh returned no fresh lines - not syncing spreads to the sheet');
+        }
         applySavedSpreads();
     }
 
