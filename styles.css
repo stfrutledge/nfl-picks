@@ -1585,6 +1585,44 @@ header h1 {
     color: var(--text-secondary);
 }
 
+/* A row with weeks in it opens onto them. */
+.perfect-weeks-row.openable {
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.perfect-weeks-row.openable:hover {
+    background: var(--bg-secondary);
+}
+
+.perfect-weeks-row.open {
+    border-bottom: none;
+}
+
+.perfect-weeks-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.perfect-weeks-detail:last-child {
+    border-bottom: none;
+}
+
+.perfect-week-chip {
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
 /* Lone Wolf Expandable Details */
 .lone-wolf-row {
     cursor: pointer;

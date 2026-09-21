@@ -92,6 +92,7 @@ function makeAppEnv() {
     return ({
         COWHERD, PERFECT_BLAZIN_WINS, CURRENT_SEASON, AVAILABLE_SEASONS, seasonData,
         perfectBlazinWeeks, perfectBlazinWeeksAllTime, renderPerfectWeeksCard, saveCowherdPicks,
+        togglePerfectWeeks, perfectWeeksExpanded,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -298,6 +299,30 @@ check('it draws what it has while the archives load, and asks for them once', ()
     assert.ok(asked > 0, 'the archives were requested');
     api.renderPerfectWeeksCard();
     assert.strictEqual(api.__scripts.length, asked, 'and not requested again on the next draw');
+});
+
+check('a name opens onto the weeks, newest first, and stays open through a redraw', () => {
+    const api = setup();
+    archivePriorSeason(api);
+    fillRemainingSeasons(api);
+    api.renderPerfectWeeksCard();
+    let html = api.__written['perfect-weeks-card'];
+    assert.doesNotMatch(html, /perfect-weeks-detail/, 'closed to begin with');
+    assert.match(html, /openable[^>]*onclick="togglePerfectWeeks\('Stephen'\)"/, 'a row with weeks is clickable');
+    assert.doesNotMatch(html, /onclick="togglePerfectWeeks\('Daniel'\)"/, 'one without is not');
+
+    api.togglePerfectWeeks('Stephen');
+    html = api.__written['perfect-weeks-card'];
+    const chips = [...html.matchAll(/perfect-week-chip">(\d{4} Wk \d+)</g)].map(m => m[1]);
+    assert.deepStrictEqual(chips, [`${api.CURRENT_SEASON} Wk 1`, `${api.CURRENT_SEASON - 1} Wk 3`], 'his two, newest first');
+    assert.match(html, /Stephen[\s\S]*?perfect-weeks-detail/, 'under his row');
+    assert.doesNotMatch(html, /Sean[\s\S]*?perfect-weeks-detail[\s\S]*?Daniel/, 'nobody else\u2019s is open');
+
+    api.renderPerfectWeeksCard();
+    assert.match(api.__written['perfect-weeks-card'], /perfect-weeks-detail/, 'still open after a redraw');
+
+    api.togglePerfectWeeks('Stephen');
+    assert.doesNotMatch(api.__written['perfect-weeks-card'], /perfect-weeks-detail/, 'and closes again');
 });
 
 check('nobody yet says so, and nobody leads', () => {

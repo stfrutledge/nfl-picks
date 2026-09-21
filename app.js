@@ -7453,6 +7453,18 @@ function perfectBlazinWeeksAllTime() {
 // One load of the archives for the all-time card, shared by every render.
 let archivesLoading = null;
 
+// Which pickers' rows on the 5-0 card are open onto their weeks. Outside the
+// render, as asIsExpanded is: the card is redrawn when the archives land and
+// on every dashboard refresh, and an open row must not snap shut.
+const perfectWeeksExpanded = new Set();
+
+/** Open or close a picker's row on the 5-0 card. */
+function togglePerfectWeeks(picker) {
+    if (perfectWeeksExpanded.has(picker)) perfectWeeksExpanded.delete(picker);
+    else perfectWeeksExpanded.add(picker);
+    renderPerfectWeeksCard();
+}
+
 /**
  * Load every archived season that is not in yet, quietly, once. The Perfect
  * Weeks card is all-time, and the archives are otherwise only loaded on
@@ -7500,16 +7512,23 @@ function renderPerfectWeeksCard() {
     const best = sorted.length ? byPicker[sorted[0]].count : 0;
 
     // One line a picker: name, when they last did it, and the count on the
-    // right. No rank column - the order says it.
+    // right. No rank column - the order says it. A row with anything in it
+    // opens onto the weeks themselves, newest first.
     const rows = sorted.map(picker => {
-        const { count, last } = byPicker[picker];
+        const { count, last, weeks } = byPicker[picker];
         const leader = best > 0 && count === best;
+        const open = count > 0 && perfectWeeksExpanded.has(picker);
+        const detail = open ? `
+            <div class="perfect-weeks-detail">
+                ${[...weeks].reverse().map(w => `<span class="perfect-week-chip">${w.season} Wk ${w.week}</span>`).join('')}
+            </div>` : '';
         return `
-            <div class="perfect-weeks-row ${leader ? 'leader' : ''} ${count ? '' : 'none'}">
+            <div class="perfect-weeks-row ${leader ? 'leader' : ''} ${count ? 'openable' : 'none'} ${open ? 'open' : ''}"
+                ${count ? `onclick="togglePerfectWeeks('${picker}')" title="Show the weeks"` : ''}>
                 <span class="lone-wolf-name">${picker}</span>
                 <span class="perfect-weeks-last">${last ? `${last.season} Wk ${last.week}` : '&ndash;'}</span>
                 <span class="perfect-weeks-count">${count}</span>
-            </div>
+            </div>${detail}
         `;
     }).join('');
 
