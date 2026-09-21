@@ -336,14 +336,14 @@ check('it sorts by total by default, and by last on request', () => {
     const names = html => [...html.matchAll(/lone-wolf-name">(\w+)</g)].map(m => m[1]);
     assert.strictEqual(api.__sort(), 'total');
     let html = api.__written['perfect-weeks-card'];
-    assert.match(html, /perfect-weeks-sort perfect-weeks-count active/, 'Total is marked');
+    assert.match(html, /perfect-weeks-sort perfect-weeks-count"[^>]*onclick="setPerfectWeeksSort\('total'\)"/, 'Total is a control');
+    assert.doesNotMatch(html, /active/, 'and nothing is marked as the one in use');
     // Stephen 2 (last this season), Sean 2 (last season), Cowherd 1, then the rest.
     assert.deepStrictEqual(names(html).slice(0, 3), ['Stephen', 'Sean', 'Cowherd']);
 
     api.setPerfectWeeksSort('last');
     html = api.__written['perfect-weeks-card'];
-    assert.match(html, /perfect-weeks-sort perfect-weeks-last active/, 'Last is marked');
-    assert.doesNotMatch(html, /perfect-weeks-count active/);
+    assert.match(html, /perfect-weeks-sort perfect-weeks-last"[^>]*onclick="setPerfectWeeksSort\('last'\)"/, 'Last is a control');
     // Stephen this season wk 1; then last season: Sean wk 9, Cowherd wk 5.
     assert.deepStrictEqual(names(html).slice(0, 3), ['Stephen', 'Sean', 'Cowherd']);
     assert.ok(names(html).indexOf('Daniel') > 2, 'never is at the bottom');

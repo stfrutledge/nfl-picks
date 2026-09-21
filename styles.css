@@ -1560,7 +1560,7 @@ header h1 {
     color: inherit;
 }
 
-/* The two headers are the sort controls. The active one carries an arrow. */
+/* The two headers are the sort controls: plain, no marker on the one in use. */
 .perfect-weeks-sort {
     background: none;
     border: none;
@@ -1574,15 +1574,6 @@ header h1 {
 
 .perfect-weeks-sort:hover {
     color: var(--text-primary);
-}
-
-.perfect-weeks-sort.active {
-    color: var(--text-primary);
-}
-
-.perfect-weeks-sort.active::after {
-    content: ' \25BC';
-    font-size: 0.55rem;
 }
 
 .perfect-weeks-row.leader .lone-wolf-name,

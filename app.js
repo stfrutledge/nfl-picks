@@ -7572,10 +7572,10 @@ function renderPerfectWeeksCard() {
         <div class="perfect-weeks-list">
             <div class="perfect-weeks-row head">
                 <span></span>
-                <button type="button" class="perfect-weeks-sort perfect-weeks-last ${perfectWeeksSort === 'last' ? 'active' : ''}"
-                    onclick="setPerfectWeeksSort('last')" title="Most recent first">Last</button>
-                <button type="button" class="perfect-weeks-sort perfect-weeks-count ${perfectWeeksSort === 'total' ? 'active' : ''}"
-                    onclick="setPerfectWeeksSort('total')" title="Most first">Total</button>
+                <button type="button" class="perfect-weeks-sort perfect-weeks-last"
+                    onclick="setPerfectWeeksSort('last')" title="Sort by most recent">Last</button>
+                <button type="button" class="perfect-weeks-sort perfect-weeks-count"
+                    onclick="setPerfectWeeksSort('total')" title="Sort by total">Total</button>
             </div>
             ${rows}
         </div>
