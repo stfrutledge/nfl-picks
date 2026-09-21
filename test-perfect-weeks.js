@@ -277,13 +277,14 @@ check('it lists everyone, most perfect weeks first, naming the last one', () => 
     api.renderPerfectWeeksCard();
     assert.ok(!api.__node('perfect-weeks-card').classList.contains('hidden'));
     const html = api.__written['perfect-weeks-card'];
-    assert.match(html, /Perfect Weeks/);
-    assert.match(html, /all seasons/);
+    assert.match(html, /5-0 Blazin' 5 Weeks/);
+    assert.match(html, /insight-subtitle">All seasons</);
     const names = [...html.matchAll(/lone-wolf-name">(\w+)</g)].map(m => m[1]);
     assert.strictEqual(names.length, 6, 'five pickers and Cowherd');
     assert.deepStrictEqual(names.slice(0, 2), ['Stephen', 'Sean'], 'two each; Stephen’s is the more recent');
-    assert.match(html, /perfect-weeks-row leader [\s\S]*?Stephen[\s\S]*?perfect-weeks-count">2<[\s\S]*?Last: \d{4} Wk 1</);
-    assert.match(html, /Daniel[\s\S]*?perfect-weeks-count">0<[\s\S]*?>Never</);
+    assert.match(html, /perfect-weeks-row leader [\s\S]*?Stephen[\s\S]*?perfect-weeks-last">\d{4} Wk 1<[\s\S]*?perfect-weeks-count">2</, 'one line: name, last, total');
+    assert.match(html, /Daniel[\s\S]*?perfect-weeks-last">&ndash;<[\s\S]*?perfect-weeks-count">0</, 'never: a dash');
+    assert.doesNotMatch(html, /lone-wolf-rank/, 'no rank column');
     assert.doesNotMatch(html, /Loading/);
 });
 

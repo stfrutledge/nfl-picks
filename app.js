@@ -7499,15 +7499,16 @@ function renderPerfectWeeksCard() {
         || compareSeasonWeek(byPicker[b].last, byPicker[a].last));
     const best = sorted.length ? byPicker[sorted[0]].count : 0;
 
-    const rows = sorted.map((picker, idx) => {
+    // One line a picker: name, when they last did it, and the count on the
+    // right. No rank column - the order says it.
+    const rows = sorted.map(picker => {
         const { count, last } = byPicker[picker];
         const leader = best > 0 && count === best;
         return `
             <div class="perfect-weeks-row ${leader ? 'leader' : ''} ${count ? '' : 'none'}">
-                <span class="lone-wolf-rank">${idx + 1}</span>
                 <span class="lone-wolf-name">${picker}</span>
+                <span class="perfect-weeks-last">${last ? `${last.season} Wk ${last.week}` : '&ndash;'}</span>
                 <span class="perfect-weeks-count">${count}</span>
-                <span class="perfect-weeks-last">${last ? `Last: ${last.season} Wk ${last.week}` : 'Never'}</span>
             </div>
         `;
     }).join('');
@@ -7519,12 +7520,17 @@ function renderPerfectWeeksCard() {
     card.innerHTML = `
         <div class="insight-header">
             <div>
-                <span class="insight-title">Perfect Weeks</span>
-                <p class="insight-subtitle">5-0 Blazin' 5 weeks, all seasons</p>
+                <span class="insight-title">5-0 Blazin' 5 Weeks</span>
+                <p class="insight-subtitle">All seasons</p>
             </div>
         </div>
         ${note}
-        <div class="lone-wolf-leaderboard">
+        <div class="perfect-weeks-list">
+            <div class="perfect-weeks-row head">
+                <span></span>
+                <span class="perfect-weeks-last">Last</span>
+                <span class="perfect-weeks-count">Total</span>
+            </div>
             ${rows}
         </div>
     `;

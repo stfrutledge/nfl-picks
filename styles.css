@@ -1520,42 +1520,68 @@ header h1 {
     font-weight: 600;
 }
 
-/* Perfect Weeks: one row per picker, the count of 5-0 weeks and which
-   weeks they were. The rows borrow the lone wolf leaderboard's shape so the
-   two cards read alike, without its click-to-expand. */
+/* 5-0 Blazin' 5 Weeks: one line a picker - name, the last time, the total.
+   A compact list rather than the lone wolf card's padded rows. */
+.perfect-weeks-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
+}
+
 .perfect-weeks-row {
     display: grid;
-    grid-template-columns: 24px 1fr auto;
-    align-items: center;
+    grid-template-columns: 1fr auto 44px;
+    align-items: baseline;
     gap: 12px;
-    padding: 10px 12px;
-    border-radius: 6px;
-    background: var(--bg-secondary);
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--border-color);
 }
 
-.perfect-weeks-row.leader {
-    background: rgba(0, 177, 18, 0.1);
-    border: 1px solid rgba(0, 177, 18, 0.2);
+.perfect-weeks-row:last-child {
+    border-bottom: none;
 }
 
-.perfect-weeks-count {
-    font-weight: 800;
-    font-size: 1.1rem;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
+.perfect-weeks-row.head {
+    padding-top: 0;
+    padding-bottom: 4px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
 }
 
+.perfect-weeks-row.head .perfect-weeks-count,
+.perfect-weeks-row.head .perfect-weeks-last {
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+}
+
+.perfect-weeks-row.leader .lone-wolf-name,
 .perfect-weeks-row.leader .perfect-weeks-count {
     color: var(--accent-green);
 }
 
-.perfect-weeks-row.none .perfect-weeks-count {
+.perfect-weeks-row.none .lone-wolf-name {
     color: var(--text-secondary);
 }
 
 .perfect-weeks-last {
-    grid-column: 2 / -1;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.perfect-weeks-count {
+    font-weight: 800;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.perfect-weeks-row.none .perfect-weeks-count {
     color: var(--text-secondary);
 }
 
