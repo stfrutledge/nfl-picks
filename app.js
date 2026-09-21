@@ -7556,8 +7556,13 @@ function renderPerfectWeeksCard() {
         ? `<p class="insight-description">Loading ${missing.length} earlier season${missing.length === 1 ? '' : 's'}&hellip;</p>`
         : (best === 0 ? '<p class="insight-description">Nobody has gone 5-0 yet.</p>' : '');
 
+    // The same header as the lone wolf card: a picture, then the title and
+    // subtitle. blazin-5.png is a local 160px crop of a Blazin' 5 segment
+    // still - the original is a 3.7 MB frame, which is not for hotlinking
+    // into a 60px slot.
     card.innerHTML = `
-        <div class="insight-header">
+        <div class="insight-header insight-image-header">
+            <img src="blazin-5.png" alt="Blazin' 5" class="insight-image">
             <div>
                 <span class="insight-title">5-0 Blazin' 5 Weeks</span>
                 <p class="insight-subtitle">All seasons</p>

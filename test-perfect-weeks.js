@@ -281,6 +281,8 @@ check('it lists everyone, most perfect weeks first, naming the last one', () => 
     const html = api.__written['perfect-weeks-card'];
     assert.match(html, /5-0 Blazin' 5 Weeks/);
     assert.match(html, /insight-subtitle">All seasons</);
+    assert.match(html, /insight-header insight-image-header[\s\S]*?<img src="blazin-5.png"[^>]*class="insight-image"/, 'a picture in the header, as the lone wolf card has');
+    assert.ok(fs.existsSync(path.join(__dirname, 'blazin-5.png')), 'and the picture is in the repo');
     const names = [...html.matchAll(/lone-wolf-name">(\w+)</g)].map(m => m[1]);
     assert.strictEqual(names.length, 6, 'five pickers and Cowherd');
     assert.deepStrictEqual(names.slice(0, 2), ['Stephen', 'Sean'], 'two each; Stephen’s is the more recent');

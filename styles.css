@@ -1449,15 +1449,17 @@ header h1 {
     color: var(--text-light);
 }
 
-/* Lone Wolf Card */
-.lone-wolf-image {
+/* Lone Wolf Card - and any other insight card with a picture in its header */
+.lone-wolf-image,
+.insight-image {
     width: 60px;
     height: 60px;
     border-radius: 8px;
     object-fit: cover;
 }
 
-.lone-wolf-header {
+.lone-wolf-header,
+.insight-image-header {
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border-color);
 }
