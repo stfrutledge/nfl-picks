@@ -1520,6 +1520,45 @@ header h1 {
     font-weight: 600;
 }
 
+/* Perfect Weeks: one row per picker, the count of 5-0 weeks and which
+   weeks they were. The rows borrow the lone wolf leaderboard's shape so the
+   two cards read alike, without its click-to-expand. */
+.perfect-weeks-row {
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+}
+
+.perfect-weeks-row.leader {
+    background: rgba(0, 177, 18, 0.1);
+    border: 1px solid rgba(0, 177, 18, 0.2);
+}
+
+.perfect-weeks-count {
+    font-weight: 800;
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.perfect-weeks-row.leader .perfect-weeks-count {
+    color: var(--accent-green);
+}
+
+.perfect-weeks-row.none .perfect-weeks-count {
+    color: var(--text-secondary);
+}
+
+.perfect-weeks-weeks {
+    grid-column: 2 / -1;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
 /* Lone Wolf Expandable Details */
 .lone-wolf-row {
     cursor: pointer;

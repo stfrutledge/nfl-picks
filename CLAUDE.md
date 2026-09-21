@@ -302,6 +302,10 @@ Two things the engine depends on:
 - **Schedules.** A week can only be scored if its games are loaded, and schedules are otherwise fetched lazily per week. `preloadSeasonSchedules()` loads the whole played season in the background on start, so standings are not limited to the weeks you happened to visit.
 
 
+### Perfect Weeks
+
+The Insights panel's third card, on the Blazin' 5 sub-tab only: each picker's 5-0 Blazin' 5 weeks this season, counted and listed. `perfectBlazinWeeks()` reads them off `calculateStatsForWeeks`' per-week breakdown, so a week is scored exactly as the standings score it. Strictly 5-0-0 - a push is not a win, so 4-0-1 does not count. Cowherd is in the list once he has a scored pick, as on the table. `node test-perfect-weeks.js` covers it.
+
 ### Year Chg
 
 **This season's win percentage minus last season's over the same weeks.**

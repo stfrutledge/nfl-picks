@@ -7380,6 +7380,81 @@ function toggleTeamDetails(teamId) {
     }
 }
 
+/** A Blazin' 5 week is perfect at five wins, no losses and no pushes. */
+const PERFECT_BLAZIN_WINS = 5;
+
+/**
+ * Each picker's 5-0 Blazin' 5 weeks this season, as a list of week numbers.
+ *
+ * Read off calculateStatsForWeeks' per-week breakdown, so a week is scored
+ * exactly as the standings score it - each pick at its own line, Cowherd at
+ * the numbers he called. Strictly 5-0-0: a push is not a win, so 4-0-1 is
+ * not a perfect week. Regular season only, which is the only time the star
+ * is offered. Cowherd is in the list once he has a scored pick, as on the
+ * Blazin' 5 table (cowherdBelongsIn).
+ */
+function perfectBlazinWeeks() {
+    const { first, last } = regularSeasonWeekRange();
+    const computed = calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD);
+    const out = {};
+    PICKERS_WITH_COWHERD.forEach(picker => {
+        const s = computed[picker];
+        if (!cowherdBelongsIn(picker, COWHERD_CATEGORY, s.blazin)) return;
+        out[picker] = s.byWeek
+            .filter(w => w.blazin.wins === PERFECT_BLAZIN_WINS
+                && w.blazin.losses === 0 && w.blazin.pushes === 0)
+            .map(w => w.week);
+    });
+    return out;
+}
+
+/**
+ * The Perfect Weeks card on the Insights panel: who has gone 5-0 this season,
+ * how often, and in which weeks. Blazin' 5 sub-tab only - it is a Blazin' 5
+ * record - and hidden on the others.
+ */
+function renderPerfectWeeksCard() {
+    const card = document.getElementById('perfect-weeks-card');
+    if (!card) return;
+    const show = currentSubcategory === 'blazin' && usingComputedStandings();
+    card.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    const weeks = perfectBlazinWeeks();
+    // Most perfect weeks first; level pickers keep the roster's order.
+    const sorted = Object.keys(weeks).sort((a, b) => weeks[b].length - weeks[a].length);
+    const best = sorted.length ? weeks[sorted[0]].length : 0;
+
+    const rows = sorted.map((picker, idx) => {
+        const list = weeks[picker];
+        const leader = best > 0 && list.length === best;
+        const when = list.length
+            ? `<span class="perfect-weeks-weeks">${list.map(w => `Wk ${w}`).join(', ')}</span>`
+            : '';
+        return `
+            <div class="perfect-weeks-row ${leader ? 'leader' : ''} ${list.length ? '' : 'none'}">
+                <span class="lone-wolf-rank">${idx + 1}</span>
+                <span class="lone-wolf-name">${picker}</span>
+                <span class="perfect-weeks-count">${list.length}</span>
+                ${when}
+            </div>
+        `;
+    }).join('');
+
+    card.innerHTML = `
+        <div class="insight-header">
+            <div>
+                <span class="insight-title">Perfect Weeks</span>
+                <p class="insight-subtitle">5-0 Blazin' 5 weeks this season</p>
+            </div>
+        </div>
+        ${best === 0 ? '<p class="insight-description">Nobody has gone 5-0 yet.</p>' : ''}
+        <div class="lone-wolf-leaderboard">
+            ${rows}
+        </div>
+    `;
+}
+
 /**
  * Calculate worst Blazin' 5 week for each picker (by record like "0-5")
  */
@@ -9075,6 +9150,8 @@ function renderInsights(consensus) {
             </div>
         `;
     }
+
+    renderPerfectWeeksCard();
 
     // Calculate lone wolf with game details based on current tab
     let loneWolfDetails;
