@@ -7560,23 +7560,24 @@ function renderPerfectWeeksCard() {
     // subtitle. blazin-5.png is a local 160px crop of a Blazin' 5 segment
     // still - the original is a 3.7 MB frame, which is not for hotlinking
     // into a 60px slot.
+    // The sort controls sit in the header, above the line, over the columns
+    // they order; the list then starts where the lone wolf card's does.
     card.innerHTML = `
-        <div class="insight-header insight-image-header">
+        <div class="insight-header insight-image-header perfect-weeks-header">
             <img src="blazin-5.png" alt="Blazin' 5" class="insight-image">
             <div>
                 <span class="insight-title">5-0 Blazin' 5 Weeks</span>
                 <p class="insight-subtitle">All seasons</p>
             </div>
-        </div>
-        ${note}
-        <div class="perfect-weeks-list">
-            <div class="perfect-weeks-row head">
-                <span></span>
+            <div class="perfect-weeks-sorts">
                 <button type="button" class="perfect-weeks-sort perfect-weeks-last"
                     onclick="setPerfectWeeksSort('last')" title="Sort by most recent">Last</button>
                 <button type="button" class="perfect-weeks-sort perfect-weeks-count"
                     onclick="setPerfectWeeksSort('total')" title="Sort by total">Total</button>
             </div>
+        </div>
+        ${note}
+        <div class="perfect-weeks-list">
             ${rows}
         </div>
     `;
