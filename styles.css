@@ -4024,40 +4024,6 @@ footer a:hover {
     animation: slideIn 0.4s ease forwards;
 }
 
-/* Back to Top Button */
-.back-to-top {
-    position: fixed;
-    bottom: 84px;
-    right: 30px;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: var(--accent-green);
-    color: white;
-    border: none;
-    font-size: 1.25rem;
-    cursor: pointer;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
-    z-index: 95;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.back-to-top.visible {
-    opacity: 1;
-    visibility: visible;
-}
-
-.back-to-top:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-}
-
-.back-to-top:active {
-    transform: translateY(0);
-}
-
 /* Collapsible Sections */
 .collapsible-header {
     display: flex;

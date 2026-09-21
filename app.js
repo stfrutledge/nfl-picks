@@ -2639,7 +2639,6 @@ function init() {
     setupGameFilters();
     setupConfirmModal();
     setupRetryButton();
-    setupBackToTop();
     initCollapsibleSections();
     setupConsolidatedTabs();
     setupPullToRefresh();
@@ -13682,31 +13681,6 @@ function setupRetryButton() {
         hideErrorState();
         showLoadingState();
         loadFromGoogleSheets();
-    });
-}
-
-/**
- * Setup back to top button
- */
-function setupBackToTop() {
-    const backToTopBtn = document.getElementById('back-to-top');
-    if (!backToTopBtn) return;
-
-    // Show/hide button based on scroll position
-    window.addEventListener('scroll', () => {
-        if (window.scrollY > 300) {
-            backToTopBtn.classList.add('visible');
-        } else {
-            backToTopBtn.classList.remove('visible');
-        }
-    });
-
-    // Scroll to top when clicked
-    backToTopBtn.addEventListener('click', () => {
-        window.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-        });
     });
 }
 

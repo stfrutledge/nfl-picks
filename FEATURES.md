@@ -26,7 +26,7 @@ All critical accessibility violations have been fixed.
 ### Mobile Experience
 
 8. **Reposition Mobile Floating Buttons**
-   - Back-to-top, keyboard toggle, progress bar overlap
+   - Keyboard toggle, progress bar overlap (the back-to-top button was removed in September 2026)
    - Stack vertically or show only one at a time
    - Effort: Low
    - Status: Pending
@@ -221,7 +221,7 @@ All critical accessibility violations have been fixed.
 - Live Scoring Summary - Real-time ESPN scores
 - Blazin' 5 Selector - Star button with 5-pick limit
 - Blazin' 5 Running Count - Sticky tally above the games list so pickers can see how many of their five are spent
-- Sticky Tabs and Back to Top - Fixed navigation
+- Sticky Tabs - Fixed navigation
 
 **UX Polish**
 - Undo for Destructive Actions - "Clear Picks" shows undo toast for 5 seconds to restore picks
