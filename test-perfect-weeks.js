@@ -92,7 +92,8 @@ function makeAppEnv() {
     return ({
         COWHERD, PERFECT_BLAZIN_WINS, CURRENT_SEASON, AVAILABLE_SEASONS, seasonData,
         perfectBlazinWeeks, perfectBlazinWeeksAllTime, renderPerfectWeeksCard, saveCowherdPicks,
-        togglePerfectWeeks, perfectWeeksExpanded,
+        togglePerfectWeeks, perfectWeeksExpanded, setPerfectWeeksSort, comparePerfectWeeks,
+        __sort: () => perfectWeeksSort,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -323,6 +324,44 @@ check('a name opens onto the weeks, newest first, and stays open through a redra
 
     api.togglePerfectWeeks('Stephen');
     assert.doesNotMatch(api.__written['perfect-weeks-card'], /perfect-weeks-detail/, 'and closes again');
+});
+
+check('it sorts by total by default, and by last on request', () => {
+    const api = setup();
+    archivePriorSeason(api);
+    fillRemainingSeasons(api);
+    api.renderPerfectWeeksCard();
+    const names = html => [...html.matchAll(/lone-wolf-name">(\w+)</g)].map(m => m[1]);
+    assert.strictEqual(api.__sort(), 'total');
+    let html = api.__written['perfect-weeks-card'];
+    assert.match(html, /perfect-weeks-sort perfect-weeks-count active/, 'Total is marked');
+    // Stephen 2 (last this season), Sean 2 (last season), Cowherd 1, then the rest.
+    assert.deepStrictEqual(names(html).slice(0, 3), ['Stephen', 'Sean', 'Cowherd']);
+
+    api.setPerfectWeeksSort('last');
+    html = api.__written['perfect-weeks-card'];
+    assert.match(html, /perfect-weeks-sort perfect-weeks-last active/, 'Last is marked');
+    assert.doesNotMatch(html, /perfect-weeks-count active/);
+    // Stephen this season wk 1; then last season: Sean wk 9, Cowherd wk 5.
+    assert.deepStrictEqual(names(html).slice(0, 3), ['Stephen', 'Sean', 'Cowherd']);
+    assert.ok(names(html).indexOf('Daniel') > 2, 'never is at the bottom');
+
+    api.setPerfectWeeksSort('bogus');
+    assert.strictEqual(api.__sort(), 'last', 'an unknown sort is ignored');
+    api.setPerfectWeeksSort('total');
+    assert.strictEqual(api.__sort(), 'total');
+});
+
+check('by last, a more recent week beats a bigger total', () => {
+    const api = setup();
+    const cmp = (a, b, sort) => api.comparePerfectWeeks(a, b, sort);
+    const many = { count: 5, last: { season: 2020, week: 3 } };
+    const recent = { count: 1, last: { season: 2025, week: 9 } };
+    const never = { count: 0, last: null };
+    assert.ok(cmp(many, recent, 'total') < 0, 'by total the five come first');
+    assert.ok(cmp(recent, many, 'last') < 0, 'by last the 2025 week comes first');
+    assert.ok(cmp(never, recent, 'last') > 0, 'never goes last');
+    assert.ok(cmp(never, recent, 'total') > 0, 'either way');
 });
 
 check('nobody yet says so, and nobody leads', () => {

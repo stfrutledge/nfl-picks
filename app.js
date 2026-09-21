@@ -7458,6 +7458,28 @@ let archivesLoading = null;
 // on every dashboard refresh, and an open row must not snap shut.
 const perfectWeeksExpanded = new Set();
 
+// How the 5-0 card is ordered: by total, or by the most recent one. Total is
+// the default - it is a tally first.
+let perfectWeeksSort = 'total';
+
+/** Order the 5-0 card by 'total' or 'last'. */
+function setPerfectWeeksSort(sort) {
+    if (sort !== 'total' && sort !== 'last') return;
+    perfectWeeksSort = sort;
+    renderPerfectWeeksCard();
+}
+
+/**
+ * The card's order. By total: most first, the more recent breaking a tie. By
+ * last: most recent first, the bigger total breaking a tie, and anyone who
+ * has never done it at the bottom either way.
+ */
+function comparePerfectWeeks(a, b, sort = perfectWeeksSort) {
+    const byTotal = b.count - a.count;
+    const byLast = compareSeasonWeek(b.last, a.last);
+    return sort === 'last' ? (byLast || byTotal) : (byTotal || byLast);
+}
+
 /** Open or close a picker's row on the 5-0 card. */
 function togglePerfectWeeks(picker) {
     if (perfectWeeksExpanded.has(picker)) perfectWeeksExpanded.delete(picker);
@@ -7506,10 +7528,8 @@ function renderPerfectWeeksCard() {
     // others always are, since a zero is the point of a tracker.
     const listed = PICKERS_WITH_COWHERD.filter(p => p !== COWHERD
         || AVAILABLE_SEASONS.some(s => !missing.includes(s) && cowherdWeeklyResults(s) && !cowherdWeeklyResults(s).aggregate));
-    // Most perfect weeks first, then the most recent one.
-    const sorted = listed.sort((a, b) => byPicker[b].count - byPicker[a].count
-        || compareSeasonWeek(byPicker[b].last, byPicker[a].last));
-    const best = sorted.length ? byPicker[sorted[0]].count : 0;
+    const sorted = listed.sort((a, b) => comparePerfectWeeks(byPicker[a], byPicker[b]));
+    const best = Math.max(0, ...sorted.map(p => byPicker[p].count));
 
     // One line a picker: name, when they last did it, and the count on the
     // right. No rank column - the order says it. A row with anything in it
@@ -7547,8 +7567,10 @@ function renderPerfectWeeksCard() {
         <div class="perfect-weeks-list">
             <div class="perfect-weeks-row head">
                 <span></span>
-                <span class="perfect-weeks-last">Last</span>
-                <span class="perfect-weeks-count">Total</span>
+                <button type="button" class="perfect-weeks-sort perfect-weeks-last ${perfectWeeksSort === 'last' ? 'active' : ''}"
+                    onclick="setPerfectWeeksSort('last')" title="Most recent first">Last</button>
+                <button type="button" class="perfect-weeks-sort perfect-weeks-count ${perfectWeeksSort === 'total' ? 'active' : ''}"
+                    onclick="setPerfectWeeksSort('total')" title="Most first">Total</button>
             </div>
             ${rows}
         </div>
