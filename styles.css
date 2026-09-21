@@ -1527,8 +1527,8 @@ header h1 {
    line up over them.
 
    Level with the lone wolf card: that header is the 60px picture over 16px
-   of padding, then the line. This one puts its 16px sort-label row (4px
-   gap + 12px line) in that padding's place, so both headers are 77px and,
+   of padding, then the line. This one puts its 16px sort-label row (11px
+   line + 5px clear of the rule) in that padding's place, so both headers are 77px and,
    with the same 16px to the list and 10px of row padding, the first names
    sit level when the cards are side by side. */
 .perfect-weeks-list {
@@ -1560,7 +1560,7 @@ header h1 {
        under them, which has its own 4px. The label row stands in for the
        bottom padding, so the labels sit right on the line. */
     row-gap: 0;
-    padding-bottom: 0;
+    padding-bottom: 5px;
 }
 
 .perfect-weeks-sorts {
@@ -1569,10 +1569,10 @@ header h1 {
     grid-template-columns: 88px 44px;
     justify-content: end;
     gap: 12px;
-    margin-top: 4px;
+    margin-top: 0;
     padding-right: 8px;
     font-size: 0.65rem;
-    line-height: 12px;
+    line-height: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
