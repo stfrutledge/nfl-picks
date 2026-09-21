@@ -1553,7 +1553,7 @@ header h1 {
     color: var(--text-secondary);
 }
 
-.perfect-weeks-weeks {
+.perfect-weeks-last {
     grid-column: 2 / -1;
     font-size: 0.75rem;
     color: var(--text-secondary);

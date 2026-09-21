@@ -304,7 +304,9 @@ Two things the engine depends on:
 
 ### Perfect Weeks
 
-The Insights panel's third card, on the Blazin' 5 sub-tab only: each picker's 5-0 Blazin' 5 weeks this season, counted and listed. `perfectBlazinWeeks()` reads them off `calculateStatsForWeeks`' per-week breakdown, so a week is scored exactly as the standings score it. Strictly 5-0-0 - a push is not a win, so 4-0-1 does not count. Cowherd is in the list once he has a scored pick, as on the table. `node test-perfect-weeks.js` covers it.
+The Insights panel's third card, on the Blazin' 5 sub-tab only: each picker's 5-0 Blazin' 5 weeks across every season, counted, with the most recent one named. `perfectBlazinWeeks(season)` reads a season's off `calculateStatsForWeeks`' per-week breakdown (with the `season` option, so an archive is scored exactly as the live season is); `perfectBlazinWeeksAllTime()` folds the seasons together. Strictly 5-0-0 - a push is not a win, so 4-0-1 does not count.
+
+**It is the one thing that loads every archive.** The archives are otherwise loaded on demand for the History tab, and the prior season for Year Chg. `ensureArchivesLoaded()` loads the rest quietly, once, the first time the card is drawn; the card draws from whatever is in straight away and again when they land, so the current season is not held behind a megabyte of history. Cowherd's picks are not archived, only his weekly record, so his come from `cowherdWeeklyResults()` for every season alike; the 2022 and earlier aggregates can say nothing about his weeks. `node test-perfect-weeks.js` covers it.
 
 ### Year Chg
 

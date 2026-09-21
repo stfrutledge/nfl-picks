@@ -1,11 +1,12 @@
 // Tests for the Perfect Weeks card.
 //
 // A 5-0 Blazin' 5 week is the thing the group brags about, so the Insights
-// panel counts them per picker on the Blazin' 5 sub-tab. What is worth
-// guarding: a perfect week is strictly five wins and nothing else (a push is
-// not a win), the count reads off the same per-week scoring the standings
-// use, Cowherd is in once he has a scored pick, and the card is only on the
-// Blazin' 5 sub-tab.
+// panel counts them per picker, across every season, and names the last one.
+// What is worth guarding: a perfect week is strictly five wins and nothing
+// else (a push is not a win), a season is scored off the same per-week
+// breakdown the standings use whether it is live or archived, Cowherd's come
+// from his archived weekly record, the card draws what it has while the
+// archives load, and it is only on the Blazin' 5 sub-tab.
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
@@ -42,6 +43,7 @@ function makeAppEnv() {
         if (!nodes.has(id)) nodes.set(id, node(id, written));
         return nodes.get(id);
     };
+    const scripts = [];
     const env = {
         localStorage: {
             getItem: k => (store.has(k) ? store.get(k) : null),
@@ -55,7 +57,9 @@ function makeAppEnv() {
             getElementById: id => nodeFor(id),
             querySelector: sel => nodeFor(sel),
             querySelectorAll: () => [],
-            createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {}, remove() {} }),
+            // A script element that is never run: an archive asked for stays
+            // pending, which is what the card has to cope with.
+            createElement: tag => { const el = { tag, style: {}, classList: { add() {}, remove() {} }, setAttribute() {}, remove() {} }; if (tag === 'script') scripts.push(el); return el; },
             head: { appendChild: () => {} },
             body: { appendChild: () => {}, classList: { add() {}, remove() {}, toggle() {} } },
             documentElement: { setAttribute() {}, classList: { add() {}, remove() {} } }
@@ -86,8 +90,8 @@ function makeAppEnv() {
     const exports = `;
     showToast = () => {};
     return ({
-        COWHERD, PERFECT_BLAZIN_WINS,
-        perfectBlazinWeeks, renderPerfectWeeksCard, saveCowherdPicks,
+        COWHERD, PERFECT_BLAZIN_WINS, CURRENT_SEASON, AVAILABLE_SEASONS, seasonData,
+        perfectBlazinWeeks, perfectBlazinWeeksAllTime, renderPerfectWeeksCard, saveCowherdPicks,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -105,6 +109,8 @@ function makeAppEnv() {
         env.confirm, env.addEventListener, env.matchMedia);
     api.__written = written;
     api.__node = nodeFor;
+    api.__window = env;
+    api.__scripts = scripts;
     return api;
 }
 
@@ -114,32 +120,37 @@ const TEAMS = [['Rams', 'Seahawks'], ['Bills', 'Chiefs'], ['Jets', 'Dolphins'], 
  * One week of five games, home -3 in each, with a result per game given as
  * the home margin: 7 covers, 3 pushes, -7 loses.
  */
-function week(api, weekNum, margins) {
+function weekData(weekNum, margins) {
     const games = TEAMS.map(([away, home], i) => ({
         id: weekNum * 10 + i, away, home, spread: 3, favorite: 'home',
         day: 'Sun', time: '1:00 PM', kickoff: '2020-01-01T18:00:00Z',
         status: 'STATUS_FINAL', completed: true
     }));
-    api.NFL_GAMES_BY_WEEK[weekNum] = games;
-    api.NFL_RESULTS_BY_WEEK[weekNum] = {};
+    const results = {};
     games.forEach((g, i) => {
         const margin = margins[i];
-        api.NFL_RESULTS_BY_WEEK[weekNum][g.id] = {
-            awayScore: 20, homeScore: 20 + margin, winner: margin > 0 ? 'home' : 'away'
-        };
+        results[g.id] = { awayScore: 20, homeScore: 20 + margin, winner: margin > 0 ? 'home' : 'away' };
     });
+    return { games, results };
+}
+
+function liveWeek(api, weekNum, margins) {
+    const { games, results } = weekData(weekNum, margins);
+    api.NFL_GAMES_BY_WEEK[weekNum] = games;
+    api.NFL_RESULTS_BY_WEEK[weekNum] = results;
 }
 
 /** Five starred picks on a side, keyed the way the app keys them. */
 const five = side => Object.fromEntries(TEAMS.map(([away, home]) =>
     [`${away.toLowerCase()}_${home.toLowerCase()}`, { line: side, winner: side, blazin: true }]));
 
-// Weeks 1 and 2 only: the card reads regularSeasonWeekRange(), whose far end
-// is CURRENT_NFL_WEEK off the clock, so a later week would not be in range.
+// Weeks 1 and 2 only: the live season reads regularSeasonWeekRange(), whose
+// far end is CURRENT_NFL_WEEK off the clock, so a later week would not be in
+// range.
 function setup() {
     const api = makeAppEnv();
-    week(api, 1, [7, 7, 7, 7, 7]);      // home covers all five
-    week(api, 2, [7, 7, 7, 7, 3]);      // four covers and a push
+    liveWeek(api, 1, [7, 7, 7, 7, 7]);      // home covers all five
+    liveWeek(api, 2, [7, 7, 7, 7, 3]);      // four covers and a push
     api.__setState({
         currentWeek: 2,
         currentSubcategory: 'blazin',
@@ -150,6 +161,36 @@ function setup() {
         }
     });
     return api;
+}
+
+/**
+ * Last season, archived: week 3 Stephen and Sean both 5-0, week 9 Sean
+ * 5-0 again. Cowherd's archived record has a 5-0 in week 5.
+ */
+function archivePriorSeason(api) {
+    const prior = api.CURRENT_SEASON - 1;
+    const w3 = weekData(3, [7, 7, 7, 7, 7]);
+    const w9 = weekData(9, [-7, -7, -7, -7, -7]);
+    api.seasonData[prior] = {
+        games: { 3: w3.games, 9: w9.games },
+        results: { 3: w3.results, 9: w9.results },
+        picks: { 3: { Stephen: five('home'), Sean: five('home') }, 9: { Sean: five('away'), Stephen: five('home') } },
+        __pickKeysNormalized: true
+    };
+    api.__window[`COWHERD_${prior}_RESULTS`] = {
+        4: { wins: 3, losses: 2, pushes: 0 },
+        5: { wins: 5, losses: 0, pushes: 0 }
+    };
+    return prior;
+}
+
+/** Every other archive present but empty, so nothing is missing. */
+function fillRemainingSeasons(api) {
+    api.AVAILABLE_SEASONS.forEach(s => {
+        if (s !== api.CURRENT_SEASON && !api.seasonData[s]) {
+            api.seasonData[s] = { games: {}, results: {}, picks: {}, __pickKeysNormalized: true };
+        }
+    });
 }
 
 let failures = 0, total = 0;
@@ -192,24 +233,75 @@ check('Cowherd is in once he has picks, scored at his own numbers', () => {
     assert.deepStrictEqual(weeks[api.COWHERD], [2]);
 });
 
+section('It is all-time, season by season');
+
+check('an archived season is scored the same way, and Cowherd’s comes from his record', () => {
+    const api = setup();
+    const prior = archivePriorSeason(api);
+    const weeks = api.perfectBlazinWeeks(prior);
+    assert.deepStrictEqual(weeks.Stephen, [3], 'week 9 he was 0-5');
+    assert.deepStrictEqual(weeks.Sean, [3, 9]);
+    assert.deepStrictEqual(weeks[api.COWHERD], [5]);
+});
+
+check('the seasons fold together, oldest first, with the last one to hand', () => {
+    const api = setup();
+    const prior = archivePriorSeason(api);
+    const { byPicker, missing } = api.perfectBlazinWeeksAllTime();
+    assert.strictEqual(byPicker.Stephen.count, 2);
+    assert.deepStrictEqual(byPicker.Stephen.last, { season: api.CURRENT_SEASON, week: 1 });
+    assert.deepStrictEqual(byPicker.Stephen.weeks, [{ season: prior, week: 3 }, { season: api.CURRENT_SEASON, week: 1 }]);
+    assert.strictEqual(byPicker.Sean.count, 2);
+    assert.deepStrictEqual(byPicker.Sean.last, { season: prior, week: 9 }, 'nothing this season, so last season’s');
+    assert.deepStrictEqual(byPicker[api.COWHERD].last, { season: prior, week: 5 });
+    assert.strictEqual(byPicker.Daniel.count, 0);
+    assert.strictEqual(byPicker.Daniel.last, null);
+    assert.ok(missing.length > 0, 'the other archives are not in');
+    assert.ok(!missing.includes(prior) && !missing.includes(api.CURRENT_SEASON));
+});
+
+check('a season archived as an aggregate says nothing about Cowherd', () => {
+    const api = setup();
+    const old = api.CURRENT_SEASON - 4;
+    api.seasonData[old] = { games: {}, results: {}, picks: {}, __pickKeysNormalized: true };
+    api.__window[`COWHERD_${old}_RESULTS`] = { aggregate: { wins: 44, losses: 37, pushes: 4 } };
+    assert.ok(!(api.COWHERD in api.perfectBlazinWeeks(old)));
+});
+
 section('The card is on the Blazin’ 5 sub-tab, and only there');
 
-check('it lists everyone, most perfect weeks first, with the weeks named', () => {
+check('it lists everyone, most perfect weeks first, naming the last one', () => {
     const api = setup();
+    archivePriorSeason(api);
+    fillRemainingSeasons(api);
     api.renderPerfectWeeksCard();
     assert.ok(!api.__node('perfect-weeks-card').classList.contains('hidden'));
     const html = api.__written['perfect-weeks-card'];
     assert.match(html, /Perfect Weeks/);
-    const rows = html.match(/perfect-weeks-row[^"]*"[\s\S]*?lone-wolf-name">(\w+)</g).map(r => r.match(/lone-wolf-name">(\w+)</)[1]);
-    assert.strictEqual(rows[0], 'Stephen', 'the one with a perfect week leads');
-    assert.strictEqual(rows.length, 5, 'every picker has a row');
-    assert.match(html, /perfect-weeks-row leader [\s\S]*?Stephen[\s\S]*?perfect-weeks-count">1<[\s\S]*?Wk 1</, 'his count and week');
-    assert.match(html, /Sean[\s\S]*?perfect-weeks-count">0</);
-    assert.doesNotMatch(html, /Nobody has gone 5-0/);
+    assert.match(html, /all seasons/);
+    const names = [...html.matchAll(/lone-wolf-name">(\w+)</g)].map(m => m[1]);
+    assert.strictEqual(names.length, 6, 'five pickers and Cowherd');
+    assert.deepStrictEqual(names.slice(0, 2), ['Stephen', 'Sean'], 'two each; Stephen’s is the more recent');
+    assert.match(html, /perfect-weeks-row leader [\s\S]*?Stephen[\s\S]*?perfect-weeks-count">2<[\s\S]*?Last: \d{4} Wk 1</);
+    assert.match(html, /Daniel[\s\S]*?perfect-weeks-count">0<[\s\S]*?>Never</);
+    assert.doesNotMatch(html, /Loading/);
+});
+
+check('it draws what it has while the archives load, and asks for them once', () => {
+    const api = setup();
+    api.renderPerfectWeeksCard();
+    const html = api.__written['perfect-weeks-card'];
+    assert.match(html, /Loading \d+ earlier seasons/);
+    assert.match(html, /Stephen[\s\S]*?perfect-weeks-count">1</, 'this season is already counted');
+    const asked = api.__scripts.length;
+    assert.ok(asked > 0, 'the archives were requested');
+    api.renderPerfectWeeksCard();
+    assert.strictEqual(api.__scripts.length, asked, 'and not requested again on the next draw');
 });
 
 check('nobody yet says so, and nobody leads', () => {
     const api = setup();
+    fillRemainingSeasons(api);
     api.__setState({ allPicks: { 1: { Stephen: five('away') } } });
     api.renderPerfectWeeksCard();
     const html = api.__written['perfect-weeks-card'];
