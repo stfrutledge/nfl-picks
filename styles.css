@@ -1678,6 +1678,173 @@ header h1 {
     background: var(--bg-tertiary);
 }
 
+/* Winnings: one line a picker - name over record and ROI, the profit on the
+   right - best first. The stake is edited in the header; the header keeps
+   the lone wolf card's rule beneath it. */
+.winnings-header {
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.winnings-stake {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.winnings-stake-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.winnings-stake-field {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.winnings-stake-field:focus-within {
+    border-color: var(--accent-green);
+}
+
+.winnings-stake-input {
+    width: 4.5em;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: var(--text-primary);
+    text-align: right;
+    -moz-appearance: textfield;
+}
+
+.winnings-stake-input::-webkit-outer-spin-button,
+.winnings-stake-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.winnings-stake-input:focus {
+    outline: none;
+}
+
+.winnings-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 16px;
+}
+
+.winnings-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.winnings-row:last-child {
+    border-bottom: none;
+}
+
+.winnings-row:hover {
+    background: var(--bg-secondary);
+}
+
+.winnings-row.open {
+    border-bottom: none;
+}
+
+.winnings-who {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.winnings-record {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.winnings-roi {
+    margin-left: 6px;
+    font-weight: 600;
+}
+
+.winnings-profit {
+    font-weight: 800;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.winnings-row.leader .lone-wolf-name {
+    color: var(--accent-green);
+}
+
+.winnings-profit.positive,
+.winnings-roi.positive,
+.winnings-week-chip.positive {
+    color: var(--accent-green);
+}
+
+.winnings-profit.negative,
+.winnings-roi.negative,
+.winnings-week-chip.negative {
+    color: var(--accent-red);
+}
+
+.winnings-profit.neutral,
+.winnings-roi.neutral,
+.winnings-week-chip.neutral {
+    color: var(--text-secondary);
+}
+
+.winnings-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.winnings-detail:last-child {
+    border-bottom: none;
+}
+
+.winnings-week-chip {
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    white-space: nowrap;
+}
+
+.winnings-note {
+    margin-top: 12px;
+}
+
 .lone-wolf-details {
     background: var(--bg-secondary);
     border-radius: 6px;

@@ -6945,6 +6945,12 @@ function renderDashboard() {
     const prior = computeLocally
         ? priorSeasonStats(range.first, range.last, PICKERS_WITH_COWHERD)
         : null;
+    // The two priced categories carry each picker's winnings onto their card,
+    // at the stake chosen on the Winnings card. Same computed stats, so the
+    // money and the record on a card are always the same picks.
+    const winnings = computeLocally && WINNINGS_CATEGORIES.includes(currentSubcategory)
+        ? calculateWinnings(getWinningsStake(), { computed })
+        : null;
     const useComputed = category => {
         stats = standingsFromComputed(computed, category, prior);
         weeklyData = weeklySeriesFromComputed(computed, category);
@@ -6981,6 +6987,13 @@ function renderDashboard() {
             if (worstWeeks[picker]) {
                 stats[picker].worstWeek = worstWeeks[picker];
             }
+        });
+    }
+
+    if (winnings && stats) {
+        Object.keys(stats).forEach(picker => {
+            const w = winnings[picker]?.[currentSubcategory];
+            if (w) stats[picker].winnings = w;
         });
     }
 
@@ -7579,6 +7592,117 @@ function renderPerfectWeeksCard() {
         <div class="perfect-weeks-list">
             ${rows}
         </div>
+    `;
+}
+
+// ============================================================================
+// Winnings card
+// ============================================================================
+
+/** Which Winnings rows are open onto their weeks. */
+const winningsExpanded = new Set();
+
+function toggleWinningsRow(picker) {
+    if (winningsExpanded.has(picker)) winningsExpanded.delete(picker);
+    else winningsExpanded.add(picker);
+    renderWinningsCard();
+}
+
+/**
+ * A new stake from the card's input. Everything that shows money is redrawn:
+ * the card itself and the profit line on every leaderboard card.
+ */
+function changeWinningsStake(value) {
+    const stake = setWinningsStake(value);
+    const input = document.getElementById('winnings-stake-input');
+    if (input) input.value = stake;
+    renderDashboard();
+}
+
+/**
+ * The profit line on a leaderboard card: what this picker is up or down at
+ * the chosen flat stake. Blank when there is no price to score at (straight
+ * up, playoffs) or nothing scored yet.
+ */
+function bettingWinningsHtml(picker) {
+    const w = picker.winnings;
+    if (!w || w.picks === 0) return '';
+    return `
+        <div class="betting-winnings ${profitTone(w.profit)}">
+            <span class="comparison-label">${formatStake(getWinningsStake())}/pick ${w.profit < 0 ? 'loss' : 'profit'}:</span>
+            <span class="comparison-value">${formatCurrency(w.profit)}</span>
+        </div>`;
+}
+
+/**
+ * The Winnings card on the Insights panel: every picker's profit at a flat
+ * stake on each pick of the sub-tab's category, best first, with the stake
+ * itself editable in the header. Blazin' 5 and Line Picks only - straight up
+ * has no price - and hidden on the others.
+ *
+ * One line a picker: name over record and ROI, the profit on the right. A
+ * row opens onto its weeks, newest first.
+ */
+function renderWinningsCard() {
+    const card = document.getElementById('winnings-card');
+    if (!card) return;
+    const category = currentSubcategory;
+    const show = WINNINGS_CATEGORIES.includes(category) && usingComputedStandings();
+    card.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    const stake = getWinningsStake();
+    const all = calculateWinnings(stake);
+    const rows = Object.keys(all)
+        .filter(p => all[p][category] && all[p][category].picks > 0)
+        .map(p => ({ picker: p, ...all[p][category] }))
+        .sort((a, b) => (b.profit - a.profit) || ((b.roi || 0) - (a.roi || 0)) || a.picker.localeCompare(b.picker));
+
+    const best = rows.length ? rows[0].profit : 0;
+    const what = category === 'blazin' ? "Blazin' 5 pick" : 'line pick';
+
+    const list = rows.map(r => {
+        const tone = profitTone(r.profit);
+        const leader = r.profit > 0 && r.profit === best;
+        const open = winningsExpanded.has(r.picker);
+        const detail = open ? `
+            <div class="winnings-detail">
+                ${[...r.byWeek].reverse().map(w => `
+                    <span class="winnings-week-chip ${profitTone(w.profit)}" title="${w.wins}-${w.losses}-${w.pushes}">Wk ${w.week} ${formatCurrency(w.profit)}</span>`).join('')}
+            </div>` : '';
+        return `
+            <div class="winnings-row ${leader ? 'leader' : ''} openable ${open ? 'open' : ''}"
+                onclick="toggleWinningsRow('${r.picker}')" title="Show the weeks">
+                <div class="winnings-who">
+                    <span class="lone-wolf-name">${r.picker}</span>
+                    <span class="winnings-record">${r.wins}-${r.losses}-${r.pushes}
+                        <span class="winnings-roi ${tone}">${formatSignedPercent(r.roi)} ROI</span></span>
+                </div>
+                <span class="winnings-profit ${tone}">${formatCurrency(r.profit)}</span>
+            </div>${detail}`;
+    }).join('');
+
+    card.innerHTML = `
+        <div class="insight-header winnings-header">
+            <div>
+                <span class="insight-title">Winnings</span>
+                <p class="insight-subtitle">${formatStake(stake)} on every ${what}, at -110</p>
+            </div>
+            <label class="winnings-stake" onclick="event.stopPropagation()">
+                <span class="winnings-stake-label">Stake</span>
+                <span class="winnings-stake-field">
+                    <span aria-hidden="true">$</span>
+                    <input type="number" id="winnings-stake-input" class="winnings-stake-input"
+                        min="1" step="5" value="${stake}" inputmode="decimal"
+                        aria-label="Stake per pick, in dollars"
+                        onchange="changeWinningsStake(this.value)">
+                </span>
+            </label>
+        </div>
+        <div class="winnings-list">
+            ${list || '<p class="insight-description">Nothing scored yet.</p>'}
+        </div>
+        <p class="insight-description winnings-note">A win pays ${formatCurrency(profitForOutcome(stake, 'win'))}, a loss costs ${formatStake(stake)}, a push returns it. Straight-up picks are not priced.</p>
     `;
 }
 
@@ -9287,6 +9411,7 @@ function renderInsights(consensus) {
     }
 
     renderPerfectWeeksCard();
+    renderWinningsCard();
 
     // Calculate lone wolf with game details based on current tab
     let loneWolfDetails;
@@ -9543,84 +9668,120 @@ function renderGroupStats(groupOverall) {
 }
 
 /**
- * Calculate profit/loss for a bet at -110 odds
- * @param {number} betAmount - Amount bet
- * @param {string} outcome - 'win', 'loss', or 'push'
- * @returns {number} Profit (positive) or loss (negative)
+ * Winnings: what a flat stake on every pick would have returned.
+ *
+ * The book's price on a spread is not stored anywhere - applyOddsData keeps
+ * the point and drops the price - so every line pick is scored at the
+ * standard -110: a win returns 10/11 of the stake, a loss costs the stake, a
+ * push returns it. Straight-up picks have no price either and are not scored;
+ * a moneyline model would need the h2h prices kept, which the worker already
+ * fetches (see formatMoneyline).
  */
-function calculatePnLAt110(betAmount, outcome) {
-    if (outcome === 'push') return 0;
-    if (outcome === 'win') return betAmount * (100 / 110); // Win pays ~0.909x
-    return -betAmount; // Loss
+const STANDARD_PRICE = -110;
+
+/** Profit on a $1 stake at an American price: -110 -> 0.909..., +150 -> 1.5. */
+function profitPerDollar(price = STANDARD_PRICE) {
+    return price < 0 ? 100 / -price : price / 100;
+}
+
+/** Profit (or loss, negative) of one pick: outcome is 'win', 'loss' or 'push'. */
+function profitForOutcome(stake, outcome, price = STANDARD_PRICE) {
+    if (outcome === 'win') return stake * profitPerDollar(price);
+    if (outcome === 'loss') return -stake;
+    return 0;
+}
+
+/** Profit of a whole { wins, losses, pushes } record at a flat stake. */
+function profitForRecord(record, stake, price = STANDARD_PRICE) {
+    return record.wins * profitForOutcome(stake, 'win', price)
+        + record.losses * profitForOutcome(stake, 'loss', price);
+}
+
+const WINNINGS_STAKE_KEY = 'nfl_winnings_stake';
+const DEFAULT_WINNINGS_STAKE = 20;
+/** The two categories that carry a price. Straight up does not. */
+const WINNINGS_CATEGORIES = ['line', 'blazin'];
+
+/** The stake this device's viewer chose; $20 until they choose one. */
+function getWinningsStake() {
+    try {
+        const stored = Number(localStorage.getItem(WINNINGS_STAKE_KEY));
+        if (Number.isFinite(stored) && stored > 0) return stored;
+    } catch (e) { /* no storage - use the default */ }
+    return DEFAULT_WINNINGS_STAKE;
+}
+
+/** Remember a stake. Anything that is not a positive number leaves it alone. */
+function setWinningsStake(stake) {
+    const value = Number(stake);
+    if (!Number.isFinite(value) || value <= 0) return getWinningsStake();
+    try { localStorage.setItem(WINNINGS_STAKE_KEY, String(value)); } catch (e) { /* fine */ }
+    return value;
 }
 
 /**
- * Calculate P&L for all pickers
- * @param {number} betAmount - Amount to bet per pick
- * @returns {Object} P&L data for each picker
+ * Every picker's winnings at a flat stake, scored exactly as the standings
+ * are - same picks, same results, same frozen lines, same season scoping,
+ * Cowherd in the Blazin' 5 column only. Pass `computed` to reuse a
+ * calculateStatsForWeeks result already in hand.
+ *
+ * @returns {Object} picker -> { line?, blazin? }, each
+ *   { wins, losses, pushes, picks, staked, profit, roi, byWeek } where byWeek
+ *   is [{ week, wins, losses, pushes, profit, running }] over the weeks that
+ *   picker had something scored in the category. roi is profit over money
+ *   staked as a percentage, null when nothing was staked. A category the
+ *   picker does not belong in (cowherdBelongsIn) is left out.
  */
-function calculateAllPickersPnL(betAmount) {
-    const pnlData = {};
+function calculateWinnings(stake = getWinningsStake(), {
+    firstWeek, lastWeek, pickers = PICKERS_WITH_COWHERD, season = currentSeason, computed = null
+} = {}) {
+    const range = regularSeasonWeekRange();
+    const first = firstWeek ?? range.first;
+    const last = lastWeek ?? range.last;
+    const stats = computed || calculateStatsForWeeks(first, last, pickers, { season });
 
-    PICKERS.forEach(picker => {
-        pnlData[picker] = {
-            spread: { wins: 0, losses: 0, pushes: 0, profit: 0 },
-            blazin: { wins: 0, losses: 0, pushes: 0, profit: 0 },
-            total: 0
-        };
-    });
-
-    // Loop through all weeks
-    for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const games = NFL_GAMES_BY_WEEK[week];
-        const results = NFL_RESULTS_BY_WEEK[week];
-
-        if (!games || !results) continue;
-
-        games.forEach(game => {
-            const gameId = game.id;
-            const result = results[gameId] || results[String(gameId)];
-            if (!result) return;
-
-            PICKERS.forEach(picker => {
-                const pickerPicks = allPicks[week]?.[picker] || {};
-                const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-                const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
-
-                if (!pick) return;
-
-                // Calculate spread pick P&L
-                if (pick.line) {
-                    const atsWinner = atsWinnerForPick(game, pick, result);
-                    if (!atsWinner) return;
-                    const isPush = atsWinner === 'push';
-                    const isWin = pick.line === atsWinner;
-                    const outcome = isPush ? 'push' : (isWin ? 'win' : 'loss');
-
-                    const profit = calculatePnLAt110(betAmount, outcome);
-                    pnlData[picker].spread.profit += profit;
-                    if (isPush) pnlData[picker].spread.pushes++;
-                    else if (isWin) pnlData[picker].spread.wins++;
-                    else pnlData[picker].spread.losses++;
-
-                    // If also a Blazin' 5 pick, track separately
-                    if (pick.blazin) {
-                        pnlData[picker].blazin.profit += profit;
-                        if (isPush) pnlData[picker].blazin.pushes++;
-                        else if (isWin) pnlData[picker].blazin.wins++;
-                        else pnlData[picker].blazin.losses++;
-                    }
-                }
-            });
+    const out = {};
+    Object.keys(stats).forEach(picker => {
+        out[picker] = {};
+        WINNINGS_CATEGORIES.forEach(category => {
+            const rec = stats[picker][category];
+            if (!cowherdBelongsIn(picker, category, rec)) return;
+            let running = 0;
+            const byWeek = stats[picker].byWeek
+                .filter(w => w[category].wins + w[category].losses + w[category].pushes > 0)
+                .map(w => {
+                    const profit = profitForRecord(w[category], stake);
+                    running += profit;
+                    return { week: w.week, ...w[category], profit, running };
+                });
+            const picks = rec.wins + rec.losses + rec.pushes;
+            const staked = picks * stake;
+            const profit = profitForRecord(rec, stake);
+            out[picker][category] = {
+                wins: rec.wins, losses: rec.losses, pushes: rec.pushes,
+                picks, staked, profit,
+                roi: staked > 0 ? (profit / staked) * 100 : null,
+                byWeek
+            };
         });
-    }
-
-    // Calculate totals (Blazin' 5 picks only)
-    PICKERS.forEach(picker => {
-        pnlData[picker].total = pnlData[picker].blazin.profit;
     });
+    return out;
+}
 
-    return pnlData;
+/** '$20' or '$12.50': a stake, for a label. */
+function formatStake(stake) {
+    return '$' + (Number.isInteger(stake) ? String(stake) : stake.toFixed(2));
+}
+
+/** '+8.2%' / '-3.0%' / '0.0%'. */
+function formatSignedPercent(pct, digits = 1) {
+    if (typeof pct !== 'number' || Number.isNaN(pct)) return '';
+    return (pct > 0 ? '+' : '') + pct.toFixed(digits) + '%';
+}
+
+/** positive / negative / neutral, for colouring a money figure. */
+function profitTone(amount) {
+    return amount > 0 ? 'positive' : amount < 0 ? 'negative' : 'neutral';
 }
 
 /**
@@ -9771,6 +9932,7 @@ function renderPickerCard(picker, index, isCompact = false) {
     const pctClass = picker.percentage >= 50 ? 'positive' : 'negative';
     const compactClass = isCompact ? 'compact' : '';
     const isPlayoffs = currentSubcategory === 'playoffs';
+    const winningsHtml = isPlayoffs ? '' : bettingWinningsHtml(picker);
 
     // Playoff-specific stats breakdown
     const playoffStatsHtml = `
@@ -9832,14 +9994,7 @@ function renderPickerCard(picker, index, isCompact = false) {
                     <div class="picker-stats">
                         ${isPlayoffs ? playoffStatsHtml : regularStatsHtml}
                     </div>
-                    ${!isPlayoffs && picker.winnings !== undefined ? `
-                        <div class="year-comparison">
-                            <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
-                                <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
-                                <span class="comparison-value">${picker.winningsRaw >= 0 ? '+' : ''}${picker.winnings}</span>
-                            </div>
-                        </div>
-                    ` : ''}
+                    ${winningsHtml ? `<div class="year-comparison">${winningsHtml}</div>` : ''}
                 </div>
             </div>
         `;
@@ -9899,12 +10054,7 @@ function renderPickerCard(picker, index, isCompact = false) {
                         <span class="comparison-value">${picker.yearChange}</span>
                     </div>
                 ` : ''}
-                ${picker.winnings !== undefined ? `
-                    <div class="betting-winnings ${picker.winningsRaw >= 0 ? 'positive' : 'negative'}">
-                        <span class="comparison-label">$20/pick ${picker.winningsRaw >= 0 ? 'profit' : 'loss'}:</span>
-                        <span class="comparison-value">${picker.winningsRaw >= 0 ? '+' : ''}${picker.winnings}</span>
-                    </div>
-                ` : ''}
+                ${winningsHtml}
             </div>
             ` : ''}
         </div>
@@ -14073,81 +14223,23 @@ function getNFLWeekStartDate(week) {
 }
 
 /**
- * Calculate weekly bankroll for a picker based on Blazin' 5 picks
- * Uses the same P&L calculation as the Standings section for consistency
- * $20 flat bet per pick, $100/week added to bankroll
+ * Weekly bankroll for the vs Market chart: $100 deposited each week, a flat
+ * $20 on every Blazin' 5 pick at -110. The betting is calculateWinnings, so
+ * this cannot drift from what the Standings tab shows.
  * @param {string} picker - Picker name
  * @returns {Array} Array of { week, bankroll, invested, returnPct } objects
  */
 function calculatePickerWeeklyBankroll(picker) {
+    const betPerPick = 20;
+    const winnings = calculateWinnings(betPerPick, { pickers: [picker], firstWeek: 1, lastWeek: CURRENT_NFL_WEEK });
+    const profitByWeek = new Map((winnings[picker]?.blazin?.byWeek || []).map(w => [w.week, w.profit]));
+
     const weeklyData = [];
     let totalInvested = 0;
     let bankroll = 0;
-    let totalWins = 0, totalLosses = 0, totalPushes = 0;
-
     for (let week = 1; week <= CURRENT_NFL_WEEK; week++) {
-        const games = NFL_GAMES_BY_WEEK[week];
-        const results = NFL_RESULTS_BY_WEEK[week];
-
-        // Add $100 investment for this week
         totalInvested += 100;
-        bankroll += 100;
-
-        if (!games || !results) {
-            weeklyData.push({
-                week,
-                bankroll,
-                invested: totalInvested,
-                returnPct: ((bankroll - totalInvested) / totalInvested) * 100
-            });
-            continue;
-        }
-
-        // Count wins/losses for this week's Blazin' 5 picks
-        // Uses same logic as calculateAllPickersPnL for consistency
-        let weekWins = 0;
-        let weekLosses = 0;
-        let weekPushes = 0;
-
-        games.forEach(game => {
-            const gameId = game.id;
-            const result = results[gameId] || results[String(gameId)];
-            if (!result) return;
-
-            const pickerPicks = allPicks[week]?.[picker] || {};
-            const cachedPicks = weeklyPicksCache[week]?.picks?.[picker] || {};
-            const pick = { ...getPicksForGame(cachedPicks, game), ...getPicksForGame(pickerPicks, game) };
-
-            if (!pick || !pick.line) return;
-
-            // Only count Blazin' 5 picks
-            if (!pick.blazin) return;
-
-            const atsWinner = atsWinnerForPick(game, pick, result);
-            if (!atsWinner) return;
-            const isPush = atsWinner === 'push';
-            const isWin = pick.line === atsWinner;
-
-            if (isPush) {
-                weekPushes++;
-            } else if (isWin) {
-                weekWins++;
-            } else {
-                weekLosses++;
-            }
-        });
-
-        totalWins += weekWins;
-        totalLosses += weekLosses;
-        totalPushes += weekPushes;
-
-        // Calculate this week's betting P&L
-        // Flat $20 bet per Blazin' 5 pick
-        const betPerPick = 20;
-        const winnings = weekWins * betPerPick * (100 / 110); // Win pays ~0.909x
-        const losses = weekLosses * betPerPick;
-        bankroll = bankroll + winnings - losses;
-
+        bankroll += 100 + (profitByWeek.get(week) || 0);
         weeklyData.push({
             week,
             bankroll,
@@ -14155,17 +14247,6 @@ function calculatePickerWeeklyBankroll(picker) {
             returnPct: ((bankroll - totalInvested) / totalInvested) * 100
         });
     }
-
-    // Compare with P&L calculation
-    const pnlData = calculateAllPickersPnL(20);
-    const pnlRecord = pnlData[picker]?.blazin;
-    if (pnlRecord) {
-        const pnlMatch = totalWins === pnlRecord.wins && totalLosses === pnlRecord.losses;
-        console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes} (P&L: ${pnlRecord.wins}-${pnlRecord.losses}-${pnlRecord.pushes}) ${pnlMatch ? 'OK' : 'MISMATCH'}`);
-    } else {
-        console.log(`[VsMarket] ${picker}: ${totalWins}-${totalLosses}-${totalPushes}`);
-    }
-
     return weeklyData;
 }
 

@@ -413,3 +413,13 @@ Still fed by the workbook, so still blank for a new season: the group-overall pa
 Offseason checklist (the only manual step): archive the finished season to `historical-<year>.js` **including playoff weeks 19-22** (historical-2025.js has them; 2016-2024 are regular-season only), and paste in the Cowherd block that `exportCowherdResults()` prints from the browser console. His week-by-week record is the one piece that cannot be re-derived once the season's picks are cleared.
 
 Run `node test-offseason-reset.js` to smoke-test the rollover behavior.
+
+## Winnings
+
+The Winnings card (Insights panel, Blazin' 5 and Line Picks sub-tabs) and the profit line on every leaderboard card answer one question: what would a flat stake on each pick have returned? `calculateWinnings(stake)` is the whole engine, and it is `calculateStatsForWeeks` with money on it - the same picks, results, frozen lines and season scoping as the standings, with `profitForRecord` applied to each week's record. The vs Market bankroll (`calculatePickerWeeklyBankroll`) is the same call at $20, so the three places money appears cannot disagree.
+
+**Every line pick is priced at -110.** The odds feed's spread `price` is thrown away in `applyOddsData` (only the point is kept, in memory, in the saved-spreads store and on the sheet), so the real juice on a given side is unknowable after the fact. A win returns 10/11 of the stake, a loss costs the stake, a push returns it. Straight-up picks are not scored: they have no price either, and pricing them properly means keeping the `h2h` moneylines the worker already fetches (`homeMoneyline`/`awayMoneyline` are set on the game object but never persisted). That is the natural next step if the feature grows.
+
+The stake is per device (`nfl_winnings_stake` in localStorage, $20 by default) and edited in the card's header; changing it redraws the dashboard so the cards follow. ROI is profit over money staked, pushes included in the stake.
+
+`node test-winnings.js` covers the arithmetic, the engine's agreement with the standings, Cowherd's column, the stake setting and the vs Market bankroll.
