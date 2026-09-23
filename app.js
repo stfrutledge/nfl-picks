@@ -4322,7 +4322,7 @@ function setupPicksActions() {
     // beforeunload cannot be trusted to complete a fetch.
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
-            flushPendingSync();
+            flushPendingSync({ keepalive: true });
         }
     });
     document.getElementById('freeze-all-btn-mobile')?.addEventListener('click', freezeAllCompleteGames);
@@ -5332,7 +5332,7 @@ function freezeAllCompleteGames() {
         { confirmLabel: `Lock ${ready.length} Pick${ready.length === 1 ? '' : 's'}` },
         () => {
             ready.forEach(game => applyFreeze(game, week, currentPicker));
-            savePicksToStorage(true);
+            savePicksToStorage(true, false, week, currentPicker);
             renderGames();
             renderScoringSummary();
             showToast(notReady > 0
@@ -5549,7 +5549,9 @@ function saveCowherdPicks(week, entries) {
     localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
     // A deliberate single Save, not a click-through: sync it now rather than
     // through the debounce that exists to batch a player working down a slate.
-    syncPicksToGoogleSheets(false, COWHERD, week);
+    // Queued like any other change, so a failed write is retried.
+    markUnsynced(week, COWHERD);
+    flushPendingSync();
     return Object.keys(picks).length;
 }
 
@@ -12396,7 +12398,9 @@ function clearCurrentPickerPicks() {
                     syncClearedStatusToGoogleSheets(savedWeek, savedPicker, false);
                 }
 
-                savePicksToStorage();
+                // Named explicitly: the undo can be tapped after moving on to
+                // another week or picker.
+                savePicksToStorage(false, false, savedWeek, savedPicker);
                 renderGames();
                 renderScoringSummary();
             });
@@ -12712,48 +12716,167 @@ function showUndoToast(message, undoCallback, duration = 5000) {
     }, duration);
 }
 
-/**
- * Save picks to localStorage and optionally sync to Google Sheets
- * @param {boolean} showSyncToast - Whether to show a toast on successful sync
- * @param {boolean} skipSync - If true, skip syncing to Google Sheets (used when loading from backup)
- */
 // Signature of the last payload successfully sent, per week and picker, so an
 // unchanged slate is not written again. Re-renders, picker switches and
 // background loads can all trigger a save without anything having changed.
 const lastSyncedSignature = {};
 
-/** Send any pending sync now instead of waiting out the debounce. */
-function flushPendingSync() {
-    if (!pendingSyncTimeout) return;
-    clearTimeout(pendingSyncTimeout);
-    pendingSyncTimeout = null;
-    syncPicksToGoogleSheets(false);
+// Every week+picker changed on this device and not yet confirmed written to the
+// sheet, as { 'week|picker': version }. This is what the debounce sends.
+//
+// It used to send whatever currentPicker and currentWeek were when the timer
+// FIRED. Pick three games, switch to another picker or tap next week inside the
+// 5s, and the sync went out for the wrong slate - usually unchanged, so deduped
+// to nothing - and the picks were never sent. The next load then took the sheet
+// as the source of truth and they were gone. Recording the slate at the moment
+// of the change is the fix; the debounce still batches a run of clicks.
+//
+// An entry stays until the sheet confirms the write, so a failure is retried
+// rather than forgotten. It is persisted so that holds across a reload, and the
+// backup loaders leave an unconfirmed slate alone: until it lands, this device
+// holds the newer copy. The version is bumped on every change, and a success
+// only clears the version it sent - a pick made while a write is in flight
+// still goes out behind it.
+const UNSYNCED_PICKS_KEY = `nfl_unsynced_picks_${CURRENT_SEASON}`;
+let unsyncedPicks = (() => {
+    try {
+        return JSON.parse(localStorage.getItem(UNSYNCED_PICKS_KEY)) || {};
+    } catch {
+        return {};
+    }
+})();
+
+// Backoff after a failed or deferred write, capped at the last step.
+const SYNC_RETRY_MS = [15000, 30000, 60000, 120000, 300000];
+let syncRetryAttempt = 0;
+let syncRunning = false;
+let syncAgain = false;
+let syncFailureShown = false; // one warning per run of failures, not one per retry
+let syncWantsToast = false;
+
+function unsyncedKey(week, picker) {
+    return `${week}|${picker}`;
 }
 
-function savePicksToStorage(showSyncToast = false, skipSync = false) {
+function persistUnsynced() {
+    try {
+        localStorage.setItem(UNSYNCED_PICKS_KEY, JSON.stringify(unsyncedPicks));
+    } catch (e) {
+        console.warn('[Sync] Could not persist the unsynced list:', e);
+    }
+}
+
+/** Is this slate changed here and not yet confirmed in the sheet? */
+function isUnsynced(week, picker) {
+    return unsyncedKey(week, picker) in unsyncedPicks;
+}
+
+function markUnsynced(week, picker) {
+    if (week == null || !picker) return;
+    const key = unsyncedKey(week, picker);
+    unsyncedPicks[key] = (unsyncedPicks[key] || 0) + 1;
+    persistUnsynced();
+}
+
+function scheduleSync(delay) {
+    if (pendingSyncTimeout) clearTimeout(pendingSyncTimeout);
+    pendingSyncTimeout = setTimeout(() => {
+        pendingSyncTimeout = null;
+        flushPendingSync();
+    }, delay);
+}
+
+/**
+ * Send every unconfirmed slate now instead of waiting out the debounce.
+ * `keepalive` is for the tab being hidden, when an ordinary fetch is often
+ * cancelled before it lands.
+ */
+async function flushPendingSync({ keepalive = false } = {}) {
+    if (pendingSyncTimeout) {
+        clearTimeout(pendingSyncTimeout);
+        pendingSyncTimeout = null;
+    }
+    if (!APPS_SCRIPT_URL) return;
+    if (syncRunning) {
+        syncAgain = true;
+        return;
+    }
+    syncRunning = true;
+    const displayToast = syncWantsToast;
+    syncWantsToast = false;
+
+    let outstanding = false;
+    let failed = false;
+    try {
+        for (const [key, version] of Object.entries(unsyncedPicks)) {
+            const cut = key.indexOf('|');
+            const week = Number(key.slice(0, cut));
+            const picker = key.slice(cut + 1);
+            const outcome = await syncPicksToGoogleSheets(displayToast, picker, week, { keepalive });
+            if (outcome === 'sent' || outcome === 'unchanged') {
+                if (unsyncedPicks[key] === version) delete unsyncedPicks[key];
+            } else {
+                // 'deferred' (schedule not loaded) or 'failed': try again later.
+                outstanding = true;
+                if (outcome === 'failed') failed = true;
+            }
+        }
+        persistUnsynced();
+    } finally {
+        syncRunning = false;
+    }
+
+    if (failed && !syncFailureShown) {
+        syncFailureShown = true;
+        showToast("Couldn't save picks to Google Sheets. They're kept on this device and will retry.", 'error');
+    } else if (!outstanding && syncFailureShown) {
+        syncFailureShown = false;
+        showToast('Picks saved to Google Sheets');
+    }
+
+    if (syncAgain) {
+        syncAgain = false;
+        scheduleSync(0);
+    } else if (outstanding) {
+        const delay = SYNC_RETRY_MS[Math.min(syncRetryAttempt, SYNC_RETRY_MS.length - 1)];
+        syncRetryAttempt++;
+        scheduleSync(delay);
+    } else {
+        syncRetryAttempt = 0;
+    }
+}
+
+/**
+ * Save picks to localStorage and queue the changed slate for the sheet.
+ * @param {boolean} showSyncToast - Whether to show a toast on successful sync
+ * @param {boolean} skipSync - If true, skip syncing to Google Sheets (used when loading from backup)
+ * @param {string|number} week - The week that changed; the one on screen by default
+ * @param {string} picker - The picker whose picks changed; the one on screen by default
+ */
+function savePicksToStorage(showSyncToast = false, skipSync = false, week = currentWeek, picker = currentPicker) {
     localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
 
     // Debounce sync to Google Sheets (skip if we're just loading data)
     if (APPS_SCRIPT_URL && !skipSync) {
-        if (pendingSyncTimeout) {
-            clearTimeout(pendingSyncTimeout);
-        }
-        pendingSyncTimeout = setTimeout(() => {
-            syncPicksToGoogleSheets(showSyncToast);
-        }, SYNC_DEBOUNCE_MS);
+        markUnsynced(week, picker);
+        if (showSyncToast) syncWantsToast = true;
+        syncRetryAttempt = 0;
+        scheduleSync(SYNC_DEBOUNCE_MS);
     }
 }
 
 /**
  * Sync one picker's picks for one week to Google Sheets.
  *
- * Defaults to the current picker and week, which is every call from the pick
- * UI. Cowherd's picks are saved by an admin who is signed in as themselves,
- * so his sync has to name him explicitly.
+ * Defaults to the current picker and week. The pick UI no longer relies on
+ * that: flushPendingSync() names the slate that actually changed.
+ *
+ * Returns 'sent' or 'unchanged' when the sheet holds this slate, 'deferred'
+ * when it could not be built yet (schedule not loaded), or 'failed'.
  */
-async function syncPicksToGoogleSheets(displayToast = true, picker = currentPicker, week = currentWeek) {
+async function syncPicksToGoogleSheets(displayToast = true, picker = currentPicker, week = currentWeek, { keepalive = false } = {}) {
     if (!APPS_SCRIPT_URL) {
-        return;
+        return 'unchanged';
     }
 
     const weekPicks = allPicks[week]?.[picker] || {};
@@ -12773,7 +12896,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
     // tombstone real picks.
     if (weekGames.length === 0) {
         console.warn(`[Sync] No schedule for week ${week}, skipping sync`);
-        return;
+        return 'deferred';
     }
 
     // A blank row in the snapshot is a tombstone, and foldPickRow gives a
@@ -12842,7 +12965,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
     const signatureKey = `${week}|${picker}`;
     if (lastSyncedSignature[signatureKey] === signature) {
         console.log(`[Sync] Week ${week} unchanged since last sync, skipping`);
-        return;
+        return 'unchanged';
     }
 
     const payload = {
@@ -12869,7 +12992,8 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            keepalive
         });
 
         const responseText = await response.text();
@@ -12883,7 +13007,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
             if (displayToast) {
                 showToast('Sync failed: Invalid response', 'error');
             }
-            return;
+            return 'failed';
         }
 
         if (result.success) {
@@ -12894,17 +13018,19 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
             if (displayToast) {
                 showToast('Picks saved to Google Sheets');
             }
-        } else {
-            console.error('[Sync] Sync failed:', result.error);
-            if (displayToast) {
-                showToast('Sync failed: ' + (result.error || 'Unknown error'), 'error');
-            }
+            return 'sent';
         }
+        console.error('[Sync] Sync failed:', result.error);
+        if (displayToast) {
+            showToast('Sync failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+        return 'failed';
     } catch (error) {
         console.error('[Sync] Failed to sync picks to Google Sheets:', error);
         if (displayToast) {
             showToast('Failed to sync to Google Sheets', 'error');
         }
+        return 'failed';
     }
 }
 
@@ -13046,6 +13172,13 @@ async function loadPicksFromGoogleSheets(week, picker) {
             return null;
         }
 
+        // Changed here and not yet written: this device holds the newer copy.
+        // Checked after the fetch, since a pick can be made while it is out.
+        if (isUnsynced(week, picker)) {
+            console.log(`[Picks Load] ${picker} week ${week} has unsynced local changes, keeping them`);
+            return null;
+        }
+
         // Check if picks were intentionally cleared (from Google Sheets)
         if (result.cleared) {
             console.log(`[Picks Load] ${picker} week ${week} was intentionally cleared (from Google Sheets), skipping restore`);
@@ -13118,8 +13251,20 @@ async function loadAllPicksFromBackup() {
         }
 
         // Reset local clearedPicks to match server state exactly
-        // This ensures "No" entries on server remove local "Yes" entries
+        // This ensures "No" entries on server remove local "Yes" entries.
+        // A slate changed here and not yet written keeps its local flag and its
+        // local picks: until the write lands, this device holds the newer copy,
+        // and the pending sync carries both to the sheet.
+        const localCleared = clearedPicks;
         clearedPicks = {};
+        for (const week in localCleared) {
+            for (const picker in localCleared[week]) {
+                if (isUnsynced(week, picker)) {
+                    if (!clearedPicks[week]) clearedPicks[week] = {};
+                    clearedPicks[week][picker] = localCleared[week][picker];
+                }
+            }
+        }
         if (result.cleared) {
             for (const sheetWeek in result.cleared) {
                 const weekNum = fromSheetWeek(sheetWeek);
@@ -13129,6 +13274,7 @@ async function loadAllPicksFromBackup() {
                     clearedPicks[week] = {};
                 }
                 for (const picker in result.cleared[sheetWeek]) {
+                    if (isUnsynced(week, picker)) continue;
                     clearedPicks[week][picker] = true;
                     // Also clear local picks to match server state
                     if (allPicks[weekNum]?.[picker]) {
@@ -13158,6 +13304,11 @@ async function loadAllPicksFromBackup() {
                 }
 
                 for (const picker in result.picks[sheetWeek]) {
+                    if (isUnsynced(week, picker)) {
+                        console.log(`[Picks Load] ${picker} week ${week} has unsynced local changes, keeping them`);
+                        continue;
+                    }
+
                     // Skip if user intentionally cleared picks for this week/picker
                     if (clearedPicks[week]?.[picker]) {
                         console.log(`[Picks Load] ${picker} week ${week} was cleared, skipping`);
@@ -13191,6 +13342,13 @@ async function loadAllPicksFromBackup() {
 
     } catch (error) {
         console.error('[Picks Load] Failed to load picks from Google Sheets backup:', error);
+    }
+
+    // Anything left unconfirmed by an earlier visit - a failed write, or a tab
+    // closed inside the debounce - goes out now rather than waiting for the
+    // next pick. A slate whose schedule is not in yet defers and retries.
+    if (Object.keys(unsyncedPicks).length > 0) {
+        scheduleSync(0);
     }
 
     // Draw what landed, rather than leaving it sitting in memory until the

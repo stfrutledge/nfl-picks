@@ -335,7 +335,9 @@ await check('a pick he dropped does not come back from the dead', async () => {
     const h = setup();
     h.api.saveCowherdPicks(WEEK, [{ key: 'rams_seahawks', side: 'away', spread: 7 }]);
     h.api.saveCowherdPicks(WEEK, [{ key: 'bills_chiefs', side: 'home', spread: -6.5 }]);
-    await new Promise(r => setTimeout(r, 0));
+    // Writes are serialised - the second goes out once the first has landed,
+    // so they reach the sheet in order - so let the queue drain.
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));
 
     const payloads = h.posts.filter(p => p.picker === 'Cowherd');
     assert.strictEqual(payloads.length, 2, 'both saves were sent');
