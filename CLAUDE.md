@@ -46,6 +46,8 @@ Two things worth knowing:
 
 `node test-odds-pacing.js` covers the pacing. Avoid calling `/odds` by hand to test things: a cache miss spends real credits.
 
+**The worker is public and unauthenticated, so the URL must not be able to buy a fetch.** Every odds request shares one cache key, `oddsCacheKey()`, built from the origin alone: the query string never reaches the key or the upstream request. There is no `?refresh=true` - it used to skip the cache, and together with a full-URL key it let anyone spend three credits per request with a made-up query string. Do not add a bypass back; the admin refresh button goes through the same cache like everything else. `/sheets` likewise checks the parsed host (`isGoogleSheetsUrl()`: https, `docs.google.com`, `/spreadsheets/`) - it was a substring test, which made it an open proxy. `node test-worker-guards.js` runs the whole worker against a fake cache and network and covers both.
+
 ## Google Apps Script
 
 The Apps Script URL the client actually talks to lives in the **Cloudflare Worker**

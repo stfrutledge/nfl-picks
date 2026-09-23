@@ -106,6 +106,40 @@ function pacedCacheDuration(remainingHeader, creditsPerFetch, now = new Date()) 
   };
 }
 
+/**
+ * The one cache key every odds request shares.
+ *
+ * The client only ever asks for a bare `/odds`, so nothing about the incoming
+ * URL may reach the key. It used to be the full request URL, which meant any
+ * made-up query string (`/odds?x=1`, `?x=2`, ...) was a fresh cache miss - three
+ * real credits each, for anyone who could read the worker's address out of
+ * app.js. The same went for `?refresh=true`, which skipped the cache outright
+ * and has been removed: nothing in the client sends it.
+ */
+function oddsCacheKey(requestUrl) {
+  return new Request(`${new URL(requestUrl).origin}/odds`);
+}
+
+/**
+ * Is this a Google Sheets address, by its actual host?
+ *
+ * The old test was `includes('docs.google.com/spreadsheets')`, which any URL can
+ * satisfy by carrying the phrase in its path or query - so
+ * `https://anything.example/?docs.google.com/spreadsheets` made this worker an
+ * open proxy, handing back whatever it fetched with `Access-Control-Allow-Origin: *`.
+ */
+function isGoogleSheetsUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'https:'
+    && parsed.hostname === 'docs.google.com'
+    && parsed.pathname.startsWith('/spreadsheets/');
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -118,7 +152,7 @@ export default {
 
     try {
       // Route based on path
-      if (path === '/odds' || path === '/') {
+      if (path === '/odds') {
         return await handleOdds(request, env, ctx);
       } else if (path === '/sheets') {
         return await handleSheets(request, url);
@@ -146,30 +180,22 @@ async function handleOdds(request, env, ctx) {
     return jsonResponse({ error: 'ODDS_API_KEY not configured' }, 500);
   }
 
-  // Check URL for force refresh parameter
-  const url = new URL(request.url);
-  const forceRefresh = url.searchParams.get('refresh') === 'true';
-
   // Try to get cached response from Cloudflare Cache API
   const cache = caches.default;
-  const cacheUrl = new URL(request.url);
-  cacheUrl.searchParams.delete('refresh'); // Normalize cache key
-  const cacheKey = new Request(cacheUrl.toString(), request);
+  const cacheKey = oddsCacheKey(request.url);
 
-  if (!forceRefresh) {
-    const cachedResponse = await cache.match(cacheKey);
-    if (cachedResponse) {
-      // Add header to indicate cache hit. X-Cache-Duration is left as stored:
-      // it records the window this entry was actually given, which is what the
-      // pacer decided at fetch time. Recomputing it here would report a window
-      // that never applied.
-      const headers = new Headers(cachedResponse.headers);
-      headers.set('X-Cache', 'HIT');
-      return new Response(cachedResponse.body, {
-        status: cachedResponse.status,
-        headers,
-      });
-    }
+  const cachedResponse = await cache.match(cacheKey);
+  if (cachedResponse) {
+    // Add header to indicate cache hit. X-Cache-Duration is left as stored:
+    // it records the window this entry was actually given, which is what the
+    // pacer decided at fetch time. Recomputing it here would report a window
+    // that never applied.
+    const headers = new Headers(cachedResponse.headers);
+    headers.set('X-Cache', 'HIT');
+    return new Response(cachedResponse.body, {
+      status: cachedResponse.status,
+      headers,
+    });
   }
 
   const oddsApiUrl = new URL('https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/');
@@ -238,8 +264,7 @@ async function handleSheets(request, url) {
     return jsonResponse({ error: 'Missing url parameter' }, 400);
   }
 
-  // Validate it's a Google Sheets URL
-  if (!sheetsUrl.includes('docs.google.com/spreadsheets')) {
+  if (!isGoogleSheetsUrl(sheetsUrl)) {
     return jsonResponse({ error: 'Invalid Google Sheets URL' }, 400);
   }
 
