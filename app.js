@@ -3245,6 +3245,10 @@ function renderHistoryWeek(week) {
         const homeSpreadDisplay = signedSpreadDisplay(game, 'home');
         const awaySpreadWithParens = spreadMissing ? '' : `(${awaySpreadDisplay})`;
         const homeSpreadWithParens = spreadMissing ? '' : `(${homeSpreadDisplay})`;
+        // A locked pick is shown at the number it was graded at, as on Make Picks.
+        const pickLineGame = { ...game, ...lineForPick(game, gamePick) };
+        const awayPickSpread = signedSpreadDisplay(pickLineGame, 'away');
+        const homePickSpread = signedSpreadDisplay(pickLineGame, 'home');
 
         // Calculate pick results
         let lineAwayResult = '', lineHomeResult = '', winnerAwayResult = '', winnerHomeResult = '';
@@ -3323,10 +3327,10 @@ function renderHistoryWeek(week) {
                         <span class="pick-label">Line Pick (ATS)</span>
                         <div class="pick-options">
                             <button class="pick-btn ${linePick === 'away' ? 'selected' : ''} ${lineAwayResult}" disabled>
-                                ${game.away} ${awaySpreadDisplay}
+                                ${game.away} ${awayPickSpread}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}" disabled>
-                                ${game.home} ${homeSpreadDisplay}
+                                ${game.home} ${homePickSpread}
                             </button>
                         </div>
                     </div>
@@ -10953,6 +10957,12 @@ function renderGames() {
         const spreadMissing = !hasUsableSpread(game);
         const awaySpreadDisplay = signedSpreadDisplay(game, 'away');
         const homeSpreadDisplay = signedSpreadDisplay(game, 'home');
+        // The pick buttons quote the line the pick is graded at: a locked pick
+        // keeps its own number after the board moves. The matchup header above
+        // them stays on the board's current line.
+        const pickLineGame = { ...game, ...lineForPick(game, gamePicks) };
+        const awayPickSpread = signedSpreadDisplay(pickLineGame, 'away');
+        const homePickSpread = signedSpreadDisplay(pickLineGame, 'home');
         // For game matchup line, show spread in parentheses only if available
         const awaySpreadWithParens = spreadMissing
             ? (spreadsLoading ? '<span class="spread-loading"></span>' : '')
@@ -11098,12 +11108,12 @@ function renderGames() {
                             <button class="pick-btn ${linePick === 'away' ? 'selected' : ''} ${lineAwayResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="away"
                                     ${readOnly ? 'disabled' : ''}>
-                                ${game.away} ${awaySpreadDisplay}
+                                ${game.away} ${awayPickSpread}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="home"
                                     ${readOnly ? 'disabled' : ''}>
-                                ${game.home} ${homeSpreadDisplay}
+                                ${game.home} ${homePickSpread}
                             </button>
                         </div>
                     </div>
@@ -11131,7 +11141,7 @@ function renderGames() {
                     </div>
                     ${frozen ? `
                         <span class="freeze-state frozen" title="Locked at ${frozenLineLabel}">
-                            Locked
+                            Locked at ${frozenLineLabel}
                         </span>
                     ` : (ridingDrift ? `
                         <span class="freeze-state drifted" title="You picked ${ridingDrift}; the line has since moved">
