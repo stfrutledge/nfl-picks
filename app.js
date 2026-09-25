@@ -6551,7 +6551,7 @@ function standingsFromComputed(computed, category, prior = null) {
         const rec = s[category];
         if (!cowherdBelongsIn(picker, category, rec)) return;
         const weekly = s.byWeek
-            .map(w => ({ week: w.week, pct: recordPercentage(w[category]) }))
+            .map(w => ({ week: w.week, record: w[category], pct: recordPercentage(w[category]) }))
             .filter(w => w.pct !== null);
 
         // Null until there are three weeks to average. With one or two it was
@@ -6562,9 +6562,19 @@ function standingsFromComputed(computed, category, prior = null) {
         //
         // Three of the PICKER'S OWN scored weeks, not three weeks of calendar:
         // somebody who has played twice has no three-week form either.
+        //
+        // The three weeks' records are pooled, the same arithmetic as the %
+        // column, not their percentages averaged. The mean gave a week with one
+        // game played the weight of a full slate: on a Friday the Thursday game
+        // alone put every picker's week at 100% or 0%, and in week 3 Last 3-Wk
+        // sat well off the season figure when the two cover the same picks and
+        // should agree.
         const last3 = weekly.slice(-LAST_3_WEEK_WINDOW);
         const last3Pct = last3.length === LAST_3_WEEK_WINDOW
-            ? last3.reduce((n, w) => n + w.pct, 0) / last3.length
+            ? recordPercentage(last3.reduce((n, w) => ({
+                wins: n.wins + w.record.wins,
+                losses: n.losses + w.record.losses
+            }), { wins: 0, losses: 0 }))
             : null;
         const best = weekly.reduce((b, w) => (b === null || w.pct > b.pct ? w : b), null);
 

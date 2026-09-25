@@ -1019,14 +1019,38 @@ check('two weeks played is still a dash', () => {
 check('three weeks played is the first real reading', () => {
     const api = weeksOf(null, [true, false, true]);
     const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 3), 'line').Stephen;
-    assert.strictEqual(Math.round(row.last3WeekPct), 67, 'mean of 100, 0, 100');
+    assert.strictEqual(Math.round(row.last3WeekPct), 67, '2-1 over the three weeks');
 });
 
 check('it keeps sliding once it has started', () => {
     const api = weeksOf(null, [true, true, false, false]);
     const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 4), 'line').Stephen;
     assert.strictEqual(Math.round(row.last3WeekPct), 33,
-        'weeks 2-4 only: 100, 0, 0 - week 1 has dropped out');
+        'weeks 2-4 only: 1-2 - week 1 has dropped out');
+});
+
+check('the three weeks are pooled, so a one-game week cannot outweigh a full slate', () => {
+    // Week 3 on a Friday: two full weeks behind it and only the Thursday game
+    // played. Averaging the weekly percentages - 33, 67 and 100 - gave 67 here,
+    // while the % column, over exactly the same picks, said 57.
+    const MATCHUPS = [['Rams', 'Seahawks'], ['Bears', 'Packers'], ['Jets', 'Bills']];
+    const weeks = {}, picks = {};
+    [[true, false, false], [true, true, false], [true]].forEach((outcomes, i) => {
+        const wk = i + 1;
+        weeks[wk] = [];
+        picks[wk] = { Stephen: {} };
+        outcomes.forEach((win, g) => {
+            const [away, home] = MATCHUPS[g];
+            weeks[wk].push(game(wk * 10 + g, away, home,
+                { completed: true, awayScore: 10, homeScore: 20 }));   // home -3 covers
+            picks[wk].Stephen[`${away.toLowerCase()}_${home.toLowerCase()}`] = { line: win ? 'home' : 'away' };
+        });
+    });
+    const api = setup({ weeks, picks });
+    const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 3), 'line').Stephen;
+    assert.strictEqual(Math.round(row.percentage), 57, '4-3 on the season');
+    assert.strictEqual(row.last3WeekPct, row.percentage,
+        'three weeks is the whole season here, so the two columns must agree');
 });
 
 check('three of the PICKERS OWN weeks, not three of calendar', () => {

@@ -388,8 +388,16 @@ him blank, which is the honest answer rather than a fabricated 0%.
 
 ### Last 3-Wk
 
-**The mean of the last three weekly percentages, and a dash until there are
-three.** `LAST_3_WEEK_WINDOW` is both the window and the minimum.
+**The picker's record over their last three weeks, pooled, and a dash until
+there are three.** `LAST_3_WEEK_WINDOW` is both the window and the minimum.
+
+Pooled, not averaged: the three weeks' wins and losses are summed and put
+through `recordPercentage()`, the same arithmetic as the % column. Until
+September 2026 it was the mean of the three weekly percentages, which gave a
+half-played week the weight of a full slate - on a Friday in week 3 the Thursday
+game alone set each picker's week to 100% or 0%, and the column sat well off
+the season % when the two covered exactly the same picks. In week 3 they now
+agree, as they should; from week 4 they diverge because the window has.
 
 It used to average whatever it had. With one week played, the mean of one
 week's percentage *is* the season percentage - so in week 1 the column sat
