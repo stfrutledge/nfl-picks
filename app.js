@@ -4324,10 +4324,19 @@ function setupPicksActions() {
     // tab or switches away, and unsynced picks would be overwritten by the
     // backup on the next load. visibilitychange is the reliable hook for this;
     // beforeunload cannot be trusted to complete a fetch.
+    //
+    // Coming back is the other half: a resumed page still holds the picks it
+    // opened with, so pick up anything the others have made since.
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
             flushPendingSync({ keepalive: true });
+        } else {
+            refreshPicksIfStale();
         }
+    });
+    // A page restored from the back/forward cache is resumed, not reloaded.
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) refreshPicksIfStale();
     });
     document.getElementById('freeze-all-btn-mobile')?.addEventListener('click', freezeAllCompleteGames);
 
@@ -13243,8 +13252,44 @@ async function loadPicksFromGoogleSheets(week, picker) {
  * Load ALL picks from Google Sheets backup in one API call
  * This fetches picks for all weeks and all pickers at once
  */
+/**
+ * How long the page has to have gone without a picks fetch before coming back
+ * to it fetches again.
+ *
+ * The backup is read once when the page opens, and a phone that is switched
+ * away from and back to - or a home-screen shortcut - resumes that page rather
+ * than loading it again. So a page opened on Thursday morning showed Thursday
+ * morning's picks all weekend, and a pick Sean or Daniel made in between only
+ * appeared after a forced reload, which read as the pick having failed to save.
+ *
+ * Five minutes rather than every return: a quick hop to another app and back
+ * should not cost a sheet read, and the sheet is slow enough under load.
+ */
+const PICKS_REFRESH_AFTER_MS = 5 * 60 * 1000;
+let lastBackupFetchAt = 0;
+let backupFetchInFlight = false;
+
+/**
+ * Re-read the backup if the last read is older than PICKS_REFRESH_AFTER_MS.
+ * Runs when the page comes back on screen. It is the same loader the page
+ * opens with, so the protection for a slate this device has not finished
+ * writing applies unchanged: its picks are kept and sent, not overwritten.
+ *
+ * @returns {boolean} whether a fetch was started
+ */
+function refreshPicksIfStale(now = Date.now()) {
+    // Before the first load settles, boot is still doing this itself.
+    if (!initialLoadComplete || backupFetchInFlight) return false;
+    if (now - lastBackupFetchAt < PICKS_REFRESH_AFTER_MS) return false;
+    console.log('[Picks Load] Page is back after a while, fetching picks again');
+    backupFetchedThisSession = false;
+    loadAllPicksFromBackup();
+    return true;
+}
+
 async function loadAllPicksFromBackup() {
-    // Only fetch from Google Sheets once per session to avoid excessive API calls
+    // Only fetch from Google Sheets once per session to avoid excessive API calls.
+    // refreshPicksIfStale() lifts this when the page returns after a while.
     if (backupFetchedThisSession) {
         console.log('[Picks Load] Backup already fetched this session, skipping');
         return;
@@ -13252,6 +13297,8 @@ async function loadAllPicksFromBackup() {
 
     // Mark as fetched immediately to prevent duplicate calls
     backupFetchedThisSession = true;
+    lastBackupFetchAt = Date.now();
+    backupFetchInFlight = true;
     console.log('[Picks Load] Starting backup fetch from Google Sheets...');
 
     try {
@@ -13362,6 +13409,8 @@ async function loadAllPicksFromBackup() {
 
     } catch (error) {
         console.error('[Picks Load] Failed to load picks from Google Sheets backup:', error);
+    } finally {
+        backupFetchInFlight = false;
     }
 
     // Anything left unconfirmed by an earlier visit - a failed write, or a tab

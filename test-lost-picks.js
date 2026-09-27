@@ -89,6 +89,7 @@ function makeEnv({ store = new Map(), backup = { picks: {}, cleared: {} } } = {}
                 return { ok: true, text: async () => JSON.stringify({ success: true }) };
             }
             if (String(url).includes('action=allpicks')) {
+                net.reads = (net.reads || 0) + 1;
                 return { ok: true, json: async () => backup };
             }
             return { ok: true, json: async () => ({}), text: async () => '{}' };
@@ -112,6 +113,7 @@ function makeEnv({ store = new Map(), backup = { picks: {}, cleared: {} } } = {}
     const appSrc = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
     const exports = `;return ({
         savePicksToStorage, flushPendingSync, loadAllPicksFromBackup, toSheetWeek,
+        refreshPicksIfStale,
         NFL_GAMES_BY_WEEK, UNSYNCED_PICKS_KEY, SYNC_DEBOUNCE_MS,
         __state: () => ({ allPicks, clearedPicks, currentWeek, currentPicker }),
         __setState: s => {
@@ -119,6 +121,7 @@ function makeEnv({ store = new Map(), backup = { picks: {}, cleared: {} } } = {}
             if ('currentPicker' in s) currentPicker = s.currentPicker;
             if ('allPicks' in s) allPicks = s.allPicks;
             if ('clearedPicks' in s) clearedPicks = s.clearedPicks;
+            if ('initialLoadComplete' in s) initialLoadComplete = s.initialLoadComplete;
         }
     });`;
     const fn = new Function(
@@ -327,6 +330,68 @@ await check('a confirmed slate still takes the backup, as before', async () => {
     await t.api.loadAllPicksFromBackup();
     assert.strictEqual(t.api.__state().allPicks[WEEK].Stephen.rams_seahawks.line, 'away',
         'the sheet is still the source of truth once nothing is pending');
+});
+
+section('Coming back to the page picks up what the others have picked since');
+
+// A phone resumes a page rather than reloading it, and picks were only read
+// when the page opened, so a pick made by somebody else in the meantime stayed
+// missing until a forced reload.
+
+const SHEET_WEEK = `${new Date().getMonth() >= 6
+    ? new Date().getFullYear() : new Date().getFullYear() - 1}_${WEEK}`;
+const MINUTE = 60 * 1000;
+
+// The page as it stands after opening: backup read once, first load done.
+async function opened(backup = { picks: {}, cleared: {} }) {
+    const t = start({ backup });
+    await t.api.loadAllPicksFromBackup();
+    t.api.__setState({ initialLoadComplete: true });
+    return { t, backup };
+}
+
+await check('back after a while, another picker\'s new pick appears', async () => {
+    const { t, backup } = await opened();
+    backup.picks[SHEET_WEEK] = { Sean: { rams_seahawks: { line: 'home', winner: 'home' } } };
+    assert.strictEqual(t.api.refreshPicksIfStale(Date.now() + 6 * MINUTE), true, 'a fetch is started');
+    await t.clock.advance(0);
+    assert.strictEqual(t.net.reads, 2, 'the backup was read again');
+    assert.strictEqual(t.api.__state().allPicks[WEEK]?.Sean?.rams_seahawks?.line, 'home',
+        'and Sean\'s pick is now on the page');
+});
+
+await check('a quick hop away and back does not read the sheet', async () => {
+    const { t } = await opened();
+    assert.strictEqual(t.api.refreshPicksIfStale(Date.now() + 1 * MINUTE), false);
+    await t.clock.advance(0);
+    assert.strictEqual(t.net.reads, 1, 'still only the read the page opened with');
+});
+
+await check('nothing is fetched before the first load has finished', async () => {
+    const t = start({});
+    assert.strictEqual(t.api.refreshPicksIfStale(Date.now() + 60 * MINUTE), false,
+        'boot is doing its own read');
+    assert.strictEqual(t.net.reads || 0, 0);
+});
+
+await check('the wait restarts from each read, not from opening the page', async () => {
+    const { t } = await opened();
+    assert.strictEqual(t.api.refreshPicksIfStale(Date.now() + 6 * MINUTE), true);
+    await t.clock.advance(0);
+    // The refresh stamps its own read with the real clock, so a return one
+    // minute after it is inside the window again.
+    assert.strictEqual(t.api.refreshPicksIfStale(Date.now() + 1 * MINUTE), false);
+    assert.strictEqual(t.net.reads, 2);
+});
+
+await check('a pick this device has not sent yet survives the refresh', async () => {
+    const { t, backup } = await opened();
+    pick(t, 'rams_seahawks', 'home');
+    backup.picks[SHEET_WEEK] = { Stephen: { rams_seahawks: { line: 'away', winner: 'away' } } };
+    t.api.refreshPicksIfStale(Date.now() + 6 * MINUTE);
+    await t.clock.advance(0);
+    assert.strictEqual(t.api.__state().allPicks[WEEK].Stephen.rams_seahawks.line, 'home',
+        'the unsent pick is newer than the sheet and is kept');
 });
 
 if (failures > 0) {
