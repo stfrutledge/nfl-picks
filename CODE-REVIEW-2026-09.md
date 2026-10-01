@@ -27,6 +27,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 | Data layer 4: the week boundary drifted an hour after DST ended | `9e5ad78` |
 | Tests: clock-dependent failures in test-live-tab.js and test-offseason-reset.js (also test-line-freezing.js, which would have failed from December) | `6b55645` |
 | Tests: no single command to run the suite (`node run-tests.js`) | `6b55645` |
+| Dead code: vs Market (JS, CSS, tab, bankroll tests) and the dead files (`odds-proxy.js` + its README, `google-apps-script.js`, `data.csv`, `start.bat`, `generate-historical-2016…2019.js`). `check-dylan-*.js` are gitignored local files and were left alone. | `a62d3d6` |
 
 ---
 
@@ -122,6 +123,8 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 ---
 
 ## Dead code and clutter
+
+**vs Market and the dead files are deleted in `a62d3d6`.** What remains here is the in-`app.js` dead code, the duplication and the performance note.
 
 - **vs Market is permanently hidden** (`index.html:71`, `display:none`, never revealed). It's about 1,400 lines (~14015-15420) plus 37 CSS rules.
   - It fetches prices through public CORS proxies, one of them dead (`cors-anywhere.herokuapp`).
