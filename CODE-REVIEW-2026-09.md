@@ -25,6 +25,8 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 | Scoring 3: the Scoring Summary counted a game with no line as a loss | `507a51c` |
 | Playoff dates hardcoded to the 2025-26 calendar (now counted from the season start) | `9e5ad78` |
 | Data layer 4: the week boundary drifted an hour after DST ended | `9e5ad78` |
+| Tests: clock-dependent failures in test-live-tab.js and test-offseason-reset.js (also test-line-freezing.js, which would have failed from December) | `6b55645` |
+| Tests: no single command to run the suite (`node run-tests.js`) | `6b55645` |
 
 ---
 
@@ -108,6 +110,8 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 ---
 
 ## Tests
+
+**The first two bullets are fixed in `6b55645`.**
 
 - **`test-live-tab.js` (3 checks) and `test-offseason-reset.js` fail. The tests are wrong, not the product.** They read the real clock and assume week 1, but today is week 3.
   - `test-offseason-reset.js` stops at its first failed check (line 85), so the rollover smoke test is currently checking **nothing**. Line 84 also hardcodes 2026 and will break next July.
