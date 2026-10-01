@@ -13,6 +13,12 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { fixedClock } = require('./fixed-clock');
+
+// The app's clock: inside 2026 week 5, the week these tests pick in. Off the
+// real clock, once the season passed week 5 every game here was a past week's
+// and locked, and the freeze checks all answered 'Game has already started'.
+const TEST_NOW = '2026-10-07T16:00:00Z';
 
 const APP = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const PARSER = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8');
@@ -110,8 +116,7 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
     env.globalThis = env;
 
     const snapshot = `
-        const HISTORICAL_DATA_SEASON = ${new Date().getMonth() >= 6
-            ? new Date().getFullYear() : new Date().getFullYear() - 1};
+        const HISTORICAL_DATA_SEASON = 2026;
         const HISTORICAL_GAMES = {};
         const HISTORICAL_RESULTS = {};
         const HISTORICAL_PICKS = {};
@@ -144,12 +149,12 @@ function makeAppEnv({ confirms = true, withDom = false, freezeButtons = [] } = {
     });`;
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
-        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
+        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date',
         PARSER + '\n' + snapshot + '\n' + APP + exports
     );
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
-        env.confirm, env.addEventListener, env.matchMedia);
+        env.confirm, env.addEventListener, env.matchMedia, fixedClock(TEST_NOW));
     return { api, posts, prompts, toasts: () => api.__toasts() };
 }
 

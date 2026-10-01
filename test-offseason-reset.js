@@ -2,6 +2,11 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { fixedClock } = require('./fixed-clock');
+
+// The app's clock: mid-July 2026, just after the rollover to the 2026 season
+// and before it kicks off. Without it every check below read the real date.
+const TEST_NOW = '2026-07-15T16:00:00Z';
 
 function makeEnv(prependSrc) {
     const store = new Map();
@@ -47,12 +52,12 @@ function makeEnv(prependSrc) {
     });`;
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
-        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
+        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date',
         parserSrc + '\n' + prependSrc + '\n' + appSrc + exports
     );
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
-        env.confirm, env.addEventListener, env.matchMedia);
+        env.confirm, env.addEventListener, env.matchMedia, fixedClock(TEST_NOW));
     return { api, env, store };
 }
 

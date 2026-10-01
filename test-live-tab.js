@@ -11,8 +11,15 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
+const { fixedClock } = require('./fixed-clock');
+
 const APP = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const PARSER = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8');
+
+// The app's clock: the Wednesday of 2026 week 1, so CURRENT_NFL_WEEK is 1 and
+// the slate() games below, that Sunday, have not opened the Live window yet.
+const TEST_NOW = '2026-09-09T16:00:00Z';
+const TEST_SEASON = 2026;
 
 /** An element stub that remembers what it was given. */
 function node(id, written) {
@@ -75,8 +82,7 @@ function makeAppEnv({ withDom = false } = {}) {
     env.globalThis = env;
 
     const snapshot = `
-        const HISTORICAL_DATA_SEASON = ${new Date().getMonth() >= 6
-            ? new Date().getFullYear() : new Date().getFullYear() - 1};
+        const HISTORICAL_DATA_SEASON = ${TEST_SEASON};
         const HISTORICAL_GAMES = {};
         const HISTORICAL_RESULTS = {};
         const HISTORICAL_PICKS = {};
@@ -114,12 +120,12 @@ function makeAppEnv({ withDom = false } = {}) {
     });`;
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
-        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
+        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date',
         PARSER + '\n' + snapshot + '\n' + APP + exports
     );
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
-        env.confirm, env.addEventListener, env.matchMedia);
+        env.confirm, env.addEventListener, env.matchMedia, fixedClock(TEST_NOW));
     api.__written = written;
     api.__node = nodeFor;
     return api;

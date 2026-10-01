@@ -4,6 +4,12 @@
 
 - **Google Sheet (Picks Backup)**: https://docs.google.com/spreadsheets/d/1fq_L7OJJOk3EE7gHFq_MJgjDTwxgyQy_Ac_jRoJr21A/edit?gid=1468882431#gid=1468882431
 
+## Tests
+
+`node run-tests.js` runs every `test-*.js` file, each in its own process, and exits non-zero if any failed. `node run-tests.js live dates` runs only the files whose names contain those words.
+
+**A test must not read the real clock.** app.js reads it as it loads - `CURRENT_SEASON`, `CURRENT_NFL_WEEK`, the Live window, `isGameLocked` - so a test that passed in the week it was written failed every week after (three files did, by October 2026). Pass `fixedClock(iso)` from `fixed-clock.js` into the `new Function` as `Date`, pinned to a moment that suits the test, as `test-live-tab.js`, `test-offseason-reset.js` and `test-line-freezing.js` do.
+
 ## Cache busting (do this once per clone)
 
 `index.html` references its local assets with a content hash — `app.js?v=78bb7458` — so a deploy changes the URL and browsers fetch the new file instead of running a cached copy. Without it, GitHub Pages serves `app.js` under one unchanging URL and every fix needs a manual hard refresh to reach anyone.
