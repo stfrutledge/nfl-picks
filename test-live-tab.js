@@ -209,10 +209,33 @@ check('a finished game offers nothing - it has a real result', () => {
     assert.strictEqual(api.liveProvisionalResult(g), null);
 });
 
-check('a tied game in progress names no winner', () => {
+check('a tied game in progress is a provisional tie', () => {
     const g = inProgress(1, 'Rams', 'Seahawks', 21, 21);
     const api = setup({ games: [g] });
-    assert.strictEqual(api.liveProvisionalResult(g).winner, null);
+    assert.strictEqual(api.liveProvisionalResult(g).winner, 'tie');
+    assert.strictEqual(api.liveProvisionalResult(g).provisional, true);
+});
+
+// Every straight-up pick on a game that had just kicked off at 0-0 used to
+// score as a loss on the Live tab: a level score had no winner, and no winner
+// matched nobody's pick. Level and still being played has no leader - pending,
+// as the row detail already said.
+check('a level game in progress leaves straight-up picks unscored', () => {
+    const games = [inProgress(1, 'Rams', 'Seahawks', 0, 0, { period: 1, clock: '14:55' })];
+    const api = setup({ games, picks: { Stephen: { rams_seahawks: b5('home') }, Sean: { rams_seahawks: b5('away') } } });
+    const asIs = api.calculateStatsForWeeks(WEEK, WEEK, ['Stephen', 'Sean'], { includeLive: true });
+    for (const p of ['Stephen', 'Sean']) {
+        assert.deepStrictEqual(asIs[p].winner, { wins: 0, losses: 0, pushes: 0 }, p);
+    }
+    // The line is another matter: 0-0 against Seahawks -3 is the Rams covering.
+    assert.strictEqual(asIs.Sean.blazin.wins, 1);
+    assert.strictEqual(asIs.Stephen.blazin.losses, 1);
+});
+
+check('the row detail agrees: pending', () => {
+    const games = [inProgress(1, 'Rams', 'Seahawks', 0, 0)];
+    const api = setup({ games, picks: { Stephen: { rams_seahawks: b5('home') } } });
+    assert.match(api.asIsPickDetail('Stephen', 'winner'), /outcome-pending/);
 });
 
 section('A game in a delay is still on');

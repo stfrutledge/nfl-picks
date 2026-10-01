@@ -185,6 +185,39 @@ check('straight-up picks ignore the spread', () => {
     assert.deepStrictEqual(s.winner, { wins: 2, losses: 1, pushes: 0 });
 });
 
+// A tie was graded three ways: getGameResult gave it to the away side,
+// postResultsToSheet to home, and the sheet's own 'tie' matched nobody and so
+// lost for everyone. The Apps Script calls it a push, and so does this.
+check('a tie is a straight-up push for both sides', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 20, homeScore: 20 })] },
+        picks: { 1: { Stephen: { rams_seahawks: { winner: 'home' } }, Sean: { rams_seahawks: { winner: 'away' } } } }
+    });
+    const s = api.calculateStatsForWeeks(1, 1);
+    assert.deepStrictEqual(s.Stephen.winner, { wins: 0, losses: 0, pushes: 1 });
+    assert.deepStrictEqual(s.Sean.winner, { wins: 0, losses: 0, pushes: 1 });
+});
+
+check('whatever winner the stored result carries', () => {
+    // The archives hold a level game as 'away' (2018-19), null (2020-22) and
+    // 'tie' (2025). The score is what decides it.
+    for (const winner of ['away', 'home', null, 'tie']) {
+        const api = setup({
+            weeks: { 1: [game(1, 'Rams', 'Seahawks')] },
+            results: { 1: { 1: { winner, awayScore: 20, homeScore: 20 } } },
+            picks: { 1: { Stephen: { rams_seahawks: { winner: 'away' } } } }
+        });
+        assert.deepStrictEqual(api.calculateStatsForWeeks(1, 1).Stephen.winner,
+            { wins: 0, losses: 0, pushes: 1 }, `stored winner ${winner}`);
+    }
+});
+
+check('a tie read off ESPN is a tie, not an away win', () => {
+    const api = setup({});
+    const g = game(1, 'Rams', 'Seahawks', { completed: true, awayScore: 23, homeScore: 23 });
+    assert.strictEqual(api.getGameResult(g, {}).winner, 'tie');
+});
+
 check("Blazin' 5 is scored on the starred line pick's ATS result", () => {
     const api = setup({
         weeks: { 1: WEEK_1 },

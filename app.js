@@ -3107,14 +3107,15 @@ function renderLifetimeStandingsTable() {
                         }
                     }
 
-                    if (gamePick.winner) {
-                        if (gameResult.winner === gamePick.winner) {
-                            stats.suWins++;
-                            stats.totalWins++;
-                        } else {
-                            stats.suLosses++;
-                            stats.totalLosses++;
-                        }
+                    const straightUp = straightUpOutcome(gamePick.winner, gameResult);
+                    if (straightUp === 'wins') {
+                        stats.suWins++;
+                        stats.totalWins++;
+                    } else if (straightUp === 'losses') {
+                        stats.suLosses++;
+                        stats.totalLosses++;
+                    } else if (straightUp === 'pushes') {
+                        stats.totalPushes++;
                     }
                 });
             });
@@ -3262,12 +3263,8 @@ function renderHistoryWeek(week) {
                 lineHomeResult = atsWinner === 'push' ? 'push' : (atsWinner === 'home' ? 'correct' : 'incorrect');
             }
             // Winner pick results
-            if (winnerPick === 'away') {
-                winnerAwayResult = result.winner === 'away' ? 'correct' : 'incorrect';
-            }
-            if (winnerPick === 'home') {
-                winnerHomeResult = result.winner === 'home' ? 'correct' : 'incorrect';
-            }
+            if (winnerPick === 'away') winnerAwayResult = straightUpResultClass('away', result);
+            if (winnerPick === 'home') winnerHomeResult = straightUpResultClass('home', result);
         }
 
         // Build final score display
@@ -3522,14 +3519,15 @@ function historyStandingsStats(season, week = null) {
                 }
 
                 // Winner pick (Straight Up)
-                if (gamePick.winner) {
-                    if (gameResult.winner === gamePick.winner) {
-                        stats.suWins++;
-                        stats.totalWins++;
-                    } else {
-                        stats.suLosses++;
-                        stats.totalLosses++;
-                    }
+                const straightUp = straightUpOutcome(gamePick.winner, gameResult);
+                if (straightUp === 'wins') {
+                    stats.suWins++;
+                    stats.totalWins++;
+                } else if (straightUp === 'losses') {
+                    stats.suLosses++;
+                    stats.totalLosses++;
+                } else if (straightUp === 'pushes') {
+                    stats.totalPushes++;
                 }
             });
         });
@@ -4842,7 +4840,7 @@ async function postResultsToSheet(week, results, source) {
             const game = games.find(g => pickKey(g) === gameKey);
             if (!game) continue;
             NFL_RESULTS_BY_WEEK[week][game.id] = {
-                winner: data.awayScore > data.homeScore ? 'away' : 'home',
+                winner: winnerFromScore(data.awayScore, data.homeScore),
                 awayScore: data.awayScore,
                 homeScore: data.homeScore
             };
@@ -4886,6 +4884,47 @@ async function backfillResults(source = 'ESPN') {
 }
 
 /**
+ * Who won on the scoreboard: 'home', 'away', or 'tie' when level.
+ *
+ * The one place a winner is read off a score. The copies this replaced each
+ * gave a level game to one side - home in one, away in the rest - so a tie was
+ * a straight-up win for whoever took that side and a loss for everyone else.
+ */
+function winnerFromScore(awayScore, homeScore) {
+    const away = Number(awayScore), home = Number(homeScore);
+    if (home > away) return 'home';
+    if (away > home) return 'away';
+    return 'tie';
+}
+
+/**
+ * Grade a straight-up pick: 'wins', 'losses' or 'pushes', or null when there is
+ * nothing to grade yet.
+ *
+ * A tie is a push for both sides, which is how the Apps Script grades it. It is
+ * read off the score rather than the stored winner, because the archives hold a
+ * level game three ways: 'away' (2018-19), null (2020-22) and 'tie' (2025).
+ *
+ * A game level while it is still being played is null, not a push: it has no
+ * leader yet. Until September 2026 a 0-0 kickoff scored every straight-up pick
+ * on it as a loss on the Live tab.
+ */
+function straightUpOutcome(side, result) {
+    if (!side || !result) return null;
+    const scored = [result.awayScore, result.homeScore]
+        .every(s => s !== null && s !== undefined && s !== '' && !isNaN(Number(s)));
+    const winner = scored ? winnerFromScore(result.awayScore, result.homeScore) : result.winner;
+    if (winner === 'tie') return result.provisional ? null : 'pushes';
+    if (winner !== 'home' && winner !== 'away') return null;
+    return side === winner ? 'wins' : 'losses';
+}
+
+/** A straight-up outcome as a game card's button class. */
+function straightUpResultClass(side, result) {
+    return { wins: 'correct', losses: 'incorrect', pushes: 'push' }[straightUpOutcome(side, result)] || '';
+}
+
+/**
  * The result for a game, from the best source available.
  *
  * The Results sheet is the source of truth. ESPN is an upstream we do not
@@ -4909,7 +4948,7 @@ function getGameResult(game, weekResults) {
     const live = getLiveGameStatus(game);
     if (live && (live.status === 'STATUS_FINAL' || live.completed)) {
         return {
-            winner: live.homeScore > live.awayScore ? 'home' : 'away',
+            winner: winnerFromScore(live.awayScore, live.homeScore),
             awayScore: live.awayScore,
             homeScore: live.homeScore
         };
@@ -4918,7 +4957,7 @@ function getGameResult(game, weekResults) {
     const finished = game.completed || game.status === 'STATUS_FINAL' || game.status === 'final';
     if (finished && (game.awayScore > 0 || game.homeScore > 0)) {
         return {
-            winner: game.homeScore > game.awayScore ? 'home' : 'away',
+            winner: winnerFromScore(game.awayScore, game.homeScore),
             awayScore: game.awayScore,
             homeScore: game.homeScore
         };
@@ -5483,7 +5522,7 @@ function liveProvisionalResult(game) {
     const live = getLiveGameStatus(game);
     const { awayScore = 0, homeScore = 0 } = live;
     return {
-        winner: homeScore > awayScore ? 'home' : (awayScore > homeScore ? 'away' : null),
+        winner: winnerFromScore(awayScore, homeScore),
         awayScore,
         homeScore,
         provisional: true
@@ -5964,7 +6003,9 @@ function asIsPickDetail(picker, category = liveSubcategory) {
         let outcome;
         if (straightUp) {
             // A tied game in progress has no leader yet: pending, not a push.
-            outcome = !result?.winner ? 'pending' : result.winner === side ? 'win' : 'loss';
+            // A tie at full time is a push.
+            outcome = { wins: 'win', losses: 'loss', pushes: 'push' }[straightUpOutcome(side, result)]
+                || 'pending';
         } else {
             const ats = result ? atsWinnerForPick(game, pick, result) : null;
             outcome = !ats ? 'pending' : ats === 'push' ? 'push' : ats === side ? 'win' : 'loss';
@@ -6394,9 +6435,8 @@ function calculateStatsForWeeks(firstWeek, lastWeek, pickers = PICKERS, { includ
                     if (pick.blazin) weekly.blazin[bucket]++;
                 }
 
-                if (pick.winner) {
-                    weekly.winner[pick.winner === result.winner ? 'wins' : 'losses']++;
-                }
+                const straightUp = straightUpOutcome(pick.winner, result);
+                if (straightUp) weekly.winner[straightUp]++;
 
                 const ouLine = lineForPick(game, pick).overUnder || pick.totalLine;
                 if (pick.overUnder && ouLine > 0) {
@@ -9072,7 +9112,7 @@ function calculateStraightUpLoneWolfPicks() {
         games.forEach(game => {
             const gameId = game.id;
             const result = results[gameId] || results[String(gameId)];
-            if (!result || !result.winner) return;
+            if (!result) return;
 
             // Collect all winner picks for this game
             const picksByChoice = { away: [], home: [] };
@@ -9102,8 +9142,10 @@ function calculateStraightUpLoneWolfPicks() {
                 loneWolfSide = 'home';
             }
 
-            if (loneWolfPicker) {
-                const isWin = loneWolfSide === result.winner;
+            // A tie leaves the lone wolf neither right nor wrong.
+            const straightUp = straightUpOutcome(loneWolfSide, result);
+            if (loneWolfPicker && (straightUp === 'wins' || straightUp === 'losses')) {
+                const isWin = straightUp === 'wins';
                 const outcome = isWin ? 'win' : 'loss';
 
                 const pickedTeam = loneWolfSide === 'away' ? game.away : game.home;
@@ -9329,7 +9371,9 @@ function calculateConsensusRecord(category = currentSubcategory) {
                 else if (side !== taken) return;    // not unanimous
 
                 if (category === 'winner') {
-                    outcomes.push(pick.winner === result.winner ? 'wins' : 'losses');
+                    const straightUp = straightUpOutcome(pick.winner, result);
+                    if (!straightUp) return;
+                    outcomes.push(straightUp);
                 } else {
                     const ats = atsWinnerForPick(game, pick, result);
                     if (!ats) return;               // no usable line yet - unscored
@@ -10999,7 +11043,7 @@ function renderGames() {
             if (!result && liveData && isFinal) {
                 // Build result from live data for games that just finished
                 result = {
-                    winner: liveData.homeScore > liveData.awayScore ? 'home' : 'away',
+                    winner: winnerFromScore(liveData.awayScore, liveData.homeScore),
                     homeScore: liveData.homeScore,
                     awayScore: liveData.awayScore
                 };
@@ -11016,12 +11060,8 @@ function renderGames() {
                     lineHomeResult = atsWinner === 'push' ? 'push' : (atsWinner === 'home' ? 'correct' : 'incorrect');
                 }
                 // Winner pick results
-                if (winnerPick === 'away') {
-                    winnerAwayResult = result.winner === 'away' ? 'correct' : 'incorrect';
-                }
-                if (winnerPick === 'home') {
-                    winnerHomeResult = result.winner === 'home' ? 'correct' : 'incorrect';
-                }
+                if (winnerPick === 'away') winnerAwayResult = straightUpResultClass('away', result);
+                if (winnerPick === 'home') winnerHomeResult = straightUpResultClass('home', result);
             }
         }
 
@@ -12174,7 +12214,7 @@ function renderScoringSummary() {
                 const liveData = getLiveGameStatus(game);
                 if (liveData && (liveData.status === 'STATUS_FINAL' || liveData.completed)) {
                     result = {
-                        winner: liveData.homeScore > liveData.awayScore ? 'home' : 'away',
+                        winner: winnerFromScore(liveData.awayScore, liveData.homeScore),
                         homeScore: liveData.homeScore,
                         awayScore: liveData.awayScore
                     };
@@ -12189,8 +12229,9 @@ function renderScoringSummary() {
             const isBlazin = gamePicks.blazin || cachedGamePicks.blazin;
 
             // Line pick result
+            // No usable line yet means unscored, not a loss.
             const linePick = gamePicks.line || cachedGamePicks.line;
-            if (linePick) {
+            if (linePick && atsWinner) {
                 if (atsWinner === 'push') {
                     stats[picker].linePushes++;
                     if (isBlazin) stats[picker].blazinPushes++;
@@ -12204,14 +12245,11 @@ function renderScoringSummary() {
             }
 
             // Straight up result
+            // A tie is a push, and this table has no straight-up pushes column.
             const winnerPick = gamePicks.winner || cachedGamePicks.winner;
-            if (winnerPick) {
-                if (winnerPick === result.winner) {
-                    stats[picker].suWins++;
-                } else {
-                    stats[picker].suLosses++;
-                }
-            }
+            const straightUp = straightUpOutcome(winnerPick, result);
+            if (straightUp === 'wins') stats[picker].suWins++;
+            else if (straightUp === 'losses') stats[picker].suLosses++;
 
             // Over/Under result (playoffs only)
             if (isPlayoff) {
