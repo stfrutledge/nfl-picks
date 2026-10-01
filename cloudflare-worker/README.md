@@ -1,67 +1,36 @@
-# Odds API Proxy - Cloudflare Worker
+# NFL Picks Proxy - Cloudflare Worker
 
-This worker proxies requests to The Odds API, keeping your API key secret on the server side.
+`nfl-picks-proxy.js` is the one worker the app talks to, deployed at
+`https://nfl-picks-proxy.stfrutledge.workers.dev` (`WORKER_PROXY_URL` in `app.js`).
+It exists so that no secret and no cross-origin request lives in the browser:
 
-## Deployment Steps
+- `/odds` - The Odds API, with the API key held server-side and one shared cache.
+- `/sheets` - Google Sheets CSV exports. Only `https://docs.google.com/spreadsheets/...` is accepted.
+- `/sync` - the Google Apps Script web app that backs picks, results and spreads up to the sheet.
 
-### 1. Create a Cloudflare Account (if needed)
-Go to https://dash.cloudflare.com and sign up (free tier is sufficient).
+## Deploying
 
-### 2. Create the Worker
-1. In the dashboard, go to **Workers & Pages**
-2. Click **Create Application**
-3. Click **Create Worker**
-4. Name it `odds-proxy` (or any name you prefer)
-5. Click **Deploy** (we'll update the code next)
+The repo copy is the source of record, not the running code: editing
+`nfl-picks-proxy.js` changes nothing until it is pasted into the worker.
 
-### 3. Add the Code
-1. Click **Edit Code**
-2. Delete all the default code
-3. Copy and paste the contents of `odds-proxy.js`
-4. Click **Deploy**
+1. https://dash.cloudflare.com > **Workers & Pages** > `nfl-picks-proxy` > **Edit Code**.
+2. Replace the code with the contents of `nfl-picks-proxy.js` and **Deploy**.
 
-### 4. Add Your API Key
-1. Go back to the Worker's page
-2. Click **Settings** → **Variables**
-3. Under **Environment Variables**, click **Add Variable**
-4. Set:
-   - **Variable name**: `ODDS_API_KEY`
-   - **Value**: your API key from https://the-odds-api.com
-5. Check **Encrypt** to keep it secret
-6. Click **Save and Deploy**
+The worker needs two environment variables (**Settings** > **Variables**, both encrypted):
 
-### 5. Get Your Worker URL
-Your worker URL will be:
-```
-https://odds-proxy.<your-subdomain>.workers.dev
-```
+| Variable | Value |
+|---|---|
+| `ODDS_API_KEY` | key from https://the-odds-api.com |
+| `APPS_SCRIPT_URL` | the Apps Script web app's deployment URL |
 
-For example: `https://odds-proxy.stfru.workers.dev`
-
-### 6. Update the App
-Update the `ODDS_PROXY_URL` in `app.js` with your worker URL.
+Redeploying the Apps Script to a new URL means updating `APPS_SCRIPT_URL` here.
 
 ## Testing
 
-You can test the worker by visiting the URL directly in your browser. It should return JSON with NFL odds data.
+Run `node test-worker-guards.js` from the repo root. It runs the whole worker
+against a fake cache and network.
 
-## Rate Limits
-
-Cloudflare Workers free tier: 100,000 requests/day
-Your actual usage: ~5-10 requests/week
-
-You'll never come close to the limit.
-
-## Troubleshooting
-
-**"API key not configured" error:**
-- Make sure the environment variable is named exactly `ODDS_API_KEY`
-- Check that you clicked "Save and Deploy" after adding the variable
-
-**CORS errors:**
-- The worker already includes CORS headers, so this shouldn't happen
-- If it does, check the browser console for details
-
-**Empty response:**
-- Check if The Odds API has games available (off-season may return empty)
-- Verify your API key is valid at https://the-odds-api.com
+**Don't call `/odds` by hand to test things.** A cache miss spends real
+credits: three a fetch, from a free tier of 500 a month. How the cache paces
+those credits across the month is covered in the repo's `CLAUDE.md`, under
+"Odds API budget".

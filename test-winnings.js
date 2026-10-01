@@ -4,8 +4,7 @@
 //
 // The engine is calculateStatsForWeeks with money on it, so most of what is
 // worth checking is that the money follows the record exactly - frozen lines,
-// pushes, Cowherd's one column, the chosen stake - and that the vs Market
-// bankroll, which used to keep its own copy of the arithmetic, agrees.
+// pushes, Cowherd's one column, the chosen stake.
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
@@ -58,7 +57,6 @@ function makeEnv() {
         profitPerDollar, profitForOutcome, profitForRecord,
         getWinningsStake, setWinningsStake, calculateWinnings,
         formatCurrency, formatStake, formatSignedPercent, profitTone,
-        calculatePickerWeeklyBankroll,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, weeklyPicksCache,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -353,40 +351,6 @@ check('calculateWinnings defaults to the remembered stake', () => {
     const w = api.calculateWinnings(undefined, { firstWeek: 1, lastWeek: 1 }).Stephen.line;
     near(w.profit, 100);
     assert.strictEqual(w.staked, 110);
-});
-
-section('The vs Market bankroll');
-
-check('the bankroll is $100 a week plus the Blazin\' 5 winnings at $20, from the same engine', () => {
-    const api = setup({
-        weeks: { 1: WEEK_1, 2: WEEK_2 },
-        picks: {
-            1: { Stephen: { rams_seahawks: { line: 'home', blazin: true }, bills_chiefs: { line: 'home', blazin: true } } }, // W L
-            2: { Stephen: { lions_bears: { line: 'away', blazin: true } } }                                                 // W
-        }
-    });
-    const weeks = api.CURRENT_NFL_WEEK;
-    if (weeks < 2) return; // offseason: nothing to compare over
-    const series = api.calculatePickerWeeklyBankroll('Stephen');
-    assert.strictEqual(series.length, weeks, 'one row a week to the current one');
-    near(series[0].bankroll, 100 + WIN - 20);
-    assert.strictEqual(series[0].invested, 100);
-    near(series[1].bankroll, 200 + 2 * WIN - 20);
-    assert.strictEqual(series[1].invested, 200);
-    const engine = api.calculateWinnings(20, { firstWeek: 1, lastWeek: weeks }).Stephen.blazin;
-    near(series[series.length - 1].bankroll - series[series.length - 1].invested, engine.profit,
-        'the bankroll\'s edge over what was deposited is the engine\'s profit');
-});
-
-check('a week with nothing scored still deposits its $100', () => {
-    const api = setup({ weeks: { 1: WEEK_1 } });
-    const weeks = api.CURRENT_NFL_WEEK;
-    if (weeks < 1) return;
-    const series = api.calculatePickerWeeklyBankroll('Stephen');
-    series.forEach((row, i) => {
-        assert.strictEqual(row.bankroll, (i + 1) * 100);
-        assert.strictEqual(row.returnPct, 0);
-    });
 });
 
 if (failures > 0) {
