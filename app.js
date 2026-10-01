@@ -177,70 +177,60 @@ function getLaborDay(year) {
     return new Date(year, 8, 1 + daysUntilMonday);
 }
 
+/** `days` after `date`, at the same local time - a DST change cannot shift it. */
+function addDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+}
+
 /**
- * Calculate NFL season dates dynamically based on season year
- * NFL season starts Thursday after Labor Day
- * Week 1 Tuesday is 2 days before that Thursday
+ * Where each part of a season starts, at local midnight on a Tuesday.
+ *
+ * Week 1 starts the Tuesday after Labor Day, and every week after it - the
+ * playoffs included - is the next Tuesday on. The one exception is the bye
+ * before the Super Bowl, which makes week 22 two weeks long.
+ *
+ * The playoff weeks are counted from the season start, not pinned to dates.
+ * Until October 2026 they were fixed at the 2025-26 calendar (Wild Card Jan
+ * 10, Super Bowl window ending Feb 9), which was a week early for 2026: Labor
+ * Day fell a week later, so week 18 Sunday computed as week 19 and locked
+ * before kickoff, as did the Wild Card and Conference games, and the window
+ * closed before the Super Bowl was played.
  */
 function getSeasonDates(seasonYear) {
-    const laborDay = getLaborDay(seasonYear);
-
-    // Season starts Tuesday before Week 1 Thursday (Thursday after Labor Day)
-    // Labor Day (Monday) + 3 days = Thursday, so Tuesday = Labor Day + 1
-    const seasonStart = new Date(laborDay);
-    seasonStart.setDate(laborDay.getDate() + 1); // Tuesday before Week 1
-
-    // Regular season is 18 weeks, ends ~18 weeks after start
-    const regularSeasonEnd = new Date(seasonStart);
-    regularSeasonEnd.setDate(seasonStart.getDate() + (18 * 7) + 1);
-
-    // Playoff dates (approximate - typically 2nd weekend of January for Wild Card)
-    const nextYear = seasonYear + 1;
-    // Wild Card is typically the 2nd Saturday/Sunday of January
-    const wildCardStart = new Date(nextYear, 0, 10); // ~January 10
-    const divisionalStart = new Date(nextYear, 0, 17); // ~January 17
-    const conferenceStart = new Date(nextYear, 0, 25); // ~January 25
-    const superBowlStart = new Date(nextYear, 0, 26); // Day after Conference Championships
-    const superBowlEnd = new Date(nextYear, 1, 9); // ~February 9
-
+    const seasonStart = addDays(getLaborDay(seasonYear), 1);
+    const weekStart = week => addDays(seasonStart, (week - 1) * 7);
     return {
         seasonStart,
-        regularSeasonEnd,
-        wildCardStart,
-        divisionalStart,
-        conferenceStart,
-        superBowlStart,
-        superBowlEnd
+        wildCardStart: weekStart(19),
+        divisionalStart: weekStart(20),
+        conferenceStart: weekStart(21),
+        superBowlStart: weekStart(22)
     };
 }
 
 /**
- * Calculate current NFL week based on date
- * Dynamically calculates dates based on CURRENT_SEASON
+ * The NFL week `now` falls in: 1 before the season, 22 from the Super Bowl
+ * week on.
+ *
+ * Counted in calendar days rather than milliseconds. Dividing elapsed time by
+ * a week's worth of ms counts from midnight in September, so once the clocks
+ * go back in November the week turned at 11pm Monday - during Monday Night
+ * Football.
  */
-function calculateCurrentNFLWeek() {
-    const dates = getSeasonDates(CURRENT_SEASON);
-    const now = new Date();
-
-    // If before season start, return week 1
+function calculateCurrentNFLWeek(now = new Date(), season = CURRENT_SEASON) {
+    const dates = getSeasonDates(season);
     if (now < dates.seasonStart) return 1;
 
-    // Playoff weeks
-    if (now >= dates.superBowlEnd) return 22; // Season completely over, stay on Super Bowl week
-    if (now >= dates.superBowlStart) return 22; // Super Bowl
-    if (now >= dates.conferenceStart) return 21; // Conference Championships
-    if (now >= dates.divisionalStart) return 20; // Divisional
-    if (now >= dates.wildCardStart) return 19; // Wild Card
+    if (now >= dates.superBowlStart) return 22;
+    if (now >= dates.conferenceStart) return 21;
+    if (now >= dates.divisionalStart) return 20;
+    if (now >= dates.wildCardStart) return 19;
 
-    // If after regular season but before Wild Card
-    if (now >= dates.regularSeasonEnd) return 19;
-
-    // Calculate weeks elapsed (each NFL week starts on Tuesday)
-    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-    const weeksElapsed = Math.floor((now - dates.seasonStart) / msPerWeek);
-
-    // Clamp to valid range (1-18)
-    return Math.min(Math.max(weeksElapsed + 1, 1), TOTAL_WEEKS);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const days = Math.round((today - dates.seasonStart) / (24 * 60 * 60 * 1000));
+    return Math.min(Math.floor(days / 7) + 1, TOTAL_WEEKS);
 }
 
 const CURRENT_NFL_WEEK = calculateCurrentNFLWeek();
