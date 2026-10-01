@@ -20,6 +20,9 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 | Hidden-tab flush had no `keepalive` | `137c329` |
 | Backup load clobbered unsynced picks, and a stale `cleared` flag wiped new ones | `137c329` |
 | Back-to-back syncs were not serialised | `137c329` |
+| Scoring 1: a level game in progress scored straight-up picks as losses (now pending) | `507a51c` |
+| Scoring 2: a final tie was graded three ways (now a straight-up push everywhere, read off the score) | `507a51c` |
+| Scoring 3: the Scoring Summary counted a game with no line as a loss | `507a51c` |
 
 ---
 
@@ -39,14 +42,14 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 
 ## Scoring and grading bugs
 
-1. **A game tied in progress counts as a straight-up loss for everyone. HIGH.** `liveProvisionalResult` returns `winner: null` at a level score, and `calculateStatsForWeeks` (~6383) does `pick.winner === result.winner ? 'wins' : 'losses'`. Every straight-up pick on a 0-0 game that has just kicked off becomes a loss in the Live as-is table, the in-play box and Move. `asIsPickDetail` shows the same picks as pending, so the two disagree.
-2. **A final tie is graded three different ways. MEDIUM-HIGH.**
+1. **Fixed in `507a51c`.** **A game tied in progress counts as a straight-up loss for everyone. HIGH.** `liveProvisionalResult` returns `winner: null` at a level score, and `calculateStatsForWeeks` (~6383) does `pick.winner === result.winner ? 'wins' : 'losses'`. Every straight-up pick on a 0-0 game that has just kicked off becomes a loss in the Live as-is table, the in-play box and Move. `asIsPickDetail` shows the same picks as pending, so the two disagree.
+2. **Fixed in `507a51c`.** **A final tie is graded three different ways. MEDIUM-HIGH.**
    - `getGameResult` (4899, 4908, and the copies at 10971 and 12146) gives the win to away.
    - `postResultsToSheet` (4832) gives it to home.
    - After a reload the sheet's `'tie'` comes back and scores a straight-up loss for everyone.
 
    The Apps Script grades it a push (line 893). Treat a tie as a straight-up push everywhere.
-3. **The Scoring Summary counts a game with no line as a loss. HIGH.** At 12157-12172, `atsWinnerForPick` returns null and falls through to `lineLosses++` / `blazinLosses++`. `renderGames` correctly skips it (`atsWinner &&`).
+3. **Fixed in `507a51c`.** **The Scoring Summary counts a game with no line as a loss. HIGH.** At 12157-12172, `atsWinnerForPick` returns null and falls through to `lineLosses++` / `blazinLosses++`. `renderGames` correctly skips it (`atsWinner &&`).
 4. **Blazin' "By Spread" buckets use the board line, but grading uses the pick's line. HIGH.** `calculateBlazinSpreadRecords` (8016-8022) and `calculateHistoryBlazinSpreadRecords` (8672-8678) bucket by `game.spread`/`game.favorite`. A pick locked at -3 that wins by 4 lands in the -6.5 row as a WIN. A null board line with a frozen pick gives a "PK" or "null" bucket. Use `lineForPick`, as `favoritesVsUnderdogsFromPicks` (6661) already does.
 5. **History fav/dog disagrees with the Line tab chart. MEDIUM.** `calculateHistoryBlazinFavDog` (8481) uses the board favourite and files pick'em games under Favourite or Underdog. The chart (6663) uses the locked line and skips pick'em games.
 6. **Playoff weeks leak into regular-season panels. MEDIUM.** These loop `week <= CURRENT_NFL_WEEK`, which reaches 22:
