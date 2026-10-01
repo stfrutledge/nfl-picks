@@ -23,12 +23,15 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 | Scoring 1: a level game in progress scored straight-up picks as losses (now pending) | `507a51c` |
 | Scoring 2: a final tie was graded three ways (now a straight-up push everywhere, read off the score) | `507a51c` |
 | Scoring 3: the Scoring Summary counted a game with no line as a loss | `507a51c` |
+| Playoff dates hardcoded to the 2025-26 calendar (now counted from the season start) | `9e5ad78` |
+| Data layer 4: the week boundary drifted an hour after DST ended | `9e5ad78` |
 
 ---
 
 ## Fix before January 2027
 
 ### Playoff dates are hardcoded to the 2025-26 calendar - HIGH
+**Fixed in `9e5ad78`.**
 `getSeasonDates` (app.js:200-204) fixes Wild Card to Jan 10, Divisional to Jan 17, Conference to Jan 25, Super Bowl to Jan 26 and the end to Feb 9, whatever the year. Labor Day 2026 is Sept 7, a week later than 2025, so:
 - Jan 10 2027 (week 18 Sunday) computes as week 19.
 - Jan 17-18 compute as week 20.
@@ -78,7 +81,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 1. **During an ESPN outage, the expired schedule cache is deleted before the fetch that could fall back to it. MEDIUM.** `getCachedSchedule` deletes entries older than 2h (~700) before `fetchNFLSchedule` runs, so the stale fallback (~928) finds nothing and the week becomes `[]`. Past weeks drop out of the standings. **Fix:** keep the expired entry until a fetch succeeds.
 2. **Old cached odds can replace fresher sheet lines on one device. MEDIUM.** `fetchNFLOdds` falls back to a cache of any age (1487-1490), and that key isn't season-scoped. `applyOddsData` then `saveSpread`s over what `loadSpreadsFromGoogleSheets` just stored (1666-1669). A pick locked there freezes the old number and syncs it. **Fix:** a non-fresh line must never replace a saved one, and cap the age of the error fallback.
 3. **`CURRENT_NFL_WEEK` is a `const` read at page load. LOW.** A tab left open from Monday into Thursday keeps the old live window, and the Live tab stays hidden until a reload.
-4. **The week boundary drifts an hour after DST ends. LOW.** `Math.floor((now - seasonStart) / msPerWeek)` (~240) counts from local midnight in September, so after Nov 1 the week turns at 11pm Monday, during Monday Night Football. It also depends on each device's timezone.
+4. **Fixed in `9e5ad78`.** **The week boundary drifts an hour after DST ends. LOW.** `Math.floor((now - seasonStart) / msPerWeek)` (~240) counts from local midnight in September, so after Nov 1 the week turns at 11pm Monday, during Monday Night Football. It also depends on each device's timezone.
 5. **`setupWeekButtons` adds a change listener on every rebuild. LOW.** It's called from init, auto-advance (1852) and preload (2040), so one week change runs `setCurrentWeek` two or three times at once.
 6. **`setCurrentWeek` has no stale-call guard. LOW.** Rapid week switching can briefly render a week before its data has loaded.
 7. **Results are keyed by `game.id`, which is reassigned whenever a week is re-sorted.** It holds because results are re-filed by matchup. A mid-session reorder of games with the same kickoff time could mis-attach them.
