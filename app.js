@@ -6068,22 +6068,39 @@ function rankStandings(rows) {
  * now has not moved, they have arrived.
  */
 function asIsPositionChange({ first, last } = regularSeasonWeekRange(), category = COWHERD_CATEGORY) {
-    const now = rankStandings(standingsFromComputed(
-        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD, { includeLive: true }),
-        category));
-
     if (last <= first) return {};
+    const moves = {};
+    Object.entries(standingsMoves({ first, last }, category, { includeLive: true }))
+        .forEach(([name, { move }]) => { moves[name] = move; });
+    return moves;
+}
 
-    // Last week is settled, so no live results belong in it.
-    const before = rankStandings(standingsFromComputed(
-        calculateStatsForWeeks(first, last - 1, PICKERS_WITH_COWHERD),
+/**
+ * Each picker's place in a category's season table through `last`, and how
+ * far that is from their place through the week before: { name: { place,
+ * move } }, move positive for a climb and null with nothing to compare
+ * against. `includeLive` counts games in progress in the later table only -
+ * the earlier one is a finished week.
+ */
+function standingsMoves({ first, last }, category, { includeLive = false } = {}) {
+    const now = rankStandings(standingsFromComputed(
+        calculateStatsForWeeks(first, last, PICKERS_WITH_COWHERD, { includeLive }),
         category));
 
-    const moves = {};
+    const before = last > first
+        ? rankStandings(standingsFromComputed(
+            calculateStatsForWeeks(first, last - 1, PICKERS_WITH_COWHERD),
+            category))
+        : null;
+
+    const out = {};
     Object.keys(now).forEach(name => {
-        moves[name] = before[name] ? before[name] - now[name] : null;
+        out[name] = {
+            place: now[name],
+            move: before && before[name] ? before[name] - now[name] : null
+        };
     });
-    return moves;
+    return out;
 }
 
 /**
@@ -7735,6 +7752,207 @@ function renderPerfectWeeksCard() {
 }
 
 // ============================================================================
+// Weekly recap card
+// ============================================================================
+
+/**
+ * The most recent regular-season week whose games have all finished, or null
+ * when none has. That is the week the recap is about: Monday night is the last
+ * game in, so the recap stays on the week before until it is final.
+ */
+function latestCompletedWeek(season = currentSeason) {
+    const { first, last } = regularSeasonWeekRangeFor(season);
+    for (let week = last; week >= first; week--) {
+        const games = getGamesForWeekAndSeason(week, season);
+        if (!games || games.length === 0) continue;
+        const results = getResultsForWeekAndSeason(week, season);
+        if (games.every(game => getGameResult(game, results))) return week;
+    }
+    return null;
+}
+
+/** '4-1', or '4-0-1' with pushes. */
+function formatRecord({ wins, losses, pushes }) {
+    return `${wins}-${losses}${pushes ? `-${pushes}` : ''}`;
+}
+
+/** 1st, 2nd, 3rd, 4th... */
+function ordinal(n) {
+    const tens = n % 100;
+    if (tens >= 11 && tens <= 13) return `${n}th`;
+    return n + ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th');
+}
+
+/**
+ * The top and bottom of one category over one week: every picker sharing the
+ * best percentage, and every one sharing the worst. Null when fewer than two
+ * pickers have a decided pick; `level` when they all finished on the same
+ * percentage, which has no top or bottom to speak of.
+ */
+function weekExtremes(stats, pickers, category) {
+    const rows = pickers
+        .map(picker => ({ picker, record: stats[picker][category], pct: recordPercentage(stats[picker][category]) }))
+        .filter(r => r.pct !== null);
+    if (rows.length < 2) return null;
+
+    const best = Math.max(...rows.map(r => r.pct));
+    const worst = Math.min(...rows.map(r => r.pct));
+    if (best === worst) return { level: true, record: rows[0].record };
+    return {
+        top: rows.filter(r => r.pct === best),
+        bottom: rows.filter(r => r.pct === worst)
+    };
+}
+
+/** "Sean, Dylan 4-1" - names sharing a place, and the record if they share it too. */
+function describeExtreme(rows) {
+    const records = [...new Set(rows.map(r => formatRecord(r.record)))];
+    if (records.length === 1) return `${rows.map(r => r.picker).join(', ')} ${records[0]}`;
+    return rows.map(r => `${r.picker} ${formatRecord(r.record)}`).join(', ');
+}
+
+/**
+ * Everything worth saying about one finished week, as sections of plain lines:
+ * [{ heading, lines }]. The card and the WhatsApp text are both drawn from it,
+ * so the two cannot say different things.
+ *
+ * Every number comes from the engine the rest of the dashboard runs on - the
+ * week's records from calculateStatsForWeeks, lone wolves from
+ * loneWolfRecords, money from calculateWinnings, the moves from the Blazin' 5
+ * season table - so a locked pick and each of Cowherd's are counted at their
+ * own line here as everywhere else.
+ */
+function weeklyRecap(week, { season = currentSeason, stake = getWinningsStake() } = {}) {
+    const stats = calculateStatsForWeeks(week, week, PICKERS_WITH_COWHERD, { season });
+    const sections = [];
+
+    // Blazin' 5 - the game the group is actually playing.
+    const blazinLines = [];
+    const blazin = weekExtremes(stats, PICKERS, 'blazin');
+    if (blazin?.level) blazinLines.push(`All level at ${formatRecord(blazin.record)}`);
+    else if (blazin) {
+        blazinLines.push(`Top: ${describeExtreme(blazin.top)}`);
+        blazinLines.push(`Bottom: ${describeExtreme(blazin.bottom)}`);
+    }
+    const perfect = PICKERS_WITH_COWHERD.filter(p => isPerfectBlazinWeek(stats[p].blazin));
+    if (perfect.length) blazinLines.push(`5-0: ${perfect.join(', ')}`);
+
+    const cowherd = stats[COWHERD]?.blazin;
+    if (cowherd && recordPercentage(cowherd) !== null) {
+        const margin = r => r.wins - r.losses;
+        const beat = PICKERS.filter(p => recordPercentage(stats[p].blazin) !== null
+            && margin(stats[p].blazin) > margin(cowherd));
+        blazinLines.push(`Cowherd ${formatRecord(cowherd)}, ${beat.length
+            ? `beaten by ${beat.join(', ')}` : 'nobody beat him'}`);
+    }
+    if (blazinLines.length) sections.push({ heading: "Blazin' 5", lines: blazinLines });
+
+    [['line', 'Line'], ['winner', 'Straight up']].forEach(([category, heading]) => {
+        const ext = weekExtremes(stats, PICKERS, category);
+        if (!ext) return;
+        sections.push({
+            heading,
+            lines: ext.level
+                ? [`All level at ${formatRecord(ext.record)}`]
+                : [`Top: ${describeExtreme(ext.top)}`, `Bottom: ${describeExtreme(ext.bottom)}`]
+        });
+    });
+
+    // Lone wolves who were right: one picker against the other four, on the
+    // line, and it covered. Starred ones are marked.
+    const thisWeek = g => g.week === week;
+    const starred = new Set();
+    Object.entries(calculateBlazinLoneWolfPicks()).forEach(([picker, d]) =>
+        d.games.filter(thisWeek).forEach(g => starred.add(`${picker}|${g.away}|${g.home}`)));
+    const wolfLines = [];
+    Object.entries(calculateLoneWolfPicksWithDetails()).forEach(([picker, d]) =>
+        d.games.filter(g => thisWeek(g) && g.outcome === 'win').forEach(g => {
+            const star = starred.has(`${picker}|${g.away}|${g.home}`) ? " (Blazin' 5)" : '';
+            wolfLines.push(`${picker} on ${g.line}${star}`);
+        }));
+    if (wolfLines.length) sections.push({ heading: 'Lone wolves who got it right', lines: wolfLines });
+
+    // The Blazin' 5 week in money, at the viewer's stake.
+    const money = calculateWinnings(stake, { computed: stats });
+    const profits = Object.keys(money)
+        .filter(p => money[p].blazin && money[p].blazin.picks > 0)
+        .map(p => ({ picker: p, profit: money[p].blazin.profit }))
+        .sort((a, b) => b.profit - a.profit);
+    if (profits.length >= 2) {
+        const up = profits[0], down = profits[profits.length - 1];
+        const lines = [];
+        if (up.profit > 0) lines.push(`Up most: ${up.picker} ${formatCurrency(up.profit)}`);
+        if (down.profit < 0) lines.push(`Down most: ${down.picker} ${formatCurrency(down.profit)}`);
+        if (lines.length) sections.push({ heading: `Winnings (${formatStake(stake)} a Blazin' 5 pick)`, lines });
+    }
+
+    // Who moved in the Blazin' 5 season table this week.
+    const { first } = regularSeasonWeekRangeFor(season);
+    const moveLines = Object.entries(standingsMoves({ first, last: week }, 'blazin'))
+        .filter(([, m]) => m.move)
+        .sort((a, b) => a[1].place - b[1].place)
+        .map(([name, m]) => `${name} ${m.move > 0 ? '▲' : '▼'}${Math.abs(m.move)} to ${ordinal(m.place)}`);
+    if (moveLines.length) sections.push({ heading: "Blazin' 5 table", lines: moveLines });
+
+    return { week, title: `Week ${week} Recap`, sections };
+}
+
+/** The recap as a WhatsApp message: *bold* headings, a line each. */
+function recapToText(recap) {
+    const out = [`*${recap.title}*`];
+    recap.sections.forEach(s => {
+        out.push('', `*${s.heading}*`, ...s.lines);
+    });
+    return out.join('\n');
+}
+
+/** The recap the card is showing, for the copy button. */
+let shownRecap = null;
+
+/**
+ * The Weekly Recap card: the last finished week, summed up, with a button that
+ * copies it for the group chat. Shown on the regular-season sub-tabs of a
+ * computed season; hidden on Playoffs, and until a week has finished.
+ */
+function renderWeeklyRecapCard() {
+    const card = document.getElementById('weekly-recap-card');
+    if (!card) return;
+    const week = currentSubcategory !== 'playoffs' && usingComputedStandings()
+        ? latestCompletedWeek() : null;
+    const recap = week ? weeklyRecap(week) : null;
+    shownRecap = recap && recap.sections.length ? recap : null;
+    card.classList.toggle('hidden', !shownRecap);
+    if (!shownRecap) return;
+
+    const sections = shownRecap.sections.map(s => `
+        <div class="recap-section">
+            <h5 class="recap-heading">${s.heading}</h5>
+            ${s.lines.map(line => `<p class="recap-line">${line}</p>`).join('')}
+        </div>`).join('');
+
+    card.innerHTML = `
+        <div class="insight-header recap-header">
+            <div>
+                <span class="insight-title">${shownRecap.title}</span>
+                <p class="insight-subtitle">The last finished week, summed up</p>
+            </div>
+            <button type="button" class="consensus-toggle recap-copy" onclick="copyWeeklyRecap()">Copy for WhatsApp</button>
+        </div>
+        <div class="recap-sections">${sections}</div>
+    `;
+}
+
+function copyWeeklyRecap() {
+    if (!shownRecap) return;
+    navigator.clipboard.writeText(recapToText(shownRecap)).then(() => {
+        showToast('Recap copied', 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showToast('Failed to copy the recap');
+    });
+}
+
+// ============================================================================
 // Winnings card
 // ============================================================================
 
@@ -8535,6 +8753,7 @@ function renderInsights(consensus) {
         `;
     }
 
+    renderWeeklyRecapCard();
     renderPerfectWeeksCard();
     renderWinningsCard();
 

@@ -1405,6 +1405,42 @@ header h1 {
     background: rgba(1, 51, 105, 0.05);
 }
 
+/* Weekly Recap: the full width of the insights grid, its sections side by
+   side where there is room and stacked on a phone. */
+.insight-card.weekly-recap {
+    grid-column: 1 / -1;
+}
+
+.recap-header {
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.recap-header .recap-copy {
+    margin-top: 0;
+}
+
+.recap-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px 24px;
+}
+
+.recap-heading {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin: 0 0 6px 0;
+}
+
+.recap-line {
+    font-size: 0.85rem;
+    margin: 0 0 4px 0;
+    overflow-wrap: anywhere;
+}
+
 .consensus-games {
     margin-top: 12px;
 }

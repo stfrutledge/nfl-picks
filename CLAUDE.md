@@ -451,6 +451,20 @@ Offseason checklist (the only manual step): archive the finished season to `hist
 
 Run `node test-offseason-reset.js` to smoke-test the rollover behavior.
 
+## Weekly Recap
+
+The first card on the Insights panel (`#weekly-recap-card`, full width): the last finished week summed up, with a **Copy for WhatsApp** button. It is about `latestCompletedWeek()`, the latest regular-season week in which every game has a result, so it moves on once Monday night is final and not before. A game that never gets a result (a postponement) holds it on the week before until one does. Hidden on the Playoffs sub-tab and until a week has finished.
+
+`weeklyRecap(week)` returns `{ title, sections: [{ heading, lines }] }`, and both the card and `recapToText()` (the chat message, `*bold*` headings) are drawn from that one structure, so they cannot say different things. It does no scoring of its own:
+
+- **Top, bottom and level** for Blazin' 5, Line and Straight up, by the week's win percentage (`weekExtremes`). A category nobody picked is left out.
+- **5-0s and Cowherd.** "Beaten by" means a better wins-minus-losses on the week than his.
+- **Lone wolves who got it right**: line lone wolves from `calculateLoneWolfPicksWithDetails` that won, marked `(Blazin' 5)` when the star was on too.
+- **Winnings**: the week's biggest Blazin' 5 profit and loss at this device's stake, from `calculateWinnings`.
+- **Table moves**: the Blazin' 5 season table through this week against the week before, from `standingsMoves()`, which `asIsPositionChange()` (the Live tab's Move column) also runs on.
+
+`node test-weekly-recap.js` covers it.
+
 ## Winnings
 
 The Winnings card (Insights panel, Blazin' 5 and Line Picks sub-tabs) and the profit line on every leaderboard card answer one question: what would a flat stake on each pick have returned? `calculateWinnings(stake)` is the whole engine, and it is `calculateStatsForWeeks` with money on it - the same picks, results, frozen lines and season scoping as the standings, with `profitForRecord` applied to each week's record. The card and the leaderboard lines are the same call, so the two places money appears cannot disagree.
