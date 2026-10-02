@@ -429,7 +429,22 @@ was written to avoid; see "no percentage at all is neutral".
 
 `calculatePlayoffStats()` is the same engine over weeks 19-22, flattened into the combined Line + Straight Up + Over/Under record the playoff table shows.
 
-Still fed by the workbook, so still blank for a new season: the group-overall panel, lone wolf, universal agreement and favourites-vs-underdogs. Those need the same treatment (`parseNFLPicksCSV` is what they come from). `node test-standings-engine.js` covers the parts that are done.
+The group-overall panel, lone wolf, universal agreement and favourites-vs-underdogs used to be read from the workbook. All four are computed now (commits `0827347`, `84eb5f4`, `414747e`). `node test-standings-engine.js` covers the engine.
+
+### One loop for every panel
+
+**`gradedPicks(first, last, { pickers, season, includeLive, liveOnly })` is the only loop that grades picks.** It yields one row per (game, picker) for every game with a result: the pick, the result, `line` (from `lineForPick`, the line the pick is graded at) and `lineOutcome` / `straightUp` / `ou` as `'wins'`/`'losses'`/`'pushes'` or null. `calculateStatsForWeeks` is a fold over those rows, and so is every records panel: team records, worst week, the Blazin' 5 team and By Spread tables on Standings and History, the history fav/dog, home/away and picked/faded splits, and all three lone wolf cards.
+
+Until October 2026 each of those panels was its own copy of the loop, about a dozen of them, and each had drifted from the engine:
+
+- **Weeks.** They ran to `CURRENT_NFL_WEEK`, which goes past the regular season in January, so playoff picks leaked into regular-season tables. Panels now use `regularSeasonWeekRangeFor(season)`.
+- **Results.** They read the Results sheet only, so a game that had just finished counted in the standings (through `getGameResult`'s fallback) and nowhere else until the backfill landed.
+- **Picks.** They merged `weeklyPicksCache` into whatever season was on screen, including an archived one, where its keys land on the wrong games. Two of the lone wolf cards read the live season's globals whatever season was showing.
+- **The line.** By Spread bucketed a pick by the *board* line, so a pick locked at -3 that won by 4 landed in the -6.5 row as a win. History fav/dog took the board favourite and filed pick'ems under one side. Detail rows printed `${fav} -${game.spread}`, which reads "-0" for a pick'em and "-null" with no line.
+
+So: **a new panel that scores picks reads `gradedPicks` rows; it does not loop over weeks itself.** `gradedLinePicks(pickers, season, { blazinOnly })` is the regular-season, graded-line-picks cut most panels want, `bucketRecords(rows, keysFor)` totals rows into `{wins, losses, pushes, games}` by any key, and `pickDetail(row)` is the expanded-row shape, with `line` from `describeLineForSide(game, side, pick)`. The tables render through `recordsTableData` → `recordsRowsHtml`, where a row with no decided picks gets a null percentage and a neutral dash rather than a red 0%.
+
+`node test-records-panels.js` covers each of the drifts above.
 - **ESPN schedule fetches** pin `dates=<CURRENT_SEASON>` — without it, ESPN serves the previous season during the offseason.
 
 Offseason checklist (the only manual step): archive the finished season to `historical-<year>.js` **including playoff weeks 19-22** (historical-2025.js has them; 2016-2024 are regular-season only), and paste in the Cowherd block that `exportCowherdResults()` prints from the browser console. His week-by-week record is the one piece that cannot be re-derived once the season's picks are cleared.
