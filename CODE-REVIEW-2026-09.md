@@ -28,6 +28,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 | Tests: clock-dependent failures in test-live-tab.js and test-offseason-reset.js (also test-line-freezing.js, which would have failed from December) | `6b55645` |
 | Tests: no single command to run the suite (`node run-tests.js`) | `6b55645` |
 | Scoring 4-9: the drifted per-panel stat loops (By Spread on the board line, history fav/dog, playoff weeks leaking in, stored results only, red 0% with nothing decided, "-0"/"-null" detail lines). All panels now fold over `gradedPicks()`. | `90a2899` |
+| Scoring 10-11: the Super Bowl summary printing "+null"/"-0" and the board line, and a deselected line pick keeping its Blazin' star | `6db558c` |
 | Dead code: vs Market (JS, CSS, tab, bankroll tests) and the dead files (`odds-proxy.js` + its README, `google-apps-script.js`, `data.csv`, `start.bat`, `generate-historical-2016…2019.js`). `check-dylan-*.js` are gitignored local files and were left alone. | `a62d3d6` |
 
 ---
@@ -73,8 +74,8 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 
    The rule in `CLAUDE.md` is that no percentage is neutral.
 9. **Fixed in `90a2899`.** **Detail rows print the board line, not the graded one. LOW-MEDIUM.** `${fav} -${g.spread}` at 7340, 7897, 8103 and 9453 shows "-0" for a pick'em and "-null" for no line. Use `describeLineForSide(game, side, pick)`.
-10. **Super Bowl summary.** It prints "+null" or "-0" and ignores the locked line (12293). The playoff breakdown's `game.spread ?` treats a pick'em as missing (10749).
-11. **Deselecting a line pick keeps `blazin: true`** (11359-11371). The star still counts toward the cap and syncs with a blank line.
+10. **Fixed in `6db558c`.** **Super Bowl summary.** It prints "+null" or "-0" and ignores the locked line (12293). The playoff breakdown's `game.spread ?` treats a pick'em as missing (10749).
+11. **Fixed in `6db558c`.** **Deselecting a line pick keeps `blazin: true`** (11359-11371). The star still counts toward the cap and syncs with a blank line.
 
 **Fixed in `90a2899`:** every panel now reads `gradedPicks()`, the loop `calculateStatsForWeeks` runs on (see "One loop for every panel" in CLAUDE.md).
 
