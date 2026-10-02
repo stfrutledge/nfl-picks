@@ -9851,7 +9851,8 @@ function renderPlayoffGameBreakdown() {
         const gamesHtml = data.games.map(entry => {
             const game = entry.game;
             const gameLabel = `${game.away} @ ${game.home}`;
-            const spreadLabel = game.spread ? `${game.favorite === 'away' ? game.away : game.home} -${game.spread}` : '-';
+            // hasUsableSpread, not truthiness: a pick'em is 0 and is a real line.
+            const spreadLabel = hasUsableSpread(game) ? describeLine(game) : '-';
 
             // Determine consensus and lone wolves for line picks
             const lineConsensus = entry.consensus.line.away >= entry.consensus.line.home ? 'away' : 'home';
@@ -10461,10 +10462,19 @@ function handlePickSelect(e) {
     const isDeselecting = currentSelection === team;
     const otherTeam = team === 'home' ? 'away' : 'home';
     let autoSelectWinner = false;
+    let unstarred = false;
 
     // Toggle selection
     if (isDeselecting) {
         delete allPicks[currentWeek][currentPicker][key][pickType];
+
+        // A Blazin' 5 pick is a line pick with a star on it, so taking the line
+        // away takes the star too. Left behind, the star kept counting toward
+        // the five and synced as a starred pick with no side to it.
+        if (pickType === 'line' && allPicks[currentWeek][currentPicker][key].blazin) {
+            delete allPicks[currentWeek][currentPicker][key].blazin;
+            unstarred = true;
+        }
 
         // Clean up a game object that holds no actual picks any more. Checking
         // for real pick fields rather than an empty object matters because
@@ -10538,6 +10548,17 @@ function handlePickSelect(e) {
         }
         if (otherWinnerBtn) {
             otherWinnerBtn.classList.remove('selected');
+        }
+    }
+
+    // The star that went with a deselected line pick. updateBlazinStarStates
+    // only enables and disables stars, and reads `active` off the button, so
+    // it has to be switched off here first.
+    if (unstarred) {
+        const starBtn = document.querySelector(`.blazin-star[data-pick-key="${key}"]`);
+        if (starBtn) {
+            starBtn.classList.remove('active');
+            starBtn.innerHTML = '<span class="blazin-label">B5</span>☆';
         }
     }
 
@@ -11367,8 +11388,6 @@ function renderSuperBowlPicksSummary(scoringTable, weekGames, weekPicks, cachedW
     }
 
     const game = weekGames[0]; // Super Bowl is just one game
-    const spread = hasUsableSpread(game) ? Number(game.spread) : null;
-    const overUnder = hasUsableLine(game.overUnder) ? Number(game.overUnder) : null;
 
     let headerHtml = `
         <thead>
@@ -11383,35 +11402,31 @@ function renderSuperBowlPicksSummary(scoringTable, weekGames, weekPicks, cachedW
 
     let bodyHtml = '<tbody>';
     PICKERS.forEach(picker => {
-        const pickerPicks = weekPicks[picker] || {};
-        const cachedPicks = cachedWeek?.picks?.[picker] || {};
-        const gamePicks = getPicksForGame(pickerPicks, game);
-        const cachedGamePicks = getPicksForGame(cachedPicks, game);
+        const pick = pickFromSources(game, weekPicks[picker], cachedWeek?.picks?.[picker]);
+        // The line this pick is graded at: a locked pick keeps its own number.
+        const line = lineForPick(game, pick);
 
-        // Get line pick
-        const linePick = gamePicks.line || cachedGamePicks.line;
+        // Get line pick. The number comes through signedSpreadDisplay, so a
+        // pick'em reads PK and a missing line is left off - it used to be
+        // built by hand and printed "+null" and "-0".
         let atsDisplay = '-';
-        if (linePick) {
-            const pickedTeam = linePick === 'home' ? game.home : game.away;
-            const isPickedFavorite = (linePick === 'home' && game.favorite === 'home') ||
-                                     (linePick === 'away' && game.favorite === 'away');
-            const spreadDisplay = isPickedFavorite ? `-${spread}` : `+${spread}`;
-            atsDisplay = `${pickedTeam} (${spreadDisplay})`;
+        if (pick.line) {
+            const pickedTeam = pick.line === 'home' ? game.home : game.away;
+            const spreadDisplay = signedSpreadDisplay({ ...game, ...line }, pick.line);
+            atsDisplay = spreadDisplay ? `${pickedTeam} (${spreadDisplay})` : pickedTeam;
         }
 
         // Get winner pick
-        const winnerPick = gamePicks.winner || cachedGamePicks.winner;
         let winnerDisplay = '-';
-        if (winnerPick) {
-            winnerDisplay = winnerPick === 'home' ? game.home : game.away;
+        if (pick.winner) {
+            winnerDisplay = pick.winner === 'home' ? game.home : game.away;
         }
 
         // Get over/under pick
-        const ouPick = gamePicks.overUnder || cachedGamePicks.overUnder;
-        const ouLine = overUnder || gamePicks.totalLine || cachedGamePicks.totalLine || 0;
+        const ouLine = hasUsableLine(line.overUnder) ? Number(line.overUnder) : (pick.totalLine || 0);
         let ouDisplay = '-';
-        if (ouPick && ouLine > 0) {
-            ouDisplay = ouPick === 'over' ? `Over ${ouLine}` : `Under ${ouLine}`;
+        if (pick.overUnder && ouLine > 0) {
+            ouDisplay = pick.overUnder === 'over' ? `Over ${ouLine}` : `Under ${ouLine}`;
         }
 
         bodyHtml += `

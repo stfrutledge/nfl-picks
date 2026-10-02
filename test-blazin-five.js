@@ -48,7 +48,7 @@ function makeEnv(stars, nodes = {}) {
         document: {
             addEventListener: () => {},
             getElementById: id => nodes[id] || null,
-            querySelector: () => null,
+            querySelector: sel => (nodes.__query ? nodes.__query(sel) : null),
             // Only the star lookup matters here; everything else sees nothing.
             querySelectorAll: sel => (sel === '.blazin-star' ? stars.current : []),
             createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {} }),
@@ -80,7 +80,7 @@ function makeEnv(stars, nodes = {}) {
     const exports = `;return ({
         CURRENT_SEASON, FIRST_PLAYOFF_WEEK,
         pickKey, getPicksForGame, getPickerPicksForWeek, countBlazinPicks,
-        updateBlazinStarStates, updateBlazinProgress,
+        updateBlazinStarStates, updateBlazinProgress, handlePickSelect,
         noteBlazinCompleted, BLAZIN_COMPLETE_HOLD_MS,
         // The release timer is a real setTimeout; a held bar would otherwise
         // keep this process alive for a minute after the checks are done.
@@ -455,8 +455,61 @@ check('the hold belongs to the picker and week it was made for', () => {
     api.__cancelBlazinRelease();
 });
 
+section("Deselecting a line pick takes its star with it");
+
+// A Blazin' 5 pick is a line pick with a star on it. Deselecting the line used
+// to leave blazin: true behind, so the star still counted toward the five and
+// synced as a starred pick with no side.
+function clickLine(api, key, team) {
+    const game = api.NFL_GAMES_BY_WEEK[WEEK].find(g => api.pickKey(g) === key);
+    api.handlePickSelect({
+        preventDefault() {}, stopPropagation() {},
+        currentTarget: {
+            dataset: { gameId: String(game.id), pickKey: key, pickType: 'line', team },
+            classList: { add() {}, remove() {}, contains: () => false }
+        }
+    });
+}
+
+check('the star is removed and stops counting toward the cap', () => {
+    const { api } = setup({ picks: fiveStarredPicks() });
+    assert.strictEqual(api.countBlazinPicks(WEEK, 'Stephen'), 5);
+    clickLine(api, 'rams_seahawks', 'home');
+    const pick = api.__state().allPicks[WEEK].Stephen.rams_seahawks || {};
+    assert.strictEqual(pick.line, undefined, 'the line pick is gone');
+    assert.ok(!pick.blazin, 'and so is the star');
+    assert.strictEqual(api.countBlazinPicks(WEEK, 'Stephen'), 4);
+});
+
+check('the winner pick on the same game is kept', () => {
+    const { api } = setup({ picks: { rams_seahawks: { line: 'home', winner: 'home', blazin: true } } });
+    clickLine(api, 'rams_seahawks', 'home');
+    assert.deepStrictEqual(api.__state().allPicks[WEEK].Stephen.rams_seahawks, { winner: 'home' });
+});
+
+check('the star button is switched off in place', () => {
+    const star = { cls: new Set(['active']), innerHTML: '<span class="blazin-label">B5</span>★' };
+    star.classList = { remove: c => star.cls.delete(c) };
+    const { api, nodes } = setup({ picks: { rams_seahawks: { line: 'home', blazin: true } } });
+    nodes.__query = sel => (sel === '.blazin-star[data-pick-key="rams_seahawks"]' ? star : null);
+    clickLine(api, 'rams_seahawks', 'home');
+    assert.strictEqual(star.cls.has('active'), false);
+    assert.ok(star.innerHTML.endsWith('☆'), star.innerHTML);
+});
+
+check('switching sides keeps the star', () => {
+    const { api } = setup({ picks: { rams_seahawks: { line: 'home', blazin: true } } });
+    clickLine(api, 'rams_seahawks', 'away');
+    const pick = api.__state().allPicks[WEEK].Stephen.rams_seahawks;
+    assert.strictEqual(pick.line, 'away');
+    assert.strictEqual(pick.blazin, true);
+});
+
 if (failures > 0) {
     console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
     process.exit(1);
 }
 console.log(`\nALL ${total} CHECKS PASSED\n`);
+// A pick click starts the real debounced sync, whose retries would otherwise
+// keep the process alive.
+process.exit(0);

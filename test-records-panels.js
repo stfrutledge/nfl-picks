@@ -64,7 +64,7 @@ function makeEnv() {
         calculateHistoryBlazinTeamPicked, calculateHistoryBlazinTeamFaded,
         calculateWorstBlazinWeeks,
         calculateLoneWolfPicksWithDetails, calculateStraightUpLoneWolfPicks, calculateBlazinLoneWolfPicks,
-        recordsTableData, winPctCell, renderPickerCard,
+        recordsTableData, winPctCell, renderPickerCard, renderSuperBowlPicksSummary,
         __setState: s => { if ('allPicks' in s) allPicks = s.allPicks; }
     });`;
     const fn = new Function(
@@ -349,6 +349,44 @@ check('a leaderboard card with no percentage shows a neutral dash', () => {
     assert.ok(!html.includes('0%'), 'no 0%');
     assert.ok(!html.includes('negative'), 'not painted red');
     assert.ok(html.includes('win-pct ">-</div>'), html.match(/win-pct[^<]*<\/div>/)?.[0]);
+});
+
+section('The Super Bowl picks summary prints the graded line');
+
+// It built the number by hand from game.spread, so a missing line printed
+// "Chiefs (+null)", a pick'em "Chiefs (-0)", and a locked pick the board's line.
+function superBowlRow(gameExtra, pick) {
+    const api = setup();
+    const table = { innerHTML: '' };
+    const sb = game(1, 'Eagles', 'Chiefs', gameExtra);
+    api.renderSuperBowlPicksSummary(table, [sb], { Stephen: { eagles_chiefs: pick } }, null);
+    const row = table.innerHTML.split('<tr>').find(r => r.includes('>Stephen<'));
+    return [...row.matchAll(/<td[^>]*>([^<]*)<\/td>/g)].map(m => m[1]);
+}
+
+check('a missing line leaves the number off', () => {
+    const [, ats] = superBowlRow({ spread: null }, { line: 'home' });
+    assert.strictEqual(ats, 'Chiefs');
+});
+
+check("a pick'em reads PK", () => {
+    const [, ats] = superBowlRow({ spread: 0 }, { line: 'away' });
+    assert.strictEqual(ats, 'Eagles (PK)');
+});
+
+check('the underdog is quoted with a plus', () => {
+    const [, ats] = superBowlRow({ spread: 1.5 }, { line: 'away', winner: 'away' });
+    assert.strictEqual(ats, 'Eagles (+1.5)');
+});
+
+check('a locked pick shows its own number and total', () => {
+    const [, ats, winner, ou] = superBowlRow({ spread: 1.5, overUnder: 48.5 }, {
+        line: 'home', winner: 'home', overUnder: 'over',
+        frozenAt: '2027-02-10T12:00:00Z', frozenSpread: 3, frozenFavorite: 'home', frozenOverUnder: 47
+    });
+    assert.strictEqual(ats, 'Chiefs (-3)');
+    assert.strictEqual(winner, 'Chiefs');
+    assert.strictEqual(ou, 'Over 47');
 });
 
 console.log(`\n${total - failures}/${total} passed`);
