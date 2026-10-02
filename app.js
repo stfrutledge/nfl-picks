@@ -2625,6 +2625,7 @@ function init() {
     setupPickerButtons();
     setupPicksActions();
     setupDarkMode();
+    setupAppSettingsButton();
     setupWeekNavigation();
     setupGameFilters();
     setupConfirmModal();
@@ -2646,6 +2647,19 @@ function init() {
 
     // Load data from Google Sheets
     loadFromGoogleSheets();
+}
+
+/**
+ * The header's gear, shown only inside the Android app, which puts a bridge on
+ * the page as window.NFLPicksApp. The app's Settings hold the phone's picker
+ * (the page opens as them) and its notifications.
+ */
+function setupAppSettingsButton() {
+    const button = document.getElementById('app-settings-btn');
+    const app = window.NFLPicksApp;
+    if (!button || !app || typeof app.openSettings !== 'function') return;
+    button.classList.remove('hidden');
+    button.addEventListener('click', () => app.openSettings());
 }
 
 /**

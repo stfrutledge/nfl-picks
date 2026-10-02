@@ -242,6 +242,32 @@ header h1 {
     display: none;
 }
 
+/* The Android app's Settings gear: sits beside the dark mode toggle, and
+   takes over its auto margin so the pair stays at the right. */
+.app-settings-btn {
+    margin-left: auto;
+    margin-right: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #f0f0f0;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+}
+
+.app-settings-btn.hidden {
+    display: none;
+}
+
+.app-settings-btn:not(.hidden) + .dark-mode-toggle {
+    margin-left: 0;
+}
+
 /* Navigation Bar */
 .nav-bar {
     background: var(--bg-primary);

@@ -1,0 +1,99 @@
+# NFL Picks - Android app
+
+A thin native shell around the live site. The site itself
+(`https://stfrutledge.github.io/nfl-picks/`) runs full screen in a WebView, so
+**every fix to the site reaches the app with no new APK**. The app adds the
+three things a web page cannot do:
+
+- **A picker that belongs to the phone.** Settings > *Who are you?* No login,
+  the same trust the site already runs on. Before the site's own script runs,
+  `MainActivity` writes that name into the site's `selectedPicker`
+  localStorage key (a document-start script), so the page opens as that person
+  and the site needs no change to know who it is. The site's picker dropdown
+  still works for looking at someone else; the next launch goes back to the
+  phone's own picker.
+- **Push notifications.** Every copy of the app subscribes to one Firebase
+  Cloud Messaging topic, `group`. On the admin's phone only (picker =
+  Stephen), Settings has a *Message the group* box, which POSTs to the
+  worker's `/notify`.
+- **A clipboard that works.** The site copies through `navigator.clipboard`
+  (Export All Picks, the Weekly Recap), which a WebView does not reliably
+  allow. The start script routes it to the native clipboard.
+
+The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
+`openSettings()`). The only site change is the header gear,
+`setupAppSettingsButton()`, which shows only when that bridge exists.
+
+## Building
+
+```sh
+./build.sh          # signed release APK -> Downloads/NFLPicks.apk
+```
+
+The build reuses the portable JDK and SDK in `%LOCALAPPDATA%/tvremote` (from
+the TV Remote and Live TV apps), and writes its output to
+`%LOCALAPPDATA%/nflpicks-build`, outside OneDrive. **Bump `versionCode` in
+`app/build.gradle.kts` on every release**, or phones won't install it over the
+top.
+
+Not in git, and needed:
+
+| File | What |
+|---|---|
+| `release.jks` + `keystore.properties` | The signing key. **Keep a copy.** An APK signed with a different key will not install over the old one, so everyone would have to uninstall first. |
+| `firebase.properties` | The Firebase project's Android app config (below). Without it the app builds and works, but has no notifications. |
+| `local.properties` | `sdk.dir`, copied from the Live TV app. |
+
+## Setting up notifications (once)
+
+### 1. Firebase project
+
+1. https://console.firebase.google.com > **Create a project** (any name, e.g.
+   *NFL Picks*). Google Analytics is not needed.
+2. **Add app** > Android. Package name **`com.sfrut.nflpicks`**. Skip the
+   SDK steps.
+3. Download `google-services.json`. The four values the app needs are in it.
+   Write them to `android/firebase.properties`:
+
+   ```properties
+   apiKey=<client[0].api_key[0].current_key>
+   appId=<client[0].client_info.mobilesdk_app_id>
+   projectId=<project_info.project_id>
+   senderId=<project_info.project_number>
+   ```
+
+4. Rebuild with `./build.sh`.
+
+### 2. A key the worker can send with
+
+Firebase console > Project settings > **Service accounts** > **Generate new
+private key**. That downloads a JSON file. It is the credential for sending to
+every phone: keep it out of the repo, and delete the local copy once it is in
+the worker.
+
+### 3. The worker
+
+The worker's `/notify` is in `cloudflare-worker/nfl-picks-proxy.js`. Paste the
+file into the Cloudflare dashboard as usual (see `cloudflare-worker/README.md`),
+then add two encrypted variables:
+
+| Variable | Value |
+|---|---|
+| `FCM_SERVICE_ACCOUNT` | the whole service-account JSON from step 2 |
+| `NOTIFY_SECRET` | any long random string: the admin key |
+
+### 4. The admin's phone
+
+Settings > *Message the group* > **Admin key** = the `NOTIFY_SECRET` value. It
+stays on that phone. It is never built into the APK, which everyone gets.
+
+## Installing
+
+Send `NFLPicks.apk` in WhatsApp. On the phone: open it, allow *Install unknown
+apps* for WhatsApp (or Files) when Android asks, and install. On first launch
+the app asks who you are, then asks to allow notifications.
+
+## Tests
+
+`node test-worker-notify.js` (repo root) runs `/notify` against a fake Google:
+it refuses without the secret, and signs and sends properly with it.

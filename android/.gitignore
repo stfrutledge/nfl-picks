@@ -1,0 +1,10 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+# Signing key - keep a copy, or updates will not install over the top.
+keystore.properties
+*.jks
+# Firebase project config, and the admin key's local copy.
+firebase.properties
+google-services.json

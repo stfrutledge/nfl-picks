@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=748ebdd9">
+    <link rel="stylesheet" href="styles.css?v=84c0911d">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -53,6 +53,9 @@
                     <h1>NFL Picks Dashboard</h1>
                     <p class="subtitle"><span id="season-display"></span> Season Tracker</p>
                 </div>
+                <!-- Only inside the Android app (window.NFLPicksApp): opens its
+                     Settings, where the phone's picker and notifications live. -->
+                <button class="app-settings-btn hidden" id="app-settings-btn" title="App settings" aria-label="App settings">&#9881;</button>
                 <button class="dark-mode-toggle" id="dark-mode-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
                     <span class="icon-sun" aria-hidden="true">&#9728;</span>
                     <span class="icon-moon" aria-hidden="true">&#9790;</span>
@@ -905,6 +908,6 @@
     <script src="charts.js?v=70009325"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=914e6fad"></script>
+    <script src="app.js?v=95effa50"></script>
 </body>
 </html>

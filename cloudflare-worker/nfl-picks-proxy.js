@@ -5,6 +5,7 @@
  * - /odds - Proxy The Odds API (hides API key) with caching
  * - /sheets - Proxy Google Sheets CSV exports
  * - /sync - Proxy Google Apps Script for picks backup
+ * - /notify - Push a message to every phone with the Android app (admin only)
  *
  * Deployment:
  * 1. Go to https://dash.cloudflare.com
@@ -158,6 +159,8 @@ export default {
         return await handleSheets(request, url);
       } else if (path === '/sync') {
         return await handleSync(request, env);
+      } else if (path === '/notify') {
+        return await handleNotify(request, env);
       } else {
         return jsonResponse({ error: 'Unknown endpoint', path }, 404);
       }
@@ -343,6 +346,158 @@ async function handleSync(request, env) {
 /**
  * Helper to create JSON responses
  */
+// ---------------------------------------------------------------------------
+// /notify - a message from the admin to every phone with the Android app.
+// ---------------------------------------------------------------------------
+
+/** The FCM topic every copy of the app subscribes to. */
+const GROUP_TOPIC = 'group';
+const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
+const MAX_TITLE = 100;
+const MAX_BODY = 1000;
+
+/**
+ * POST { title, body } with `Authorization: Bearer <NOTIFY_SECRET>`, and it is
+ * sent to the group topic through Firebase Cloud Messaging.
+ *
+ * The secret is the only thing between the public internet and a push to
+ * everybody's phone, so it is checked before anything else is read, and the
+ * Firebase credentials (FCM_SERVICE_ACCOUNT, the service account's whole JSON
+ * key) never leave the worker. The secret lives on the admin's phone only,
+ * typed into the app's Settings - it is not in the APK, which goes to everyone.
+ */
+async function handleNotify(request, env) {
+  if (request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+  if (!env.NOTIFY_SECRET || !env.FCM_SERVICE_ACCOUNT) {
+    return jsonResponse({ error: 'Notifications are not configured' }, 500);
+  }
+
+  const auth = request.headers.get('Authorization') || '';
+  const given = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!(await secretsMatch(given, env.NOTIFY_SECRET))) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch (e) {
+    return jsonResponse({ error: 'Body must be JSON' }, 400);
+  }
+  const title = String(payload?.title ?? '').trim().slice(0, MAX_TITLE) || 'NFL Picks';
+  const body = String(payload?.body ?? '').trim();
+  if (!body) return jsonResponse({ error: 'Message is empty' }, 400);
+  if (body.length > MAX_BODY) return jsonResponse({ error: `Message is over ${MAX_BODY} characters` }, 400);
+
+  let account;
+  try {
+    account = JSON.parse(env.FCM_SERVICE_ACCOUNT);
+  } catch (e) {
+    return jsonResponse({ error: 'FCM_SERVICE_ACCOUNT is not valid JSON' }, 500);
+  }
+
+  const token = await googleAccessToken(account);
+  const response = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`,
+    {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          topic: GROUP_TOPIC,
+          notification: { title, body },
+          // High priority so it is shown straight away, on the channel the
+          // app creates for group messages.
+          android: { priority: 'HIGH', notification: { channel_id: GROUP_TOPIC } },
+        },
+      }),
+    });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    return jsonResponse({ error: `FCM answered ${response.status}`, detail: detail.slice(0, 500) }, 502);
+  }
+  const sent = await response.json();
+  return jsonResponse({ ok: true, name: sent.name });
+}
+
+/**
+ * Compare two secrets without the time taken saying how much of a guess was
+ * right: both are hashed, and the fixed-length digests compared in full.
+ */
+async function secretsMatch(given, expected) {
+  if (!given) return false;
+  const digest = async s => new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
+  const [a, b] = await Promise.all([digest(given), digest(expected)]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+// An OAuth token lasts an hour; one isolate can reuse it for every message
+// sent in that time rather than signing a new one each send.
+let cachedGoogleToken = null;
+
+/**
+ * An OAuth access token for the service account, from a JWT signed with its
+ * private key (the service-account flow; there is no Google SDK in a worker).
+ */
+async function googleAccessToken(account, now = Date.now()) {
+  if (cachedGoogleToken && cachedGoogleToken.account === account.client_email
+      && cachedGoogleToken.expires > now + 60_000) {
+    return cachedGoogleToken.token;
+  }
+
+  const tokenUri = account.token_uri || 'https://oauth2.googleapis.com/token';
+  const iat = Math.floor(now / 1000);
+  const jwt = await signJwt(
+    { alg: 'RS256', typ: 'JWT' },
+    { iss: account.client_email, scope: FCM_SCOPE, aud: tokenUri, iat, exp: iat + 3600 },
+    account.private_key);
+
+  const response = await fetch(tokenUri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }).toString(),
+  });
+  if (!response.ok) {
+    throw new Error(`Google token request failed: ${response.status} ${(await response.text()).slice(0, 200)}`);
+  }
+  const data = await response.json();
+  cachedGoogleToken = {
+    account: account.client_email,
+    token: data.access_token,
+    expires: now + (data.expires_in || 3600) * 1000,
+  };
+  return data.access_token;
+}
+
+function base64Url(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function signJwt(header, claims, privateKeyPem) {
+  const encode = obj => base64Url(new TextEncoder().encode(JSON.stringify(obj)));
+  const unsigned = `${encode(header)}.${encode(claims)}`;
+
+  const der = Uint8Array.from(
+    atob(privateKeyPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')),
+    c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    'pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned));
+  return `${unsigned}.${base64Url(new Uint8Array(signature))}`;
+}
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,

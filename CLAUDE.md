@@ -451,6 +451,10 @@ Offseason checklist (the only manual step): archive the finished season to `hist
 
 Run `node test-offseason-reset.js` to smoke-test the rollover behavior.
 
+## Android app
+
+`android/` is a native shell around the live site: the site runs in a WebView loaded from GitHub Pages, so a site change reaches the app with no new APK. The app adds a picker owned by the phone (written into `selectedPicker` before the site's script runs), push notifications (one FCM topic, `group`; the admin sends from the app's Settings through the worker's `/notify`), and a working clipboard. The page sees it as `window.NFLPicksApp`; the header gear (`setupAppSettingsButton`) is the only site code that knows the app exists, and it does nothing in a browser. Setup, the build and the secrets are in `android/README.md`. `node test-worker-notify.js` covers `/notify`.
+
 ## Weekly Recap
 
 The first card on the Insights panel (`#weekly-recap-card`, full width): the last finished week summed up, with a **Copy for WhatsApp** button. It is about `latestCompletedWeek()`, the latest regular-season week in which every game has a result, so it moves on once Monday night is final and not before. A game that never gets a result (a postponement) holds it on the week before until one does. Hidden on the Playoffs sub-tab and until a week has finished.

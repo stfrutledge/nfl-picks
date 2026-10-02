@@ -1,0 +1,9 @@
+<resources>
+    <!-- The site draws everything; this only keeps the window plain and the
+         status bar the site's own navy. -->
+    <style name="Theme.NflPicks" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#013369</item>
+        <item name="android:navigationBarColor">#013369</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
