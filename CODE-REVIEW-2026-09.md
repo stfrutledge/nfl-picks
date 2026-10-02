@@ -97,7 +97,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 
 ## UI, sync and security
 
-1. **Picks can be changed after kickoff. MEDIUM.** `handlePickSelect`, `handleBlazinToggle` and `handleOUSelect` rely on the `disabled` state set at render time. There is no `isGameLocked` check when the click happens, and the Apps Script has no kickoff check either. (Cowherd entry is deliberately unlocked; leave that alone.)
+1. **Declined (2026-10-02).** The cards are redrawn by the live-score poll, so they lock within about 2 minutes of kickoff; Stephen chose not to add a click-time check for that window. **Picks can be changed after kickoff. LOW.** `handlePickSelect`, `handleBlazinToggle` and `handleOUSelect` rely on the `disabled` state set at render time. There is no `isGameLocked` check when the click happens, and the Apps Script has no kickoff check either. (Cowherd entry is deliberately unlocked; leave that alone.)
 2. **No auth on the write path. Accepted risk.** Anyone reading `app.js` can POST picks, results, spreads or `cleared: true` for any picker, via the worker or the Apps Script URL directly (app.js:15). A real fix needs a check inside Apps Script plus a new deployment URL kept out of the repo.
 3. **Formula injection into the sheet. MEDIUM.** `appendRow` and `setValues` in `google-apps-script-simple.js` (350-368, 412, 421, 691, 703) write client strings as-is, so a value starting with `=`, `+`, `-` or `@` becomes a live formula. **Fix:** prefix these with `'` and add length checks. Needs an Apps Script redeploy.
 4. **No LockService in the Apps Script. MEDIUM.** `saveSpreads`, `saveResults` and `saveClearedStatus` read and then write, so two concurrent backfills can append duplicate Results rows.
@@ -179,7 +179,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 ## Features worth adding (best value for effort first)
 
 1. **Built in `50aed9d`.** **Weekly recap card with "Copy for WhatsApp" (low effort).** After Monday night: the week's winner and loser, 5-0s, lone-wolf hits, Cowherd vs the group, the Winnings swing and position moves. Built from `calculateStatsForWeeks`, `perfectBlazinWeeks`, `calculateBlazinLoneWolfPicks`, `calculateWinnings` and `asIsPositionChange`. The WhatsApp formatter already exists in Export All Picks.
-2. **"Still to pick" strip plus a nudge (low).** For example "Sean 9/16, 3/5 stars", a countdown to the next kickoff and a one-tap copy of a nudge message. No backend needed.
+2. **Declined (2026-10-02): not wanted.** **"Still to pick" strip plus a nudge (low).** For example "Sean 9/16, 3/5 stars", a countdown to the next kickoff and a one-tap copy of a nudge message. No backend needed.
 3. **Hall of Shame and bad beats (low-medium).** ROADMAP #3, not started. Cover margin is `lineForPick` arithmetic on final scores. "Worst Blazin' pick of the week" is the biggest miss, and "Bad beat" is a loss by 1 point or less against the number. Keep a persistent all-time list and feed it into the recap.
 4. **Season-long head-to-head (medium).** Generalise `calculatePlayoffAgreement` and the agreement matrix to the regular season, adding each pair's record on games where they disagreed. Covers FEATURES #16.
 5. **Moneylines: use them or drop them (medium).**
@@ -200,4 +200,4 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 3. Fix the two clock-dependent tests and add a single test command.
 4. Delete vs Market and the dead files.
 5. Consolidate the drifted stat loops onto one engine iterator (fixes scoring items 4-9).
-6. Weekly recap (built in `50aed9d`), then the "still to pick" strip, then Hall of Shame.
+6. Weekly recap (built in `50aed9d`), then Hall of Shame. (The "still to pick" strip was declined.)
