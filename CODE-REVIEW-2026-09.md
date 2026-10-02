@@ -27,6 +27,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 | Data layer 4: the week boundary drifted an hour after DST ended | `9e5ad78` |
 | Tests: clock-dependent failures in test-live-tab.js and test-offseason-reset.js (also test-line-freezing.js, which would have failed from December) | `6b55645` |
 | Tests: no single command to run the suite (`node run-tests.js`) | `6b55645` |
+| Scoring 4-9: the drifted per-panel stat loops (By Spread on the board line, history fav/dog, playoff weeks leaking in, stored results only, red 0% with nothing decided, "-0"/"-null" detail lines). All panels now fold over `gradedPicks()`. | `90a2899` |
 | Dead code: vs Market (JS, CSS, tab, bankroll tests) and the dead files (`odds-proxy.js` + its README, `google-apps-script.js`, `data.csv`, `start.bat`, `generate-historical-2016…2019.js`). `check-dylan-*.js` are gitignored local files and were left alone. | `a62d3d6` |
 
 ---
@@ -56,24 +57,26 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 
    The Apps Script grades it a push (line 893). Treat a tie as a straight-up push everywhere.
 3. **Fixed in `507a51c`.** **The Scoring Summary counts a game with no line as a loss. HIGH.** At 12157-12172, `atsWinnerForPick` returns null and falls through to `lineLosses++` / `blazinLosses++`. `renderGames` correctly skips it (`atsWinner &&`).
-4. **Blazin' "By Spread" buckets use the board line, but grading uses the pick's line. HIGH.** `calculateBlazinSpreadRecords` (8016-8022) and `calculateHistoryBlazinSpreadRecords` (8672-8678) bucket by `game.spread`/`game.favorite`. A pick locked at -3 that wins by 4 lands in the -6.5 row as a WIN. A null board line with a frozen pick gives a "PK" or "null" bucket. Use `lineForPick`, as `favoritesVsUnderdogsFromPicks` (6661) already does.
-5. **History fav/dog disagrees with the Line tab chart. MEDIUM.** `calculateHistoryBlazinFavDog` (8481) uses the board favourite and files pick'em games under Favourite or Underdog. The chart (6663) uses the locked line and skips pick'em games.
-6. **Playoff weeks leak into regular-season panels. MEDIUM.** These loop `week <= CURRENT_NFL_WEEK`, which reaches 22:
+4. **Fixed in `90a2899`.** **Blazin' "By Spread" buckets use the board line, but grading uses the pick's line. HIGH.** `calculateBlazinSpreadRecords` (8016-8022) and `calculateHistoryBlazinSpreadRecords` (8672-8678) bucket by `game.spread`/`game.favorite`. A pick locked at -3 that wins by 4 lands in the -6.5 row as a WIN. A null board line with a frozen pick gives a "PK" or "null" bucket. Use `lineForPick`, as `favoritesVsUnderdogsFromPicks` (6661) already does.
+5. **Fixed in `90a2899`.** **History fav/dog disagrees with the Line tab chart. MEDIUM.** `calculateHistoryBlazinFavDog` (8481) uses the board favourite and files pick'em games under Favourite or Underdog. The chart (6663) uses the locked line and skips pick'em games.
+6. **Fixed in `90a2899`.** **Playoff weeks leak into regular-season panels. MEDIUM.** These loop `week <= CURRENT_NFL_WEEK`, which reaches 22:
    - `calculateTeamPickRecords` (7133)
    - the three lone-wolf functions (8941, 9041, 9131)
    - `calculateWorstBlazinWeeks` (7725)
 
    Standings, consensus and fav/dog use `regularSeasonWeekRange()`.
-7. **The hand-rolled panels read stored results only. MEDIUM.** Team records, worst week, the Blazin' team/spread tables and lone wolf use `results[game.id]`. The standings use `getGameResult` with its live fallback, so a game that has just finished counts in one and not the other until the backfill lands.
-8. **No decided picks renders a red "0%". MEDIUM.**
+7. **Fixed in `90a2899`.** **The hand-rolled panels read stored results only. MEDIUM.** Team records, worst week, the Blazin' team/spread tables and lone wolf use `results[game.id]`. The standings use `getGameResult` with its live fallback, so a game that has just finished counts in one and not the other until the backfill lands.
+8. **Fixed in `90a2899`.** **No decided picks renders a red "0%". MEDIUM.**
    - `renderPickerCard` (9932, 9988, 10010) uses `percentage >= 50` and `?.toFixed(2) || 0`.
    - `calculatePlayoffStats` (6818) stores 0 instead of null.
    - The same happens on the lone-wolf card (9434, 9473) and the team/spread tables (7318, 7878, 8078).
 
    The rule in `CLAUDE.md` is that no percentage is neutral.
-9. **Detail rows print the board line, not the graded one. LOW-MEDIUM.** `${fav} -${g.spread}` at 7340, 7897, 8103 and 9453 shows "-0" for a pick'em and "-null" for no line. Use `describeLineForSide(game, side, pick)`.
+9. **Fixed in `90a2899`.** **Detail rows print the board line, not the graded one. LOW-MEDIUM.** `${fav} -${g.spread}` at 7340, 7897, 8103 and 9453 shows "-0" for a pick'em and "-null" for no line. Use `describeLineForSide(game, side, pick)`.
 10. **Super Bowl summary.** It prints "+null" or "-0" and ignores the locked line (12293). The playoff breakdown's `game.spread ?` treats a pick'em as missing (10749).
 11. **Deselecting a line pick keeps `blazin: true`** (11359-11371). The star still counts toward the cap and syncs with a blank line.
+
+**Fixed in `90a2899`:** every panel now reads `gradedPicks()`, the loop `calculateStatsForWeeks` runs on (see "One loop for every panel" in CLAUDE.md).
 
 **Root cause of 4-9:** about 12 copy-pasted per-picker loops that drifted from the engine on week range, result source and which line they read. The durable fix is one engine iterator yielding (game, picker, pick, graded line, result) rows that all these panels consume.
 
@@ -119,6 +122,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
   - **Fix:** inject a clock, either a `Date` shim into the `new Function` or a `now` parameter on `calculateCurrentNFLWeek`. For the as-is test, pass `{first: 1, last: 1}`.
 - **There's no single command to run the suite:** no `package.json`, no runner, no CI. Add a `run-tests.js` or an npm script.
 - Untested paths: team records, worst week, the Blazin' spread and team tables, the history fav/dog and spread tables, lone wolf, consensus, `favoritesVsUnderdogsFromPicks` and `renderPickerCard`.
+  - **Covered by `test-records-panels.js` (`90a2899`):** all of these except consensus and `favoritesVsUnderdogsFromPicks`.
 
 ---
 
