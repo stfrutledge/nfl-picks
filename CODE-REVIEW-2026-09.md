@@ -180,7 +180,7 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 
 1. **Built in `50aed9d`.** **Weekly recap card with "Copy for WhatsApp" (low effort).** After Monday night: the week's winner and loser, 5-0s, lone-wolf hits, Cowherd vs the group, the Winnings swing and position moves. Built from `calculateStatsForWeeks`, `perfectBlazinWeeks`, `calculateBlazinLoneWolfPicks`, `calculateWinnings` and `asIsPositionChange`. The WhatsApp formatter already exists in Export All Picks.
 2. **Declined (2026-10-02): not wanted.** **"Still to pick" strip plus a nudge (low).** For example "Sean 9/16, 3/5 stars", a countdown to the next kickoff and a one-tap copy of a nudge message. No backend needed.
-3. **Hall of Shame and bad beats (low-medium).** ROADMAP #3, not started. Cover margin is `lineForPick` arithmetic on final scores. "Worst Blazin' pick of the week" is the biggest miss, and "Bad beat" is a loss by 1 point or less against the number. Keep a persistent all-time list and feed it into the recap.
+3. **Declined (2026-10-02): not wanted.** **Hall of Shame and bad beats (low-medium).** ROADMAP #3, not started. Cover margin is `lineForPick` arithmetic on final scores. "Worst Blazin' pick of the week" is the biggest miss, and "Bad beat" is a loss by 1 point or less against the number. Keep a persistent all-time list and feed it into the recap.
 4. **Season-long head-to-head (medium).** Generalise `calculatePlayoffAgreement` and the agreement matrix to the regular season, adding each pair's record on games where they disagreed. Covers FEATURES #16.
 5. **Moneylines: use them or drop them (medium).**
    - The `h2h` data is a third of every odds fetch and is thrown away.
@@ -200,4 +200,4 @@ Full review done on 2026-09-22 at commit `2e85bee`. Five parallel read-only pass
 3. Fix the two clock-dependent tests and add a single test command.
 4. Delete vs Market and the dead files.
 5. Consolidate the drifted stat loops onto one engine iterator (fixes scoring items 4-9).
-6. Weekly recap (built in `50aed9d`), then Hall of Shame. (The "still to pick" strip was declined.)
+6. Weekly recap (built in `50aed9d`). The "still to pick" strip and Hall of Shame were declined.
