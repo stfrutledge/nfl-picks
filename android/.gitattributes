@@ -1,0 +1,5 @@
+# A shell script with CRLF endings will not run on a fresh clone elsewhere.
+gradlew text eol=lf
+build.sh text eol=lf
+*.bat text eol=crlf
+*.jar binary
