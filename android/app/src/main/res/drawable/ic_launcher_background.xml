@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The link preview's field (scripts/make-og-image.ps1): white falling off
+     to a faint grey. Light on purpose - the shield's body is navy. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:startColor="#FFFFFF" android:endColor="#E9ECF1" />
+</shape>

@@ -24,6 +24,21 @@ The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
 `openSettings()`). The only site change is the header gear,
 `setupAppSettingsButton()`, which shows only when that bridge exists.
 
+## Look
+
+- **Icon**: the NFL shield on the link preview's white-to-grey field, rendered
+  by `make-icon.ps1` from the same asset as the favicon and `og-image.png`
+  (launcher at every density, a monochrome layer for Android 13 themed icons,
+  a white cut-out shield for notifications, and the Settings header shield).
+  Re-run it if the shield ever changes:
+  `powershell -ExecutionPolicy Bypass -File android/make-icon.ps1`.
+- **Settings** is drawn in the site's style rather than Material's: the black
+  header with the shield and the green subtitle, `--bg-secondary` page,
+  bordered 8dp cards, uppercase letter-spaced labels and black uppercase
+  buttons, in Inter (bundled; OFL, see `FONT-LICENSE-Inter.txt`). It follows
+  the phone's light/dark setting with the site's dark tokens. On first launch
+  the same screen is the welcome.
+
 ## Building
 
 ```sh
