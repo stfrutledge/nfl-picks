@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONTokener
 
 /**
  * The live site, full screen. Everything the group sees is the site itself,
@@ -37,6 +38,29 @@ class MainActivity : ComponentActivity() {
 
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /**
+     * Settings, which may come back asking for one of the site's admin actions
+     * (Refresh Spreads, Export All Picks). Those stay the site's own code: the
+     * page is asked to run them, so they behave and report exactly as the
+     * buttons do in a browser.
+     */
+    private val settings =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val action = result.data?.getStringExtra(SettingsActivity.EXTRA_ADMIN_ACTION)
+                ?.takeIf { it in SettingsActivity.ADMIN_ACTIONS } ?: return@registerForActivityResult
+            web.evaluateJavascript("window.runAppAdminAction && runAppAdminAction('$action')", null)
+        }
+
+    /** Open Settings, handing it the page's Odds API credits line for the admin tools. */
+    private fun openSettings() {
+        web.evaluateJavascript("window.appAdminInfo ? appAdminInfo() : ''") { json ->
+            val quota = runCatching { JSONTokener(json).nextValue() as? String }.getOrNull().orEmpty()
+            settings.launch(
+                Intent(this, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_QUOTA, quota)
+            )
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,7 +92,7 @@ class MainActivity : ComponentActivity() {
         else load()
 
         // Nobody chosen yet: that is the first question.
-        if (prefs.picker == null) startActivity(Intent(this, SettingsActivity::class.java))
+        if (prefs.picker == null) settings.launch(Intent(this, SettingsActivity::class.java))
         else askForNotifications()
     }
 
@@ -110,9 +134,11 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun openSettings() = runOnUiThread {
-            startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
-        }
+        fun openSettings() = runOnUiThread { this@MainActivity.openSettings() }
+
+        /** Tells the page that Settings has the admin actions, so it can drop its own buttons. */
+        @JavascriptInterface
+        fun hasAdminTools(): Boolean = true
     }
 
     private inner class SiteClient : WebViewClient() {

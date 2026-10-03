@@ -20,9 +20,22 @@ three things a web page cannot do:
   (Export All Picks, the Weekly Recap), which a WebView does not reliably
   allow. The start script routes it to the native clipboard.
 
+- **Stephen's admin actions in Settings.** *Refresh spreads from API*, *Export
+  all picks* and the Odds API credits line moved off the bottom of the picks
+  into an *Admin tools* card. They are still the site's own code: Settings
+  closes and `MainActivity` asks the page to run them (`runAppAdminAction`),
+  so they behave and report exactly as the buttons do in a browser. The
+  credits line is read off the page (`appAdminInfo`) as Settings opens.
+  Cowherd's Blazin' 5 entry stays with the picks, by choice: it is weekly
+  data entry tied to the week on screen.
+
 The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
-`openSettings()`). The only site change is the header gear,
-`setupAppSettingsButton()`, which shows only when that bridge exists.
+`openSettings()`, `hasAdminTools()`). The site's side is
+`setupAppSettingsButton()`: the header gear shows only when that bridge
+exists, and the page's admin buttons are hidden (`.app-admin-tools`) only when
+`hasAdminTools()` says so. The site and the APK ship separately, so a site
+change must keep working with an older app: test for a bridge method before
+calling it. `node test-app-bridge.js` covers this.
 
 ## Look
 

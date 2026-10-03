@@ -2660,6 +2660,28 @@ function setupAppSettingsButton() {
     if (!button || !app || typeof app.openSettings !== 'function') return;
     button.classList.remove('hidden');
     button.addEventListener('click', () => app.openSettings());
+
+    // An app with the admin tools in its Settings takes the admin actions off
+    // the bottom of the picks. Asked rather than assumed, so a browser and an
+    // older app that lacks them both keep the buttons.
+    if (typeof app.hasAdminTools === 'function' && app.hasAdminTools()) {
+        document.body.classList.add('app-admin-tools');
+    }
+}
+
+/**
+ * Run one of the admin actions the app's Settings moved off the picks. The
+ * app calls this on the page, so the work and its toasts are exactly what the
+ * buttons do in a browser.
+ */
+function runAppAdminAction(action) {
+    const id = { 'refresh-spreads': 'refresh-spreads-btn', 'export-picks': 'export-all-picks-btn' }[action];
+    if (id) document.getElementById(id)?.click();
+}
+
+/** The admin actions' state for the app's Settings: the Odds API credits line. */
+function appAdminInfo() {
+    return document.getElementById('api-quota')?.textContent || '';
 }
 
 /**

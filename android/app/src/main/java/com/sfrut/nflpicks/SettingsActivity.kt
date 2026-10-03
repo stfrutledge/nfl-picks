@@ -201,8 +201,23 @@ private fun Field(
  */
 class SettingsActivity : ComponentActivity() {
 
+    companion object {
+        /** In: the page's Odds API credits line, for the admin tools. */
+        const val EXTRA_QUOTA = "quota"
+        /** Out: an admin action for MainActivity to have the page run. */
+        const val EXTRA_ADMIN_ACTION = "adminAction"
+        /** The actions the page's runAppAdminAction() knows. */
+        val ADMIN_ACTIONS = setOf("refresh-spreads", "export-picks")
+    }
+
     private lateinit var prefs: Prefs
     private var notificationsOn by mutableStateOf(false)
+
+    /** Close Settings and have the site run one of its admin actions. */
+    private fun runOnSite(action: String) {
+        setResult(RESULT_OK, Intent().putExtra(EXTRA_ADMIN_ACTION, action))
+        finish()
+    }
 
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshNotifications() }
@@ -308,7 +323,10 @@ class SettingsActivity : ComponentActivity() {
                     }
                 }
 
-                if (picker == ADMIN_PICKER) AdminCard()
+                if (picker == ADMIN_PICKER) {
+                    AdminToolsCard()
+                    AdminCard()
+                }
 
                 PrimaryButton(
                     if (picker == null) "Choose a picker first" else if (firstRun) "Let's go" else "Done",
@@ -393,6 +411,29 @@ class SettingsActivity : ComponentActivity() {
             Box(Modifier.size(10.dp).background(if (on) site.green else site.red, RoundedCornerShape(5.dp)))
             Spacer(Modifier.width(10.dp))
             Body(text, color = site.text)
+        }
+    }
+
+    /**
+     * The admin actions that used to sit under Stephen's picks. Each closes
+     * Settings and runs on the site, which shows its own progress and result.
+     */
+    @Composable
+    private fun AdminToolsCard() {
+        val quota = remember { intent.getStringExtra(EXTRA_QUOTA).orEmpty() }
+        Card {
+            Label("Admin tools")
+            Body(
+                if (quota.isNotBlank()) quota
+                else "Odds API credits show once the site has fetched odds."
+            )
+            PrimaryButton("Refresh spreads from API", modifier = Modifier.fillMaxWidth()) {
+                runOnSite("refresh-spreads")
+            }
+            PrimaryButton("Export all picks", modifier = Modifier.fillMaxWidth()) {
+                runOnSite("export-picks")
+            }
+            Body("Both run on the site and report there. Export copies this week's picks for WhatsApp.")
         }
     }
 
