@@ -16,6 +16,9 @@ fun props(name: String) = Properties().apply {
 // plugin, which fails the build when google-services.json is missing.
 val firebase = props("firebase.properties")
 val keyProps = props("keystore.properties")
+// SHA-256 of the admin key (the worker's NOTIFY_SECRET): Admin Settings opens only
+// for a key that hashes to it. The hash is safe to ship; the key is not in the APK.
+val admin = props("admin.properties")
 
 fun quoted(value: String?) = "\"${value ?: ""}\""
 
@@ -27,12 +30,13 @@ android {
         applicationId = "com.sfrut.nflpicks"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         buildConfigField("String", "FIREBASE_API_KEY", quoted(firebase.getProperty("apiKey")))
         buildConfigField("String", "FIREBASE_APP_ID", quoted(firebase.getProperty("appId")))
         buildConfigField("String", "FIREBASE_PROJECT_ID", quoted(firebase.getProperty("projectId")))
         buildConfigField("String", "FIREBASE_SENDER_ID", quoted(firebase.getProperty("senderId")))
+        buildConfigField("String", "ADMIN_KEY_SHA256", quoted(admin.getProperty("adminKeySha256")))
     }
 
     signingConfigs {

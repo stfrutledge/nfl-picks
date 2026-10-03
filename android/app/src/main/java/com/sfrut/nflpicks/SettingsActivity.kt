@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -276,6 +277,14 @@ class SettingsActivity : ComponentActivity() {
         var picker by remember { mutableStateOf(prefs.picker) }
         // First launch: the screen is a welcome, not a settings page.
         val firstRun = remember { prefs.picker == null }
+        var showAdmin by remember { mutableStateOf(false) }
+
+        // Admin Settings is a page of its own; back returns to this one.
+        BackHandler(enabled = showAdmin) { showAdmin = false }
+        if (showAdmin) {
+            AdminScreen(onBack = { showAdmin = false })
+            return
+        }
 
         Column(
             Modifier
@@ -323,9 +332,19 @@ class SettingsActivity : ComponentActivity() {
                     }
                 }
 
+                // Anyone can choose Stephen - there are no logins - so the
+                // admin page asks for the admin key before it shows anything.
                 if (picker == ADMIN_PICKER) {
-                    AdminToolsCard()
-                    AdminCard()
+                    Card {
+                        Label("Admin")
+                        Body(
+                            if (prefs.adminUnlocked) "Spreads, export and messaging the group."
+                            else "Needs the admin key."
+                        )
+                        PrimaryButton("Admin Settings  ›", modifier = Modifier.fillMaxWidth()) {
+                            showAdmin = true
+                        }
+                    }
                 }
 
                 PrimaryButton(
@@ -437,10 +456,85 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Admin Settings: the admin tools and messaging the group, behind the
+     * admin key. The key is checked against a SHA-256 built into the APK
+     * (Prefs.isAdminKey), so the page opens for nobody who merely picked
+     * Stephen. Once a correct key is in, this phone stays unlocked.
+     */
+    @Composable
+    private fun AdminScreen(onBack: () -> Unit) {
+        val site = LocalSite.current
+        var unlocked by remember { mutableStateOf(prefs.adminUnlocked) }
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(site.page)
+        ) {
+            Header("Admin Settings")
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "‹  BACK",
+                    style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                        letterSpacing = 0.08.em, color = site.textSecondary),
+                    modifier = Modifier.clickable(onClick = onBack).padding(vertical = 4.dp)
+                )
+
+                if (!unlocked) {
+                    UnlockCard(onUnlocked = { unlocked = true })
+                } else {
+                    AdminToolsCard()
+                    AdminCard()
+                    Text(
+                        "LOCK ADMIN ON THIS PHONE",
+                        style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                            letterSpacing = 0.08.em, color = site.textLight),
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .clickable {
+                                prefs.adminKey = ""
+                                unlocked = false
+                            }
+                            .padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun UnlockCard(onUnlocked: () -> Unit) {
+        val site = LocalSite.current
+        var key by remember { mutableStateOf("") }
+        var wrong by remember { mutableStateOf(false) }
+        Card {
+            Label("Admin key")
+            Body("Admin Settings is for Stephen only. Enter the admin key to open it on this phone.")
+            Field("Key", key, { key = it; wrong = false }, secret = true)
+            PrimaryButton("Unlock", enabled = key.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                if (prefs.isAdminKey(key)) {
+                    prefs.adminKey = key
+                    onUnlocked()
+                } else {
+                    wrong = true
+                }
+            }
+            if (wrong) StatusLine(on = false, "That key isn't right.")
+        }
+    }
+
     @Composable
     private fun AdminCard() {
         val site = LocalSite.current
-        var key by remember { mutableStateOf(prefs.adminKey) }
+        val key = remember { prefs.adminKey }
         var title by remember { mutableStateOf("NFL Picks") }
         var body by remember { mutableStateOf("") }
         var sending by remember { mutableStateOf(false) }
@@ -450,7 +544,6 @@ class SettingsActivity : ComponentActivity() {
         Card {
             Label("Message the group")
             Body("Goes to every phone with the app and notifications on.")
-            Field("Admin key", key, { key = it; prefs.adminKey = it }, secret = true)
             Field("Title", title, { title = it })
             Field("Message", body, { body = it }, lines = 3)
             PrimaryButton(

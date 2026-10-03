@@ -33,6 +33,26 @@ class Prefs(context: Context) {
         get() = prefs.getString("adminKey", "") ?: ""
         set(value) = prefs.edit().putString("adminKey", value.trim()).apply()
 
+    /**
+     * Whether a key is the admin key: its SHA-256 against the one built in
+     * from admin.properties. A build without that hash accepts any key, and
+     * the worker - which checks the real secret - is then the only gate.
+     */
+    fun isAdminKey(key: String): Boolean {
+        val expected = BuildConfig.ADMIN_KEY_SHA256
+        val trimmed = key.trim()
+        if (trimmed.isEmpty()) return false
+        if (expected.isEmpty()) return true
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(trimmed.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return java.security.MessageDigest.isEqual(digest.toByteArray(), expected.lowercase().toByteArray())
+    }
+
+    /** This phone has the admin key, so Admin Settings opens without asking. */
+    val adminUnlocked: Boolean
+        get() = isAdminKey(adminKey)
+
     /** Whether Settings has already shown the system's permission prompt. */
     var askedForNotifications: Boolean
         get() = prefs.getBoolean("askedForNotifications", false)

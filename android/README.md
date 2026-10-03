@@ -20,6 +20,7 @@ three things a web page cannot do:
   (Export All Picks, the Weekly Recap), which a WebView does not reliably
   allow. The start script routes it to the native clipboard.
 
+- **Admin Settings.** With Stephen chosen, Settings shows one *Admin Settings* button. It asks for the admin key (checked against `admin.properties`'s hash) before it shows anything; the phone then stays unlocked until *Lock admin on this phone*. Inside: the admin tools and *Message the group*.
 - **Stephen's admin actions in Settings.** *Refresh spreads from API*, *Export
   all picks* and the Odds API credits line moved off the bottom of the picks
   into an *Admin tools* card. They are still the site's own code: Settings
@@ -69,6 +70,7 @@ Not in git, and needed:
 | File | What |
 |---|---|
 | `release.jks` + `keystore.properties` | The signing key. **Keep a copy.** An APK signed with a different key will not install over the old one, so everyone would have to uninstall first. |
+| `admin.properties` | `adminKeySha256=` the SHA-256 of the admin key (`NOTIFY_SECRET`). Admin Settings opens only for a key that hashes to it, so anyone who picks Stephen (there are no logins) cannot open it. The hash ships in the APK; the key never does. Without the file, any key opens the page and the worker is the only check. |
 | `firebase.properties` | The Firebase project's Android app config (below). Without it the app builds and works, but has no notifications. |
 | `local.properties` | `sdk.dir`, copied from the Live TV app. |
 

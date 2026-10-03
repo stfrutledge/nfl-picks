@@ -8,3 +8,4 @@ keystore.properties
 # Firebase project config, and the admin key's local copy.
 firebase.properties
 google-services.json
+admin.properties
