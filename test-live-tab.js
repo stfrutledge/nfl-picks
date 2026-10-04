@@ -979,6 +979,26 @@ check('each pick says where it stands', () => {
     assert.ok(!soon.includes('outcome-provisional'), 'and not called provisional');
 });
 
+check('a game being played shows the time left with its quarter', () => {
+    // It showed the bare clock - "5:00", no quarter - and "0:00" at the half.
+    const api = setup(weekOfPicks());
+    const live = api.asIsPickDetail('Stephen').split('game-detail-row').slice(1)
+        .find(r => r.includes('Chiefs 20'));
+    assert.ok(live.includes('>5:00 Q3<'), live);
+});
+
+check('half time, the end of a quarter and a delay say so', () => {
+    const at = extra => {
+        const week = weekOfPicks();
+        week.games[1] = inProgress(2, 'Bills', 'Chiefs', 30, 20, extra);
+        return setup(week).asIsPickDetail('Stephen').split('game-detail-row').slice(1)
+            .find(r => r.includes('Chiefs 20'));
+    };
+    assert.ok(at({ status: 'STATUS_HALFTIME', clock: '0:00', period: 2 }).includes('>Half<'));
+    assert.ok(at({ status: 'STATUS_END_PERIOD', clock: '0:00', period: 1 }).includes('>End Q1<'));
+    assert.ok(at({ status: 'STATUS_DELAYED', clock: '2:00', period: 4 }).includes('>Delayed<'));
+});
+
 check('the detail is shaped like the Team Records one', () => {
     // Same row class, same slots, same outcome classes - the two expansions
     // are one thing, not two takes on it.

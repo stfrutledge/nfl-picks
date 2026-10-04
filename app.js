@@ -581,6 +581,10 @@ function getLiveGameStatus(game) {
             homeScore: game.homeScore || 0,
             awayScore: game.awayScore || 0,
             status: game.status,
+            // Kept when the snapshot has them, so a label built from this one
+            // can still say "5:00 Q3" before the first poll lands.
+            period: game.period,
+            clock: game.clock,
             completed: game.completed || game.status === 'STATUS_FINAL'
         };
     }
@@ -6069,10 +6073,12 @@ function asIsPickDetail(picker, category = liveSubcategory) {
         }
         const label = outcome === 'pending' ? '&ndash;' : outcome.toUpperCase();
 
-        const live = getLiveGameStatus(game);
+        // Time left WITH the quarter ("5:00 Q3"), as on the game cards. The bare
+        // clock said nothing about how much game was left, and read "0:00" at
+        // half time.
         const status = settled ? 'Final'
-            : (isGameInProgress(game) && live?.status === 'STATUS_DELAYED' ? 'Delayed'
-                : isGameInProgress(game) && live?.clock ? live.clock : (game.time || ''));
+            : isGameInProgress(game) ? liveClockLabel(getLiveGameStatus(game))
+            : (game.time || '');
         const matchup = result
             ? `${game.away} ${result.awayScore} @ ${game.home} ${result.homeScore}`
             : `${game.away} @ ${game.home}`;
