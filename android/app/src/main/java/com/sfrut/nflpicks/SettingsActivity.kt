@@ -474,7 +474,18 @@ class SettingsActivity : ComponentActivity() {
             result = null
             // The page normally stays open behind Settings. If Android has
             // closed it, fall back to closing Settings and running it there.
-            if (PageBridge.runAdminAction(action)) running = action else runOnSite(action)
+            running = action
+            val asked = PageBridge.runAdminAction(action) { started ->
+                // An old page can only click its own buttons: let it, on screen.
+                if (!started) {
+                    running = null
+                    runOnSite(action)
+                }
+            }
+            if (!asked) {
+                running = null
+                runOnSite(action)
+            }
         }
 
         Card {

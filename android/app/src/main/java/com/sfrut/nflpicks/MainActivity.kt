@@ -33,7 +33,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
     private lateinit var prefs: Prefs
 
-    private val pageRunner: (String) -> Unit = { script -> web.evaluateJavascript(script, null) }
+    private val pageRunner: (String, (String) -> Unit) -> Unit = { script, onResult ->
+        web.evaluateJavascript(script) { onResult(it ?: "null") }
+    }
 
     /** The picker the page was loaded with, to tell when Settings changed it. */
     private var loadedPicker: String? = null
@@ -122,7 +124,12 @@ class MainActivity : ComponentActivity() {
 
     private fun load() {
         loadedPicker = prefs.picker
-        web.loadUrl(SITE_URL)
+        // A unique query makes this a fresh fetch of the front page: GitHub
+        // Pages lets it be cached for 10 minutes, and a cached copy runs the
+        // site from before the last push. The scripts and styles it loads are
+        // named by content hash, so they still come from the cache. The site
+        // reads no query string.
+        web.loadUrl("$SITE_URL?app=${System.currentTimeMillis()}")
     }
 
     private fun askForNotifications() {
