@@ -52,7 +52,8 @@ function load(bridge) {
     const src = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8')
         + '\nconst HISTORICAL_DATA_SEASON=2026,HISTORICAL_GAMES={},HISTORICAL_RESULTS={},HISTORICAL_PICKS={};\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + ';return { setupAppSettingsButton, runAppAdminAction, appAdminInfo };';
+        + `;return { setupAppSettingsButton, runAppAdminAction, appAdminInfo, NFL_GAMES_BY_WEEK,
+            __setState: s => { if ('allPicks' in s) allPicks = s.allPicks; if ('currentWeek' in s) currentWeek = s.currentWeek; } };`;
     const api = new Function('window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date', src)(
         env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
@@ -108,7 +109,7 @@ check("the stylesheet hides them only under the app's class", () => {
     assert.ok(/\.app-admin-tools \.admin-actions\s*\{[^}]*display:\s*none\s*!important/.test(css));
 });
 
-section('Running the actions for the app');
+section('Running the actions for an app that closes Settings (1.3, 1.4)');
 
 check('each action clicks the button the page already has', () => {
     const { api, node } = load({ openSettings() {}, hasAdminTools: () => true });
@@ -132,5 +133,75 @@ check('the credits line is read off the page', () => {
     assert.strictEqual(api.appAdminInfo(), 'Odds API: 412 left of 500');
 });
 
-console.log(`\n${total - failures}/${total} passed`);
-process.exit(failures ? 1 : 0);
+section('Running the actions for an app that stays in Settings (1.5+)');
+
+// The app keeps Admin Settings open and waits for adminResult. Every path has
+// to answer, or the button sits on "Refreshing..." until the app gives up.
+function reportingApp() {
+    const reports = [], copies = [];
+    return {
+        reports, copies,
+        bridge: {
+            openSettings() {}, hasAdminTools: () => true,
+            copy: text => copies.push(text),
+            adminResult: (action, ok, message, quota) => reports.push({ action, ok, message, quota })
+        }
+    };
+}
+
+async function acheck(name, fn) {
+    total++;
+    try { await fn(); console.log(`  ok  ${name}`); }
+    catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+}
+
+(async () => {
+    await acheck('export copies the picks and reports it, without clicking anything', async () => {
+        const app = reportingApp();
+        const { api, node } = load(app.bridge);
+        api.NFL_GAMES_BY_WEEK[5] = [{ id: 1, away: 'Rams', home: 'Seahawks', spread: 3, favorite: 'home' }];
+        api.__setState({ currentWeek: 5, allPicks: { 5: { Stephen: { rams_seahawks: { line: 'home', winner: 'home' } } } } });
+        node('api-quota').textContent = 'Odds API: 400 left of 500';
+
+        await api.runAppAdminAction('export-picks');
+        assert.strictEqual(node('export-all-picks-btn').clicks, 0);
+        assert.strictEqual(app.copies.length, 1);
+        assert.ok(app.copies[0].includes('Seahawks (-3), Seahawks win'), app.copies[0]);
+        assert.deepStrictEqual(app.reports, [{
+            action: 'export-picks', ok: true,
+            message: 'Week 5 picks copied. Paste them into WhatsApp.',
+            quota: 'Odds API: 400 left of 500'
+        }]);
+    });
+
+    await acheck('export of a week with no games says so', async () => {
+        const app = reportingApp();
+        const { api } = load(app.bridge);
+        api.__setState({ currentWeek: 7 });
+        await api.runAppAdminAction('export-picks');
+        assert.strictEqual(app.copies.length, 0);
+        assert.strictEqual(app.reports[0].ok, false);
+        assert.match(app.reports[0].message, /No games/);
+    });
+
+    await acheck('a refresh that cannot reach the odds still answers', async () => {
+        // fetch throws here, as it would offline.
+        const app = reportingApp();
+        const { api, node } = load(app.bridge);
+        await api.runAppAdminAction('refresh-spreads');
+        assert.strictEqual(node('refresh-spreads-btn').clicks, 0);
+        assert.strictEqual(app.reports.length, 1);
+        assert.strictEqual(app.reports[0].action, 'refresh-spreads');
+        assert.strictEqual(app.reports[0].ok, false);
+    });
+
+    await acheck('an unknown action is ignored', async () => {
+        const app = reportingApp();
+        const { api } = load(app.bridge);
+        await api.runAppAdminAction('clear-everything');
+        assert.strictEqual(app.reports.length, 0);
+    });
+
+    console.log(`\n${total - failures}/${total} passed`);
+    process.exit(failures ? 1 : 0);
+})();

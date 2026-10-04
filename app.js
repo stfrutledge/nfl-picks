@@ -1728,6 +1728,24 @@ async function updateSpreadsFromAPI(forceRefresh = false) {
     return updateOddsFromAPI(forceRefresh);
 }
 
+/**
+ * What the Refresh Spreads button does, without the toasts: fetch the lines,
+ * share them through the sheet, redraw. Returns { ok, message } so the app's
+ * Admin Settings can report the result where it was asked for.
+ */
+async function refreshSpreadsNow() {
+    const success = await updateSpreadsFromAPI(true); // Force refresh
+    if (success) {
+        // Sync to Google Sheets so other users get the updated spreads
+        await syncSpreadsToGoogleSheets();
+        renderGames(); // Re-render to show new spreads
+        return { ok: true, message: 'Spreads updated and synced!' };
+    }
+    // Still render - saved spreads should be applied
+    renderGames();
+    return { ok: false, message: 'Could not fetch odds. Using saved/fallback spreads.' };
+}
+
 // How long to wait between live-score fetches.
 //
 // Two rates, because shouldPollLiveScores() stays true on nothing but
@@ -2670,13 +2688,40 @@ function setupAppSettingsButton() {
 }
 
 /**
- * Run one of the admin actions the app's Settings moved off the picks. The
- * app calls this on the page, so the work and its toasts are exactly what the
- * buttons do in a browser.
+ * Run one of the admin actions the app's Settings moved off the picks.
+ *
+ * An app that can take the answer (adminResult, app 1.5+) stays in Admin
+ * Settings while this runs behind it, and is told how it went - so the result
+ * shows where it was asked for. An older app closed Settings to come here, so
+ * for it the page's own buttons are clicked and their toasts do the telling.
  */
-function runAppAdminAction(action) {
-    const id = { 'refresh-spreads': 'refresh-spreads-btn', 'export-picks': 'export-all-picks-btn' }[action];
-    if (id) document.getElementById(id)?.click();
+async function runAppAdminAction(action) {
+    const app = window.NFLPicksApp;
+    if (!app || typeof app.adminResult !== 'function') {
+        const id = { 'refresh-spreads': 'refresh-spreads-btn', 'export-picks': 'export-all-picks-btn' }[action];
+        if (id) document.getElementById(id)?.click();
+        return;
+    }
+
+    let result;
+    try {
+        if (action === 'refresh-spreads') {
+            result = await refreshSpreadsNow();
+        } else if (action === 'export-picks') {
+            const text = exportAllPicksText();
+            if (text === null) {
+                result = { ok: false, message: 'No games available for this week.' };
+            } else {
+                app.copy(text);
+                result = { ok: true, message: `${getWeekTitle(currentWeek, '').trim()} picks copied. Paste them into WhatsApp.` };
+            }
+        } else {
+            return;
+        }
+    } catch (e) {
+        result = { ok: false, message: e?.message || 'Something went wrong.' };
+    }
+    app.adminResult(action, result.ok, result.message, appAdminInfo());
 }
 
 /** The admin actions' state for the app's Settings: the Odds API credits line. */
@@ -4385,17 +4430,8 @@ function setupPicksActions() {
     // Refresh spreads button (admin only - at bottom of picks section)
     document.getElementById('refresh-spreads-btn')?.addEventListener('click', async () => {
         showToast('Refreshing spreads from API...');
-        const success = await updateSpreadsFromAPI(true); // Force refresh
-        if (success) {
-            // Sync to Google Sheets so other users get the updated spreads
-            await syncSpreadsToGoogleSheets();
-            showToast('Spreads updated and synced!', 'success');
-            renderGames(); // Re-render to show new spreads
-        } else {
-            showToast('Could not fetch odds. Using saved/fallback spreads.', 'warning');
-            // Still render - saved spreads should be applied
-            renderGames();
-        }
+        const result = await refreshSpreadsNow();
+        showToast(result.message, result.ok ? 'success' : 'warning');
     });
 
     // Export all picks button (admin only)
@@ -11933,13 +11969,30 @@ function copyPicksToClipboard() {
  * Format: *PickerName* (bold) followed by each game on its own line
  */
 function exportAllPicksToClipboard() {
-    const weekGames = getGamesForWeek(currentWeek);
-    const weekPicks = allPicks[currentWeek] || {};
-
-    if (weekGames.length === 0) {
+    const text = exportAllPicksText();
+    if (text === null) {
         showToast('No games available for this week');
         return;
     }
+
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('All picks exported!', 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showToast('Failed to export picks');
+    });
+}
+
+/**
+ * The week's picks as Export All Picks copies them, or null when the week has
+ * no games. Separate from the copying so the app's Admin Settings can copy it
+ * and report there.
+ */
+function exportAllPicksText() {
+    const weekGames = getGamesForWeek(currentWeek);
+    const weekPicks = allPicks[currentWeek] || {};
+
+    if (weekGames.length === 0) return null;
 
     const lines = [];
     const weekTitle = getWeekTitle(currentWeek, '').trim();
@@ -11995,14 +12048,7 @@ function exportAllPicksToClipboard() {
         }
     });
 
-    const text = lines.join('\n');
-
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('All picks exported!', 'success');
-    }).catch(err => {
-        console.error('Failed to copy:', err);
-        showToast('Failed to export picks');
-    });
+    return lines.join('\n');
 }
 
 /**

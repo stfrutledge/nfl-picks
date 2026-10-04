@@ -23,9 +23,12 @@ three things a web page cannot do:
 - **Admin Settings.** With Stephen chosen, Settings shows one *Admin Settings* button. It asks for the admin key (checked against `admin.properties`'s hash) before it shows anything; the phone then stays unlocked until *Lock admin on this phone*. Inside: the admin tools and *Message the group*.
 - **Stephen's admin actions in Settings.** *Refresh spreads from API*, *Export
   all picks* and the Odds API credits line moved off the bottom of the picks
-  into an *Admin tools* card. They are still the site's own code: Settings
-  closes and `MainActivity` asks the page to run them (`runAppAdminAction`),
-  so they behave and report exactly as the buttons do in a browser. The
+  into an *Admin tools* card. They are still the site's own code, run on the
+  page that stays open behind Settings: `PageBridge` lends Settings a way to
+  run script there (`runAppAdminAction`), and the page answers through
+  `NFLPicksApp.adminResult(action, ok, message, quota)`, so the result and the
+  new credits count show in Admin Settings without leaving it. If Android has
+  closed the page, Settings closes and runs the action there instead. The
   credits line is read off the page (`appAdminInfo`) as Settings opens.
   Cowherd's Blazin' 5 entry stays with the picks, by choice: it is weekly
   data entry tied to the week on screen.

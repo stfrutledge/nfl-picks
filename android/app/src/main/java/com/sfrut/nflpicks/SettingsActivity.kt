@@ -37,6 +37,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +69,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -439,20 +442,59 @@ class SettingsActivity : ComponentActivity() {
      */
     @Composable
     private fun AdminToolsCard() {
-        val quota = remember { intent.getStringExtra(EXTRA_QUOTA).orEmpty() }
+        var quota by remember { mutableStateOf(intent.getStringExtra(EXTRA_QUOTA).orEmpty()) }
+        // The action the page is running for us, and how the last one went.
+        var running by remember { mutableStateOf<String?>(null) }
+        var result by remember { mutableStateOf<AdminResult?>(null) }
+
+        // Hear the page's answer for as long as this card is on screen.
+        DisposableEffect(Unit) {
+            PageBridge.onAdminResult = { answer ->
+                if (answer.action == running) {
+                    running = null
+                    result = answer
+                    if (answer.quota.isNotBlank()) quota = answer.quota
+                }
+            }
+            onDispose { PageBridge.onAdminResult = null }
+        }
+
+        // A page that never answers - an old cached copy of the site, or one
+        // still loading - must not leave the button spinning for ever.
+        LaunchedEffect(running) {
+            val waiting = running ?: return@LaunchedEffect
+            delay(45_000)
+            if (running == waiting) {
+                running = null
+                result = AdminResult(waiting, false, "No answer from the site. Close Settings and check the page.", "")
+            }
+        }
+
+        fun run(action: String) {
+            result = null
+            // The page normally stays open behind Settings. If Android has
+            // closed it, fall back to closing Settings and running it there.
+            if (PageBridge.runAdminAction(action)) running = action else runOnSite(action)
+        }
+
         Card {
             Label("Admin tools")
             Body(
                 if (quota.isNotBlank()) quota
                 else "Odds API credits show once the site has fetched odds."
             )
-            PrimaryButton("Refresh spreads from API", modifier = Modifier.fillMaxWidth()) {
-                runOnSite("refresh-spreads")
-            }
-            PrimaryButton("Export all picks", modifier = Modifier.fillMaxWidth()) {
-                runOnSite("export-picks")
-            }
-            Body("Both run on the site and report there. Export copies this week's picks for WhatsApp.")
+            PrimaryButton(
+                if (running == "refresh-spreads") "Refreshing spreads..." else "Refresh spreads from API",
+                enabled = running == null,
+                modifier = Modifier.fillMaxWidth()
+            ) { run("refresh-spreads") }
+            PrimaryButton(
+                if (running == "export-picks") "Exporting..." else "Export all picks",
+                enabled = running == null,
+                modifier = Modifier.fillMaxWidth()
+            ) { run("export-picks") }
+            result?.let { StatusLine(on = it.ok, it.message) }
+            Body("Export copies the week on screen, ready to paste into WhatsApp.")
         }
     }
 

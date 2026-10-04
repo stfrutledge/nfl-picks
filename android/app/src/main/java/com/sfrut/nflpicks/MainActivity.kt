@@ -33,6 +33,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
     private lateinit var prefs: Prefs
 
+    private val pageRunner: (String) -> Unit = { script -> web.evaluateJavascript(script, null) }
+
     /** The picker the page was loaded with, to tell when Settings changed it. */
     private var loadedPicker: String? = null
 
@@ -72,6 +74,8 @@ class MainActivity : ComponentActivity() {
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.addJavascriptInterface(Bridge(), "NFLPicksApp")
+        // Admin Settings runs the site's admin actions on this page, behind it.
+        PageBridge.runScript = pageRunner
         web.webViewClient = SiteClient()
 
         // Before any of the site's own script runs: hand it this phone's
@@ -103,6 +107,12 @@ class MainActivity : ComponentActivity() {
             load()
             askForNotifications()
         }
+    }
+
+    override fun onDestroy() {
+        // Only our own: a recreated activity may already have lent a new one.
+        if (PageBridge.runScript === pageRunner) PageBridge.runScript = null
+        super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -139,6 +149,12 @@ class MainActivity : ComponentActivity() {
         /** Tells the page that Settings has the admin actions, so it can drop its own buttons. */
         @JavascriptInterface
         fun hasAdminTools(): Boolean = true
+
+        /** The page's answer to an admin action Admin Settings asked it to run. */
+        @JavascriptInterface
+        fun adminResult(action: String, ok: Boolean, message: String, quota: String) = runOnUiThread {
+            PageBridge.onAdminResult?.invoke(AdminResult(action, ok, message, quota))
+        }
     }
 
     private inner class SiteClient : WebViewClient() {
