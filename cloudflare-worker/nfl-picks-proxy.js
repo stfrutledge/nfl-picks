@@ -6,6 +6,7 @@
  * - /sheets - Proxy Google Sheets CSV exports
  * - /sync - Proxy Google Apps Script for picks backup
  * - /notify - Push a message to every phone with the Android app (admin only)
+ * - scheduled (cron, every 15 min) - automatic Blazin' 5 results and pick reminders
  *
  * Deployment:
  * 1. Go to https://dash.cloudflare.com
@@ -167,6 +168,13 @@ export default {
     } catch (error) {
       return jsonResponse({ error: error.message }, 500);
     }
+  },
+
+  // The cron trigger: automatic notifications. See runAutomations().
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runAutomations(env).then(
+      result => console.log('[automations]', JSON.stringify(result)),
+      error => console.error('[automations] failed:', error.message)));
   },
 };
 
@@ -527,6 +535,333 @@ async function signJwt(header, claims, privateKeyPem) {
   const signature = await crypto.subtle.sign(
     'RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned));
   return `${unsigned}.${base64Url(new Uint8Array(signature))}`;
+}
+
+// ---------------------------------------------------------------------------
+// Automatic notifications - run every 15 minutes by a Cloudflare cron trigger.
+// ---------------------------------------------------------------------------
+//
+// Two kinds, both sent to the whole group through sendToGroup():
+//
+//   blazin_results   when every starred game of the week is final
+//   pick_reminders   3 hours before the week's first kickoff and before the
+//                    first weekend kickoff, to whoever still has picks to make
+//
+// Each phone then decides whether to show it (categories, quiet hours,
+// spoilers - the app's Delivery.decide). Each is sent once: the NOTIFY_STATE
+// KV namespace records what has gone out.
+//
+// The worker grades Blazin' 5 picks itself, because nothing else is running
+// when the last game ends. It is a copy of the site's rule (atsWinnerForPick ->
+// calculateATSWinnerFrom), kept small on purpose; test-worker-automations.js
+// fails if it ever disagrees with the site's engine.
+
+const NFL_PICKERS = ['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
+const COWHERD_PICKER = 'Cowherd';
+const BLAZIN_PER_WEEK = 5;
+const REMINDER_LEAD_MS = 3 * 60 * 60 * 1000;
+const SENT_TTL_SECONDS = 60 * 60 * 24 * 60;   // forget a week's flags after 60 days
+
+const ESPN_SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+
+// The site's alias map (TEAM_NAME_MAP), so keys built here match the picks'.
+const TEAM_ALIASES = {
+  buccs: 'buccaneers', bucs: 'buccaneers', tb: 'buccaneers', nyj: 'jets', jax: 'jaguars',
+  cle: 'browns', chi: 'bears', buf: 'bills', ne: 'patriots', bal: 'ravens', cin: 'bengals',
+  ari: 'cardinals', hou: 'texans', lv: 'raiders', phi: 'eagles', lac: 'chargers', kc: 'chiefs',
+  wsh: 'commanders', nyg: 'giants', ind: 'colts', sea: 'seahawks', ten: 'titans', sf: '49ers',
+  gb: 'packers', den: 'broncos', det: 'lions', lar: 'rams', car: 'panthers', no: 'saints',
+  min: 'vikings', dal: 'cowboys', mia: 'dolphins', pit: 'steelers', atl: 'falcons'
+};
+
+/** "Kansas City Chiefs" -> "Chiefs": the nickname the site keys games by. */
+function teamNickname(displayName) {
+  const name = String(displayName || '').trim();
+  const parts = name.split(' ');
+  return parts[parts.length - 1];
+}
+
+function normalizeTeam(name) {
+  const lower = String(name || '').trim().toLowerCase();
+  return TEAM_ALIASES[lower] || lower;
+}
+
+/** "away_home", as the site's pickKey() builds it. */
+function matchupKey(away, home) {
+  return `${normalizeTeam(away)}_${normalizeTeam(home)}`;
+}
+
+function normalizeKey(rawKey) {
+  const parts = String(rawKey).split('_');
+  return parts.length === 2 ? matchupKey(parts[0], parts[1]) : String(rawKey);
+}
+
+/** The current week's games from ESPN's scoreboard. */
+async function fetchScoreboard() {
+  const response = await fetch(ESPN_SCOREBOARD);
+  if (!response.ok) throw new Error(`ESPN answered ${response.status}`);
+  const data = await response.json();
+  const games = (data.events || []).map(event => {
+    const comp = event.competitions?.[0] || {};
+    const side = homeAway => comp.competitors?.find(c => c.homeAway === homeAway) || {};
+    const away = teamNickname(side('away').team?.displayName);
+    const home = teamNickname(side('home').team?.displayName);
+    const status = event.status?.type || {};
+    return {
+      key: matchupKey(away, home),
+      away, home,
+      kickoff: Date.parse(event.date),
+      state: status.state || (status.completed ? 'post' : 'pre'),   // pre | in | post
+      final: Boolean(status.completed),
+      awayScore: Number(side('away').score) || 0,
+      homeScore: Number(side('home').score) || 0,
+    };
+  });
+  return {
+    season: data.season?.year,
+    seasonType: data.season?.type,      // 2 = regular season
+    week: data.week?.number,
+    games,
+  };
+}
+
+async function appsScriptGet(env, params) {
+  const url = new URL(env.APPS_SCRIPT_URL);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const response = await fetch(url.toString());
+  if (!response.ok) throw new Error(`Apps Script answered ${response.status}`);
+  return response.json();
+}
+
+/** One week's picks per picker, keyed like the site's. */
+async function fetchWeekPicks(env, season, week) {
+  const data = await appsScriptGet(env, { action: 'allpicks', season: String(season) });
+  const raw = data.picks?.[`${season}_${week}`] || {};
+  const picks = {};
+  for (const [picker, games] of Object.entries(raw)) {
+    picks[picker] = {};
+    for (const [key, pick] of Object.entries(games)) picks[picker][normalizeKey(key)] = pick;
+  }
+  return picks;
+}
+
+/** One week's lines from the Spreads tab, keyed like the site's. */
+async function fetchWeekSpreads(env, season, week) {
+  const data = await appsScriptGet(env, { action: 'spreads', week: `${season}_${week}` });
+  const spreads = {};
+  for (const [key, line] of Object.entries(data.spreads || {})) spreads[normalizeKey(key)] = line;
+  return spreads;
+}
+
+function hasUsableLine(raw) {
+  if (raw === null || raw === undefined || raw === '') return false;
+  return Number.isFinite(Number(raw));
+}
+
+/** The line a pick is graded at: its own frozen one, or the week's. */
+function lineForPick(pick, weekLine) {
+  if (pick.frozenAt) return { spread: pick.frozenSpread, favorite: pick.frozenFavorite };
+  return weekLine ? { spread: weekLine.spread, favorite: weekLine.favorite } : null;
+}
+
+/** calculateATSWinnerFrom: the underdog gets the points. */
+function atsWinner(spread, favorite, awayScore, homeScore) {
+  const away = awayScore + (favorite === 'away' ? 0 : spread);
+  const home = homeScore + (favorite === 'home' ? 0 : spread);
+  return away > home ? 'away' : home > away ? 'home' : 'push';
+}
+
+/** Each picker's Blazin' 5 record on the week's final games. */
+function gradeBlazin(games, picks, spreads) {
+  const byKey = Object.fromEntries(games.map(g => [g.key, g]));
+  const records = {};
+  for (const picker of [...NFL_PICKERS, COWHERD_PICKER]) {
+    const record = { wins: 0, losses: 0, pushes: 0, starred: 0 };
+    for (const [key, pick] of Object.entries(picks[picker] || {})) {
+      if (!pick.blazin || !pick.line) continue;
+      record.starred++;
+      const game = byKey[key];
+      const line = lineForPick(pick, spreads[key]);
+      if (!game?.final || !line || !hasUsableLine(line.spread)) continue;
+      const ats = atsWinner(Number(line.spread), line.favorite, game.awayScore, game.homeScore);
+      if (ats === 'push') record.pushes++;
+      else if (ats === pick.line) record.wins++;
+      else record.losses++;
+    }
+    records[picker] = record;
+  }
+  return records;
+}
+
+/**
+ * Whether the week's Blazin' 5 is settled: at least one star, every starred
+ * game final, and nobody still able to add a star - five placed, or no game
+ * left to kick off.
+ */
+function blazinSettled(games, picks) {
+  const starredKeys = new Set();
+  for (const picker of [...NFL_PICKERS, COWHERD_PICKER]) {
+    for (const [key, pick] of Object.entries(picks[picker] || {})) {
+      if (pick.blazin && pick.line) starredKeys.add(key);
+    }
+  }
+  if (starredKeys.size === 0) return false;
+  const byKey = Object.fromEntries(games.map(g => [g.key, g]));
+  if ([...starredKeys].some(key => !byKey[key]?.final)) return false;
+  const gamesLeft = games.some(g => g.state === 'pre');
+  if (!gamesLeft) return true;
+  return NFL_PICKERS.every(picker =>
+    Object.values(picks[picker] || {}).filter(p => p.blazin && p.line).length >= BLAZIN_PER_WEEK);
+}
+
+function formatBlazinRecord({ wins, losses, pushes }) {
+  return `${wins}-${losses}${pushes ? `-${pushes}` : ''}`;
+}
+
+function blazinMessage(season, week, records) {
+  const ranked = NFL_PICKERS
+    .filter(p => records[p].starred > 0)
+    .sort((a, b) => (records[b].wins - records[b].losses) - (records[a].wins - records[a].losses)
+      || records[b].wins - records[a].wins || a.localeCompare(b));
+  const cowherd = records[COWHERD_PICKER];
+  const line = ranked.map(p => `${p} ${formatBlazinRecord(records[p])}`).join(', ')
+    + (cowherd?.starred ? `. Cowherd ${formatBlazinRecord(cowherd)}.` : '.');
+  return {
+    category: 'blazin_results',
+    id: `blazin-${season}-${week}`,
+    title: `Week ${week} Blazin’ 5`,
+    body: line,
+    spoilerTitle: `Week ${week} Blazin’ 5`,
+    spoilerBody: 'Results are in. Open the app to see how everyone did.',
+  };
+}
+
+/** The weekday a kickoff falls on in New York: 'Thu', 'Sun'... */
+function easternWeekday(ms) {
+  return new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+}
+
+const WEEKDAY_NAMES = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+
+/**
+ * The week's reminder moments: its first kickoff (usually Thursday night), and
+ * the first kickoff of the weekend slate after that - usually Sunday's early
+ * games, Saturday's late in the season.
+ */
+function reminderSlates(games) {
+  const upcoming = [...games].sort((a, b) => a.kickoff - b.kickoff);
+  if (upcoming.length === 0) return [];
+  const isWeekend = g => ['Fri', 'Sat', 'Sun'].includes(easternWeekday(g.kickoff));
+  const slates = [];
+  // A week that opens before the weekend (Thursday night) gets a reminder
+  // for that game alone; then the weekend's first kickoff gets the full one.
+  const first = upcoming[0];
+  if (!isWeekend(first)) {
+    slates.push({ kind: 'first', kickoff: first.kickoff, day: easternWeekday(first.kickoff) });
+  }
+  const weekend = upcoming.find(isWeekend);
+  if (weekend) slates.push({ kind: 'weekend', kickoff: weekend.kickoff, day: easternWeekday(weekend.kickoff) });
+  return slates;
+}
+
+function plural(n, one, many = one + 's') {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * A reminder before [slate]: for each picker with picks still to make on games
+ * not yet started, their own sentence. Null when everyone is done.
+ */
+function reminderMessage(season, week, slate, games, picks, regularSeason) {
+  // Before the opener, only its own day's games are about to lock; before the
+  // weekend, everything left - and the Blazin' stars, which need placing
+  // before the games they go on.
+  const open = games.filter(g => g.state === 'pre' && g.kickoff >= slate.kickoff
+    && (slate.kind === 'weekend' || easternWeekday(g.kickoff) === slate.day));
+  const personal = {};
+  for (const picker of NFL_PICKERS) {
+    const mine = picks[picker] || {};
+    const unpicked = open.filter(g => !(mine[g.key]?.line && mine[g.key]?.winner));
+    const stars = Object.values(mine).filter(p => p.blazin && p.line).length;
+    const starsLeft = regularSeason && slate.kind === 'weekend' && open.length > 0
+      ? Math.max(0, BLAZIN_PER_WEEK - stars) : 0;
+    if (unpicked.length === 0 && starsLeft === 0) continue;
+
+    const todo = [];
+    if (unpicked.length) todo.push(plural(unpicked.length, 'game'));
+    if (starsLeft) todo.push(plural(starsLeft, 'Blazin’ star'));
+    personal[picker] = `You still have ${todo.join(' and ')} to pick.`;
+  }
+  if (Object.keys(personal).length === 0) return null;
+
+  const day = WEEKDAY_NAMES[slate.day] || 'the first';
+  return {
+    category: 'pick_reminders',
+    id: `reminder-${season}-${week}-${slate.kind}`,
+    title: `${day} kickoff in 3 hours`,
+    body: '',
+    personal,
+    expiresAt: slate.kickoff,
+  };
+}
+
+async function alreadySent(env, id) {
+  return Boolean(await env.NOTIFY_STATE.get(`sent:${id}`));
+}
+
+async function markSent(env, id) {
+  await env.NOTIFY_STATE.put(`sent:${id}`, new Date().toISOString(), { expirationTtl: SENT_TTL_SECONDS });
+}
+
+/**
+ * One run of the schedule. Fetches the picks only when something could be
+ * due, so a quiet Tuesday costs one ESPN call and a couple of KV reads.
+ * Returns what it did, for the logs and the tests.
+ */
+async function runAutomations(env, now = Date.now()) {
+  if (!env.NOTIFY_STATE || !env.FCM_SERVICE_ACCOUNT || !env.APPS_SCRIPT_URL) {
+    return { skipped: 'not configured' };
+  }
+  const board = await fetchScoreboard();
+  const { season, week, games } = board;
+  if (!season || !week || games.length === 0) return { skipped: 'no games' };
+  const regularSeason = board.seasonType === 2;
+  const done = [];
+
+  // What could be due on this run, before paying for the sheet.
+  const blazinId = `blazin-${season}-${week}`;
+  // A non-starred game still being played (Monday night) must not hold up
+  // results that are already settled, so this only waits for a final game.
+  const blazinCandidate = regularSeason && games.some(g => g.final)
+    && !(await alreadySent(env, blazinId));
+
+  const dueSlates = [];
+  for (const slate of reminderSlates(games)) {
+    if (now < slate.kickoff - REMINDER_LEAD_MS || now >= slate.kickoff) continue;
+    if (!(await alreadySent(env, `reminder-${season}-${week}-${slate.kind}`))) dueSlates.push(slate);
+  }
+
+  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done };
+
+  const picks = await fetchWeekPicks(env, season, week);
+
+  if (blazinCandidate && blazinSettled(games, picks)) {
+    const spreads = await fetchWeekSpreads(env, season, week);
+    const message = blazinMessage(season, week, gradeBlazin(games, picks, spreads));
+    const sent = await sendToGroup(env, message);
+    if (sent.ok) { await markSent(env, blazinId); done.push(blazinId); }
+  }
+
+  for (const slate of dueSlates) {
+    const id = `reminder-${season}-${week}-${slate.kind}`;
+    const message = reminderMessage(season, week, slate, games, picks, regularSeason);
+    // Nobody to remind is still "done": the moment has passed for this slate.
+    if (!message) { await markSent(env, id); done.push(`${id} (nobody to remind)`); continue; }
+    const sent = await sendToGroup(env, message);
+    if (sent.ok) { await markSent(env, id); done.push(id); }
+  }
+
+  return { season, week, done };
 }
 
 function jsonResponse(data, status = 200) {

@@ -28,6 +28,32 @@ The worker's environment variables (**Settings** > **Variables**, all encrypted)
 
 Without the last two, `/notify` answers 500 and sends nothing; everything else works.
 
+## Automatic notifications (cron)
+
+Every 15 minutes the worker's `scheduled` handler (`runAutomations`) checks
+the current week on ESPN and, when something is due, reads the picks and lines
+from the Apps Script and sends through FCM:
+
+- **Blazin' 5 results** (`blazin_results`): once every starred game is final
+  and nobody can still add a star. Graded by the worker's small copy of the
+  site's rule; `test-worker-automations.js` fails if it disagrees with
+  `calculateStatsForWeeks`.
+- **Pick reminders** (`pick_reminders`): 3 hours before the week's opener
+  (that day's games only) and before the first weekend kickoff (everything
+  left, plus Blazin' stars), worded per picker, for those with picks to make.
+
+Everything is sent data-only; each phone decides what to show and when (the
+app's categories, quiet hours and spoiler-free setting). It needs, besides the
+variables above:
+
+| Setting | Where | Value |
+|---|---|---|
+| KV namespace binding `NOTIFY_STATE` | **Settings** > **Bindings** | a KV namespace (e.g. `nfl-picks-notify`): records what has been sent, so nothing goes twice |
+| Cron trigger | **Settings** > **Trigger events** | `*/15 * * * *` |
+
+Without the binding the schedule does nothing. A quiet day costs one ESPN call
+and a couple of KV reads; the sheet is only read when something could be due.
+
 Redeploying the Apps Script to a new URL means updating `APPS_SCRIPT_URL` here.
 
 ## Testing
