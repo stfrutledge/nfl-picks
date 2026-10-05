@@ -1,6 +1,7 @@
 package com.sfrut.nflpicks
 
 import android.Manifest
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -34,6 +35,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -41,6 +44,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -327,13 +331,15 @@ class SettingsActivity : ComponentActivity() {
                     when {
                         !NflPicksApp.pushConfigured ->
                             Body("This build of the app has no notification service set up.")
-                        notificationsOn -> StatusLine(on = true, "On. Messages to the group appear on this phone.")
+                        notificationsOn -> StatusLine(on = true, "On for this phone. Choose which ones below.")
                         else -> {
-                            StatusLine(on = false, "Off. You won't see messages to the group.")
+                            StatusLine(on = false, "Off. You won't see any notifications.")
                             PrimaryButton("Turn on notifications") { turnOnNotifications() }
                         }
                     }
                 }
+
+                if (NflPicksApp.pushConfigured) NotificationChoices()
 
                 // Anyone can choose Stephen - there are no logins - so the
                 // admin page asks for the admin key before it shows anything.
@@ -363,6 +369,115 @@ class SettingsActivity : ComponentActivity() {
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp)
                 )
             }
+        }
+    }
+
+    /**
+     * Which notifications this phone shows, and when. All of it is applied on
+     * the phone (Delivery.decide): nothing here is sent anywhere, so it takes
+     * effect for the very next notification.
+     */
+    @Composable
+    private fun NotificationChoices() {
+        val site = LocalSite.current
+        val on = remember { mutableStateMapOf<Category, Boolean>().apply {
+            Category.entries.forEach { put(it, prefs.categoryOn(it)) }
+        } }
+        var spoilerFree by remember { mutableStateOf(prefs.spoilerFree) }
+        var quietOn by remember { mutableStateOf(prefs.quietOn) }
+        var quietStart by remember { mutableStateOf(prefs.quietStart) }
+        var quietEnd by remember { mutableStateOf(prefs.quietEnd) }
+
+        Card {
+            Label("Send me")
+            Category.entries.forEach { category ->
+                ToggleRow(category.label, category.description, on[category] == true) {
+                    on[category] = it
+                    prefs.setCategoryOn(category, it)
+                }
+            }
+        }
+
+        Card {
+            Label("Spoilers")
+            ToggleRow(
+                "Spoiler-free results",
+                if (spoilerFree) "Results notifications say only that results are in. No names or scores."
+                else "Results notifications show everyone's record.",
+                spoilerFree
+            ) { spoilerFree = it; prefs.spoilerFree = it }
+            Body("The app itself still shows scores when you open it.", color = site.textLight, size = 12.sp)
+        }
+
+        Card {
+            Label("Quiet hours")
+            ToggleRow(
+                "Hold notifications overnight",
+                if (quietOn) "Anything arriving between these times is shown when they end, in this phone's time zone."
+                else "Notifications are shown as soon as they arrive.",
+                quietOn
+            ) { quietOn = it; prefs.quietOn = it }
+            if (quietOn) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TimeBox("From", quietStart, Modifier.weight(1f)) { quietStart = it; prefs.quietStart = it }
+                    TimeBox("Until", quietEnd, Modifier.weight(1f)) { quietEnd = it; prefs.quietEnd = it }
+                }
+            }
+        }
+    }
+
+    /** A setting that is on or off: name and explanation, with the site's green for on. */
+    @Composable
+    private fun ToggleRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+        val site = LocalSite.current
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { onChange(!checked) }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(title, style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp, color = site.text))
+                Body(detail, size = 13.sp)
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onChange,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = site.green,
+                    checkedThumbColor = Color.White,
+                    uncheckedTrackColor = site.border,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedBorderColor = site.border
+                )
+            )
+        }
+    }
+
+    /** A time of day in the site's input style; tapping it opens the clock. */
+    @Composable
+    private fun TimeBox(label: String, minuteOfDay: Int, modifier: Modifier = Modifier, onChange: (Int) -> Unit) {
+        val site = LocalSite.current
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Label(label)
+            Text(
+                QuietHours.format(minuteOfDay),
+                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = site.text),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(site.card, RoundedCornerShape(4.dp))
+                    .border(2.dp, site.border, RoundedCornerShape(4.dp))
+                    .clickable {
+                        TimePickerDialog(
+                            this@SettingsActivity,
+                            { _, hour, minute -> onChange(hour * 60 + minute) },
+                            minuteOfDay / 60, minuteOfDay % 60, true
+                        ).show()
+                    }
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+            )
         }
     }
 

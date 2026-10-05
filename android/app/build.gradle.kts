@@ -30,8 +30,8 @@ android {
         applicationId = "com.sfrut.nflpicks"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
         buildConfigField("String", "FIREBASE_API_KEY", quoted(firebase.getProperty("apiKey")))
         buildConfigField("String", "FIREBASE_APP_ID", quoted(firebase.getProperty("appId")))
         buildConfigField("String", "FIREBASE_PROJECT_ID", quoted(firebase.getProperty("projectId")))
@@ -77,4 +77,9 @@ dependencies {
 
     implementation(platform("com.google.firebase:firebase-bom:33.4.0"))
     implementation("com.google.firebase:firebase-messaging")
+
+    // Holds a notification through quiet hours and shows it when they end.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    testImplementation("junit:junit:4.13.2")
 }

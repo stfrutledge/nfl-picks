@@ -1,8 +1,6 @@
 package com.sfrut.nflpicks
 
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
@@ -12,15 +10,8 @@ class NflPicksApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        Notifications.createChannels(this)
         startPush()
-    }
-
-    private fun createChannel() {
-        val channel = NotificationChannel(
-            GROUP_TOPIC, "Group messages", NotificationManager.IMPORTANCE_HIGH
-        ).apply { description = "Messages sent to the whole group" }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     /**

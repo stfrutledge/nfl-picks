@@ -36,11 +36,12 @@
             </intent-filter>
         </service>
 
-        <!-- Messages arriving while the app is in the background are drawn by
-             the system, on this channel and with this icon. -->
+        <!-- Only for a message with a notification payload (the worker before
+             1.7), drawn by the system while the app is in the background.
+             Everything else is data-only and drawn by Notifications. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="group" />
+            android:value="messages" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />

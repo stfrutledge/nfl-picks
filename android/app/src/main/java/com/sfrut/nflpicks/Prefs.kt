@@ -58,6 +58,40 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("askedForNotifications", false)
         set(value) = prefs.edit().putBoolean("askedForNotifications", value).apply()
 
+    // --- Notification settings: every category on, spoiler-free, quiet
+    // midnight to 9am. The defaults the group agreed; each phone can change.
+
+    fun categoryOn(category: Category): Boolean = prefs.getBoolean("notify.${category.id}", true)
+    fun setCategoryOn(category: Category, on: Boolean) =
+        prefs.edit().putBoolean("notify.${category.id}", on).apply()
+
+    var spoilerFree: Boolean
+        get() = prefs.getBoolean("notify.spoilerFree", true)
+        set(value) = prefs.edit().putBoolean("notify.spoilerFree", value).apply()
+
+    var quietOn: Boolean
+        get() = prefs.getBoolean("notify.quietOn", true)
+        set(value) = prefs.edit().putBoolean("notify.quietOn", value).apply()
+
+    /** Minutes after midnight. */
+    var quietStart: Int
+        get() = prefs.getInt("notify.quietStart", 0)
+        set(value) = prefs.edit().putInt("notify.quietStart", value).apply()
+
+    var quietEnd: Int
+        get() = prefs.getInt("notify.quietEnd", 9 * 60)
+        set(value) = prefs.edit().putInt("notify.quietEnd", value).apply()
+
+    /** Everything Delivery.decide needs to know about this phone. */
+    fun deliverySettings() = DeliverySettings(
+        picker = picker,
+        enabled = Category.entries.filter { categoryOn(it) }.toSet(),
+        spoilerFree = spoilerFree,
+        quietOn = quietOn,
+        quietStart = quietStart,
+        quietEnd = quietEnd
+    )
+
     var subscribed: Boolean
         get() = prefs.getBoolean("subscribed", false)
         set(value) = prefs.edit().putBoolean("subscribed", value).apply()
