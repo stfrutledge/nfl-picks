@@ -680,9 +680,11 @@ class SettingsActivity : ComponentActivity() {
     }
 
     /**
-     * One of each kind of notification, sent to this phone only. Each goes
-     * through the same rules as the real thing - its category switch,
-     * spoiler-free and quiet hours - so a test held overnight is a test passed.
+     * One of each kind of notification, sent to this phone only. The results
+     * and reminder tests are built by the worker from the real picks, lines
+     * and scores - the same code the schedule sends with - so they check the
+     * real thing, not a made-up sample. Each goes through this phone's rules
+     * (category switches, spoiler-free, quiet hours) as the real one would.
      */
     @Composable
     private fun TestCard() {
@@ -691,48 +693,50 @@ class SettingsActivity : ComponentActivity() {
         var status by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
         val scope = rememberCoroutineScope()
 
-        fun test(category: Category, title: String, body: String,
-                 spoilerTitle: String? = null, spoilerBody: String? = null, personal: Map<String, String>? = null) {
+        /** Why a sent test might not appear straight away, or at all. */
+        fun caveat(category: Category): String? = when {
+            !prefs.categoryOn(category) -> "${category.label} is switched off, so it won't show"
+            prefs.quietOn && QuietHours.isQuiet(
+                java.time.LocalTime.now().let { it.hour * 60 + it.minute }, prefs.quietStart, prefs.quietEnd) ->
+                "it's quiet hours, so it'll show at ${QuietHours.format(prefs.quietEnd)}"
+            else -> null
+        }
+
+        fun run(category: Category, send: suspend () -> Pair<Boolean, String?>) {
             sending = category
             status = null
             scope.launch {
-                val error = withContext(Dispatchers.IO) {
-                    Notify.sendTest(key, category, title, body, spoilerTitle, spoilerBody, personal)
-                }
+                val (ok, note) = withContext(Dispatchers.IO) { send() }
                 sending = null
-                status = if (error == null) {
-                    val rules = buildList {
-                        if (!prefs.categoryOn(category)) add("${category.label} is switched off, so it won't show")
-                        else if (prefs.quietOn && QuietHours.isQuiet(
-                                java.time.LocalTime.now().let { it.hour * 60 + it.minute }, prefs.quietStart, prefs.quietEnd))
-                            add("it's quiet hours, so it'll show at ${QuietHours.format(prefs.quietEnd)}")
-                    }
-                    true to (if (rules.isEmpty()) "Sent to this phone." else "Sent to this phone, but ${rules.first()}.")
-                } else false to error
+                status = when {
+                    !ok -> false to (note ?: "Something went wrong.")
+                    note != null -> true to note                       // nothing to send, and why
+                    else -> true to (caveat(category)?.let { "Sent to this phone, but $it." } ?: "Sent to this phone.")
+                }
             }
         }
 
         Card {
             Label("Test on this phone")
-            Body("Sends to this phone only - nobody else sees it. Each follows your notification settings, as the real one would.")
+            Body("Sends to this phone only - nobody else sees it. Results and reminders use this week's real picks and scores.")
             PrimaryButton(if (sending == Category.MESSAGES) "Sending..." else "Test message",
                 enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
-                test(Category.MESSAGES, "NFL Picks", "A test message from Admin Settings.")
+                run(Category.MESSAGES) {
+                    val error = Notify.sendTest(key, Category.MESSAGES, "NFL Picks", "A test message from Admin Settings.")
+                    (error == null) to error
+                }
             }
-            PrimaryButton(if (sending == Category.BLAZIN_RESULTS) "Sending..." else "Test Blazin’ results",
+            PrimaryButton(if (sending == Category.BLAZIN_RESULTS) "Grading this week..." else "Test Blazin’ results",
                 enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
-                test(Category.BLAZIN_RESULTS, "Test Blazin’ 5",
-                    "Jason 4-1, Sean 3-2, Stephen 3-2, Dylan 2-3, Daniel 1-4. Cowherd 2-3.",
-                    spoilerTitle = "Test Blazin’ 5",
-                    spoilerBody = "Results are in. Open the app to see how everyone did.")
+                run(Category.BLAZIN_RESULTS) { Notify.sendPreview(key, Category.BLAZIN_RESULTS) }
             }
-            PrimaryButton(if (sending == Category.PICK_REMINDERS) "Sending..." else "Test pick reminder",
+            PrimaryButton(if (sending == Category.PICK_REMINDERS) "Checking picks..." else "Test pick reminder",
                 enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
-                test(Category.PICK_REMINDERS, "Sunday kickoff in 3 hours", "",
-                    personal = mapOf((prefs.picker ?: ADMIN_PICKER) to
-                        "You still have 3 games and 2 Blazin’ stars to pick."))
+                run(Category.PICK_REMINDERS) { Notify.sendPreview(key, Category.PICK_REMINDERS) }
             }
             status?.let { (ok, text) -> StatusLine(on = ok, text) }
+            Body("The reminder test lists everyone with picks to make; a real reminder shows each person only their own.",
+                color = LocalSite.current.textLight, size = 12.sp)
         }
     }
 

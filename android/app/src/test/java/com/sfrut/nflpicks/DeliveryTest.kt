@@ -111,10 +111,10 @@ class DeliveryTest {
     @Test fun `a reminder goes only to the pickers it names, in their own words`() {
         val reminder = Incoming(
             Category.PICK_REMINDERS, "Kickoff in 3 hours", "",
-            personal = mapOf("Sean" to "You have 4 games and 2 Blazin’ stars to pick.")
+            personal = mapOf("Sean" to "You still have 4 games to pick and 2 Blazin’ 5 picks to make.")
         )
         val noon = at(dublin, 2026, 10, 11, 15)
-        assertEquals("You have 4 games and 2 Blazin’ stars to pick.",
+        assertEquals("You still have 4 games to pick and 2 Blazin’ 5 picks to make.",
             (Delivery.decide(reminder, defaults, noon) as Decision.Show).body)
         assertTrue(Delivery.decide(reminder, defaults.copy(picker = "Jason"), noon) is Decision.Drop)
         assertTrue(Delivery.decide(reminder, defaults.copy(picker = null), noon) is Decision.Drop)

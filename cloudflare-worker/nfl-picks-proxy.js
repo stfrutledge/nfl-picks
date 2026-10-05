@@ -396,6 +396,13 @@ async function handleNotify(request, env) {
   } catch (e) {
     return jsonResponse({ error: 'Body must be JSON' }, 400);
   }
+  // A preview: the real Blazin' 5 result or pick reminder for this week, built
+  // from the real picks, lines and scores by the same code the schedule uses,
+  // sent to the asking phone only.
+  if (typeof payload?.token === 'string' && payload.token.trim() && PREVIEWS.includes(payload?.preview)) {
+    return handlePreview(env, payload.token.trim(), payload.preview);
+  }
+
   const title = String(payload?.title ?? '').trim().slice(0, MAX_TITLE) || 'NFL Picks';
   const body = String(payload?.body ?? '').trim();
   if (!body && !(payload?.personal && payload?.token)) return jsonResponse({ error: 'Message is empty' }, 400);
@@ -753,9 +760,9 @@ function blazinMessage(season, week, records) {
   return {
     category: 'blazin_results',
     id: `blazin-${season}-${week}`,
-    title: `Week ${week} Blazin’ 5`,
+    title: `Blazin’ 5 Results - Week ${week}`,
     body: line,
-    spoilerTitle: `Week ${week} Blazin’ 5`,
+    spoilerTitle: `Blazin’ 5 Results - Week ${week}`,
     spoilerBody: 'Results are in. Open the app to see how everyone did.',
   };
 }
@@ -812,9 +819,9 @@ function reminderMessage(season, week, slate, games, picks, regularSeason) {
     if (unpicked.length === 0 && starsLeft === 0) continue;
 
     const todo = [];
-    if (unpicked.length) todo.push(plural(unpicked.length, 'game'));
-    if (starsLeft) todo.push(plural(starsLeft, 'Blazin’ star'));
-    personal[picker] = `You still have ${todo.join(' and ')} to pick.`;
+    if (unpicked.length) todo.push(`${plural(unpicked.length, 'game')} to pick`);
+    if (starsLeft) todo.push(`${plural(starsLeft, 'Blazin’ 5 pick')} to make`);
+    personal[picker] = `You still have ${todo.join(' and ')}.`;
   }
   if (Object.keys(personal).length === 0) return null;
 
@@ -886,6 +893,64 @@ async function runAutomations(env, now = Date.now()) {
   }
 
   return { season, week, done };
+}
+
+const PREVIEWS = ['blazin_results', 'pick_reminders'];
+
+/**
+ * Admin Settings' real-data tests. Results: the current week graded as it
+ * stands - exactly what the schedule would send, plus a note of starred games
+ * still to finish. Reminder: who still has picks to make this week, all of
+ * them listed (a real reminder shows each phone only its own line, which
+ * tells the admin nothing about the rest). Nothing is sent when there is
+ * nothing to show; the answer says why.
+ */
+async function handlePreview(env, token, kind) {
+  if (!env.APPS_SCRIPT_URL) return jsonResponse({ error: 'APPS_SCRIPT_URL is not configured' }, 500);
+  const board = await fetchScoreboard();
+  const { season, week, games } = board;
+  if (!season || !week || games.length === 0) return jsonResponse({ error: 'ESPN has no games this week' }, 502);
+  const picks = await fetchWeekPicks(env, season, week);
+
+  let message;
+  if (kind === 'blazin_results') {
+    const spreads = await fetchWeekSpreads(env, season, week);
+    const records = gradeBlazin(games, picks, spreads);
+    const starred = Object.values(records).reduce((n, r) => n + r.starred, 0);
+    if (starred === 0) return jsonResponse({ ok: true, sent: false, note: `Nobody has starred a Week ${week} game yet.` });
+    message = blazinMessage(season, week, records);
+    const pending = pendingStarredGames(games, picks);
+    if (pending > 0) {
+      message.body += ` As it stands: ${plural(pending, 'starred game')} still to finish.`;
+    }
+  } else {
+    const slate = { kind: 'weekend', kickoff: 0, day: '' };
+    const reminder = reminderMessage(season, week, slate, games, picks, board.seasonType === 2);
+    if (!reminder) return jsonResponse({ ok: true, sent: false, note: `Everyone's Week ${week} picks are in.` });
+    const lines = Object.entries(reminder.personal)
+      .map(([picker, text]) => `${picker}: ${text.replace(/^You still have /, '').replace(/\.$/, '')}`);
+    message = {
+      category: 'pick_reminders',
+      title: `Still to pick - Week ${week}`,
+      body: lines.join(' · '),
+    };
+  }
+
+  const sent = await sendToGroup(env, { ...message, id: `preview-${kind}-${Date.now()}` }, { token });
+  if (!sent.ok) return jsonResponse({ error: sent.error, detail: sent.detail }, sent.status || 502);
+  return jsonResponse({ ok: true, sent: true, week });
+}
+
+/** Starred games not yet final, across everyone. */
+function pendingStarredGames(games, picks) {
+  const byKey = Object.fromEntries(games.map(g => [g.key, g]));
+  const keys = new Set();
+  for (const picker of [...NFL_PICKERS, COWHERD_PICKER]) {
+    for (const [key, pick] of Object.entries(picks[picker] || {})) {
+      if (pick.blazin && pick.line && !byKey[key]?.final) keys.add(key);
+    }
+  }
+  return keys.size;
 }
 
 function jsonResponse(data, status = 200) {

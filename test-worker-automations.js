@@ -164,7 +164,8 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(notification, undefined, 'data-only: the phone decides');
         assert.strictEqual(data.category, 'blazin_results');
         assert.strictEqual(data.id, 'blazin-2026-5');
-        assert.strictEqual(data.title, 'Week 5 Blazin’ 5');
+        assert.strictEqual(data.title, 'Blazin’ 5 Results - Week 5');
+        assert.strictEqual(data.spoilerTitle, 'Blazin’ 5 Results - Week 5');
         assert.match(data.spoilerBody, /Results are in/);
         assert.ok(!/\d-\d/.test(data.spoilerBody), 'no records in the spoiler-free text');
     });
@@ -250,7 +251,7 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(reminder.data.title, 'Sunday kickoff in 3 hours');
         const personal = JSON.parse(reminder.data.personal);
         assert.ok(!('Stephen' in personal), 'nothing to remind Stephen of');
-        assert.strictEqual(personal.Sean, 'You still have 3 games and 4 Blazin’ stars to pick.');
+        assert.strictEqual(personal.Sean, 'You still have 3 games to pick and 4 Blazin’ 5 picks to make.');
     });
 
     await check('not before the window, and once only within it', async () => {
@@ -272,6 +273,74 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         appsScriptCalls.length = 0;
         await tick(T.thu - 60 * 60 * 1000);
         assert.deepStrictEqual(appsScriptCalls, [], 'the slate is settled');
+    });
+
+    section('Admin Settings’ real-data tests');
+
+    async function preview(kind, auth = 'Bearer s') {
+        const r = await worker.fetch(new Request('https://w.example/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: auth },
+            body: JSON.stringify({ token: 'my-phone', preview: kind })
+        }), ENV, { waitUntil() {} });
+        return { status: r.status, json: await r.json() };
+    }
+
+    await check('the results test grades the real week and sends it to one phone', async () => {
+        const r = await preview('blazin_results');
+        assert.strictEqual(r.status, 200);
+        assert.strictEqual(r.json.sent, true);
+        assert.strictEqual(sent.length, 1);
+        assert.strictEqual(sent[0].token, 'my-phone');
+        assert.strictEqual(sent[0].topic, undefined, 'never the group');
+        assert.strictEqual(sent[0].data.title, 'Blazin’ 5 Results - Week 5');
+        assert.strictEqual(sent[0].data.body,
+            'Jason 3-1-1, Stephen 3-1-1, Dylan 2-2-1, Daniel 1-3-1, Sean 1-3-1. Cowherd 2-0-1.',
+            'the same grading as the real notification');
+        assert.ok(!kv.size, 'a test does not count as the week’s real send');
+    });
+
+    await check('mid-week it says how many starred games are still to finish', async () => {
+        world.board = scoreboard(['post', 'post', 'post', 'in', 'pre', 'pre'], FINALS);
+        await preview('blazin_results');
+        // Games 4 (in play), 5 and 6 are still to finish, and all carry a star
+        // - Jason's fifth is on Monday night.
+        assert.match(sent[0].data.body, /As it stands: 3 starred games still to finish\.$/);
+    });
+
+    await check('the reminder test lists everyone with picks to make', async () => {
+        world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        world.picks = {
+            Stephen: { ...Object.fromEntries(KEYS.map(k => [k, plain('home')])),
+                ...Object.fromEntries(KEYS.slice(1, 6).map(k => [k, star('home')])) },
+            Sean: { rams_seahawks: star('home'), jets_dolphins: plain('home') }
+        };
+        await preview('pick_reminders');
+        const { data, token } = sent[0];
+        assert.strictEqual(token, 'my-phone');
+        assert.strictEqual(data.category, 'pick_reminders');
+        assert.strictEqual(data.title, 'Still to pick - Week 5');
+        assert.strictEqual(data.personal, undefined, 'one list, not per-picker lines');
+        assert.ok(data.body.includes('Sean: 3 games to pick and 4 Blazin’ 5 picks to make'), data.body);
+        assert.ok(data.body.includes('Jason: 5 games to pick and 5 Blazin’ 5 picks to make'), data.body);
+        assert.ok(!data.body.includes('Stephen'), 'Stephen is done');
+    });
+
+    await check('nothing to show: nothing sent, and the answer says why', async () => {
+        world.picks = Object.fromEntries(['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'].map(p =>
+            [p, { ...Object.fromEntries(KEYS.map(k => [k, plain('home')])),
+                ...Object.fromEntries(KEYS.slice(0, 5).map(k => [k, star('home')])) }]));
+        world.board = scoreboard(['pre', 'pre', 'pre', 'pre', 'pre', 'pre']);
+        const r = await preview('pick_reminders');
+        assert.strictEqual(r.json.sent, false);
+        assert.match(r.json.note, /picks are in/);
+        assert.strictEqual(sent.length, 0);
+    });
+
+    await check('a preview still needs the admin key', async () => {
+        const r = await preview('blazin_results', 'Bearer wrong');
+        assert.strictEqual(r.status, 401);
+        assert.strictEqual(sent.length, 0);
     });
 
     section('The worker grades exactly as the site does');

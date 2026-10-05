@@ -36,6 +36,23 @@ object Notify {
         return post(adminKey, payload)
     }
 
+    /**
+     * A real-data test: the worker builds this week's actual Blazin' 5 result
+     * (as it stands) or the list of who still has picks to make, from the real
+     * picks, lines and scores, and sends it to this phone only.
+     *
+     * Returns (ok, what to show): the error, the worker's reason for sending
+     * nothing ("Everyone's picks are in"), or null when it was sent.
+     */
+    suspend fun sendPreview(adminKey: String, category: Category): Pair<Boolean, String?> {
+        val token = thisPhoneToken() ?: return false to "Could not get this phone's notification address."
+        val payload = JSONObject().put("token", token).put("preview", category.id)
+        val (error, answer) = postForAnswer(adminKey, payload)
+        if (error != null) return false to error
+        if (answer?.optBoolean("sent", true) == false) return true to answer.optString("note").ifBlank { "Nothing to send." }
+        return true to null
+    }
+
     /** This phone's FCM address. */
     private suspend fun thisPhoneToken(): String? = suspendCancellableCoroutine { cont ->
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
@@ -43,28 +60,33 @@ object Notify {
         }
     }
 
-    private fun post(adminKey: String, payload: JSONObject): String? {
+    private fun post(adminKey: String, payload: JSONObject): String? = postForAnswer(adminKey, payload).first
+
+    /** (error or null, the worker's JSON answer on success). */
+    private fun postForAnswer(adminKey: String, payload: JSONObject): Pair<String?, JSONObject?> {
         val connection = URL("$WORKER_URL/notify").openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
             connection.connectTimeout = 15_000
-            connection.readTimeout = 20_000
+            // A real-data test reads the Google Sheet, which can take 30s.
+            connection.readTimeout = 60_000
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $adminKey")
             connection.outputStream.use { it.write(payload.toString().toByteArray()) }
 
             val status = connection.responseCode
-            if (status in 200..299) return null
-            val error = (connection.errorStream ?: connection.inputStream)
+            val text = (if (status in 200..299) connection.inputStream else connection.errorStream ?: connection.inputStream)
                 ?.bufferedReader()?.use { it.readText() }
-                ?.let { runCatching { JSONObject(it).optString("error") }.getOrNull() }
-            when (status) {
+            val json = text?.let { runCatching { JSONObject(it) }.getOrNull() }
+            if (status in 200..299) return null to json
+            val error = when (status) {
                 401 -> "The admin key was not accepted."
-                else -> error?.takeIf { it.isNotBlank() } ?: "The server answered $status."
+                else -> json?.optString("error")?.takeIf { it.isNotBlank() } ?: "The server answered $status."
             }
+            error to null
         } catch (e: Exception) {
-            "Could not reach the server: ${e.message ?: e.javaClass.simpleName}"
+            "Could not reach the server: ${e.message ?: e.javaClass.simpleName}" to null
         } finally {
             connection.disconnect()
         }

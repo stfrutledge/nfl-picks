@@ -9,7 +9,7 @@ import java.time.ZonedDateTime
  */
 enum class Category(val id: String, val label: String, val description: String) {
     BLAZIN_RESULTS("blazin_results", "Blazin’ 5 results", "When the last starred game of the week is final."),
-    PICK_REMINDERS("pick_reminders", "Pick reminders", "Before kickoff, if you still have picks or stars to make."),
+    PICK_REMINDERS("pick_reminders", "Pick reminders", "Before kickoff, if you still have picks or Blazin’ 5 picks to make."),
     MESSAGES("messages", "Messages from Stephen", "Messages sent to the whole group.");
 
     companion object {
