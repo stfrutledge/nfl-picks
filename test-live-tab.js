@@ -37,7 +37,7 @@ function node(id, written) {
     };
 }
 
-function makeAppEnv({ withDom = false } = {}) {
+function makeAppEnv({ withDom = false, now = TEST_NOW } = {}) {
     const store = new Map();
     const written = {};
     // Stable per id: a test that looks an element up twice has to see the
@@ -106,7 +106,7 @@ function makeAppEnv({ withDom = false } = {}) {
         renderAsIsStandings, CURRENT_NFL_WEEK,
         toggleAsIsDetail, asIsPickDetail, asIsExpanded,
         asIsWeekRecord, formatWeekRecord, weekRecordTone, weekRecordInPlay,
-        setLiveSubcategory, LIVE_SUBCATEGORIES,
+        setLiveSubcategory, LIVE_SUBCATEGORIES, setLiveScope,
         __liveSubcategory: () => liveSubcategory,
         __setLiveScores: c => { liveScoresCache = c; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
@@ -125,7 +125,7 @@ function makeAppEnv({ withDom = false } = {}) {
     );
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
-        env.confirm, env.addEventListener, env.matchMedia, fixedClock(TEST_NOW));
+        env.confirm, env.addEventListener, env.matchMedia, fixedClock(now));
     api.__written = written;
     api.__node = nodeFor;
     return api;
@@ -1554,6 +1554,76 @@ check('the team column keeps its width and the pickers take the rest', () => {
     assert.ok(/flex:\s*1 1 auto/.test(pickers), 'the pickers fill what is left');
     assert.ok(/min-width:\s*0/.test(pickers), 'and can shrink below their content, so the chips wrap here');
     assert.ok(/flex-wrap:\s*wrap/.test(pickers), 'stacking inside their own column');
+});
+
+section('Season to Date and This Week');
+
+// Wednesday of week 2, so the season (weeks 1-2) and the week (2) differ.
+// Week 1: Stephen's star won. Week 2: his star is losing as it stands.
+function twoWeeks() {
+    const api = makeAppEnv({ withDom: true, now: '2026-09-16T16:00:00Z' });
+    api.NFL_GAMES_BY_WEEK[1] = [finalGame(1, 'Rams', 'Seahawks', 20, 24)];
+    api.NFL_GAMES_BY_WEEK[2] = [inProgress(1, 'Bills', 'Chiefs', 10, 20)];
+    api.__setState({
+        currentWeek: 2, currentPicker: 'Stephen',
+        allPicks: {
+            1: { Stephen: { rams_seahawks: b5('home') } },
+            2: { Stephen: { bills_chiefs: b5('away') } }
+        }
+    });
+    return api;
+}
+
+const stephenRow = api => {
+    const body = api.__written['as-is-standings-body'] || '';
+    return body.split('as-is-name">Stephen<')[1]?.split('</tr>')[0] || '';
+};
+const cells = row => [...row.matchAll(/<td[^>]*>([^<]*)<\/td>/g)].map(m => m[1]);
+
+check('Season to Date is the default, and counts both weeks', () => {
+    const api = twoWeeks();
+    api.renderLiveTab();
+    assert.deepStrictEqual(cells(stephenRow(api)).slice(0, 3), ['1', '1', '0'], 'won week 1, losing week 2');
+    assert.ok((api.__written['#as-is-standings-table thead'] || '').includes('Move'), 'with its Move column');
+});
+
+check('This Week counts this week alone, with games in progress as they stand', () => {
+    const api = twoWeeks();
+    api.setLiveScope('week');
+    assert.deepStrictEqual(cells(stephenRow(api)).slice(0, 3), ['0', '1', '0'], 'only the live week-2 loss');
+});
+
+check('This Week has no Move column', () => {
+    const api = twoWeeks();
+    api.setLiveScope('week');
+    const head = api.__written['#as-is-standings-table thead'] || '';
+    assert.ok(!head.includes('Move'), head);
+    assert.ok(!(api.__written['as-is-standings-body'] || '').includes('position-move'));
+});
+
+check('the note says which one is showing', () => {
+    const api = twoWeeks();
+    api.setLiveScope('week');
+    assert.strictEqual(api.__written['as-is-note:text'],
+        'Week 2 Blazin’ 5 only, with games in progress counted as they stand.');
+    api.setLiveScope('season');
+    assert.match(api.__written['as-is-note:text'], /^Season Blazin’ 5, .*Move is against the end of last week\.$/);
+});
+
+check('the scope survives a score refresh and a sub-tab switch', () => {
+    const api = twoWeeks();
+    api.setLiveScope('week');
+    api.renderLiveTab();                 // what every live poll does
+    api.setLiveSubcategory('line');
+    assert.ok(!(api.__written['#as-is-standings-table thead'] || '').includes('Move'), 'still This Week');
+    assert.match(api.__written['as-is-note:text'], /^Week 2 line picks, starred or not only/);
+});
+
+check('an unknown scope is ignored', () => {
+    const api = twoWeeks();
+    api.setLiveScope('week');
+    api.setLiveScope('fortnight');
+    assert.ok(!(api.__written['#as-is-standings-table thead'] || '').includes('Move'));
 });
 
 if (failures > 0) {

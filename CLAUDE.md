@@ -264,6 +264,8 @@ The detail **reuses the Team Records expansion wholesale** - `team-details-row`,
 
 Which rows are open lives in `asIsExpanded`, **outside the render**: the table is rebuilt on every score poll, so an open row would otherwise snap shut every thirty seconds while it was being read.
 
+**Season to Date / This Week.** A toggle above the table (`liveScope`, `setLiveScope`, the same `.scope-toggle` as the Standings tab) switches it between the season to date and the current week alone, both with games in progress counted as they stand. This Week is the same engine over `currentWeek` only, and drops the Move column (`showMove: false`): Move is a place in the season table against last week's, which one week does not have. The scope is module state, so the 30s score refresh keeps it.
+
 **The as-is column set is the record plus a Move.** Last 3-Wk, Best Week and Year Chg describe the shape of a season, which says nothing about where an afternoon is heading. Move is the position now — live games counted as they stand — against the table as it finished **last week**, from `asIsPositionChange()`. Equal records share a place (`rankStandings`), or five pickers level on 0-0 get five arbitrary places and the season's first result reads as a four-place climb. A dash covers both "level" and "nothing to compare against", which is every row in week 1.
 
 `asIsPositionChange()` takes its week range as a parameter, defaulting to `regularSeasonWeekRange()`. That is the only reason a later week can be tested at all: `CURRENT_NFL_WEEK` comes off the clock, and week 1 is the one week where this column does nothing.

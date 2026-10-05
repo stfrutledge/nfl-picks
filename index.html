@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=7de621bc">
+    <link rel="stylesheet" href="styles.css?v=c5640075">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -629,6 +629,15 @@
                 <!-- No frame of its own: the table draws one, and the section
                      title above is the heading. Same call as the Standings tab. -->
                 <div class="as-is-panel">
+                    <!-- The same toggle as the Standings tab's: the season so
+                         far, or this week on its own. Both count games in
+                         progress as they stand. -->
+                    <div class="scope-row live-scope-row" id="live-scope">
+                        <div class="scope-toggle" role="group" aria-label="Live table scope">
+                            <button class="subtab active" data-live-scope="season" id="live-scope-season">Season to Date</button>
+                            <button class="subtab" data-live-scope="week" id="live-scope-week">This Week</button>
+                        </div>
+                    </div>
                     <div class="as-is-heading">
                         <span class="as-is-note" id="as-is-note">Season Blazin&rsquo; 5, with games in progress counted as they stand. Move is against the end of last week.</span>
                     </div>
@@ -908,6 +917,6 @@
     <script src="charts.js?v=70009325"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=0644cc72"></script>
+    <script src="app.js?v=0fe94585"></script>
 </body>
 </html>

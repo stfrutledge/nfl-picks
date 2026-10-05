@@ -4092,6 +4092,10 @@ function setupTabs() {
     document.querySelectorAll('[data-standings-scope]').forEach(btn => {
         btn.addEventListener('click', () => setStandingsScope(btn.dataset.standingsScope));
     });
+    // The Live tab's table: the season to date, or this week on its own.
+    document.querySelectorAll('[data-live-scope]').forEach(btn => {
+        btn.addEventListener('click', () => setLiveScope(btn.dataset.liveScope));
+    });
     const standingsWeekDropdown = document.getElementById('standings-week');
     if (standingsWeekDropdown) {
         standingsWeekDropdown.addEventListener('change', (e) => {
@@ -5921,11 +5925,19 @@ function liveGameRank(game, weekResults) {
 // currentSubcategory on purpose - the two tabs are looked at for different
 // reasons and should not drag each other about.
 const LIVE_SUBCATEGORIES = {
-    blazin: { label: 'Blazin’ 5', note: 'Season Blazin’ 5' },
-    line:   { label: 'Line Picks',    note: 'Season line picks, starred or not' },
-    winner: { label: 'Straight Up',   note: 'Season straight-up picks' }
+    blazin: { label: 'Blazin’ 5', note: 'Season Blazin’ 5', weekNote: 'Blazin’ 5' },
+    line:   { label: 'Line Picks',    note: 'Season line picks, starred or not', weekNote: 'line picks, starred or not' },
+    winner: { label: 'Straight Up',   note: 'Season straight-up picks', weekNote: 'straight-up picks' }
 };
 let liveSubcategory = 'blazin';
+
+/**
+ * What the Live tab's table covers: 'season' (the season to date) or 'week'
+ * (this week on its own). Both count games in progress as they stand. Module
+ * state, like standingsScope, so a score refresh redraws the scope being read
+ * rather than snapping back to the season.
+ */
+let liveScope = 'season';
 
 /** Switch the Live tab between its three tables. An unknown name is ignored. */
 function setLiveSubcategory(subcategory) {
@@ -5934,6 +5946,13 @@ function setLiveSubcategory(subcategory) {
     document.querySelectorAll('#live-subtabs .subtab').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.liveSubcategory === subcategory);
     });
+    renderLiveTab();
+}
+
+/** Switch the Live tab's table between the season to date and this week. */
+function setLiveScope(scope) {
+    if (scope !== 'season' && scope !== 'week') return;
+    liveScope = scope;
     renderLiveTab();
 }
 
@@ -5953,10 +5972,16 @@ function renderLiveTab() {
             : `Week ${getWeekDisplayName(currentWeek)}`;
     }
 
+    document.querySelectorAll('[data-live-scope]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.liveScope === liveScope);
+    });
+
     const note = document.getElementById('as-is-note');
     if (note) {
-        note.textContent = `${view.note}, with games in progress counted as they stand. `
-            + 'Move is against the end of last week.';
+        note.textContent = liveScope === 'week'
+            ? `${label?.textContent || 'This week'} ${view.weekNote} only, with games in progress counted as they stand.`
+            : `${view.note}, with games in progress counted as they stand. `
+                + 'Move is against the end of last week.';
     }
 
     renderAsIsStandings(liveSubcategory);
@@ -6190,8 +6215,14 @@ function standingsMoves({ first, last }, category, { includeLive = false } = {})
  * which is what Last 3-Wk, Best Week and Year Chg describe, says nothing
  * about where an afternoon is heading.
  */
-function renderAsIsStandings(category = liveSubcategory) {
-    const { first, last } = regularSeasonWeekRange();
+function renderAsIsStandings(category = liveSubcategory, scope = liveScope) {
+    // This Week is the same engine over the one week. It has no Move: that is
+    // a place in the season table against last week's, which a single week
+    // does not have.
+    const thisWeek = scope === 'week';
+    const { first, last } = thisWeek
+        ? { first: currentWeek, last: currentWeek }
+        : regularSeasonWeekRange();
     const computed = calculateStatsForWeeks(
         first, last, PICKERS_WITH_COWHERD, { includeLive: true });
     renderStandingsTable(standingsFromComputed(computed, category), {
@@ -6200,7 +6231,8 @@ function renderAsIsStandings(category = liveSubcategory) {
         category,
         setTitle: false,
         columns: 'as-is',
-        positionChange: asIsPositionChange(undefined, category),
+        showMove: !thisWeek,
+        positionChange: thisWeek ? null : asIsPositionChange(undefined, category),
         // currentWeek, not `last`: it is the week the detail rows open onto,
         // and the box is the summary of what is behind them.
         weekRecord: asIsWeekRecord(currentWeek, category)
@@ -9482,7 +9514,8 @@ function renderStandingsTable(stats, {
     columns = 'season',
     positionChange = null,
     weekRecord = null,
-    week = null
+    week = null,
+    showMove = true
 } = {}) {
     const tbody = document.getElementById(tbodyId);
     const thead = document.querySelector(`#${tableId} thead`);
@@ -9537,7 +9570,7 @@ function renderStandingsTable(stats, {
                 <th>Push</th>
                 <th>%</th>
                 <th>Total</th>
-                <th title="Position change since the end of last week">Move</th>
+                ${showMove ? '<th title="Position change since the end of last week">Move</th>' : ''}
             </tr>
         `;
 
@@ -9568,11 +9601,11 @@ function renderStandingsTable(stats, {
                     <td>${picker.pushes || 0}</td>
                     <td class="${pctCellClass(picker.percentage)}">${pct}</td>
                     <td>${picker.totalPicks || 0}</td>
-                    <td class="position-move">${formatPositionMove(move)}</td>
+                    ${showMove ? `<td class="position-move">${formatPositionMove(move)}</td>` : ''}
                 </tr>
                 ${open ? `
                 <tr class="team-details-row">
-                    <td colspan="7">
+                    <td colspan="${showMove ? 7 : 6}">
                         <div class="team-details-container">${asIsPickDetail(picker.name)}</div>
                     </td>
                 </tr>` : ''}
