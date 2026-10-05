@@ -2832,12 +2832,11 @@ function setupSeasonDropdown() {
     // Setup history section dropdowns
     const historySeasonDropdown = document.getElementById('history-season-dropdown');
     if (historySeasonDropdown && hasHistoricalSeasons) {
-        // Show all seasons including current (2025 season is complete)
-        // Add "Lifetime" option, then seasons with most recent selected by default
-        let optionsHtml = '<option value="lifetime">Lifetime</option>';
-        AVAILABLE_SEASONS.forEach((season, index) => {
-            const isSelected = index === 0 ? ' selected' : '';
-            optionsHtml += `<option value="${season}"${isSelected}>${season}</option>`;
+        // "Lifetime" first and selected by default, then every season, newest
+        // first. History opens on the all-time view.
+        let optionsHtml = '<option value="lifetime" selected>Lifetime</option>';
+        AVAILABLE_SEASONS.forEach(season => {
+            optionsHtml += `<option value="${season}">${season}</option>`;
         });
         historySeasonDropdown.innerHTML = optionsHtml;
 
@@ -4803,13 +4802,17 @@ async function setActiveCategory(category) {
         setActiveSubcategory(currentSubcategory);
     } else if (category === 'history') {
         historySection?.classList.remove('hidden');
-        // Load the first available season (includes current since 2025 is complete)
+        // Lifetime by default; after that, whichever season was last chosen,
+        // so a trip to another tab does not throw the reader back to the start.
         if (AVAILABLE_SEASONS.length > 0) {
             const historySeasonDropdown = document.getElementById('history-season-dropdown');
-            if (historySeasonDropdown) {
-                historySeasonDropdown.value = AVAILABLE_SEASONS[0];
+            const value = historySeasonDropdown?.value || 'lifetime';
+            if (value === 'lifetime') {
+                if (historySeasonDropdown) historySeasonDropdown.value = 'lifetime';
+                loadLifetimeHistory();
+            } else {
+                loadHistorySeason(Number(value));
             }
-            loadHistorySeason(AVAILABLE_SEASONS[0]);
         }
     }
 
