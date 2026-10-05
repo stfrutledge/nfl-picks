@@ -391,11 +391,43 @@ async function handleNotify(request, env) {
   if (!body) return jsonResponse({ error: 'Message is empty' }, 400);
   if (body.length > MAX_BODY) return jsonResponse({ error: `Message is over ${MAX_BODY} characters` }, 400);
 
+  const sent = await sendToGroup(env, {
+    category: 'messages',
+    title,
+    body,
+    id: `msg-${Date.now()}`,
+  });
+  if (!sent.ok) return jsonResponse({ error: sent.error, detail: sent.detail }, sent.status || 502);
+  return jsonResponse({ ok: true, name: sent.name });
+}
+
+/**
+ * Send to every phone on the group topic, as a data-only message.
+ *
+ * Data-only on purpose: the system never draws it, so each phone decides for
+ * itself (the app's Delivery.decide) whether that category is switched on,
+ * whether it is meant for its picker, whether to hide scores, and whether to
+ * hold it until that person's quiet hours end, in their own time zone. A
+ * notification payload would be drawn by the system the moment it landed,
+ * 4am in Ireland included.
+ *
+ * `data`: { category, title, body, id, spoilerTitle?, spoilerBody?,
+ * personal? (object), expiresAt? (ms) } - all sent as strings, as FCM requires.
+ *
+ * Returns { ok, name } or { ok: false, status, error, detail }.
+ */
+async function sendToGroup(env, data) {
   let account;
   try {
     account = JSON.parse(env.FCM_SERVICE_ACCOUNT);
   } catch (e) {
-    return jsonResponse({ error: 'FCM_SERVICE_ACCOUNT is not valid JSON' }, 500);
+    return { ok: false, status: 500, error: 'FCM_SERVICE_ACCOUNT is not valid JSON' };
+  }
+
+  const strings = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null) continue;
+    strings[key] = typeof value === 'string' ? value : JSON.stringify(value);
   }
 
   const token = await googleAccessToken(account);
@@ -407,20 +439,19 @@ async function handleNotify(request, env) {
       body: JSON.stringify({
         message: {
           topic: GROUP_TOPIC,
-          notification: { title, body },
-          // High priority so it is shown straight away, on the channel the
-          // app creates for group messages.
-          android: { priority: 'HIGH', notification: { channel_id: GROUP_TOPIC } },
+          data: strings,
+          // High priority wakes the app at once to decide, even in Doze.
+          android: { priority: 'HIGH' },
         },
       }),
     });
 
   if (!response.ok) {
     const detail = await response.text();
-    return jsonResponse({ error: `FCM answered ${response.status}`, detail: detail.slice(0, 500) }, 502);
+    return { ok: false, status: 502, error: `FCM answered ${response.status}`, detail: detail.slice(0, 500) };
   }
   const sent = await response.json();
-  return jsonResponse({ ok: true, name: sent.name });
+  return { ok: true, name: sent.name };
 }
 
 /**

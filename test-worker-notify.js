@@ -131,7 +131,7 @@ function section(name) { console.log(`\n${name}`); }
 
     section('A good request goes to the group topic');
 
-    await check('it is sent to the topic, high priority, on the group channel', async () => {
+    await check('it is sent to the topic, data-only and high priority, as a message', async () => {
         const r = await notify({ body: { title: 'Week 5', body: 'Picks lock at 8:15' } });
         assert.strictEqual(r.status, 200);
         assert.deepStrictEqual(await r.json(), { ok: true, name: 'projects/nfl-picks-test/messages/1' });
@@ -140,17 +140,27 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(send.url, 'https://fcm.googleapis.com/v1/projects/nfl-picks-test/messages:send');
         assert.strictEqual(send.headers.Authorization, 'Bearer google-token');
         const { message } = JSON.parse(send.body);
-        assert.deepStrictEqual(message, {
-            topic: 'group',
-            notification: { title: 'Week 5', body: 'Picks lock at 8:15' },
-            android: { priority: 'HIGH', notification: { channel_id: 'group' } }
-        });
+        assert.strictEqual(message.topic, 'group');
+        assert.deepStrictEqual(message.android, { priority: 'HIGH' });
+        assert.strictEqual(message.data.category, 'messages');
+        assert.strictEqual(message.data.title, 'Week 5');
+        assert.strictEqual(message.data.body, 'Picks lock at 8:15');
+        assert.match(message.data.id, /^msg-\d+$/);
+    });
+
+    await check('no notification payload: the system must not draw it before the phone decides', async () => {
+        // A notification payload is drawn the moment it lands, 4am in Ireland
+        // included, and ignores the person's switches.
+        await notify();
+        const { message } = JSON.parse(fcmCalls()[0].body);
+        assert.strictEqual(message.notification, undefined);
+        Object.values(message.data).forEach(v => assert.strictEqual(typeof v, 'string', 'FCM data must be strings'));
     });
 
     await check('a blank title becomes "NFL Picks"', async () => {
         await notify({ body: { title: '  ', body: 'hello' } });
         const { message } = JSON.parse(fcmCalls()[0].body);
-        assert.strictEqual(message.notification.title, 'NFL Picks');
+        assert.strictEqual(message.data.title, 'NFL Picks');
     });
 
     await check('the JWT is signed by the service account and verifies', async () => {
