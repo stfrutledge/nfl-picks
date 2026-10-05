@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=c5640075">
+    <link rel="stylesheet" href="styles.css?v=5aa3e60a">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -623,7 +623,9 @@
             <!-- Live: this week's Blazin' 5 games and the as-is table -->
             <section id="live-section" class="live-section hidden">
                 <div class="live-header">
-                    <h2 class="live-title"><span id="live-title-category">Blazin&rsquo; 5</span> &mdash; <span id="live-week-label">--</span> (As it stands)</h2>
+                    <!-- "Blazin' 5 - Week 5" or "Blazin' 5 - Season to Date": the sub-tab, then
+                         what the table below covers (the scope toggle). -->
+                    <h2 class="live-title"><span id="live-title-category">Blazin&rsquo; 5</span> &mdash; <span id="live-scope-label">Season to Date</span></h2>
                 </div>
 
                 <!-- No frame of its own: the table draws one, and the section
@@ -637,9 +639,6 @@
                             <button class="subtab active" data-live-scope="season" id="live-scope-season">Season to Date</button>
                             <button class="subtab" data-live-scope="week" id="live-scope-week">This Week</button>
                         </div>
-                    </div>
-                    <div class="as-is-heading">
-                        <span class="as-is-note" id="as-is-note">Season Blazin&rsquo; 5, with games in progress counted as they stand. Move is against the end of last week.</span>
                     </div>
                     <div class="standings-table-container">
                         <table class="standings-table" id="as-is-standings-table">
@@ -917,6 +916,6 @@
     <script src="charts.js?v=70009325"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=0fe94585"></script>
+    <script src="app.js?v=5dbff6d3"></script>
 </body>
 </html>

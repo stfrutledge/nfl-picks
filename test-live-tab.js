@@ -711,14 +711,14 @@ check('each category scores the week by its own rule', () => {
     assert.strictEqual(rec('winner'), '1-0-0', 'the winner, not the line');
 });
 
-check('switching the sub-tab redraws the table, the title and the note', () => {
+check('switching the sub-tab redraws the table and the title', () => {
     const api = setup(threeRecords());
     api.asIsExpanded.clear();
 
     api.setLiveSubcategory('line');
     assert.strictEqual(api.__liveSubcategory(), 'line');
     assert.strictEqual(api.__written['live-title-category:text'], 'Line Picks');
-    assert.match(api.__written['as-is-note:text'] || '', /^Season line picks/);
+    assert.strictEqual(api.__written['live-scope-label:text'], 'Season to Date');
     let stephen = (api.__written['as-is-standings-body'] || '').split('as-is-name">Stephen<')[1] || '';
     assert.match(stephen, /week-record[^>]*>1-0-0</, 'the Line Picks in play');
 
@@ -1601,13 +1601,21 @@ check('This Week has no Move column', () => {
     assert.ok(!(api.__written['as-is-standings-body'] || '').includes('position-move'));
 });
 
-check('the note says which one is showing', () => {
+check('the title follows the toggle: "Week 2" or "Season to Date"', () => {
     const api = twoWeeks();
+    api.renderLiveTab();
+    assert.strictEqual(api.__written['live-title-category:text'], 'Blazin’ 5');
+    assert.strictEqual(api.__written['live-scope-label:text'], 'Season to Date');
     api.setLiveScope('week');
-    assert.strictEqual(api.__written['as-is-note:text'],
-        'Week 2 Blazin’ 5 only, with games in progress counted as they stand.');
+    assert.strictEqual(api.__written['live-scope-label:text'], 'Week 2');
     api.setLiveScope('season');
-    assert.match(api.__written['as-is-note:text'], /^Season Blazin’ 5, .*Move is against the end of last week\.$/);
+    assert.strictEqual(api.__written['live-scope-label:text'], 'Season to Date');
+});
+
+check('there is no explanatory line under the toggle any more', () => {
+    const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    assert.ok(!html.includes('as-is-note'));
+    assert.ok(!html.includes('(As it stands)'));
 });
 
 check('the scope survives a score refresh and a sub-tab switch', () => {
@@ -1616,7 +1624,8 @@ check('the scope survives a score refresh and a sub-tab switch', () => {
     api.renderLiveTab();                 // what every live poll does
     api.setLiveSubcategory('line');
     assert.ok(!(api.__written['#as-is-standings-table thead'] || '').includes('Move'), 'still This Week');
-    assert.match(api.__written['as-is-note:text'], /^Week 2 line picks, starred or not only/);
+    assert.strictEqual(api.__written['live-title-category:text'], 'Line Picks');
+    assert.strictEqual(api.__written['live-scope-label:text'], 'Week 2');
 });
 
 check('an unknown scope is ignored', () => {

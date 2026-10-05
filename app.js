@@ -5925,9 +5925,9 @@ function liveGameRank(game, weekResults) {
 // currentSubcategory on purpose - the two tabs are looked at for different
 // reasons and should not drag each other about.
 const LIVE_SUBCATEGORIES = {
-    blazin: { label: 'Blazin’ 5', note: 'Season Blazin’ 5', weekNote: 'Blazin’ 5' },
-    line:   { label: 'Line Picks',    note: 'Season line picks, starred or not', weekNote: 'line picks, starred or not' },
-    winner: { label: 'Straight Up',   note: 'Season straight-up picks', weekNote: 'straight-up picks' }
+    blazin: { label: 'Blazin’ 5' },
+    line:   { label: 'Line Picks' },
+    winner: { label: 'Straight Up' }
 };
 let liveSubcategory = 'blazin';
 
@@ -5965,24 +5965,20 @@ function renderLiveTab() {
     const title = document.getElementById('live-title-category');
     if (title) title.textContent = view.label;
 
-    const label = document.getElementById('live-week-label');
+    // The title says what the table covers, and follows the toggle: "Week 5"
+    // or "Season to Date".
+    const label = document.getElementById('live-scope-label');
     if (label) {
-        label.textContent = isPlayoffWeek(currentWeek)
-            ? getWeekDisplayName(currentWeek)
-            : `Week ${getWeekDisplayName(currentWeek)}`;
+        label.textContent = liveScope === 'week'
+            ? (isPlayoffWeek(currentWeek)
+                ? getWeekDisplayName(currentWeek)
+                : `Week ${getWeekDisplayName(currentWeek)}`)
+            : 'Season to Date';
     }
 
     document.querySelectorAll('[data-live-scope]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.liveScope === liveScope);
     });
-
-    const note = document.getElementById('as-is-note');
-    if (note) {
-        note.textContent = liveScope === 'week'
-            ? `${label?.textContent || 'This week'} ${view.weekNote} only, with games in progress counted as they stand.`
-            : `${view.note}, with games in progress counted as they stand. `
-                + 'Move is against the end of last week.';
-    }
 
     renderAsIsStandings(liveSubcategory);
     // The game boxes follow the record: starred games, every game with a line
