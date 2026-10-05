@@ -157,6 +157,55 @@ function section(name) { console.log(`\n${name}`); }
         Object.values(message.data).forEach(v => assert.strictEqual(typeof v, 'string', 'FCM data must be strings'));
     });
 
+    section('A test from Admin Settings goes to one phone');
+
+    await check('with a token it goes to that phone, not the group', async () => {
+        await notify({ body: { title: 'Test', body: 'hello', token: 'phone-token-123' } });
+        const { message } = JSON.parse(fcmCalls()[0].body);
+        assert.strictEqual(message.token, 'phone-token-123');
+        assert.strictEqual(message.topic, undefined, 'never the whole group');
+        assert.match(message.data.id, /^test-/);
+    });
+
+    await check('a test can be any category, with spoiler and personal fields', async () => {
+        await notify({ body: {
+            title: 'Week 5 Blazin’ 5', body: 'Jason 5-0', token: 't',
+            category: 'blazin_results', spoilerTitle: 'Week 5', spoilerBody: 'Results are in.'
+        } });
+        let { message } = JSON.parse(fcmCalls()[0].body);
+        assert.strictEqual(message.data.category, 'blazin_results');
+        assert.strictEqual(message.data.spoilerBody, 'Results are in.');
+
+        await notify({ body: {
+            title: 'Sunday kickoff in 3 hours', body: '', token: 't',
+            category: 'pick_reminders', personal: { Stephen: 'You still have 2 games to pick.' }
+        } });
+        ({ message } = JSON.parse(fcmCalls()[1].body));
+        assert.strictEqual(message.data.category, 'pick_reminders');
+        assert.deepStrictEqual(JSON.parse(message.data.personal), { Stephen: 'You still have 2 games to pick.' });
+    });
+
+    await check('a group message is always a message, whatever category it claims', async () => {
+        // Only a one-phone test may pretend to be results or a reminder.
+        await notify({ body: { body: 'hi', category: 'blazin_results', spoilerBody: 'x' } });
+        const { message } = JSON.parse(fcmCalls()[0].body);
+        assert.strictEqual(message.topic, 'group');
+        assert.strictEqual(message.data.category, 'messages');
+        assert.strictEqual(message.data.spoilerBody, undefined);
+    });
+
+    await check('a test still needs the admin key', async () => {
+        const r = await notify({ auth: 'Bearer nope', body: { body: 'hi', token: 't' } });
+        assert.strictEqual(r.status, 401);
+        assert.strictEqual(fcmCalls().length, 0);
+    });
+
+    await check('an unknown category on a test falls back to a message', async () => {
+        await notify({ body: { body: 'hi', token: 't', category: 'everything' } });
+        const { message } = JSON.parse(fcmCalls()[0].body);
+        assert.strictEqual(message.data.category, 'messages');
+    });
+
     await check('a blank title becomes "NFL Picks"', async () => {
         await notify({ body: { title: '  ', body: 'hello' } });
         const { message } = JSON.parse(fcmCalls()[0].body);

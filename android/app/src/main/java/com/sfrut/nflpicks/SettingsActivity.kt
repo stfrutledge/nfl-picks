@@ -661,6 +661,7 @@ class SettingsActivity : ComponentActivity() {
                 } else {
                     AdminToolsCard()
                     AdminCard()
+                    if (NflPicksApp.pushConfigured) TestCard()
                     Text(
                         "LOCK ADMIN ON THIS PHONE",
                         style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
@@ -675,6 +676,63 @@ class SettingsActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * One of each kind of notification, sent to this phone only. Each goes
+     * through the same rules as the real thing - its category switch,
+     * spoiler-free and quiet hours - so a test held overnight is a test passed.
+     */
+    @Composable
+    private fun TestCard() {
+        val key = remember { prefs.adminKey }
+        var sending by remember { mutableStateOf<Category?>(null) }
+        var status by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+        val scope = rememberCoroutineScope()
+
+        fun test(category: Category, title: String, body: String,
+                 spoilerTitle: String? = null, spoilerBody: String? = null, personal: Map<String, String>? = null) {
+            sending = category
+            status = null
+            scope.launch {
+                val error = withContext(Dispatchers.IO) {
+                    Notify.sendTest(key, category, title, body, spoilerTitle, spoilerBody, personal)
+                }
+                sending = null
+                status = if (error == null) {
+                    val rules = buildList {
+                        if (!prefs.categoryOn(category)) add("${category.label} is switched off, so it won't show")
+                        else if (prefs.quietOn && QuietHours.isQuiet(
+                                java.time.LocalTime.now().let { it.hour * 60 + it.minute }, prefs.quietStart, prefs.quietEnd))
+                            add("it's quiet hours, so it'll show at ${QuietHours.format(prefs.quietEnd)}")
+                    }
+                    true to (if (rules.isEmpty()) "Sent to this phone." else "Sent to this phone, but ${rules.first()}.")
+                } else false to error
+            }
+        }
+
+        Card {
+            Label("Test on this phone")
+            Body("Sends to this phone only - nobody else sees it. Each follows your notification settings, as the real one would.")
+            PrimaryButton(if (sending == Category.MESSAGES) "Sending..." else "Test message",
+                enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
+                test(Category.MESSAGES, "NFL Picks", "A test message from Admin Settings.")
+            }
+            PrimaryButton(if (sending == Category.BLAZIN_RESULTS) "Sending..." else "Test Blazin’ results",
+                enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
+                test(Category.BLAZIN_RESULTS, "Test Blazin’ 5",
+                    "Jason 4-1, Sean 3-2, Stephen 3-2, Dylan 2-3, Daniel 1-4. Cowherd 2-3.",
+                    spoilerTitle = "Test Blazin’ 5",
+                    spoilerBody = "Results are in. Open the app to see how everyone did.")
+            }
+            PrimaryButton(if (sending == Category.PICK_REMINDERS) "Sending..." else "Test pick reminder",
+                enabled = sending == null, modifier = Modifier.fillMaxWidth()) {
+                test(Category.PICK_REMINDERS, "Sunday kickoff in 3 hours", "",
+                    personal = mapOf((prefs.picker ?: ADMIN_PICKER) to
+                        "You still have 3 games and 2 Blazin’ stars to pick."))
+            }
+            status?.let { (ok, text) -> StatusLine(on = ok, text) }
         }
     }
 

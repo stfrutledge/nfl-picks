@@ -363,6 +363,8 @@ const GROUP_TOPIC = 'group';
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const MAX_TITLE = 100;
 const MAX_BODY = 1000;
+/** The kinds of notification the app knows (its Category ids). */
+const NOTIFY_CATEGORIES = ['blazin_results', 'pick_reminders', 'messages'];
 
 /**
  * POST { title, body } with `Authorization: Bearer <NOTIFY_SECRET>`, and it is
@@ -396,15 +398,34 @@ async function handleNotify(request, env) {
   }
   const title = String(payload?.title ?? '').trim().slice(0, MAX_TITLE) || 'NFL Picks';
   const body = String(payload?.body ?? '').trim();
-  if (!body) return jsonResponse({ error: 'Message is empty' }, 400);
+  if (!body && !(payload?.personal && payload?.token)) return jsonResponse({ error: 'Message is empty' }, 400);
   if (body.length > MAX_BODY) return jsonResponse({ error: `Message is over ${MAX_BODY} characters` }, 400);
 
+  // A test from Admin Settings goes to the admin's own phone (its FCM token)
+  // rather than the group, and may be any category, with the extra fields a
+  // real one carries - so spoilers, reminders and quiet hours can be tried on
+  // demand. The secret is still required: a token alone sends nothing.
+  const token = typeof payload?.token === 'string' ? payload.token.trim() : '';
+  if (token.length > 4096) return jsonResponse({ error: 'Bad token' }, 400);
+  const category = token && NOTIFY_CATEGORIES.includes(payload?.category) ? payload.category : 'messages';
+  const extra = {};
+  if (token) {
+    for (const field of ['spoilerTitle', 'spoilerBody']) {
+      if (typeof payload?.[field] === 'string') extra[field] = payload[field].slice(0, MAX_BODY);
+    }
+    if (payload?.personal && typeof payload.personal === 'object') {
+      extra.personal = Object.fromEntries(Object.entries(payload.personal)
+        .filter(([, v]) => typeof v === 'string').map(([k, v]) => [String(k).slice(0, 40), v.slice(0, MAX_BODY)]));
+    }
+  }
+
   const sent = await sendToGroup(env, {
-    category: 'messages',
+    category,
     title,
     body,
-    id: `msg-${Date.now()}`,
-  });
+    id: `${token ? 'test' : 'msg'}-${Date.now()}`,
+    ...extra,
+  }, { token: token || null });
   if (!sent.ok) return jsonResponse({ error: sent.error, detail: sent.detail }, sent.status || 502);
   return jsonResponse({ ok: true, name: sent.name });
 }
@@ -422,9 +443,11 @@ async function handleNotify(request, env) {
  * `data`: { category, title, body, id, spoilerTitle?, spoilerBody?,
  * personal? (object), expiresAt? (ms) } - all sent as strings, as FCM requires.
  *
+ * `token` sends to that one phone instead (Admin Settings' tests).
+ *
  * Returns { ok, name } or { ok: false, status, error, detail }.
  */
-async function sendToGroup(env, data) {
+async function sendToGroup(env, data, { token = null } = {}) {
   let account;
   try {
     account = JSON.parse(env.FCM_SERVICE_ACCOUNT);
@@ -438,15 +461,16 @@ async function sendToGroup(env, data) {
     strings[key] = typeof value === 'string' ? value : JSON.stringify(value);
   }
 
-  const token = await googleAccessToken(account);
+  const accessToken = await googleAccessToken(account);
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`,
     {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: {
-          topic: GROUP_TOPIC,
+          // One phone for a test, the whole group otherwise.
+          ...(token ? { token } : { topic: GROUP_TOPIC }),
           data: strings,
           // High priority wakes the app at once to decide, even in Doze.
           android: { priority: 'HIGH' },
