@@ -1612,9 +1612,25 @@ check('the title follows the toggle: "Week 2" or "Season to Date"', () => {
     assert.strictEqual(api.__written['live-scope-label:text'], 'Season to Date');
 });
 
-check('there is no explanatory line under the toggle any more', () => {
+check('the line under the toggle is worded for the view', () => {
+    const api = twoWeeks();
+    api.renderLiveTab();
+    assert.strictEqual(api.__written['as-is-note:text'],
+        'Season Blazin’ 5, with games in progress counted as they stand. Move is against the end of last week.');
+    api.setLiveScope('week');
+    assert.strictEqual(api.__written['as-is-note:text'],
+        'This week’s Blazin’ 5 only, with games in progress counted as they stand.', 'no Move to mention');
+    api.setLiveSubcategory('line');
+    assert.strictEqual(api.__written['as-is-note:text'],
+        'This week’s line picks only, starred or not, with games in progress counted as they stand.');
+    api.setLiveScope('season');
+    api.setLiveSubcategory('winner');
+    assert.strictEqual(api.__written['as-is-note:text'],
+        'Season straight-up picks, with games in progress counted as they stand. Move is against the end of last week.');
+});
+
+check('the title no longer says "(As it stands)"', () => {
     const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    assert.ok(!html.includes('as-is-note'));
     assert.ok(!html.includes('(As it stands)'));
 });
 

@@ -5925,9 +5925,9 @@ function liveGameRank(game, weekResults) {
 // currentSubcategory on purpose - the two tabs are looked at for different
 // reasons and should not drag each other about.
 const LIVE_SUBCATEGORIES = {
-    blazin: { label: 'Blazin’ 5' },
-    line:   { label: 'Line Picks' },
-    winner: { label: 'Straight Up' }
+    blazin: { label: 'Blazin’ 5',  picks: 'Blazin’ 5' },
+    line:   { label: 'Line Picks',  picks: 'line picks', which: ', starred or not' },
+    winner: { label: 'Straight Up', picks: 'straight-up picks' }
 };
 let liveSubcategory = 'blazin';
 
@@ -5979,6 +5979,16 @@ function renderLiveTab() {
     document.querySelectorAll('[data-live-scope]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.liveScope === liveScope);
     });
+
+    // What the table counts, for the sub-tab and the scope. This Week has no
+    // Move column, so its line says nothing about one.
+    const note = document.getElementById('as-is-note');
+    if (note) {
+        note.textContent = liveScope === 'week'
+            ? `This week’s ${view.picks} only${view.which || ''}, with games in progress counted as they stand.`
+            : `Season ${view.picks}${view.which || ''}, with games in progress counted as they stand. `
+                + 'Move is against the end of last week.';
+    }
 
     renderAsIsStandings(liveSubcategory);
     // The game boxes follow the record: starred games, every game with a line

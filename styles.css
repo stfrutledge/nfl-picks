@@ -6229,6 +6229,19 @@ body.standings-provisional #records-analysis-section {
     margin-bottom: 26px;
 }
 
+.as-is-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.as-is-note {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
 .standings-table .position-move {
     text-align: center;
     font-weight: 700;
