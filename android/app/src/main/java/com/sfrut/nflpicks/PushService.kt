@@ -14,7 +14,7 @@ import com.google.firebase.messaging.RemoteMessage
  *
  * A message with a notification payload - the worker before 1.7's changes -
  * is drawn by the system when the app is in the background, and handed here
- * only in the foreground. It is shown as a message from Stephen.
+ * only in the foreground. It is shown as a general message.
  */
 class PushService : FirebaseMessagingService() {
 
