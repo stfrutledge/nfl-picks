@@ -695,28 +695,54 @@ function getCachedSchedule(week) {
             }
             const minsAgo = (age / (1000 * 60)).toFixed(0);
             console.log(`[ESPN] Using cached schedule for week ${week} (${minsAgo} mins old, ${data.length} games)`);
-            // Sort cached data by kickoff time to ensure proper order
-            data.sort((a, b) => {
-                const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
-                const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
-                return timeA - timeB;
-            });
-            // Reassign IDs and recalculate day in ET timezone after sorting
-            data.forEach((game, index) => {
-                game.id = index + 1;
-                // Recalculate day in ET timezone from kickoff
-                if (game.kickoff) {
-                    game.day = getDayName(new Date(game.kickoff));
-                }
-            });
-            return data;
+            return orderCachedGames(data);
         }
 
-        console.log(`[ESPN] Schedule cache expired for week ${week}`);
-        localStorage.removeItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
+        // Expired, but KEPT. It is only a miss for now: a fresh fetch replaces
+        // it, and if that fetch fails, staleCachedSchedule() serves it. This
+        // used to delete it here, before the fetch - so when ESPN failed the
+        // fallback found nothing and the week came back empty. That is how the
+        // October 2026 ESPN outage blanked weeks on a phone that had them.
+        console.log(`[ESPN] Schedule cache expired for week ${week}, refreshing`);
         return null;
     } catch (e) {
         console.warn('[ESPN] Error reading schedule cache:', e);
+        return null;
+    }
+}
+
+/**
+ * A cached week's games in kickoff order, with ids and ET days recomputed - the
+ * same shape a fresh fetch produces.
+ */
+function orderCachedGames(data) {
+    data.sort((a, b) => {
+        const timeA = a.kickoff ? new Date(a.kickoff).getTime() : 0;
+        const timeB = b.kickoff ? new Date(b.kickoff).getTime() : 0;
+        return timeA - timeB;
+    });
+    data.forEach((game, index) => {
+        game.id = index + 1;
+        if (game.kickoff) game.day = getDayName(new Date(game.kickoff));
+    });
+    return data;
+}
+
+/**
+ * The cached schedule for a week however old it is, for when ESPN cannot be
+ * reached. Still only a current-version, valid copy: an old cache version can
+ * hold the pre-null `spread: 0` placeholders, which would read as pick'ems.
+ */
+function staleCachedSchedule(week) {
+    try {
+        const cached = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
+        if (!cached) return null;
+        const { data, version, timestamp } = JSON.parse(cached);
+        if (version !== SCHEDULE_CACHE_VERSION || !isValidGameData(data)) return null;
+        const hours = ((Date.now() - timestamp) / (60 * 60 * 1000)).toFixed(1);
+        console.log(`[ESPN] Using stale cached schedule for week ${week} (${hours}h old) - ESPN unreachable`);
+        return orderCachedGames(data);
+    } catch (e) {
         return null;
     }
 }
@@ -940,13 +966,8 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
         return games;
     } catch (error) {
         console.error(`[ESPN] Error fetching schedule for week ${week}:`, error);
-        // Try to return stale cache on error
-        const staleCache = localStorage.getItem(`${SCHEDULE_CACHE_KEY}_${CURRENT_SEASON}_week${week}`);
-        if (staleCache) {
-            console.log('[ESPN] Using stale cache due to fetch error');
-            return JSON.parse(staleCache).data;
-        }
-        return null;
+        // The last good copy, however old, rather than an empty week.
+        return staleCachedSchedule(week);
     }
 }
 
