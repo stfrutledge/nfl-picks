@@ -224,14 +224,17 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
 
     const PRE = ['pre', 'pre', 'pre', 'pre', 'pre', 'pre'];
 
-    await check('three hours before Thursday: only those without a pick on that game', async () => {
+    // Thursday 8 October, noon in Dublin (Irish summer time, UTC+1).
+    const THU_NOON_IRELAND = Date.parse('2026-10-08T11:00:00Z');
+
+    await check('noon Thursday, Irish time: only those without a pick on that night’s game', async () => {
         world.board = scoreboard(PRE);
         world.picks = { Stephen: { bills_chiefs: plain('home') }, Sean: {}, Jason: { rams_seahawks: plain('away') } };
-        await tick(T.thu - 2 * 60 * 60 * 1000);
+        await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
         assert.strictEqual(sent.length, 1);
         const { data } = sent[0];
         assert.strictEqual(data.category, 'pick_reminders');
-        assert.strictEqual(data.title, 'Thursday kickoff in 3 hours');
+        assert.strictEqual(data.title, 'Thursday night’s game: picks due');
         assert.strictEqual(data.expiresAt, String(T.thu), 'stale at kickoff');
         const personal = JSON.parse(data.personal);
         assert.deepStrictEqual(Object.keys(personal).sort(), ['Daniel', 'Dylan', 'Jason', 'Sean']);
@@ -254,14 +257,41 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(personal.Sean, 'You still have 3 games to pick and 4 Blazin’ 5 picks to make.');
     });
 
-    await check('not before the window, and once only within it', async () => {
+    await check('not before noon in Ireland, and once only after it', async () => {
         world.board = scoreboard(PRE);
         world.picks = {};
-        await tick(T.thu - 4 * 60 * 60 * 1000);
-        assert.strictEqual(sent.length, 0, 'four hours out is too early');
-        await tick(T.thu - 2 * 60 * 60 * 1000);
-        await tick(T.thu - 1 * 60 * 60 * 1000);
+        await tick(THU_NOON_IRELAND - 15 * 60 * 1000);
+        assert.strictEqual(sent.length, 0, '11:45 is too early');
+        await tick(THU_NOON_IRELAND);
+        await tick(THU_NOON_IRELAND + 15 * 60 * 1000);
+        await tick(T.thu - 60 * 60 * 1000);
         assert.strictEqual(sent.length, 1);
+    });
+
+    await check('after the clocks go back, noon is still noon in Ireland', async () => {
+        // Thursday 5 November: Ireland went back to GMT on 25 October and the
+        // US to EST on 1 November, so the week runs four weeks later and an
+        // hour later in UTC (8:15pm EST is 01:15 UTC). Noon in Ireland is now
+        // 12:00 UTC, not 11:00.
+        const games = GAMES.map(([a, h, k]) => [a, h, k + 28 * 24 * 60 * 60 * 1000]);
+        const board = scoreboard(PRE);
+        board.events.forEach((e, i) => { e.date = new Date(games[i][2] + 60 * 60 * 1000).toISOString(); });
+        world.board = board;
+        world.picks = {};
+        await tick(Date.parse('2026-11-05T11:50:00Z'));
+        assert.strictEqual(sent.length, 0, '11:50 GMT is before noon');
+        await tick(Date.parse('2026-11-05T12:05:00Z'));
+        assert.strictEqual(sent.length, 1);
+    });
+
+    await check('the weekend still has exactly one reminder, three hours before', async () => {
+        world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        world.picks = {};
+        await tick(T.sun - 3 * 60 * 60 * 1000 - 60 * 1000);
+        assert.strictEqual(sent.length, 0, 'not before 3 hours out');
+        for (const minutes of [0, 15, 30, 60, 120, 170]) await tick(T.sun - 3 * 60 * 60 * 1000 + minutes * 60 * 1000);
+        assert.strictEqual(sent.filter(m => m.data.id.endsWith('-weekend')).length, 1);
+        assert.strictEqual(sent.length, 1, 'and nothing else');
     });
 
     await check('everyone done: nothing sent, and not asked again', async () => {

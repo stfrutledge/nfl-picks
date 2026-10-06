@@ -784,15 +784,51 @@ function reminderSlates(games) {
   if (upcoming.length === 0) return [];
   const isWeekend = g => ['Fri', 'Sat', 'Sun'].includes(easternWeekday(g.kickoff));
   const slates = [];
-  // A week that opens before the weekend (Thursday night) gets a reminder
-  // for that game alone; then the weekend's first kickoff gets the full one.
+  // A week that opens before the weekend (Thursday night) gets a reminder for
+  // that game alone at noon, Irish time, on the day - well ahead of an 8:15pm
+  // ET kickoff, which is past 1am in Ireland. Then the weekend's first kickoff
+  // gets the one full reminder, 3 hours before.
   const first = upcoming[0];
   if (!isWeekend(first)) {
-    slates.push({ kind: 'first', kickoff: first.kickoff, day: easternWeekday(first.kickoff) });
+    const day = easternWeekday(first.kickoff);
+    let sendAt = noonInIreland(first.kickoff);
+    // An opener that kicks off before (or near) Irish noon - none do today -
+    // falls back to the usual 3 hours before.
+    if (sendAt > first.kickoff - 60 * 60 * 1000) sendAt = first.kickoff - REMINDER_LEAD_MS;
+    slates.push({ kind: 'first', kickoff: first.kickoff, day, sendAt });
   }
   const weekend = upcoming.find(isWeekend);
-  if (weekend) slates.push({ kind: 'weekend', kickoff: weekend.kickoff, day: easternWeekday(weekend.kickoff) });
+  if (weekend) {
+    slates.push({ kind: 'weekend', kickoff: weekend.kickoff, day: easternWeekday(weekend.kickoff),
+      sendAt: weekend.kickoff - REMINDER_LEAD_MS });
+  }
   return slates;
+}
+
+/** Where most of the group is; the opener's reminder goes out at noon here. */
+const GROUP_TIME_ZONE = 'Europe/Dublin';
+
+/**
+ * Noon in Ireland on the US calendar day of [kickoffMs] - Thursday for
+ * Thursday Night Football, though it is past midnight in Ireland by kickoff.
+ * Worked out through Intl, so Irish and US clock changes are both handled.
+ */
+function noonInIreland(kickoffMs) {
+  const [y, m, d] = new Date(kickoffMs).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    .split('-').map(Number);
+  return wallClockToUtc(y, m, d, 12, 0, GROUP_TIME_ZONE);
+}
+
+/** The instant a wall clock in [timeZone] reads y-m-d h:min. */
+function wallClockToUtc(y, m, d, h, min, timeZone) {
+  const guess = Date.UTC(y, m - 1, d, h, min);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', hourCycle: 'h23'
+  }).formatToParts(new Date(guess)).map(p => [p.type, p.value]));
+  const shown = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute));
+  return guess - (shown - guess);
 }
 
 function plural(n, one, many = one + 's') {
@@ -829,7 +865,7 @@ function reminderMessage(season, week, slate, games, picks, regularSeason) {
   return {
     category: 'pick_reminders',
     id: `reminder-${season}-${week}-${slate.kind}`,
-    title: `${day} kickoff in 3 hours`,
+    title: slate.kind === 'first' ? `${day} night’s game: picks due` : `${day} kickoff in 3 hours`,
     body: '',
     personal,
     expiresAt: slate.kickoff,
@@ -868,7 +904,7 @@ async function runAutomations(env, now = Date.now()) {
 
   const dueSlates = [];
   for (const slate of reminderSlates(games)) {
-    if (now < slate.kickoff - REMINDER_LEAD_MS || now >= slate.kickoff) continue;
+    if (now < slate.sendAt || now >= slate.kickoff) continue;
     if (!(await alreadySent(env, `reminder-${season}-${week}-${slate.kind}`))) dueSlates.push(slate);
   }
 
