@@ -11227,6 +11227,23 @@ const PatternEngine = {
 };
 
 /**
+ * A cheap fingerprint of what PatternEngine reads - the games and results
+ * loaded, and the picks - so its cache is thrown away the moment any of them
+ * changes: a week of games arriving from ESPN, a result landing, a pick made.
+ */
+function patternDataSignature() {
+    let games = 0;
+    let results = 0;
+    for (let week = 1; week <= TOTAL_WEEKS; week++) {
+        games += (getGamesForWeek(week) || []).length;
+        results += Object.keys(getResultsForWeek(week) || {}).length;
+    }
+    let picks = 0;
+    try { picks = JSON.stringify(allPicks).length; } catch (e) { /* unchanged */ }
+    return `${currentSeason}|${games}|${results}|${picks}`;
+}
+
+/**
  * Insights Manager - Caching and retrieval
  */
 const InsightsManager = {
@@ -11241,13 +11258,20 @@ const InsightsManager = {
      */
     getInsights: function(forceRefresh = false) {
         const now = Date.now();
-        if (!forceRefresh && this.cache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
+        // Fresh only while the data under it is unchanged, as well as young.
+        // Time alone was not enough: a page that drew Patterns while its weeks
+        // were still loading cached "no patterns" and kept showing that for
+        // five minutes after the games, results and picks had all arrived.
+        const signature = patternDataSignature();
+        if (!forceRefresh && this.cache && signature === this.cacheSignature
+                && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
             return this.cache;
         }
 
         console.log('Regenerating pattern insights...');
         this.cache = PatternEngine.detectAllPatterns();
         this.cacheTimestamp = now;
+        this.cacheSignature = signature;
         this.buildIndexes();
         return this.cache;
     },
