@@ -5,6 +5,7 @@
  * - /odds - Proxy The Odds API (hides API key) with caching
  * - /sheets - Proxy Google Sheets CSV exports
  * - /sync - Proxy Google Apps Script for picks backup
+ * - /espn - ESPN's NFL scoreboard, cached, with CORS (browsers stopped getting it)
  * - /notify - Push a message to every phone with the Android app (admin only)
  * - scheduled (cron, every 15 min) - automatic Blazin' 5 results and pick reminders
  *
@@ -160,6 +161,8 @@ export default {
         return await handleSheets(request, url);
       } else if (path === '/sync') {
         return await handleSync(request, env);
+      } else if (path === '/espn') {
+        return await handleEspn(request, url, ctx);
       } else if (path === '/notify') {
         return await handleNotify(request, env);
       } else {
@@ -929,6 +932,53 @@ async function runAutomations(env, now = Date.now()) {
   }
 
   return { season, week, done };
+}
+
+/**
+ * ESPN's NFL scoreboard, passed through with CORS.
+ *
+ * The site used to fetch it straight from the browser. From early October
+ * 2026 ESPN's edge stopped sending Access-Control-Allow-Origin to browsers
+ * (it still does to anything else), so every schedule and live-score fetch
+ * failed and the standings stopped at the weeks a phone had already cached.
+ * The worker is not a browser, so it gets the data; it adds the header.
+ *
+ * Only the scoreboard, and only its seasontype / week / dates parameters, so
+ * this cannot be used as an open proxy. Cached at the edge: 20 seconds for the
+ * current scoreboard (live scores, polled every 30s by every open page) and
+ * 5 minutes for a given week's schedule.
+ */
+const ESPN_PARAMS = ['seasontype', 'week', 'dates'];
+
+async function handleEspn(request, url, ctx) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+
+  const upstream = new URL(ESPN_SCOREBOARD);
+  for (const name of ESPN_PARAMS) {
+    const value = url.searchParams.get(name);
+    if (value === null) continue;
+    if (!/^\d{1,4}$/.test(value)) return jsonResponse({ error: `Bad ${name}` }, 400);
+    upstream.searchParams.set(name, value);
+  }
+
+  const cache = caches.default;
+  const cacheKey = new Request(`${url.origin}/espn${upstream.search}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
+  const response = await fetch(upstream.toString());
+  if (!response.ok) return jsonResponse({ error: `ESPN answered ${response.status}` }, 502);
+  const body = await response.text();
+  const seconds = upstream.searchParams.has('week') ? 300 : 20;
+  const out = new Response(body, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': `public, max-age=${seconds}`,
+      ...CORS_HEADERS,
+    },
+  });
+  ctx.waitUntil(cache.put(cacheKey, out.clone()));
+  return out;
 }
 
 const PREVIEWS = ['blazin_results', 'pick_reminders'];

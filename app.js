@@ -479,7 +479,7 @@ let liveScoresRefreshTimer = null;
  */
 async function fetchLiveScores() {
     try {
-        const response = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
+        const response = await fetchEspnScoreboard();
         const data = await response.json();
 
         const scores = {};
@@ -627,6 +627,28 @@ function liveCacheEntry(game) {
  * Fetches game schedule for any NFL week
  */
 const ESPN_SCHEDULE_URL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+
+/**
+ * ESPN's NFL scoreboard - a week's schedule with `query` ("?seasontype=2&week=4
+ * &dates=2026"), or the live scoreboard without one.
+ *
+ * Through the worker's /espn first. From early October 2026 ESPN stopped
+ * sending browsers the Access-Control-Allow-Origin header, so a direct fetch
+ * from the page failed every time - no schedules, no live scores - and the
+ * standings stopped at the weeks a device had already cached. The worker is
+ * not a browser, gets the data, and adds the header. ESPN direct is kept as
+ * the fallback, for the day the worker is down and ESPN has fixed itself.
+ */
+async function fetchEspnScoreboard(query = '') {
+    try {
+        const viaWorker = await fetch(`${WORKER_PROXY_URL}/espn${query}`);
+        if (viaWorker.ok) return viaWorker;
+        console.warn(`[ESPN] Worker answered ${viaWorker.status}, trying ESPN directly`);
+    } catch (e) {
+        console.warn(`[ESPN] Worker unreachable (${e.message}), trying ESPN directly`);
+    }
+    return fetch(`${ESPN_SCHEDULE_URL}${query}`);
+}
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
 const SCHEDULE_CACHE_VERSION = 8; // Increment to invalidate all caches (v8 stores a missing line as null, not 0)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
@@ -825,13 +847,13 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
         let url;
         if (isPlayoffWeek(week)) {
             const playoffInfo = PLAYOFF_WEEKS[week];
-            url = `${ESPN_SCHEDULE_URL}?seasontype=3&week=${playoffInfo.espnWeek}&dates=${CURRENT_SEASON}`;
+            url = `?seasontype=3&week=${playoffInfo.espnWeek}&dates=${CURRENT_SEASON}`;
             console.log(`[ESPN] Fetching playoff schedule for ${playoffInfo.name}...`);
         } else {
-            url = `${ESPN_SCHEDULE_URL}?seasontype=2&week=${week}&dates=${CURRENT_SEASON}`;
+            url = `?seasontype=2&week=${week}&dates=${CURRENT_SEASON}`;
             console.log(`[ESPN] Fetching schedule for week ${week}...`);
         }
-        const response = await fetch(url);
+        const response = await fetchEspnScoreboard(url);
 
         if (!response.ok) {
             throw new Error(`ESPN API error: ${response.status}`);

@@ -140,6 +140,51 @@ function section(name) { console.log(`\n${name}`); }
         });
     }
 
+    section('ESPN: the NFL scoreboard only, cached, with CORS');
+
+    // Browsers stopped getting Access-Control-Allow-Origin from ESPN in
+    // October 2026, so the site fetches the scoreboard through here.
+    const espnCalls = () => upstream.filter(u => u.startsWith('https://site.api.espn.com/'));
+
+    await check('a week’s schedule is fetched from the scoreboard, with CORS added', async () => {
+        const r = await call('/espn?seasontype=2&week=4&dates=2026');
+        assert.strictEqual(r.status, 200);
+        assert.strictEqual(r.headers.get('Access-Control-Allow-Origin'), '*');
+        assert.deepStrictEqual(espnCalls(), [
+            'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=4&dates=2026'
+        ]);
+    });
+
+    await check('the current scoreboard (live scores) needs no parameters', async () => {
+        await call('/espn');
+        assert.deepStrictEqual(espnCalls(), ['https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard']);
+    });
+
+    await check('a repeat is served from the cache', async () => {
+        await call('/espn?seasontype=2&week=4&dates=2026');
+        await call('/espn?seasontype=2&week=4&dates=2026');
+        assert.strictEqual(espnCalls().length, 1);
+    });
+
+    await check('any other parameter is dropped, never forwarded', async () => {
+        await call('/espn?week=4&url=https://evil.example/&limit=999');
+        assert.deepStrictEqual(espnCalls(), [
+            'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=4'
+        ]);
+    });
+
+    for (const [label, query] of [
+        ['a non-numeric week', '?week=4;drop'],
+        ['a path in a parameter', '?dates=../../x'],
+        ['an over-long number', '?week=12345']
+    ]) {
+        await check(`rejects ${label}`, async () => {
+            const r = await call('/espn' + query);
+            assert.strictEqual(r.status, 400);
+            assert.strictEqual(espnCalls().length, 0);
+        });
+    }
+
     fs.unlinkSync(tmp);
     if (failures > 0) {
         console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
