@@ -1295,6 +1295,43 @@ header h1 {
     }
 }
 
+/* The phone week window: hidden on wide screens, where all weeks fit. */
+.chart-week-window {
+    display: none;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+@media (max-width: 700px) {
+    .chart-week-window {
+        display: flex;
+    }
+}
+
+.chart-window-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chart-window-nav.hidden {
+    display: none;
+}
+
+.chart-window-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    min-width: 64px;
+    text-align: center;
+}
+
+.chart-window-arrow:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 .chart-zoom-btn {
     padding: 8px 14px;
     border-radius: 8px;

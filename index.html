@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=2076176e">
+    <link rel="stylesheet" href="styles.css?v=de06b26d">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -460,6 +460,17 @@
                                 <div class="chart-header">
                                     <h3>Season Win % by Week</h3>
                                     <button class="chart-zoom-btn" id="toggle-trend-zoom" title="Toggle zoom level">Zoom In</button>
+                                    <!-- Phones only: a few weeks at a time across the full width,
+                                         moved with the arrows or a swipe. Desktop has the room
+                                         for all eighteen. -->
+                                    <div class="chart-week-window" id="trend-week-window">
+                                        <button class="chart-zoom-btn" id="trend-weeks-toggle" title="Show a few weeks at a time">Zoom In Weeks</button>
+                                        <div class="chart-window-nav hidden" id="trend-window-nav">
+                                            <button class="chart-zoom-btn chart-window-arrow" id="trend-window-prev" aria-label="Earlier weeks">&#9664;</button>
+                                            <span class="chart-window-label" id="trend-window-label"></span>
+                                            <button class="chart-zoom-btn chart-window-arrow" id="trend-window-next" aria-label="Later weeks">&#9654;</button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <canvas id="trend-chart"></canvas>
                             </div>
@@ -915,7 +926,7 @@
     </div>
 
     <script src="parser.js?v=2588c724"></script>
-    <script src="charts.js?v=70009325"></script>
+    <script src="charts.js?v=77c64f94"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
     <script src="app.js?v=020fe038"></script>

@@ -209,6 +209,108 @@ function renderTrendChart(weeklyData, category) {
         zoomBtn.textContent = trendChartZoomed ? 'Zoom Out' : 'Zoom In';
         zoomBtn.classList.toggle('zoomed', !trendChartZoomed);
     }
+
+    // Where the season has got to, for the week window to open on.
+    trendLastPlayedWeek = played.size ? Math.max(...played) : 1;
+    trendWeekCount = weeks.length;
+    setupTrendWeekWindow();
+    applyTrendWeekWindow();
+}
+
+// --- Phone week window -------------------------------------------------------
+//
+// Eighteen weeks across a phone's 330-odd pixels left the opening weeks of a
+// season - the only ones with any data - crammed into the left fifth of the
+// chart, six lines on top of each other. On a narrow screen "Zoom In Weeks"
+// shows TREND_WINDOW_WEEKS at a time across the full width instead, opening
+// on the latest played week, moved with the arrows or a swipe. The x axis is
+// windowed rather than the canvas made wider, so the percentage axis stays on
+// screen. State lives here, so the 30s live redraw keeps the window where it is.
+
+const TREND_WINDOW_WEEKS = 6;
+let trendWindowOn = false;
+let trendWindowStart = null;     // first week shown (1-based), null = latest
+let trendLastPlayedWeek = 1;
+let trendWeekCount = 18;
+
+function trendWindowNarrow() {
+    return window.matchMedia('(max-width: 700px)').matches;
+}
+
+/** The first week of the window: as chosen, or ending just past the latest played week. */
+function trendWindowFirstWeek() {
+    const maxStart = Math.max(1, trendWeekCount - TREND_WINDOW_WEEKS + 1);
+    const preferred = trendWindowStart ?? (trendLastPlayedWeek - TREND_WINDOW_WEEKS + 2);
+    return Math.min(maxStart, Math.max(1, preferred));
+}
+
+function applyTrendWeekWindow() {
+    if (!trendChart) return;
+    const on = trendWindowOn && trendWindowNarrow();
+    const x = trendChart.options.scales.x;
+    const first = trendWindowFirstWeek();
+    const last = Math.min(trendWeekCount, first + TREND_WINDOW_WEEKS - 1);
+    if (on) {
+        x.min = `Wk ${first}`;
+        x.max = `Wk ${last}`;
+    } else {
+        delete x.min;
+        delete x.max;
+    }
+    trendChart.update('none');
+
+    const toggle = document.getElementById('trend-weeks-toggle');
+    if (toggle) toggle.textContent = on ? 'All Weeks' : 'Zoom In Weeks';
+    document.getElementById('trend-window-nav')?.classList.toggle('hidden', !on);
+    const label = document.getElementById('trend-window-label');
+    if (label) label.textContent = `Wk ${first}–${last}`;
+    const prev = document.getElementById('trend-window-prev');
+    const next = document.getElementById('trend-window-next');
+    if (prev) prev.disabled = first <= 1;
+    if (next) next.disabled = last >= trendWeekCount;
+}
+
+/** Move the window by [weeks], clamped to the season. */
+function shiftTrendWeekWindow(weeks) {
+    trendWindowStart = trendWindowFirstWeek() + weeks;
+    applyTrendWeekWindow();
+}
+
+/** Wire the controls and the swipe once; the chart itself is redrawn often. */
+function setupTrendWeekWindow() {
+    const toggle = document.getElementById('trend-weeks-toggle');
+    if (!toggle || toggle.dataset.wired) return;
+    toggle.dataset.wired = '1';
+
+    toggle.addEventListener('click', () => {
+        trendWindowOn = !trendWindowOn;
+        trendWindowStart = null;        // open on the latest weeks each time
+        applyTrendWeekWindow();
+    });
+    document.getElementById('trend-window-prev')?.addEventListener('click', () => shiftTrendWeekWindow(-1));
+    document.getElementById('trend-window-next')?.addEventListener('click', () => shiftTrendWeekWindow(1));
+
+    // A horizontal swipe on the chart moves the window - a week per ~50px.
+    // Vertical movement is left to the page, so the chart never traps a scroll.
+    const canvas = document.getElementById('trend-chart');
+    let startX = null, startY = null;
+    canvas?.addEventListener('touchstart', e => {
+        if (!trendWindowOn || e.touches.length !== 1) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+    }, { passive: true });
+    canvas?.addEventListener('touchend', e => {
+        if (startX === null) return;
+        const dx = e.changedTouches[0].clientX - startX;
+        const dy = e.changedTouches[0].clientY - startY;
+        startX = null;
+        if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+        // Swipe left (finger moves left) shows later weeks.
+        shiftTrendWeekWindow(-Math.trunc(dx / 50) || (dx < 0 ? 1 : -1));
+    }, { passive: true });
+
+    // Rotating to landscape (or a wider window) drops back to all weeks.
+    window.matchMedia('(max-width: 700px)').addEventListener?.('change', applyTrendWeekWindow);
 }
 
 /**
