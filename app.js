@@ -8819,8 +8819,6 @@ function renderPatternsPanel() {
 
     // Get current filter values
     const selectedPicker = pickerFilter ? pickerFilter.value : 'all';
-    const activeTypeBtn = document.querySelector('.pattern-type-btn.active');
-    const selectedType = activeTypeBtn ? activeTypeBtn.dataset.type : 'all';
 
     // Get insights
     let insights = InsightsManager.getAllInterestingInsights();
@@ -8829,6 +8827,23 @@ function renderPatternsPanel() {
     if (selectedPicker !== 'all') {
         insights = insights.filter(i => i.picker === selectedPicker);
     }
+
+    // The Primetime filter only once there is a primetime pattern to show for
+    // this picker (or anyone, on All). It needs five night games, so it is
+    // empty for the first weeks of a season, and a button onto nothing reads
+    // as broken. Hidden while selected, it hands back to All.
+    const primetimeBtn = document.querySelector('.pattern-type-btn[data-type="primetime"]');
+    const hasPrimetime = insights.some(i => i.type === 'primetime');
+    if (primetimeBtn) {
+        primetimeBtn.classList.toggle('hidden', !hasPrimetime);
+        if (!hasPrimetime && primetimeBtn.classList.contains('active')) {
+            primetimeBtn.classList.remove('active');
+            document.querySelector('.pattern-type-btn[data-type="all"]')?.classList.add('active');
+        }
+    }
+    const activeTypeBtn = document.querySelector('.pattern-type-btn.active');
+    const selectedType = activeTypeBtn ? activeTypeBtn.dataset.type : 'all';
+
     if (selectedType !== 'all') {
         insights = insights.filter(i => i.type === selectedType);
     }

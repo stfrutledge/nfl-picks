@@ -10,11 +10,12 @@ const path = require('path');
 const assert = require('assert');
 const { fixedClock } = require('./fixed-clock');
 
-function makeEnv() {
+function makeEnv(dom = {}) {
     const env = {
         localStorage: { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 },
         document: {
-            addEventListener() {}, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
+            addEventListener() {}, getElementById: id => dom.byId?.[id] || null,
+            querySelector: sel => dom.query?.(sel) || null, querySelectorAll: sel => dom.queryAll?.(sel) || [],
             createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, setAttribute() {} }),
             head: { appendChild() {} }, body: { appendChild() {}, classList: { add() {}, remove() {}, toggle() {} } },
             documentElement: { setAttribute() {}, classList: { add() {}, remove() {} } }
@@ -28,7 +29,7 @@ function makeEnv() {
     const src = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8')
         + '\nconst HISTORICAL_DATA_SEASON=2026,HISTORICAL_GAMES={},HISTORICAL_RESULTS={},HISTORICAL_PICKS={};\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return { InsightsManager, NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
+        + `;return { InsightsManager, NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, renderPatternsPanel,
             setPicks: p => { allPicks = p; } };`;
     return new Function('window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date', src)(
@@ -86,6 +87,90 @@ check('unchanged data is served from the cache', () => {
     loadSeason(api);
     const first = api.InsightsManager.getInsights();
     assert.strictEqual(api.InsightsManager.getInsights(), first, 'same object, not recomputed');
+});
+
+// --- The Primetime filter button -------------------------------------------
+
+function el(classes = []) {
+    const set = new Set(classes);
+    return {
+        innerHTML: '', value: 'all', options: [1, 2], dataset: {},
+        classList: {
+            add: c => set.add(c), remove: c => set.delete(c), contains: c => set.has(c),
+            toggle: (c, on) => (on ? set.add(c) : set.delete(c))
+        },
+        appendChild() {}
+    };
+}
+
+function patternsDom({ primetimeActive = false, picker = 'all' } = {}) {
+    const buttons = {
+        all: Object.assign(el(primetimeActive ? [] : ['active']), { dataset: { type: 'all' } }),
+        team: Object.assign(el(), { dataset: { type: 'team' } }),
+        primetime: Object.assign(el(primetimeActive ? ['active'] : []), { dataset: { type: 'primetime' } })
+    };
+    const grid = el();
+    const filter = Object.assign(el(), { value: picker });
+    return {
+        buttons, grid,
+        dom: {
+            byId: { 'patterns-grid': grid, 'patterns-picker-filter': filter },
+            query: sel => {
+                const m = sel.match(/data-type="(\w+)"/);
+                if (m) return buttons[m[1]];
+                if (sel === '.pattern-type-btn.active') return Object.values(buttons).find(b => b.classList.contains('active'));
+                return null;
+            },
+            queryAll: () => Object.values(buttons)
+        }
+    };
+}
+
+/** Five primetime (Thursday) picks for Stephen, all losses against -3. */
+function loadPrimetime(api) {
+    const picks = {};
+    for (let week = 1; week <= 5; week++) {
+        api.NFL_GAMES_BY_WEEK[week] = [{ id: 1, away: 'Rams', home: 'Chiefs', spread: 3, favorite: 'home',
+            day: 'Thursday', time: '8:15 PM ET' }];
+        api.NFL_RESULTS_BY_WEEK[week] = { 1: { winner: 'home', awayScore: 20, homeScore: 21 } };
+        picks[week] = { Stephen: { rams_chiefs: { line: 'home' } } };
+    }
+    api.setPicks(picks);
+}
+
+check('no primetime pattern yet: the Primetime button is hidden', () => {
+    const { dom, buttons } = patternsDom();
+    const api = makeEnv(dom);
+    loadSeason(api);                        // Sunday games only
+    api.renderPatternsPanel();
+    assert.strictEqual(buttons.primetime.classList.contains('hidden'), true);
+    assert.strictEqual(buttons.team.classList.contains('hidden'), false, 'Teams is left alone');
+});
+
+check('once there is one, it appears', () => {
+    const { dom, buttons } = patternsDom();
+    const api = makeEnv(dom);
+    loadPrimetime(api);
+    api.renderPatternsPanel();
+    assert.strictEqual(buttons.primetime.classList.contains('hidden'), false);
+});
+
+check('it follows the picker filter', () => {
+    const { dom, buttons } = patternsDom({ picker: 'Sean' });
+    const api = makeEnv(dom);
+    loadPrimetime(api);                     // the pattern is Stephen's
+    api.renderPatternsPanel();
+    assert.strictEqual(buttons.primetime.classList.contains('hidden'), true);
+});
+
+check('hidden while selected, the filter goes back to All', () => {
+    const { dom, buttons, grid } = patternsDom({ primetimeActive: true });
+    const api = makeEnv(dom);
+    loadSeason(api);
+    api.renderPatternsPanel();
+    assert.strictEqual(buttons.primetime.classList.contains('active'), false);
+    assert.strictEqual(buttons.all.classList.contains('active'), true);
+    assert.ok(/Chiefs/.test(grid.innerHTML), 'showing every pattern, not an empty panel');
 });
 
 if (failures > 0) {
