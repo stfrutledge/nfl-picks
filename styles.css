@@ -2545,15 +2545,20 @@ footer a:hover {
         min-height: 40px;
     }
 
+    /* The tabs share the full width equally: three across, or four while
+       Live is up. A hidden tab is display: none, so it takes no share. */
     .category-tabs {
-        overflow-x: auto;
-        justify-content: flex-start;
-        -webkit-overflow-scrolling: touch;
+        padding-left: 0;
+        padding-right: 0;
     }
 
     .tab {
-        padding: 14px 16px;
-        font-size: 0.75rem;
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 14px 4px;
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-align: center;
         white-space: nowrap;
     }
 
