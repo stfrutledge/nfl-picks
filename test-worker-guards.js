@@ -106,6 +106,17 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(sent.searchParams.get('markets'), 'spreads,h2h,totals');
     });
 
+    await check('the quota headers are readable cross-origin, on a miss and a hit', async () => {
+        for (const response of [await call('/odds'), await call('/odds')]) {
+            const exposed = (response.headers.get('Access-Control-Expose-Headers') || '')
+                .split(',').map(h => h.trim().toLowerCase());
+            for (const name of ['x-requests-remaining', 'x-requests-used', 'x-cache-duration']) {
+                assert.ok(exposed.includes(name), `${response.headers.get('X-Cache')} exposes ${name}`);
+            }
+            assert.strictEqual(response.headers.get('x-requests-remaining'), '400');
+        }
+    });
+
     await check('the root path is no longer an odds endpoint', async () => {
         const response = await call('/');
         assert.strictEqual(response.status, 404);

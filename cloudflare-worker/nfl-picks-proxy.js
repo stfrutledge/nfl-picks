@@ -32,6 +32,12 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400',
 };
 
+// A cross-origin page can only read the CORS-safelisted response headers unless
+// the rest are named here. Without it the quota headers reach the browser but
+// `response.headers.get()` returns null, so the admin credits readout stays empty.
+const ODDS_EXPOSE_HEADERS =
+  'x-requests-remaining, x-requests-used, x-credits-per-fetch, X-Cache, X-Cache-Duration';
+
 // Fallback cache windows, used only when the Odds API does not tell us how much
 // quota is left. Normally the pacer below decides.
 const GAME_DAY_CACHE_HOURS = 4;      // Fresher odds on game days
@@ -206,6 +212,9 @@ async function handleOdds(request, env, ctx) {
     // that never applied.
     const headers = new Headers(cachedResponse.headers);
     headers.set('X-Cache', 'HIT');
+    // Set here as well as on the miss: entries cached before this header
+    // existed are still served until they expire.
+    headers.set('Access-Control-Expose-Headers', ODDS_EXPOSE_HEADERS);
     return new Response(cachedResponse.body, {
       status: cachedResponse.status,
       headers,
@@ -238,6 +247,7 @@ async function handleOdds(request, env, ctx) {
   const headers = new Headers({
     'Content-Type': 'application/json',
     ...CORS_HEADERS,
+    'Access-Control-Expose-Headers': ODDS_EXPOSE_HEADERS,
     'X-Cache': 'MISS',
     'X-Cache-Duration': paced.reason,
   });
