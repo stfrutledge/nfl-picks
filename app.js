@@ -2898,6 +2898,17 @@ function setupSeasonDropdown() {
         });
     }
 
+    // Lifetime's season range. The end that was moved wins: taking "from" past
+    // "to" drags "to" along with it, rather than refusing the change.
+    document.getElementById('history-lifetime-from')?.addEventListener('change', (e) => {
+        setHistoryLifetimeRange(Number(e.target.value), historyLifetimeRange().to, 'from');
+        loadLifetimeHistory();
+    });
+    document.getElementById('history-lifetime-to')?.addEventListener('change', (e) => {
+        setHistoryLifetimeRange(historyLifetimeRange().from, Number(e.target.value), 'to');
+        loadLifetimeHistory();
+    });
+
     const historyWeekDropdown = document.getElementById('history-week-dropdown');
     if (historyWeekDropdown) {
         historyWeekDropdown.addEventListener('change', (e) => {
@@ -3095,15 +3106,75 @@ async function loadHistorySeason(season) {
     renderHistoryBlazinSpreadRecords();
 }
 
+// The seasons Lifetime spans. Null is an open end - the first or the latest
+// season - so the default follows AVAILABLE_SEASONS rather than freezing the
+// list as it stood when the page loaded.
+let historyLifetimeFrom = null;
+let historyLifetimeTo = null;
+
+/** Lifetime's range, open ends resolved, plus the bounds it can move between. */
+function historyLifetimeRange() {
+    const min = Math.min(...AVAILABLE_SEASONS);
+    const max = Math.max(...AVAILABLE_SEASONS);
+    return { from: historyLifetimeFrom ?? min, to: historyLifetimeTo ?? max, min, max };
+}
+
 /**
- * Load and display lifetime (all seasons combined) history
+ * Set Lifetime's range. Each end is held to the seasons there are, and if the
+ * two cross, the end that was moved (`moved`, 'from' or 'to') keeps its value
+ * and the other follows it.
+ */
+function setHistoryLifetimeRange(from, to, moved = 'from') {
+    const { min, max } = historyLifetimeRange();
+    const clamp = s => Math.min(max, Math.max(min, Number.isFinite(s) ? s : min));
+    from = clamp(from);
+    to = clamp(to);
+    if (from > to) {
+        if (moved === 'to') from = to;
+        else to = from;
+    }
+    // Back to open at the bounds, so the full range stays "Lifetime".
+    historyLifetimeFrom = from === min ? null : from;
+    historyLifetimeTo = to === max ? null : to;
+    populateHistoryLifetimeRange();
+}
+
+/** The seasons in Lifetime's range, newest first like AVAILABLE_SEASONS. */
+function historyLifetimeSeasons() {
+    const { from, to } = historyLifetimeRange();
+    return AVAILABLE_SEASONS.filter(season => season >= from && season <= to);
+}
+
+/** "Lifetime" for every season, else the span: "2021", "2019–2023". */
+function historyLifetimeTitle() {
+    const { from, to, min, max } = historyLifetimeRange();
+    if (from === min && to === max) return 'Lifetime';
+    return from === to ? String(from) : `${from}–${to}`;
+}
+
+/** Fill the From/To dropdowns, oldest first, with the range selected. */
+function populateHistoryLifetimeRange() {
+    const { from, to } = historyLifetimeRange();
+    const seasons = [...AVAILABLE_SEASONS].sort((a, b) => a - b);
+    const options = selected => seasons.map(season =>
+        `<option value="${season}"${season === selected ? ' selected' : ''}>${season}</option>`
+    ).join('');
+    const fromDropdown = document.getElementById('history-lifetime-from');
+    const toDropdown = document.getElementById('history-lifetime-to');
+    if (fromDropdown) fromDropdown.innerHTML = options(from);
+    if (toDropdown) toDropdown.innerHTML = options(to);
+}
+
+/**
+ * Load and display lifetime history: every season combined, or the ones in
+ * the From/To range.
  */
 async function loadLifetimeHistory() {
     showLoadingState('Loading lifetime data...');
 
-    // Load all available season data
-    const loadPromises = AVAILABLE_SEASONS.map(season => loadSeasonData(season));
-    await Promise.all(loadPromises);
+    populateHistoryLifetimeRange();
+    const seasons = historyLifetimeSeasons();
+    await Promise.all(seasons.map(season => loadSeasonData(season)));
 
     hideLoadingState();
 
@@ -3119,9 +3190,9 @@ async function loadLifetimeHistory() {
     }
     updateHistoryScopeControls(null);
 
-    // Update picker dropdown to include all pickers across all seasons
+    // Update picker dropdown to include every picker in the range
     const allPickers = new Set();
-    AVAILABLE_SEASONS.forEach(season => {
+    seasons.forEach(season => {
         getPickersForSeason(season).forEach(p => allPickers.add(p));
     });
     const sortedPickers = Array.from(allPickers).sort();
@@ -3148,21 +3219,27 @@ async function loadLifetimeHistory() {
 }
 
 /**
- * Render standings table aggregated across all seasons (lifetime view)
+ * Render standings table aggregated across the seasons in Lifetime's range
  */
 function renderLifetimeStandingsTable() {
     const tbody = document.getElementById('history-standings-table-body');
     const titleSpan = document.getElementById('history-standings-title');
+    const scopeLabel = document.getElementById('history-standings-scope-label');
     if (!tbody) return;
 
     if (titleSpan) {
-        titleSpan.textContent = 'Lifetime';
+        titleSpan.textContent = historyLifetimeTitle();
+    }
+    // "Lifetime Standings", "2019–2023 Standings": a span of seasons is not
+    // a "Season", and a single season's scope label may still be showing.
+    if (scopeLabel) {
+        scopeLabel.textContent = '';
     }
 
-    // Aggregate stats across all seasons
+    // Aggregate stats across the seasons in range
     const pickerStats = {};
 
-    AVAILABLE_SEASONS.forEach(season => {
+    historyLifetimeSeasons().forEach(season => {
         if (!getSeasonData(season)) return;
 
         const data = getSeasonData(season);
@@ -3539,6 +3616,7 @@ function historyWeekName(week) {
  */
 function updateHistoryScopeControls(season) {
     const scope = document.getElementById('history-scope');
+    document.getElementById('history-lifetime-range')?.classList.toggle('hidden', !!season);
     if (!scope) return;
     scope.classList.toggle('hidden', !season);
     const seasonBtn = document.getElementById('history-scope-season');
@@ -8235,7 +8313,7 @@ function renderHistoryBlazinTeamRecords(picker = null) {
     const selectedPicker = picker || dropdown?.value || 'Stephen';
     const seasonValue = seasonDropdown?.value;
     const isLifetime = seasonValue === 'lifetime';
-    const seasons = isLifetime ? AVAILABLE_SEASONS : [parseInt(seasonValue) || 2024];
+    const seasons = isLifetime ? historyLifetimeSeasons() : [parseInt(seasonValue) || 2024];
     // Matches the dropdown's own default (Team Picked) - the fallback only
     // applies when the element is missing, and disagreeing with the markup
     // would render a table the selector does not describe.
@@ -8304,7 +8382,7 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
     const selectedPicker = picker || dropdown?.value || 'Stephen';
     const seasonValue = seasonDropdown?.value;
     const isLifetime = seasonValue === 'lifetime';
-    const seasons = isLifetime ? AVAILABLE_SEASONS : [parseInt(seasonValue) || 2024];
+    const seasons = isLifetime ? historyLifetimeSeasons() : [parseInt(seasonValue) || 2024];
     const analysisType = analysisTypeDropdown?.value || 'spread';
 
     // Update table header based on analysis type

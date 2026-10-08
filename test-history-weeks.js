@@ -92,6 +92,8 @@ function makeAppEnv() {
         populateHistoryStandingsWeeks, updateHistoryScopeControls,
         setHistoryStandingsScope, renderHistoryStandingsTable, historySelectedSeason,
         saveCowherdPicks,
+        AVAILABLE_SEASONS, historyLifetimeRange, setHistoryLifetimeRange,
+        historyLifetimeSeasons, historyLifetimeTitle, renderLifetimeStandingsTable,
         __scope: () => historyStandingsScope,
         __week: () => historyStandingsWeek,
         __setWeek: w => { historyStandingsWeek = w; },
@@ -282,6 +284,67 @@ check('a season with nothing played yet says so on the week table', () => {
     api.populateHistoryStandingsWeeks(api.CURRENT_SEASON);
     api.setHistoryStandingsScope('week');
     assert.match(api.__written['history-standings-table-body'], /No weeks played yet/);
+});
+
+section('Lifetime spans the seasons chosen');
+
+check('by default it is every season, titled "Lifetime"', () => {
+    const api = setup();
+    assert.deepStrictEqual(api.historyLifetimeSeasons(), api.AVAILABLE_SEASONS);
+    assert.strictEqual(api.historyLifetimeTitle(), 'Lifetime');
+});
+
+check('a range keeps only its seasons, both ends included', () => {
+    const api = setup();
+    api.setHistoryLifetimeRange(2019, 2022);
+    assert.deepStrictEqual(api.historyLifetimeSeasons(), [2022, 2021, 2020, 2019]);
+    assert.strictEqual(api.historyLifetimeTitle(), '2019–2022');
+    api.setHistoryLifetimeRange(2021, 2021);
+    assert.deepStrictEqual(api.historyLifetimeSeasons(), [2021]);
+    assert.strictEqual(api.historyLifetimeTitle(), '2021');
+});
+
+check('crossed ends: the one that was moved wins', () => {
+    const api = setup();
+    const ends = () => [api.historyLifetimeRange().from, api.historyLifetimeRange().to];
+    api.setHistoryLifetimeRange(2018, 2020);
+    api.setHistoryLifetimeRange(2023, 2020, 'from');
+    assert.deepStrictEqual(ends(), [2023, 2023]);
+    api.setHistoryLifetimeRange(2023, 2017, 'to');
+    assert.deepStrictEqual(ends(), [2017, 2017]);
+});
+
+check('ends are held to the seasons there are, and the full span reads "Lifetime" again', () => {
+    const api = setup();
+    api.setHistoryLifetimeRange(1999, 3000);
+    const { from, to, min, max } = api.historyLifetimeRange();
+    assert.deepStrictEqual([from, to], [min, max]);
+    assert.strictEqual(api.historyLifetimeTitle(), 'Lifetime');
+});
+
+check('the dropdowns are filled oldest first, with the range selected', () => {
+    const api = setup();
+    api.setHistoryLifetimeRange(2019, 2022);
+    assert.match(api.__written['history-lifetime-from'], /^<option value="2016"/);
+    assert.match(api.__written['history-lifetime-from'], /value="2019" selected/);
+    assert.match(api.__written['history-lifetime-to'], /value="2022" selected/);
+});
+
+check('the range shows on Lifetime only', () => {
+    const api = setup();
+    api.updateHistoryScopeControls(null);
+    assert.ok(!api.__node('history-lifetime-range').classList.contains('hidden'));
+    api.updateHistoryScopeControls(api.CURRENT_SEASON);
+    assert.ok(api.__node('history-lifetime-range').classList.contains('hidden'));
+});
+
+check('the table is titled by its span, without "Season"', () => {
+    const api = setup();
+    api.__written['history-standings-scope-label:text'] = 'Week 2';
+    api.setHistoryLifetimeRange(2019, 2022);
+    api.renderLifetimeStandingsTable();
+    assert.strictEqual(api.__written['history-standings-title:text'], '2019–2022');
+    assert.strictEqual(api.__written['history-standings-scope-label:text'], '');
 });
 
 console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);

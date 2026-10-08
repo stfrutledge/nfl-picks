@@ -711,6 +711,19 @@
                         </select>
                     </div>
 
+                    <!-- Lifetime only: the seasons it spans, every season by
+                         default. Hidden on a single season. -->
+                    <div class="scope-week hidden" id="history-lifetime-range">
+                        <label for="history-lifetime-from">From:</label>
+                        <select id="history-lifetime-from" class="week-dropdown" aria-label="First season">
+                            <!-- Options populated by JavaScript -->
+                        </select>
+                        <label for="history-lifetime-to">to</label>
+                        <select id="history-lifetime-to" class="week-dropdown" aria-label="Last season">
+                            <!-- Options populated by JavaScript -->
+                        </select>
+                    </div>
+
                     <!-- What the standings table below covers: the season so
                          far (the whole of it, once it is over) or one week of
                          it. Hidden on Lifetime, which has no weeks. -->
@@ -929,6 +942,6 @@
     <script src="charts.js?v=77c64f94"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=1c6c450d"></script>
+    <script src="app.js?v=54bc09e3"></script>
 </body>
 </html>
