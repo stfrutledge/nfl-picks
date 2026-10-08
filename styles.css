@@ -181,6 +181,9 @@ header {
 
 .header-text {
     text-align: left;
+    /* Takes the squeeze on a narrow phone, so the round buttons beside it
+       keep their shape. */
+    min-width: 0;
 }
 
 header h1 {
@@ -211,6 +214,8 @@ header h1 {
     border-radius: 50%;
     width: 40px;
     height: 40px;
+    flex-shrink: 0;
+    padding: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -253,6 +258,8 @@ header h1 {
     border-radius: 50%;
     width: 40px;
     height: 40px;
+    flex-shrink: 0;
+    padding: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -2583,10 +2590,15 @@ footer a:hover {
         width: 40px;
     }
 
-    .dark-mode-toggle {
+    .dark-mode-toggle,
+    .app-settings-btn {
         width: 36px;
         height: 36px;
         font-size: 1rem;
+    }
+
+    .app-settings-btn {
+        font-size: 1.15rem;
     }
 
     .charts-grid-content {
