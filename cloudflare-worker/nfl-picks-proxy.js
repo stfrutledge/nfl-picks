@@ -677,16 +677,66 @@ async function appsScriptGet(env, params) {
   return response.json();
 }
 
-/** One week's picks per picker, keyed like the site's. */
-async function fetchWeekPicks(env, season, week) {
+/** Every week's picks this season, per week number then picker, keyed like the site's. */
+async function fetchSeasonPicks(env, season) {
   const data = await appsScriptGet(env, { action: 'allpicks', season: String(season) });
-  const raw = data.picks?.[`${season}_${week}`] || {};
-  const picks = {};
-  for (const [picker, games] of Object.entries(raw)) {
-    picks[picker] = {};
-    for (const [key, pick] of Object.entries(games)) picks[picker][normalizeKey(key)] = pick;
+  const byWeek = {};
+  for (const [sheetWeek, raw] of Object.entries(data.picks || {})) {
+    const match = String(sheetWeek).match(/^(\d{4})_(\d+)$/);
+    if (!match || Number(match[1]) !== Number(season)) continue;
+    const picks = {};
+    for (const [picker, games] of Object.entries(raw || {})) {
+      picks[picker] = {};
+      for (const [key, pick] of Object.entries(games)) picks[picker][normalizeKey(key)] = pick;
+    }
+    byWeek[Number(match[2])] = picks;
   }
-  return picks;
+  return byWeek;
+}
+
+/**
+ * Each picker's Blazin' 5 record for the season through [week]: the earlier
+ * weeks graded from the Results and Spreads tabs, this one from [current]
+ * (already graded off ESPN). The Results tab is what the site scores from, so
+ * the percentage matches the Standings tab's Blazin' 5 column.
+ *
+ * One allresults call, plus one spreads call per earlier week that has a star
+ * in it, in parallel. Null when the sheet cannot be read - the notification
+ * then goes out with the week's record alone rather than not at all.
+ */
+async function seasonBlazinRecords(env, season, week, seasonPicks, current) {
+  try {
+    const earlier = Object.keys(seasonPicks).map(Number)
+      .filter(w => w < week && Object.values(seasonPicks[w]).some(mine =>
+        Object.values(mine || {}).some(p => p.blazin && p.line)));
+    const totals = {};
+    for (const picker of [...NFL_PICKERS, COWHERD_PICKER]) {
+      const r = current[picker] || {};
+      totals[picker] = { wins: r.wins || 0, losses: r.losses || 0, pushes: r.pushes || 0 };
+    }
+    if (earlier.length === 0) return totals;
+
+    const [results, ...spreads] = await Promise.all([
+      appsScriptGet(env, { action: 'allresults' }),
+      ...earlier.map(w => fetchWeekSpreads(env, season, w)),
+    ]);
+    earlier.forEach((w, i) => {
+      const games = Object.entries(results.results?.[`${season}_${w}`] || {}).map(([key, r]) => ({
+        key: normalizeKey(key), final: true,
+        awayScore: Number(r.awayScore) || 0, homeScore: Number(r.homeScore) || 0,
+      }));
+      const graded = gradeBlazin(games, seasonPicks[w], spreads[i]);
+      for (const [picker, r] of Object.entries(graded)) {
+        totals[picker].wins += r.wins;
+        totals[picker].losses += r.losses;
+        totals[picker].pushes += r.pushes;
+      }
+    });
+    return totals;
+  } catch (error) {
+    console.error('[automations] season Blazin record failed:', error.message);
+    return null;
+  }
 }
 
 /** One week's lines from the Spreads tab, keyed like the site's. */
@@ -762,7 +812,34 @@ function formatBlazinRecord({ wins, losses, pushes }) {
   return `${wins}-${losses}${pushes ? `-${pushes}` : ''}`;
 }
 
-function blazinMessage(season, week, records) {
+/** The site's Blazin' 5 %: wins over decided picks, pushes left out. Null with none decided. */
+function blazinPercent({ wins, losses }) {
+  return wins + losses > 0 ? `${((wins / (wins + losses)) * 100).toFixed(1)}%` : null;
+}
+
+/**
+ * One picker's own result: their week and their season so far, and a pointer
+ * to the site for everyone else's. [season] is null when the season record
+ * could not be read, and the line is then left out.
+ */
+function personalBlazinLine(week, season) {
+  const parts = [week.starred > 0
+    ? `You went ${formatBlazinRecord(week)} this week.`
+    : 'You had no Blazin’ 5 picks this week.'];
+  if (season && season.wins + season.losses + season.pushes > 0) {
+    const pct = blazinPercent(season);
+    parts.push(`Season: ${formatBlazinRecord(season)}${pct ? ` (${pct})` : ''}.`);
+  }
+  parts.push('See the site for everyone’s results.');
+  return parts.join(' ');
+}
+
+/**
+ * The week's results. Each phone shows only its own picker's line (personal);
+ * body keeps the whole group's, best first, for the logs and the tests that
+ * check the worker grades as the site does.
+ */
+function blazinMessage(season, week, records, seasonRecords = null) {
   const ranked = NFL_PICKERS
     .filter(p => records[p].starred > 0)
     .sort((a, b) => (records[b].wins - records[b].losses) - (records[a].wins - records[a].losses)
@@ -770,11 +847,14 @@ function blazinMessage(season, week, records) {
   const cowherd = records[COWHERD_PICKER];
   const line = ranked.map(p => `${p} ${formatBlazinRecord(records[p])}`).join(', ')
     + (cowherd?.starred ? `. Cowherd ${formatBlazinRecord(cowherd)}.` : '.');
+  const personal = Object.fromEntries(NFL_PICKERS.map(p =>
+    [p, personalBlazinLine(records[p], seasonRecords?.[p] || null)]));
   return {
     category: 'blazin_results',
     id: `blazin-${season}-${week}`,
     title: `Blazin’ 5 Results - Week ${week}`,
     body: line,
+    personal,
     spoilerTitle: `Blazin’ 5 Results - Week ${week}`,
     spoilerBody: 'Results are in. Open the app to see how everyone did.',
   };
@@ -923,11 +1003,14 @@ async function runAutomations(env, now = Date.now()) {
 
   if (!blazinCandidate && dueSlates.length === 0) return { season, week, done };
 
-  const picks = await fetchWeekPicks(env, season, week);
+  const seasonPicks = await fetchSeasonPicks(env, season);
+  const picks = seasonPicks[week] || {};
 
   if (blazinCandidate && blazinSettled(games, picks)) {
     const spreads = await fetchWeekSpreads(env, season, week);
-    const message = blazinMessage(season, week, gradeBlazin(games, picks, spreads));
+    const records = gradeBlazin(games, picks, spreads);
+    const seasonRecords = await seasonBlazinRecords(env, season, week, seasonPicks, records);
+    const message = blazinMessage(season, week, records, seasonRecords);
     const sent = await sendToGroup(env, message);
     if (sent.ok) { await markSent(env, blazinId); done.push(blazinId); }
   }
@@ -1006,7 +1089,8 @@ async function handlePreview(env, token, kind) {
   const board = await fetchScoreboard();
   const { season, week, games } = board;
   if (!season || !week || games.length === 0) return jsonResponse({ error: 'ESPN has no games this week' }, 502);
-  const picks = await fetchWeekPicks(env, season, week);
+  const seasonPicks = await fetchSeasonPicks(env, season);
+  const picks = seasonPicks[week] || {};
 
   let message;
   if (kind === 'blazin_results') {
@@ -1014,10 +1098,14 @@ async function handlePreview(env, token, kind) {
     const records = gradeBlazin(games, picks, spreads);
     const starred = Object.values(records).reduce((n, r) => n + r.starred, 0);
     if (starred === 0) return jsonResponse({ ok: true, sent: false, note: `Nobody has starred a Week ${week} game yet.` });
-    message = blazinMessage(season, week, records);
+    const seasonRecords = await seasonBlazinRecords(env, season, week, seasonPicks, records);
+    message = blazinMessage(season, week, records, seasonRecords);
+    // The admin's phone shows the admin's own line, as the real one will.
     const pending = pendingStarredGames(games, picks);
     if (pending > 0) {
-      message.body += ` As it stands: ${plural(pending, 'starred game')} still to finish.`;
+      const note = ` As it stands: ${plural(pending, 'starred game')} still to finish.`;
+      message.body += note;
+      for (const picker of Object.keys(message.personal)) message.personal[picker] += note;
     }
   } else {
     const slate = { kind: 'weekend', kickoff: 0, day: '' };

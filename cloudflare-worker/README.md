@@ -37,7 +37,10 @@ from the Apps Script and sends through FCM:
 - **Blazin' 5 results** (`blazin_results`): once every starred game is final
   and nobody can still add a star. Graded by the worker's small copy of the
   site's rule; `test-worker-automations.js` fails if it disagrees with
-  `calculateStatsForWeeks`.
+  `calculateStatsForWeeks`. Each phone shows only its own picker's line: that
+  week's record, the season's record and Blazin' 5 % (earlier weeks graded from
+  the Results and Spreads tabs), and a pointer to the site for everyone else's.
+  If the sheet cannot be read the week's record goes out without the season.
 - **Pick reminders** (`pick_reminders`): at noon Irish time on the day of a
   midweek opener (Thursday Night Football; that night's games only), and one
   reminder 3 hours before the first weekend kickoff (everything left, plus

@@ -104,8 +104,12 @@ globalThis.fetch = async (url, init = {}) => {
     if (u.startsWith(APPS_SCRIPT_URL)) {
         const action = new URL(u).searchParams.get('action');
         appsScriptCalls.push(action);
-        if (action === 'allpicks') return new Response(JSON.stringify({ picks: { '2026_5': world.picks } }));
+        if (action === 'allpicks') return new Response(JSON.stringify({ picks: { ...world.earlierPicks, '2026_5': world.picks } }));
         if (action === 'spreads') return new Response(JSON.stringify({ spreads: world.spreads }));
+        if (action === 'allresults') {
+            if (world.resultsDown) return new Response('down', { status: 500 });
+            return new Response(JSON.stringify({ results: world.results }));
+        }
     }
     if (u === ACCOUNT.token_uri) return new Response(JSON.stringify({ access_token: 't', expires_in: 3600 }));
     if (u.startsWith('https://fcm.googleapis.com/')) {
@@ -142,7 +146,8 @@ let failures = 0, total = 0;
 async function check(name, fn) {
     total++;
     sent.length = 0; appsScriptCalls.length = 0; kv.clear();
-    world = { board: scoreboard(ALL_FINAL, FINALS), picks: fullPicks(), spreads: SPREADS };
+    world = { board: scoreboard(ALL_FINAL, FINALS), picks: fullPicks(), spreads: SPREADS,
+        earlierPicks: {}, results: {}, resultsDown: false };
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
@@ -177,6 +182,54 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         await tick(TUE_MORNING);
         assert.strictEqual(sent[0].data.body,
             'Jason 3-1-1, Stephen 3-1-1, Dylan 2-2-1, Daniel 1-3-1, Sean 1-3-1. Cowherd 2-0-1.');
+    });
+
+    // Week 4, already in the Results tab: the same six games, every home side
+    // winning by 7 at -3, so a home star wins and an away star loses.
+    const WEEK4_RESULTS = Object.fromEntries(KEYS.map(k => [k, { awayScore: 10, homeScore: 17 }]));
+
+    await check('each phone gets only its own picker’s week, season and a pointer to the site', async () => {
+        world.earlierPicks = {
+            '2026_4': {
+                Stephen: Object.fromEntries(KEYS.slice(0, 5).map(k => [k, star('home')])),   // 5-0
+                Sean: Object.fromEntries(KEYS.slice(0, 5).map(k => [k, star('away')]))       // 0-5
+            },
+            '2025_4': { Stephen: { bills_chiefs: star('away') } }   // another season: ignored
+        };
+        world.results = { '2026_4': WEEK4_RESULTS, '2025_4': WEEK4_RESULTS };
+        await tick(TUE_MORNING);
+        const personal = JSON.parse(sent[0].data.personal);
+        assert.deepStrictEqual(Object.keys(personal).sort(), ['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen']);
+        // Stephen: 3-1-1 this week + 5-0 in week 4 = 8-1-1, 8/9 decided.
+        assert.strictEqual(personal.Stephen,
+            'You went 3-1-1 this week. Season: 8-1-1 (88.9%). See the site for everyone’s results.');
+        // Sean: 1-3-1 + 0-5 = 1-8-1.
+        assert.strictEqual(personal.Sean,
+            'You went 1-3-1 this week. Season: 1-8-1 (11.1%). See the site for everyone’s results.');
+        // Daniel starred nothing in week 4: his season is this week alone.
+        assert.strictEqual(personal.Daniel,
+            'You went 1-3-1 this week. Season: 1-3-1 (25.0%). See the site for everyone’s results.');
+        assert.ok(!Object.values(personal).some(t => /Stephen|Sean|Jason|Dylan|Daniel/.test(t)),
+            'nobody else’s name in anyone’s line');
+    });
+
+    await check('a picker with no stars this week still gets their season', async () => {
+        delete world.picks.Daniel;
+        world.picks.Daniel = { cowboys_commanders: plain('home') };
+        world.earlierPicks = { '2026_4': { Daniel: { rams_seahawks: star('home'), jets_dolphins: star('home') } } };
+        world.results = { '2026_4': WEEK4_RESULTS };
+        await tick(TUE_MORNING);
+        assert.strictEqual(JSON.parse(sent[0].data.personal).Daniel,
+            'You had no Blazin’ 5 picks this week. Season: 2-0 (100.0%). See the site for everyone’s results.');
+    });
+
+    await check('the sheet down: the week’s record still goes out, without a season line', async () => {
+        world.earlierPicks = { '2026_4': { Stephen: { bills_chiefs: star('home') } } };
+        world.resultsDown = true;
+        await tick(TUE_MORNING);
+        assert.strictEqual(sent.length, 1);
+        assert.strictEqual(JSON.parse(sent[0].data.personal).Stephen,
+            'You went 3-1-1 this week. See the site for everyone’s results.');
     });
 
     await check('never sent twice', async () => {
