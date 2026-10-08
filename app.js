@@ -1493,7 +1493,11 @@ async function fetchNFLOdds(forceRefresh = false) {
 
     try {
         console.log('[Odds API] Fetching odds via worker proxy...');
-        const response = await fetch(`${WORKER_PROXY_URL}/odds`);
+        // Past the browser's HTTP cache: the worker's cached responses carry a
+        // max-age of hours, so a forced refresh would otherwise reread this
+        // device's own copy without reaching the worker at all. The worker's
+        // edge cache still answers, so this spends no credits.
+        const response = await fetch(`${WORKER_PROXY_URL}/odds`, { cache: 'no-cache' });
 
         if (!response.ok) {
             throw new Error(`Odds API error: ${response.status}`);
