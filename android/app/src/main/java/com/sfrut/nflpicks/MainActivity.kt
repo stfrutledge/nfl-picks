@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONObject
 import org.json.JSONTokener
 
 /**
@@ -56,10 +57,25 @@ class MainActivity : ComponentActivity() {
             web.evaluateJavascript("window.runAppAdminAction && runAppAdminAction('$action')", null)
         }
 
-    /** Open Settings, handing it the page's Odds API credits line for the admin tools. */
+    /**
+     * Open Settings, handing it the page's Odds API credits line for the admin
+     * tools, and the page's theme - the site's own toggle, which can differ
+     * from the phone's - so Settings matches the page it opened from.
+     */
     private fun openSettings() {
-        web.evaluateJavascript("window.appAdminInfo ? appAdminInfo() : ''") { json ->
-            val quota = runCatching { JSONTokener(json).nextValue() as? String }.getOrNull().orEmpty()
+        val script = """
+            ({ quota: window.appAdminInfo ? appAdminInfo() : '',
+               theme: localStorage.getItem('theme') })
+        """.trimIndent()
+        web.evaluateJavascript(script) { json ->
+            val page = runCatching { JSONTokener(json).nextValue() as? JSONObject }.getOrNull()
+            val quota = page?.optString("quota").orEmpty()
+            // The site's rule: its saved toggle, else the phone's setting.
+            if (page != null) prefs.siteDark = when (page.optString("theme")) {
+                "dark" -> true
+                "light" -> false
+                else -> null
+            }
             settings.launch(
                 Intent(this, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_QUOTA, quota)
             )

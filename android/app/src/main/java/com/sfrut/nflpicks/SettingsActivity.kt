@@ -240,7 +240,8 @@ class SettingsActivity : ComponentActivity() {
         // dark on the light page and light on the dark one.
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
         setContent {
-            val dark = isSystemInDarkTheme()
+            // The site's theme, not just the phone's: its toggle can override.
+            val dark = prefs.siteDark ?: isSystemInDarkTheme()
             val view = LocalView.current
             SideEffect {
                 WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !dark

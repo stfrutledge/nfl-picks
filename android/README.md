@@ -53,7 +53,9 @@ calling it. `node test-app-bridge.js` covers this.
   header with the shield and the green subtitle, `--bg-secondary` page,
   bordered 8dp cards, uppercase letter-spaced labels and black uppercase
   buttons, in Inter (bundled; OFL, see `FONT-LICENSE-Inter.txt`). It follows
-  the phone's light/dark setting with the site's dark tokens. On first launch
+  the site's light/dark rule, with the site's dark tokens: the page's saved
+  toggle (read off the page each time Settings opens), else the phone's
+  setting. On first launch
   the same screen is the welcome.
 
 ## Building

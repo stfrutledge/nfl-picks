@@ -53,6 +53,17 @@ class Prefs(context: Context) {
     val adminUnlocked: Boolean
         get() = isAdminKey(adminKey)
 
+    /**
+     * The site's saved theme toggle as last read off the page: true dark,
+     * false light, null never set (Settings then follows the phone, as the
+     * site does).
+     */
+    var siteDark: Boolean?
+        get() = if (prefs.contains("siteDark")) prefs.getBoolean("siteDark", false) else null
+        set(value) = prefs.edit().apply {
+            if (value == null) remove("siteDark") else putBoolean("siteDark", value)
+        }.apply()
+
     /** Whether Settings has already shown the system's permission prompt. */
     var askedForNotifications: Boolean
         get() = prefs.getBoolean("askedForNotifications", false)
