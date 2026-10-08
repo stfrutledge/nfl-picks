@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=de06b26d">
+    <link rel="stylesheet" href="styles.css?v=5a009385">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -709,10 +709,18 @@
                         <select id="history-season-dropdown" class="season-dropdown">
                             <!-- Options populated by JavaScript -->
                         </select>
+                        <!-- Lifetime only: opens and closes the season range. -->
+                        <button type="button" class="lifetime-filter-btn hidden" id="history-lifetime-filter"
+                                aria-label="Filter seasons" aria-expanded="false"
+                                aria-controls="history-lifetime-range" title="Filter seasons">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z"/>
+                            </svg>
+                        </button>
                     </div>
 
-                    <!-- Lifetime only: the seasons it spans, every season by
-                         default. Hidden on a single season. -->
+                    <!-- Lifetime only, and only while the filter button is on:
+                         the seasons it spans, every season by default. -->
                     <div class="scope-week hidden" id="history-lifetime-range">
                         <label for="history-lifetime-from">From:</label>
                         <select id="history-lifetime-from" class="week-dropdown" aria-label="First season">
@@ -942,6 +950,6 @@
     <script src="charts.js?v=77c64f94"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=54bc09e3"></script>
+    <script src="app.js?v=96427ae6"></script>
 </body>
 </html>

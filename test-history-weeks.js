@@ -94,6 +94,7 @@ function makeAppEnv() {
         saveCowherdPicks,
         AVAILABLE_SEASONS, historyLifetimeRange, setHistoryLifetimeRange,
         historyLifetimeSeasons, historyLifetimeTitle, renderLifetimeStandingsTable,
+        toggleHistoryLifetimeFilter,
         __scope: () => historyStandingsScope,
         __week: () => historyStandingsWeek,
         __setWeek: w => { historyStandingsWeek = w; },
@@ -330,12 +331,45 @@ check('the dropdowns are filled oldest first, with the range selected', () => {
     assert.match(api.__written['history-lifetime-to'], /value="2022" selected/);
 });
 
-check('the range shows on Lifetime only', () => {
+check('the filter button shows on Lifetime only', () => {
     const api = setup();
+    const btn = api.__node('history-lifetime-filter');
     api.updateHistoryScopeControls(null);
-    assert.ok(!api.__node('history-lifetime-range').classList.contains('hidden'));
+    assert.ok(!btn.classList.contains('hidden'));
     api.updateHistoryScopeControls(api.CURRENT_SEASON);
-    assert.ok(api.__node('history-lifetime-range').classList.contains('hidden'));
+    assert.ok(btn.classList.contains('hidden'));
+});
+
+check('the range shows only once the filter button is on, and only on Lifetime', () => {
+    const api = setup();
+    const range = api.__node('history-lifetime-range');
+    const btn = api.__node('history-lifetime-filter');
+    api.__node('history-season-dropdown').value = 'lifetime';
+    api.updateHistoryScopeControls(null);
+    assert.ok(range.classList.contains('hidden'), 'closed by default');
+
+    api.toggleHistoryLifetimeFilter();
+    assert.ok(!range.classList.contains('hidden'), 'opened by the button');
+    assert.ok(btn.classList.contains('active'));
+
+    api.updateHistoryScopeControls(api.CURRENT_SEASON);
+    assert.ok(range.classList.contains('hidden'), 'a single season never shows it');
+
+    api.updateHistoryScopeControls(null);
+    api.toggleHistoryLifetimeFilter();
+    assert.ok(range.classList.contains('hidden'), 'closed again by the button');
+    assert.ok(!btn.classList.contains('active'));
+});
+
+check('a closed filter still marks the button while a range is applied', () => {
+    const api = setup();
+    const btn = api.__node('history-lifetime-filter');
+    api.setHistoryLifetimeRange(2020, 2023);
+    api.updateHistoryScopeControls(null);
+    assert.ok(btn.classList.contains('filtered'));
+    api.setHistoryLifetimeRange(2000, 3000);
+    api.updateHistoryScopeControls(null);
+    assert.ok(!btn.classList.contains('filtered'), 'every season is no filter');
 });
 
 check('the table is titled by its span, without "Season"', () => {

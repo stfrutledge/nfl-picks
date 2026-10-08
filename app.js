@@ -2898,6 +2898,9 @@ function setupSeasonDropdown() {
         });
     }
 
+    document.getElementById('history-lifetime-filter')
+        ?.addEventListener('click', toggleHistoryLifetimeFilter);
+
     // Lifetime's season range. The end that was moved wins: taking "from" past
     // "to" drags "to" along with it, rather than refusing the change.
     document.getElementById('history-lifetime-from')?.addEventListener('change', (e) => {
@@ -3111,6 +3114,15 @@ async function loadHistorySeason(season) {
 // list as it stood when the page loaded.
 let historyLifetimeFrom = null;
 let historyLifetimeTo = null;
+// Whether the From/To dropdowns are showing. Closing them keeps the range:
+// the table's title still names it, and the button stays marked.
+let historyLifetimeFilterOpen = false;
+
+/** Show or hide the From/To dropdowns under the filter button. */
+function toggleHistoryLifetimeFilter() {
+    historyLifetimeFilterOpen = !historyLifetimeFilterOpen;
+    updateHistoryScopeControls(historySelectedSeason());
+}
 
 /** Lifetime's range, open ends resolved, plus the bounds it can move between. */
 function historyLifetimeRange() {
@@ -3616,7 +3628,18 @@ function historyWeekName(week) {
  */
 function updateHistoryScopeControls(season) {
     const scope = document.getElementById('history-scope');
-    document.getElementById('history-lifetime-range')?.classList.toggle('hidden', !!season);
+    // Lifetime's filter button, and the range only while it is on. The
+    // button is marked "filtered" whenever the range is narrower than every
+    // season, so a closed filter still says one is applied.
+    const filterBtn = document.getElementById('history-lifetime-filter');
+    if (filterBtn) {
+        filterBtn.classList.toggle('hidden', !!season);
+        filterBtn.classList.toggle('active', historyLifetimeFilterOpen);
+        filterBtn.classList.toggle('filtered', historyLifetimeTitle() !== 'Lifetime');
+        filterBtn.setAttribute('aria-expanded', String(historyLifetimeFilterOpen));
+    }
+    document.getElementById('history-lifetime-range')
+        ?.classList.toggle('hidden', !!season || !historyLifetimeFilterOpen);
     if (!scope) return;
     scope.classList.toggle('hidden', !season);
     const seasonBtn = document.getElementById('history-scope-season');

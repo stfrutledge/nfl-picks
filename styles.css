@@ -4867,6 +4867,52 @@ body.standings-provisional #records-analysis-section {
     gap: 12px;
 }
 
+/* Lifetime's filter button, beside the season dropdown. Outlined like the
+   dropdown; green while the range is open, filled once a range is applied. */
+.lifetime-filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 4px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.lifetime-filter-btn.hidden {
+    display: none;
+}
+
+.lifetime-filter-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linejoin: round;
+}
+
+.lifetime-filter-btn:hover {
+    border-color: var(--text-light);
+}
+
+.lifetime-filter-btn.active {
+    border-color: var(--accent-green);
+    color: var(--accent-green);
+}
+
+.lifetime-filter-btn.filtered svg {
+    fill: currentColor;
+}
+
+.lifetime-filter-btn.filtered {
+    color: var(--accent-green);
+}
+
 .history-season-row .season-selector label {
     font-weight: 600;
     color: var(--text-secondary);
