@@ -409,8 +409,8 @@ check('a pooled table names each picker, in name order within a game', () => {
     const api = setup();
     const html = api.gameDetailRowsHtml(TWO_ON_ONE, { withPicker: true });
     assert.ok(!/Picked:/.test(html));
-    assert.ok(html.indexOf('Dylan picked Cowboys') > -1);
-    assert.ok(html.indexOf('Dylan picked Cowboys') < html.indexOf('Stephen picked Cowboys'));
+    assert.ok(html.indexOf('Dylan: Cowboys') > -1);
+    assert.ok(html.indexOf('Dylan: Cowboys') < html.indexOf('Stephen: Cowboys'));
 });
 
 console.log(`\n${total - failures}/${total} passed`);

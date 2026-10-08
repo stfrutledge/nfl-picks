@@ -6877,9 +6877,9 @@ function gameDetailRowsHtml(games, { withSeason = false, withPicker = false } = 
         .map(g => `
                 <div class="game-detail-row outcome-${g.outcome}">
                     <span class="game-week${withSeason ? ' with-season' : ''}">${withSeason ? `<span class="game-season">${g.season}</span> ` : ''}Wk ${g.week}</span>
-                    <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
+                    <span class="game-matchup">${g.away}&nbsp;${g.awayScore} @ ${g.home}&nbsp;${g.homeScore}</span>
                     <span class="game-spread">${g.line}</span>
-                    <span class="game-picked">${withPicker && g.picker ? `${g.picker} picked` : 'Picked:'} ${g.picked}</span>
+                    <span class="game-picked">${withPicker && g.picker ? `${g.picker}:` : 'Picked:'} ${g.picked}</span>
                     <span class="game-outcome">${g.outcome.toUpperCase()}</span>
                 </div>
             `).join('');
