@@ -64,6 +64,15 @@ class Prefs(context: Context) {
             if (value == null) remove("siteDark") else putBoolean("siteDark", value)
         }.apply()
 
+    /**
+     * The exact address of the last page that loaded in full. Every load has
+     * its own address (MainActivity.load), and the WebView's cache keeps pages
+     * by address, so this is how an offline start finds the last one.
+     */
+    var lastPageUrl: String?
+        get() = prefs.getString("lastPageUrl", null)
+        set(value) = prefs.edit().putString("lastPageUrl", value).apply()
+
     /** Whether Settings has already shown the system's permission prompt. */
     var askedForNotifications: Boolean
         get() = prefs.getBoolean("askedForNotifications", false)

@@ -117,7 +117,20 @@ class DeliveryTest {
         assertEquals("You still have 4 games to pick and 2 Blazin’ 5 picks to make.",
             (Delivery.decide(reminder, defaults, noon) as Decision.Show).body)
         assertTrue(Delivery.decide(reminder, defaults.copy(picker = "Jason"), noon) is Decision.Drop)
+        // No group text to fall back on, for a phone with no picker.
         assertTrue(Delivery.decide(reminder, defaults.copy(picker = null), noon) is Decision.Drop)
+    }
+
+    @Test fun `a phone with no picker chosen gets the group's text`() {
+        val reminder = Incoming(
+            Category.PICK_REMINDERS, "Kickoff in 3 hours", "Still to pick: Jason, Sean.",
+            personal = mapOf("Sean" to "You still have 4 games to pick.")
+        )
+        val noon = at(dublin, 2026, 10, 11, 15)
+        assertEquals("Still to pick: Jason, Sean.",
+            (Delivery.decide(reminder, defaults.copy(picker = null), noon) as Decision.Show).body)
+        assertTrue("a picker with nothing to do still gets nothing",
+            Delivery.decide(reminder, defaults.copy(picker = "Stephen"), noon) is Decision.Drop)
     }
 
     @Test fun `a reminder that would only show after kickoff is dropped`() {

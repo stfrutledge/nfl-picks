@@ -843,8 +843,9 @@ function personalBlazinLine(week, season) {
 
 /**
  * The week's results. Each phone shows only its own picker's line (personal);
- * body keeps the whole group's, best first, for the logs and the tests that
- * check the worker grades as the site does.
+ * body keeps the whole group's, best first: what a phone with no picker chosen
+ * shows, and what the tests check the worker grades as the site does with.
+ * `week` tells the app where a tap should land.
  */
 function blazinMessage(season, week, records, seasonRecords = null) {
   const ranked = NFL_PICKERS
@@ -859,6 +860,7 @@ function blazinMessage(season, week, records, seasonRecords = null) {
   return {
     category: 'blazin_results',
     id: `blazin-${season}-${week}`,
+    week,
     title: `Blazin’ 5 Results - Week ${week}`,
     body: line,
     personal,
@@ -965,8 +967,10 @@ function reminderMessage(season, week, slate, games, picks, regularSeason) {
   return {
     category: 'pick_reminders',
     id: `reminder-${season}-${week}-${slate.kind}`,
+    week,
     title: slate.kind === 'first' ? `${day} night’s game: picks due` : `${day} kickoff in 3 hours`,
-    body: '',
+    // For a phone with no picker chosen: who still has picks to make.
+    body: `Still to pick: ${Object.keys(personal).join(', ')}.`,
     personal,
     expiresAt: slate.kickoff,
   };
@@ -1132,6 +1136,7 @@ async function handlePreview(env, token, kind) {
       .map(([picker, text]) => `${picker}: ${text.replace(/^You still have /, '').replace(/\.$/, '')}`);
     message = {
       category: 'pick_reminders',
+      week,
       title: `Still to pick - Week ${week}`,
       body: lines.join(' · '),
     };

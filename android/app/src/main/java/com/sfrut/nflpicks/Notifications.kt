@@ -51,7 +51,7 @@ object Notifications {
         when (decision) {
             is Decision.Drop -> Log.i(TAG, "Dropped ${msg.category.id}: ${decision.reason}")
             is Decision.Show -> if (decision.held) hold(context, data, decision.atMillis)
-                else show(context, msg.category, decision.title, decision.body, data["id"])
+                else show(context, msg.category, decision.title, decision.body, data["id"], data["week"])
         }
     }
 
@@ -90,13 +90,22 @@ object Notifications {
         Log.i(TAG, "Holding ${data["category"]} until $atMillis")
     }
 
-    fun show(context: Context, category: Category, title: String, body: String, id: String?) {
+    /**
+     * Where tapping lands: results on the Blazin' 5 standings, a reminder on
+     * Make Picks for its week (MainActivity.openTarget). A message just opens.
+     */
+    fun show(context: Context, category: Category, title: String, body: String, id: String?, week: String? = null) {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
 
+        val tap = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(MainActivity.EXTRA_OPEN, category.id)
+        week?.let { tap.putExtra(MainActivity.EXTRA_WEEK, it) }
+        // One request code per category, so a reminder's tap cannot overwrite
+        // where a results notification still on screen goes.
         val open = PendingIntent.getActivity(
-            context, 0,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            context, category.ordinal, tap,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(context, category.id)
@@ -128,7 +137,7 @@ class HeldNotificationWorker(context: Context, params: WorkerParameters) : Corou
         val settings = Prefs(applicationContext).deliverySettings().copy(quietOn = false)
         val decision = Delivery.decide(msg, settings, ZonedDateTime.now())
         if (decision is Decision.Show) {
-            Notifications.show(applicationContext, msg.category, decision.title, decision.body, data["id"])
+            Notifications.show(applicationContext, msg.category, decision.title, decision.body, data["id"], data["week"])
         }
         return Result.success()
     }

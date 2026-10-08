@@ -62,9 +62,13 @@ object Delivery {
     fun decide(msg: Incoming, settings: DeliverySettings, now: ZonedDateTime): Decision {
         if (msg.category !in settings.enabled) return Decision.Drop("${msg.category.id} is switched off")
 
-        val body = if (msg.personal != null) {
-            msg.personal[settings.picker ?: ""] ?: return Decision.Drop("not meant for ${settings.picker}")
-        } else msg.body
+        // A phone with no picker chosen cannot be given anyone's own line, so it
+        // gets the group's (an older worker sent a reminder with none: dropped).
+        val body = when {
+            msg.personal == null -> msg.body
+            settings.picker == null -> msg.body.ifBlank { return Decision.Drop("no picker, no group text") }
+            else -> msg.personal[settings.picker] ?: return Decision.Drop("not meant for ${settings.picker}")
+        }
 
         val spoilerFree = settings.spoilerFree && msg.spoilerBody != null
         val title = if (spoilerFree) msg.spoilerTitle ?: msg.title else msg.title

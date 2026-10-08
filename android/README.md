@@ -16,6 +16,16 @@ three things a web page cannot do:
   Cloud Messaging topic, `group`. On the admin's phone only (picker =
   Stephen), Settings has a *Message the group* box, which POSTs to the
   worker's `/notify`.
+  Tapping one lands where it is about: Blazin' 5 results on Standings >
+  Blazin' 5, a pick reminder on Make Picks for its week (the worker sends the
+  `week`; the page switches through `openFromApp` in app.js). A phone with no
+  picker chosen gets the group's text instead of anyone's own line.
+- **Offline.** With no connection (or the site unreachable) the app reopens
+  the last page that loaded, from the WebView's cache, drawn from the site's
+  own saved data, under a strip saying it is offline; pull down (or tap the
+  strip) to retry. Pull-to-refresh is only on while the strip is up, so it
+  never fights the page's own scrolling. Every live load has its own address
+  (`?app=<time>`), so `Prefs.lastPageUrl` records which one to reopen.
 - **A clipboard that works.** The site copies through `navigator.clipboard`
   (Export All Picks, the Weekly Recap), which a WebView does not reliably
   allow. The start script routes it to the native clipboard.

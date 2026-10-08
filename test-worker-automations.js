@@ -295,6 +295,8 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         const personal = JSON.parse(data.personal);
         assert.deepStrictEqual(Object.keys(personal).sort(), ['Daniel', 'Dylan', 'Jason', 'Sean']);
         assert.strictEqual(personal.Sean, 'You still have 1 game to pick.', 'Thursday only, no stars yet');
+        assert.strictEqual(data.body, 'Still to pick: Daniel, Dylan, Jason, Sean.', 'for a phone with no picker');
+        assert.strictEqual(data.week, '5', 'where a tap lands');
     });
 
     await check('three hours before the weekend: every game left, and the stars', async () => {
@@ -380,6 +382,7 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(sent[0].token, 'my-phone');
         assert.strictEqual(sent[0].topic, undefined, 'never the group');
         assert.strictEqual(sent[0].data.title, 'Blazin’ 5 Results - Week 5');
+        assert.strictEqual(sent[0].data.week, '5');
         assert.strictEqual(sent[0].data.body,
             'Jason 3-1-1, Stephen 3-1-1, Dylan 2-2-1, Daniel 1-3-1, Sean 1-3-1. Cowherd 2-0-1.',
             'the same grading as the real notification');

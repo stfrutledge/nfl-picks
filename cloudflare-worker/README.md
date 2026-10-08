@@ -41,10 +41,14 @@ from the Apps Script and sends through FCM:
   week's record, the season's record and Blazin' 5 % (earlier weeks graded from
   the Results and Spreads tabs), and a pointer to the site for everyone else's.
   If the sheet cannot be read the week's record goes out without the season.
+  A phone with no picker chosen shows the group line (everyone's record).
+  While the current week has no stars yet, the Admin Settings test grades last week.
 - **Pick reminders** (`pick_reminders`): at noon Irish time on the day of a
   midweek opener (Thursday Night Football; that night's games only), and one
   reminder 3 hours before the first weekend kickoff (everything left, plus
   Blazin' 5 picks to make), worded per picker, for those with picks to make.
+  The group line, for a phone with no picker, names who still has picks to make.
+  Both carry the `week`, so a tap opens the app on the right screen.
 
 Everything is sent data-only; each phone decides what to show and when (the
 app's categories, quiet hours and spoiler-free setting). It needs, besides the

@@ -2739,6 +2739,26 @@ function setupAppSettingsButton() {
 }
 
 /**
+ * Where a tapped notification lands, called by the Android app (1.12+):
+ * Blazin' 5 results open Standings on the Blazin' 5 table, a pick reminder
+ * opens Make Picks on its week. A cold start is still loading when the app
+ * calls, so this waits for the first load to finish.
+ */
+async function openFromApp(target, week) {
+    for (let i = 0; !initialLoadComplete && i < 150; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (target === 'standings-blazin') {
+        await setActiveCategory('standings');
+        await setActiveSubcategory('blazin');
+    } else if (target === 'make-picks') {
+        await setActiveCategory('make-picks');
+        const w = Number(week);
+        if (w >= 1 && w !== currentWeek && w <= getMaxNavigableWeek()) await setCurrentWeek(w);
+    }
+}
+
+/**
  * Run one of the admin actions the app's Settings moved off the picks.
  *
  * An app that can take the answer (adminResult, app 1.5+) stays in Admin
