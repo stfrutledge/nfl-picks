@@ -1525,6 +1525,59 @@ header h1 {
     justify-self: end;
 }
 
+/* On a phone the one-line row is wider than the screen, and the records
+   tables clip it (overflow: hidden) - the pick and the outcome were cut off.
+   Every expansion gets the consensus card's stacked layout there instead;
+   the matchup wraps rather than truncating, so nothing is lost. */
+@media (max-width: 768px) {
+    .team-details-container {
+        padding: 10px 12px;
+    }
+
+    .team-details-container .game-detail-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+            "week matchup outcome"
+            "week picked  spread";
+        column-gap: 10px;
+        row-gap: 2px;
+        font-size: 0.75rem;
+    }
+
+    .team-details-container .game-week,
+    .team-details-container .game-week.with-season,
+    .team-details-container .game-spread,
+    .team-details-container .game-picked,
+    .team-details-container .game-outcome {
+        min-width: 0;
+    }
+
+    .team-details-container .game-week {
+        grid-area: week;
+        align-self: center;
+    }
+
+    .team-details-container .game-matchup {
+        grid-area: matchup;
+    }
+
+    .team-details-container .game-picked {
+        grid-area: picked;
+    }
+
+    .team-details-container .game-spread {
+        grid-area: spread;
+        justify-self: end;
+        text-align: right;
+    }
+
+    .team-details-container .game-outcome {
+        grid-area: outcome;
+        justify-self: end;
+    }
+}
+
 /* Everybody on the same side at different locked numbers, landing on
    different outcomes - a consensus game with no single group result. */
 .game-detail-row.outcome-split {
@@ -2584,13 +2637,17 @@ footer a:hover {
         gap: 24px;
     }
 
+    /* Scrolls rather than clips if a table still cannot fit: overflow: hidden
+       (for the rounded corners) used to cut the last columns off unreachably. */
     .team-records-table-container {
         max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     .team-records-table th,
     .team-records-table td {
-        padding: 10px 12px;
+        padding: 10px 8px;
         font-size: 0.8rem;
     }
 
