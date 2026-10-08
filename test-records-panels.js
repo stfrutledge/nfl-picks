@@ -65,6 +65,7 @@ function makeEnv() {
         calculateWorstBlazinWeeks,
         calculateLoneWolfPicksWithDetails, calculateStraightUpLoneWolfPicks, calculateBlazinLoneWolfPicks,
         recordsTableData, winPctCell, renderPickerCard, renderSuperBowlPicksSummary,
+        gameDetailRowsHtml,
         __setState: s => { if ('allPicks' in s) allPicks = s.allPicks; }
     });`;
     const fn = new Function(
@@ -387,6 +388,29 @@ check('a locked pick shows its own number and total', () => {
     assert.strictEqual(ats, 'Chiefs (-3)');
     assert.strictEqual(winner, 'Chiefs');
     assert.strictEqual(ou, 'Over 47');
+});
+
+section('With "All", a detail row names who made the pick');
+
+// Two pickers on one game: without names it reads as one game listed twice.
+const TWO_ON_ONE = [
+    { week: 14, season: 2016, picker: 'Stephen', away: 'Cowboys', home: 'Giants', awayScore: 7, homeScore: 10, picked: 'Cowboys', line: 'Cowboys -3', outcome: 'loss' },
+    { week: 14, season: 2016, picker: 'Dylan', away: 'Cowboys', home: 'Giants', awayScore: 7, homeScore: 10, picked: 'Cowboys', line: 'Cowboys -3', outcome: 'loss' }
+];
+
+check('one picker reads "Picked:", as before', () => {
+    const api = setup();
+    const html = api.gameDetailRowsHtml(TWO_ON_ONE);
+    assert.strictEqual((html.match(/Picked: Cowboys/g) || []).length, 2);
+    assert.ok(!/Stephen|Dylan/.test(html));
+});
+
+check('a pooled table names each picker, in name order within a game', () => {
+    const api = setup();
+    const html = api.gameDetailRowsHtml(TWO_ON_ONE, { withPicker: true });
+    assert.ok(!/Picked:/.test(html));
+    assert.ok(html.indexOf('Dylan picked Cowboys') > -1);
+    assert.ok(html.indexOf('Dylan picked Cowboys') < html.indexOf('Stephen picked Cowboys'));
 });
 
 console.log(`\n${total - failures}/${total} passed`);

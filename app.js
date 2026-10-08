@@ -6823,7 +6823,7 @@ function winPctCell(pct) {
  * The body of a records table: one row per bucket, each opening onto the games
  * behind it. `label(row)` is the first cell's contents.
  */
-function recordsRowsHtml(rows, idPrefix, label, { withSeason = false } = {}) {
+function recordsRowsHtml(rows, idPrefix, label, { withSeason = false, withPicker = false } = {}) {
     return rows.map(row => {
         const { wins, losses, pushes, total, pct, games } = row;
         const pushStr = pushes > 0 ? `-${pushes}` : '';
@@ -6840,7 +6840,7 @@ function recordsRowsHtml(rows, idPrefix, label, { withSeason = false } = {}) {
             <tr class="team-details-row hidden" id="details-${rowId}">
                 <td colspan="4">
                     <div class="team-details-container">
-                        ${gameDetailRowsHtml(games, { withSeason })}
+                        ${gameDetailRowsHtml(games, { withSeason, withPicker })}
                     </div>
                 </td>
             </tr>
@@ -6864,16 +6864,22 @@ function spreadLabelCell({ key }) {
     return `<td class="spread-value">${key}</td>`;
 }
 
-/** The expanded game list under a records row. `withSeason` prefixes the season, for lifetime views. */
-function gameDetailRowsHtml(games, { withSeason = false } = {}) {
+/**
+ * The expanded game list under a records row. `withSeason` prefixes the
+ * season, for lifetime views. `withPicker` names who made each pick, for a
+ * table pooling several pickers ("All"): two of them on the same game would
+ * otherwise read as one game listed twice.
+ */
+function gameDetailRowsHtml(games, { withSeason = false, withPicker = false } = {}) {
     return [...games]
-        .sort((a, b) => (a.season || 0) - (b.season || 0) || a.week - b.week)
+        .sort((a, b) => (a.season || 0) - (b.season || 0) || a.week - b.week
+            || (withPicker ? String(a.picker).localeCompare(String(b.picker)) : 0))
         .map(g => `
                 <div class="game-detail-row outcome-${g.outcome}">
                     <span class="game-week${withSeason ? ' with-season' : ''}">${withSeason ? `<span class="game-season">${g.season}</span> ` : ''}Wk ${g.week}</span>
                     <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
                     <span class="game-spread">${g.line}</span>
-                    <span class="game-picked">Picked: ${g.picked}</span>
+                    <span class="game-picked">${withPicker && g.picker ? `${g.picker} picked` : 'Picked:'} ${g.picked}</span>
                     <span class="game-outcome">${g.outcome.toUpperCase()}</span>
                 </div>
             `).join('');
@@ -8372,7 +8378,7 @@ function renderHistoryBlazinTeamRecords(picker = null) {
 
     const rows = sortTeamRecordsData(recordsTableData(teamRecords, 'team'), teamRecordsSortState['history-blazin'].column, teamRecordsSortState['history-blazin'].direction);
 
-    tbody.innerHTML = recordsRowsHtml(rows, 'hist-blazin-', teamLabelCell, { withSeason: isLifetime });
+    tbody.innerHTML = recordsRowsHtml(rows, 'hist-blazin-', teamLabelCell, { withSeason: isLifetime, withPicker: selectedPicker === 'All' });
 
     if (rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
@@ -8452,7 +8458,7 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
 
     const rows = sortTeamRecordsData(recordsTableData(records, 'spread'), teamRecordsSortState['history-spread'].column, teamRecordsSortState['history-spread'].direction);
 
-    tbody.innerHTML = recordsRowsHtml(rows, 'hist-spread-', spreadLabelCell, { withSeason: isLifetime });
+    tbody.innerHTML = recordsRowsHtml(rows, 'hist-spread-', spreadLabelCell, { withSeason: isLifetime, withPicker: selectedPicker === 'All' });
 
     if (rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
