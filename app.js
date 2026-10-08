@@ -8422,7 +8422,7 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
             <tr>
                 <th class="sortable" data-sort="spread" data-table="history-spread">${headerLabel} <span class="sort-icon"></span></th>
                 <th class="sortable active desc" data-sort="record" data-table="history-spread">Record <span class="sort-icon">▼</span></th>
-                <th class="sortable" data-sort="picks" data-table="history-spread"># Picks <span class="sort-icon"></span></th>
+                <th class="sortable" data-sort="picks" data-table="history-spread">Picks <span class="sort-icon"></span></th>
                 <th class="sortable" data-sort="pct" data-table="history-spread">Win % <span class="sort-icon"></span></th>
             </tr>
         `;
