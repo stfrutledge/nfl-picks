@@ -1558,6 +1558,11 @@ header h1 {
         align-self: center;
     }
 
+    /* Lifetime rows: the season over the week, to keep the column narrow. */
+    .team-details-container .game-season {
+        display: block;
+    }
+
     .team-details-container .game-matchup {
         grid-area: matchup;
     }
@@ -5154,23 +5159,10 @@ body.standings-provisional #records-analysis-section {
         font-size: 1rem;
     }
 
-    .history-blazin-section .team-records-table-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        margin: 0 -12px;
-        padding: 0 12px;
-    }
-
-    .history-blazin-section .team-records-table {
-        min-width: 350px;
-    }
-
-    .history-blazin-section .team-records-table th,
-    .history-blazin-section .team-records-table td {
-        padding: 8px 10px;
-        font-size: 0.8rem;
-        white-space: nowrap;
-    }
+    /* The tables and their expansions take the Standings tab's phone rules
+       as they are. This used to set nowrap on every cell, which reached the
+       expansion's game rows too: they stayed one wide line and were cut off,
+       where on Standings they stack. */
 }
 
 /* ===== PLAYOFF COMPARISON SECTION ===== */

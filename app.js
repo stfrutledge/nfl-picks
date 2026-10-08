@@ -6870,7 +6870,7 @@ function gameDetailRowsHtml(games, { withSeason = false } = {}) {
         .sort((a, b) => (a.season || 0) - (b.season || 0) || a.week - b.week)
         .map(g => `
                 <div class="game-detail-row outcome-${g.outcome}">
-                    <span class="game-week${withSeason ? ' with-season' : ''}">${withSeason ? g.season + ' ' : ''}Wk ${g.week}</span>
+                    <span class="game-week${withSeason ? ' with-season' : ''}">${withSeason ? `<span class="game-season">${g.season}</span> ` : ''}Wk ${g.week}</span>
                     <span class="game-matchup">${g.away} ${g.awayScore} @ ${g.home} ${g.homeScore}</span>
                     <span class="game-spread">${g.line}</span>
                     <span class="game-picked">Picked: ${g.picked}</span>
