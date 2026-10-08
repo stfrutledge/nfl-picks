@@ -100,7 +100,10 @@ const kv = new Map();
 
 globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
-    if (u.startsWith('https://site.api.espn.com/')) return new Response(JSON.stringify(world.board));
+    if (u.startsWith('https://site.api.espn.com/')) {
+        const week = new URL(u).searchParams.get('week');
+        return new Response(JSON.stringify(week ? world.weekBoards[week] : world.board));
+    }
     if (u.startsWith(APPS_SCRIPT_URL)) {
         const action = new URL(u).searchParams.get('action');
         appsScriptCalls.push(action);
@@ -147,7 +150,7 @@ async function check(name, fn) {
     total++;
     sent.length = 0; appsScriptCalls.length = 0; kv.clear();
     world = { board: scoreboard(ALL_FINAL, FINALS), picks: fullPicks(), spreads: SPREADS,
-        earlierPicks: {}, results: {}, resultsDown: false };
+        earlierPicks: {}, results: {}, resultsDown: false, weekBoards: {} };
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
@@ -389,6 +392,20 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         // Games 4 (in play), 5 and 6 are still to finish, and all carry a star
         // - Jason's fifth is on Monday night.
         assert.match(sent[0].data.body, /As it stands: 3 starred games still to finish\.$/);
+    });
+
+    await check('with no stars yet this week, the results test shows last week', async () => {
+        // Week 5 has just started and nobody has starred anything; week 4 was
+        // the same six games, all played.
+        world.board = scoreboard(['pre', 'pre', 'pre', 'pre', 'pre', 'pre']);
+        world.weekBoards['4'] = { ...scoreboard(ALL_FINAL, FINALS), week: { number: 4 } };
+        world.earlierPicks = { '2026_4': fullPicks() };
+        world.picks = {};
+        const r = await preview('blazin_results');
+        assert.strictEqual(r.json.sent, true);
+        assert.strictEqual(r.json.week, 4);
+        assert.strictEqual(sent[0].data.title, 'Blazin’ 5 Results - Week 4');
+        assert.ok(JSON.parse(sent[0].data.personal).Stephen.startsWith('You went 3-1-1 this week.'));
     });
 
     await check('the reminder test lists everyone with picks to make', async () => {

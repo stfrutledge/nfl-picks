@@ -641,8 +641,15 @@ function normalizeKey(rawKey) {
 }
 
 /** The current week's games from ESPN's scoreboard. */
-async function fetchScoreboard() {
-  const response = await fetch(ESPN_SCOREBOARD);
+/** The current week, or with `week` a past regular-season week of `season`. */
+async function fetchScoreboard({ season, week } = {}) {
+  const url = new URL(ESPN_SCOREBOARD);
+  if (week) {
+    url.searchParams.set('dates', season);
+    url.searchParams.set('seasontype', '2');
+    url.searchParams.set('week', week);
+  }
+  const response = await fetch(url.toString());
   if (!response.ok) throw new Error(`ESPN answered ${response.status}`);
   const data = await response.json();
   const games = (data.events || []).map(event => {
@@ -1079,7 +1086,7 @@ const PREVIEWS = ['blazin_results', 'pick_reminders'];
 /**
  * Admin Settings' real-data tests. Results: the current week graded as it
  * stands - exactly what the schedule would send, plus a note of starred games
- * still to finish. Reminder: who still has picks to make this week, all of
+ * still to finish - or last week's, while nobody has starred one yet. Reminder: who still has picks to make this week, all of
  * them listed (a real reminder shows each phone only its own line, which
  * tells the admin nothing about the rest). Nothing is sent when there is
  * nothing to show; the answer says why.
@@ -1093,15 +1100,25 @@ async function handlePreview(env, token, kind) {
   const picks = seasonPicks[week] || {};
 
   let message;
+  let shownWeek = week;
   if (kind === 'blazin_results') {
-    const spreads = await fetchWeekSpreads(env, season, week);
-    const records = gradeBlazin(games, picks, spreads);
-    const starred = Object.values(records).reduce((n, r) => n + r.starred, 0);
+    // Early in a week nobody has starred anything yet, so the test shows last
+    // week instead: a real result to look at rather than nothing at all.
+    let weekGames = games, weekPicks = picks;
+    let records = gradeBlazin(weekGames, weekPicks, await fetchWeekSpreads(env, season, week));
+    let starred = Object.values(records).reduce((n, r) => n + r.starred, 0);
+    if (starred === 0 && week > 1 && board.seasonType === 2) {
+      shownWeek = week - 1;
+      weekGames = (await fetchScoreboard({ season, week: shownWeek })).games;
+      weekPicks = seasonPicks[shownWeek] || {};
+      records = gradeBlazin(weekGames, weekPicks, await fetchWeekSpreads(env, season, shownWeek));
+      starred = Object.values(records).reduce((n, r) => n + r.starred, 0);
+    }
     if (starred === 0) return jsonResponse({ ok: true, sent: false, note: `Nobody has starred a Week ${week} game yet.` });
-    const seasonRecords = await seasonBlazinRecords(env, season, week, seasonPicks, records);
-    message = blazinMessage(season, week, records, seasonRecords);
+    const seasonRecords = await seasonBlazinRecords(env, season, shownWeek, seasonPicks, records);
+    message = blazinMessage(season, shownWeek, records, seasonRecords);
     // The admin's phone shows the admin's own line, as the real one will.
-    const pending = pendingStarredGames(games, picks);
+    const pending = pendingStarredGames(weekGames, weekPicks);
     if (pending > 0) {
       const note = ` As it stands: ${plural(pending, 'starred game')} still to finish.`;
       message.body += note;
@@ -1122,7 +1139,7 @@ async function handlePreview(env, token, kind) {
 
   const sent = await sendToGroup(env, { ...message, id: `preview-${kind}-${Date.now()}` }, { token });
   if (!sent.ok) return jsonResponse({ error: sent.error, detail: sent.detail }, sent.status || 502);
-  return jsonResponse({ ok: true, sent: true, week });
+  return jsonResponse({ ok: true, sent: true, week: shownWeek });
 }
 
 /** Starred games not yet final, across everyone. */
