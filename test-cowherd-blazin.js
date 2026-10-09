@@ -101,7 +101,9 @@ function makeAppEnv({ confirms = true } = {}) {
         const HISTORICAL_RESULTS = {};
         const HISTORICAL_PICKS = {};
     `;
-    const exports = `;
+    // A page that has read the Backup sheet: until then syncs are held (see
+    // backupMergedOnce in app.js), and these checks are about the payload.
+    const exports = `;backupMergedOnce = true;
     const TEST_TOASTS = [];
     showToast = (m, t) => TEST_TOASTS.push({ message: m, type: t });
     return ({

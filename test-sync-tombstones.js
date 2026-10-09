@@ -65,7 +65,9 @@ function makeEnv() {
     `;
     const parserSrc = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8');
     const appSrc = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-    const exports = `;return ({
+    // A page that has read the Backup sheet: until then syncs are held (see
+    // backupMergedOnce in app.js), and these checks are about the payload.
+    const exports = `;backupMergedOnce = true;return ({
         pickKey, syncPicksToGoogleSheets, NFL_GAMES_BY_WEEK,
         __setState: s => {
             if ('currentWeek' in s) currentWeek = s.currentWeek;

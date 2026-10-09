@@ -86,10 +86,11 @@ function makeEnv({ store = new Map(), backup = { picks: {}, cleared: {} } } = {}
                 if (net.gate) await net.gate;
                 if (net.failing) throw new TypeError('Failed to fetch');
                 posts.push({ body: JSON.parse(opts.body), keepalive: opts.keepalive });
-                return { ok: true, text: async () => JSON.stringify({ success: true }) };
+                return { ok: true, text: async () => JSON.stringify(net.reply || { success: true }) };
             }
             if (String(url).includes('action=allpicks')) {
                 net.reads = (net.reads || 0) + 1;
+                if (net.readFailing) throw new TypeError('Failed to fetch');
                 return { ok: true, json: async () => backup };
             }
             return { ok: true, json: async () => ({}), text: async () => '{}' };
@@ -122,6 +123,7 @@ function makeEnv({ store = new Map(), backup = { picks: {}, cleared: {} } } = {}
             if ('allPicks' in s) allPicks = s.allPicks;
             if ('clearedPicks' in s) clearedPicks = s.clearedPicks;
             if ('initialLoadComplete' in s) initialLoadComplete = s.initialLoadComplete;
+            if ('backupMergedOnce' in s) backupMergedOnce = s.backupMergedOnce;
         }
     });`;
     const fn = new Function(
@@ -149,12 +151,15 @@ function pick(t, key, side) {
     if (!allPicks[currentWeek]) allPicks[currentWeek] = {};
     if (!allPicks[currentWeek][currentPicker]) allPicks[currentWeek][currentPicker] = {};
     allPicks[currentWeek][currentPicker][key] = { line: side, winner: side };
-    t.api.savePicksToStorage();
+    t.api.savePicksToStorage(false, false, currentWeek, currentPicker, [key]);
 }
 
-function start(opts) {
+// A page that has already read the backup, unless `fresh`: a page that has
+// not, where every send is held until it does.
+function start(opts = {}) {
     const t = makeEnv(opts);
-    t.api.__setState({ currentWeek: WEEK, currentPicker: 'Stephen', allPicks: {} });
+    t.api.__setState({ currentWeek: WEEK, currentPicker: 'Stephen', allPicks: {},
+        backupMergedOnce: !opts.fresh });
     return t;
 }
 
@@ -243,6 +248,31 @@ await check('a failure is reported once, kept, and retried until it lands', asyn
     assert.strictEqual(sentFor(t, 'Stephen').length, 1, 'the retry landed');
     assert.deepStrictEqual(unsynced(t), {}, 'and the queue is empty');
     assert.match(t.toasts[t.toasts.length - 1].textContent, /saved to Google Sheets/);
+});
+
+await check('a reply of success with an error against the picks is a failure', async () => {
+    // What doPost sends when savePicks() refuses a request with no week or
+    // picker: success for the request, nothing written.
+    const t = start();
+    t.net.reply = { success: true, results: { picks: { error: 'Missing week or picker' } } };
+    pick(t, 'rams_seahawks', 'home');
+    await t.clock.advance(t.api.SYNC_DEBOUNCE_MS);
+    assert.ok(`${WEEK}|Stephen` in unsynced(t), 'still queued, so it is retried');
+
+    t.net.reply = { success: true, results: { picks: { message: 'Backed up 3 picks', rowsAdded: 3 } } };
+    await t.clock.advance(300000);
+    assert.deepStrictEqual(unsynced(t), {}, 'a real save clears it');
+});
+
+await check('a bare success still counts, whatever shape the deployed script replies in', async () => {
+    // The repo copy is not necessarily what is deployed. Demanding a row count
+    // would turn every save into a retry against an older script.
+    const t = start();
+    t.net.reply = { success: true };
+    pick(t, 'rams_seahawks', 'home');
+    await t.clock.advance(t.api.SYNC_DEBOUNCE_MS);
+    assert.deepStrictEqual(unsynced(t), {});
+    assert.strictEqual(sentFor(t, 'Stephen').length, 1, 'sent once, not retried');
 });
 
 await check('a pick made while a write is in flight goes out behind it', async () => {
@@ -392,6 +422,66 @@ await check('a pick this device has not sent yet survives the refresh', async ()
     await t.clock.advance(0);
     assert.strictEqual(t.api.__state().allPicks[WEEK].Stephen.rams_seahawks.line, 'home',
         'the unsent pick is newer than the sheet and is kept');
+});
+
+section('A pick made before the backup is read cannot erase the rest of the week');
+// October 2026: a pick made on a freshly opened page went out as a whole-week
+// snapshot from a device that had not read the sheet yet, so every other game
+// in it was a blank - and the picker's pick from the night before was erased.
+
+// A fresh page whose sheet already holds a pick for Stephen in another game.
+function freshWithSheetPick() {
+    const backup = { picks: {}, cleared: {} };
+    const t = start({ fresh: true, backup });
+    backup.picks[t.api.toSheetWeek(WEEK)] = {
+        Stephen: { rams_seahawks: { line: 'away', winner: 'away' } }
+    };
+    return t;
+}
+
+await check('nothing is sent until the backup has been read', async () => {
+    const t = freshWithSheetPick();
+    pick(t, 'bills_chiefs', 'away');
+    await t.clock.advance(t.api.SYNC_DEBOUNCE_MS + 60000);
+    assert.strictEqual(t.posts.length, 0, 'held, not sent as a week of blanks');
+    assert.ok(`${WEEK}|Stephen` in unsynced(t), 'and still queued');
+});
+
+await check('the read merges the sheet around the new pick, then sends both', async () => {
+    const t = freshWithSheetPick();
+    pick(t, 'bills_chiefs', 'away');
+    await t.api.loadAllPicksFromBackup();
+    await t.clock.advance(1);
+
+    const sent = sentFor(t, 'Stephen');
+    assert.strictEqual(sent.length, 1);
+    assert.strictEqual(linePick(sent[0], 'rams_seahawks'), 'Rams', 'the earlier pick survived');
+    assert.strictEqual(linePick(sent[0], 'bills_chiefs'), 'Bills', 'and the new one went out');
+});
+
+await check('a game changed here keeps this device\'s pick over the sheet\'s', async () => {
+    const t = freshWithSheetPick();
+    pick(t, 'rams_seahawks', 'home');   // the same game, changed before the read
+    await t.api.loadAllPicksFromBackup();
+    assert.strictEqual(t.api.__state().allPicks[WEEK].Stephen.rams_seahawks.line, 'home');
+});
+
+await check('a failed first read holds the pick, and the read is retried', async () => {
+    const t = freshWithSheetPick();
+    t.net.readFailing = true;
+    pick(t, 'bills_chiefs', 'away');
+    await t.api.loadAllPicksFromBackup();
+    t.api.__setState({ initialLoadComplete: true });
+    await t.clock.advance(60000);
+    assert.strictEqual(t.posts.length, 0, 'nothing sent while the sheet cannot be read');
+    const readsWhileDown = t.net.reads;
+    assert.ok(readsWhileDown >= 2 && readsWhileDown < 10, `retried at the backoff pace (${readsWhileDown})`);
+
+    t.net.readFailing = false;
+    await t.clock.advance(300000);
+    const sent = sentFor(t, 'Stephen');
+    assert.strictEqual(sent.length, 1, 'sent once the read lands');
+    assert.strictEqual(linePick(sent[0], 'rams_seahawks'), 'Rams', 'with the sheet\'s pick merged in');
 });
 
 if (failures > 0) {

@@ -5561,7 +5561,7 @@ function freezeGameByKey(key) {
         { confirmLabel: 'Lock Pick', dontShowKey: 'lockPick' },
         () => {
             applyFreeze(game);
-            savePicksToStorage(true);
+            savePicksToStorage(true, false, currentWeek, currentPicker, [key]);
             renderGames();
             renderScoringSummary();
             showToast(`Locked at ${line}`);
@@ -5620,7 +5620,7 @@ function freezeAllCompleteGames() {
         { confirmLabel: `Lock ${ready.length} Pick${ready.length === 1 ? '' : 's'}` },
         () => {
             ready.forEach(game => applyFreeze(game, week, currentPicker));
-            savePicksToStorage(true, false, week, currentPicker);
+            savePicksToStorage(true, false, week, currentPicker, ready.map(pickKey));
             renderGames();
             renderScoringSummary();
             showToast(notReady > 0
@@ -10503,7 +10503,7 @@ function renderGames() {
             : (isBlazin ? 'Remove from Blazin 5' : 'Add to Blazin 5');
 
         return `
-            <div class="${cardClasses}" data-game-id="${game.id}" data-kickoff="${game.kickoff || ''}">
+            <div class="${cardClasses}" data-game-id="${game.id}" data-pick-key="${key}" data-kickoff="${game.kickoff || ''}">
                 <div class="game-header">
                     <span class="game-time">${game.time}</span>
                     ${statusBadge}
@@ -10634,6 +10634,8 @@ function renderGames() {
 
     // Start countdown timer
     startCountdownTimer();
+
+    refreshCardSyncLines();
 }
 
 /**
@@ -10842,7 +10844,7 @@ function handlePickSelect(e) {
 
     // Save to localStorage. The debounced sync reads the flag deleted just
     // above, so it carries the lift to the sheet with the picks.
-    savePicksToStorage();
+    savePicksToStorage(false, false, currentWeek, currentPicker, [key]);
 
     // Check if all picks are complete for the week (only when making a pick, not deselecting)
     if (!isDeselecting) {
@@ -11053,7 +11055,7 @@ function handleOUSelect(e) {
     }
 
     // Save to localStorage
-    savePicksToStorage();
+    savePicksToStorage(false, false, currentWeek, currentPicker, [key]);
 
     // Update button states
     const otherValue = value === 'over' ? 'under' : 'over';
@@ -11149,7 +11151,7 @@ function handleBlazinToggle(e) {
     updateFreezeControls();
 
     // Save to localStorage
-    savePicksToStorage();
+    savePicksToStorage(false, false, currentWeek, currentPicker, [key]);
 }
 
 // ============================================
@@ -11818,6 +11820,9 @@ function clearCurrentPickerPicks() {
                 : {};
             const savedWeek = currentWeek;
             const savedPicker = currentPicker;
+            // Only the games actually cleared get a sync line, here and on
+            // undo - a locked or kicked-off pick is untouched by either.
+            let clearedKeys = Object.keys(savedPicks);
 
             if (allPicks[currentWeek] && allPicks[currentWeek][currentPicker]) {
                 const games = getGamesForWeek(currentWeek);
@@ -11835,6 +11840,7 @@ function clearCurrentPickerPicks() {
                 });
 
                 allPicks[currentWeek][currentPicker] = preservedPicks;
+                clearedKeys = clearedKeys.filter(key => !(key in preservedPicks));
             }
 
             // Mark picks as intentionally cleared (prevents backup restore)
@@ -11847,7 +11853,7 @@ function clearCurrentPickerPicks() {
             // Sync cleared status to Google Sheets
             syncClearedStatusToGoogleSheets(currentWeek, currentPicker, true);
 
-            savePicksToStorage();
+            savePicksToStorage(false, false, currentWeek, currentPicker, clearedKeys);
             renderGames();
             renderScoringSummary();
 
@@ -11868,7 +11874,7 @@ function clearCurrentPickerPicks() {
 
                 // Named explicitly: the undo can be tapped after moving on to
                 // another week or picker.
-                savePicksToStorage(false, false, savedWeek, savedPicker);
+                savePicksToStorage(false, false, savedWeek, savedPicker, clearedKeys);
                 renderGames();
                 renderScoringSummary();
             });
@@ -12224,6 +12230,23 @@ let unsyncedPicks = (() => {
     }
 })();
 
+// Which games in each unconfirmed slate changed, for the line on their cards:
+// { 'week|picker': [pickKey, ...] }, with '*' for a change to the whole slate
+// (Clear Picks, an import). Display only - the sync still sends the whole week.
+// A slate with no entry here (queued before this existed) counts as '*'.
+const UNSYNCED_GAMES_KEY = `nfl_unsynced_games_${CURRENT_SEASON}`;
+let unsyncedGames = (() => {
+    try {
+        const stored = JSON.parse(localStorage.getItem(UNSYNCED_GAMES_KEY)) || {};
+        for (const slate of Object.keys(stored)) {
+            if (!(slate in unsyncedPicks)) delete stored[slate];
+        }
+        return stored;
+    } catch {
+        return {};
+    }
+})();
+
 // Backoff after a failed or deferred write, capped at the last step.
 const SYNC_RETRY_MS = [15000, 30000, 60000, 120000, 300000];
 let syncRetryAttempt = 0;
@@ -12231,6 +12254,7 @@ let syncRunning = false;
 let syncAgain = false;
 let syncFailureShown = false; // one warning per run of failures, not one per retry
 let syncWantsToast = false;
+let syncFailing = false; // the last write attempt failed; the card lines say so
 
 function unsyncedKey(week, picker) {
     return `${week}|${picker}`;
@@ -12239,6 +12263,7 @@ function unsyncedKey(week, picker) {
 function persistUnsynced() {
     try {
         localStorage.setItem(UNSYNCED_PICKS_KEY, JSON.stringify(unsyncedPicks));
+        localStorage.setItem(UNSYNCED_GAMES_KEY, JSON.stringify(unsyncedGames));
     } catch (e) {
         console.warn('[Sync] Could not persist the unsynced list:', e);
     }
@@ -12249,19 +12274,149 @@ function isUnsynced(week, picker) {
     return unsyncedKey(week, picker) in unsyncedPicks;
 }
 
-function markUnsynced(week, picker) {
+function markUnsynced(week, picker, gameKeys = ['*']) {
     if (week == null || !picker) return;
     const key = unsyncedKey(week, picker);
     unsyncedPicks[key] = (unsyncedPicks[key] || 0) + 1;
+    unsyncedGames[key] = [...new Set([...(unsyncedGames[key] || []), ...gameKeys])];
     persistUnsynced();
+}
+
+/** Is this game's pick changed here and not yet confirmed in the sheet? */
+function isGamePendingSync(week, picker, gameKey) {
+    const slate = unsyncedKey(week, picker);
+    if (!(slate in unsyncedPicks)) return false;
+    const games = unsyncedGames[slate];
+    return !games || games.includes('*') || games.includes(gameKey);
+}
+
+/**
+ * The line across the top of a game card while its pick is on its way to the
+ * sheet: green while sending, amber and pulsing after a failed write, full and
+ * "Pick saved" once confirmed, then gone. A pick stuck on this phone keeps its line
+ * up, which is the point: in October 2026 one sat unsent overnight and nothing
+ * on screen said so after the first failure toast.
+ *
+ * The line follows the two waits it is standing in for. The debounce is known
+ * exactly, so the line runs steadily to CARD_SYNC_WAIT_PCT as it counts down.
+ * A new pick restarts that countdown for everything queued, so every line
+ * already running rolls back to CARD_SYNC_RESTART_PCT and fills again. The
+ * write is not known - about 2s at best, 5-8s often - so the line then creeps
+ * on towards CARD_SYNC_SEND_PCT, and only the sheet's confirmation fills it.
+ *
+ * Each line's movement is stored as a straight segment (from, to, when), not
+ * read off the page, because a re-render rebuilds the cards: a rebuilt card
+ * redraws its line from the segment and carries on where it was.
+ */
+const CARD_SYNC_WAIT_PCT = 75;
+const CARD_SYNC_SEND_PCT = 95;
+const CARD_SYNC_SEND_MS = 8000;
+const CARD_SYNC_RESTART_PCT = 10;
+const CARD_SYNC_ROLLBACK_MS = 250;
+const cardSyncSegments = {};
+let syncDueAt = 0;          // when the scheduled write fires
+let syncSendingAt = 0;      // when the write in flight started; 0 when none is
+let cardSyncRestart = false; // a new pick restarted the countdown: roll lines back
+
+function cardSyncPct(seg, now) {
+    if (now <= seg.fromAt) return seg.fromPct;
+    if (now >= seg.toAt) return seg.toPct;
+    return seg.fromPct + (seg.toPct - seg.fromPct) * (now - seg.fromAt) / (seg.toAt - seg.fromAt);
+}
+
+/** Where a pending line should be heading right now, as [percent, time]. */
+function cardSyncTarget(current, now) {
+    if (syncFailing && !syncSendingAt) return [current, now];
+    if (syncSendingAt) return [Math.max(current, CARD_SYNC_SEND_PCT), syncSendingAt + CARD_SYNC_SEND_MS];
+    return [Math.max(current, CARD_SYNC_WAIT_PCT), Math.max(syncDueAt, now)];
+}
+
+function drawCardSyncFill(fill, seg, now, rollback = false) {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    clearTimeout(fill.rollbackTimer);
+    if (rollback && !reduceMotion) {
+        // Slide back to the restart point, then carry on from there.
+        fill.style.transition = `width ${CARD_SYNC_ROLLBACK_MS}ms ease-out`;
+        fill.style.width = `${seg.fromPct}%`;
+        fill.rollbackTimer = setTimeout(() => drawCardSyncFill(fill, seg, Date.now()), CARD_SYNC_ROLLBACK_MS);
+        return;
+    }
+    fill.style.transition = 'none';
+    fill.style.width = `${reduceMotion ? seg.toPct : cardSyncPct(seg, now)}%`;
+    const remaining = seg.toAt - now;
+    if (!reduceMotion && remaining > 0) {
+        void fill.offsetWidth;
+        fill.style.transition = `width ${remaining}ms linear`;
+        fill.style.width = `${seg.toPct}%`;
+    }
+}
+
+function refreshCardSyncLines() {
+    if (typeof document === 'undefined' || !document.querySelectorAll || !currentPicker) return;
+    const slate = unsyncedKey(currentWeek, currentPicker);
+    const now = Date.now();
+    const restart = cardSyncRestart;
+    cardSyncRestart = false;
+
+    document.querySelectorAll('.game-card[data-pick-key]').forEach(card => {
+        const gameKey = card.dataset.pickKey;
+        const id = `${slate}|${gameKey}`;
+        let line = card.querySelector(':scope > .card-sync');
+
+        if (isGamePendingSync(currentWeek, currentPicker, gameKey)) {
+            let redraw = false;
+            if (!line || line.classList.contains('is-done')) {
+                line?.remove();
+                line = document.createElement('div');
+                line.className = 'card-sync';
+                line.setAttribute('role', 'status');
+                line.innerHTML = '<div class="card-sync-track"><div class="card-sync-fill"></div></div>'
+                    + '<span class="card-sync-label"></span>';
+                card.prepend(line);
+                redraw = true;
+            }
+            const seg = cardSyncSegments[id] ||= { fromPct: 0, fromAt: now, toPct: 0, toAt: now };
+            let current = cardSyncPct(seg, now);
+            let startAt = now;
+            const rollback = restart && current > CARD_SYNC_RESTART_PCT;
+            if (rollback) {
+                current = CARD_SYNC_RESTART_PCT;
+                startAt = now + CARD_SYNC_ROLLBACK_MS;
+            }
+            const [toPct, toAt] = cardSyncTarget(current, startAt);
+            if (rollback || toPct !== seg.toPct || toAt !== seg.toAt) {
+                cardSyncSegments[id] = { fromPct: current, fromAt: startAt, toPct, toAt };
+                redraw = true;
+            }
+            if (redraw) drawCardSyncFill(line.querySelector('.card-sync-fill'), cardSyncSegments[id], now, rollback);
+
+            line.classList.toggle('is-retrying', syncFailing);
+            line.querySelector('.card-sync-label').textContent =
+                syncFailing ? 'Pick not saved yet · retrying' : 'Saving pick…';
+        } else {
+            delete cardSyncSegments[id];
+            if (line && !line.classList.contains('is-done')) {
+                const fill = line.querySelector('.card-sync-fill');
+                fill.style.transition = 'width 0.25s ease-out';
+                fill.style.width = '100%';
+                line.classList.remove('is-retrying');
+                line.classList.add('is-done');
+                line.querySelector('.card-sync-label').textContent = 'Pick saved';
+                setTimeout(() => line.classList.add('is-leaving'), 1200);
+                setTimeout(() => line.remove(), 1500);
+            }
+        }
+    });
 }
 
 function scheduleSync(delay) {
     if (pendingSyncTimeout) clearTimeout(pendingSyncTimeout);
+    syncDueAt = Date.now() + delay;
     pendingSyncTimeout = setTimeout(() => {
         pendingSyncTimeout = null;
         flushPendingSync();
     }, delay);
+    refreshCardSyncLines();
 }
 
 /**
@@ -12280,6 +12435,8 @@ async function flushPendingSync({ keepalive = false } = {}) {
         return;
     }
     syncRunning = true;
+    syncSendingAt = Date.now();
+    refreshCardSyncLines();
     const displayToast = syncWantsToast;
     syncWantsToast = false;
 
@@ -12292,7 +12449,10 @@ async function flushPendingSync({ keepalive = false } = {}) {
             const picker = key.slice(cut + 1);
             const outcome = await syncPicksToGoogleSheets(displayToast, picker, week, { keepalive });
             if (outcome === 'sent' || outcome === 'unchanged') {
-                if (unsyncedPicks[key] === version) delete unsyncedPicks[key];
+                if (unsyncedPicks[key] === version) {
+                    delete unsyncedPicks[key];
+                    delete unsyncedGames[key];
+                }
             } else {
                 // 'deferred' (schedule not loaded) or 'failed': try again later.
                 outstanding = true;
@@ -12312,6 +12472,10 @@ async function flushPendingSync({ keepalive = false } = {}) {
         showToast('Picks saved to Google Sheets');
     }
 
+    syncSendingAt = 0;
+    syncFailing = failed;
+    refreshCardSyncLines();
+
     if (syncAgain) {
         syncAgain = false;
         scheduleSync(0);
@@ -12330,16 +12494,21 @@ async function flushPendingSync({ keepalive = false } = {}) {
  * @param {boolean} skipSync - If true, skip syncing to Google Sheets (used when loading from backup)
  * @param {string|number} week - The week that changed; the one on screen by default
  * @param {string} picker - The picker whose picks changed; the one on screen by default
+ * @param {string[]} gameKeys - The games that changed, for their cards' sync line; the whole slate by default
  */
-function savePicksToStorage(showSyncToast = false, skipSync = false, week = currentWeek, picker = currentPicker) {
+function savePicksToStorage(showSyncToast = false, skipSync = false, week = currentWeek, picker = currentPicker, gameKeys = ['*']) {
     localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
 
     // Debounce sync to Google Sheets (skip if we're just loading data)
     if (APPS_SCRIPT_URL && !skipSync) {
-        markUnsynced(week, picker);
+        markUnsynced(week, picker, gameKeys);
+        // The countdown restarts for everything queued, and a fresh attempt is
+        // coming whatever the last one did, so every line starts over in green.
+        cardSyncRestart = true;
+        syncFailing = false;
         if (showSyncToast) syncWantsToast = true;
         syncRetryAttempt = 0;
-        scheduleSync(SYNC_DEBOUNCE_MS);
+        scheduleSync(SYNC_DEBOUNCE_MS); // also starts this game's sync line
     }
 }
 
@@ -12374,6 +12543,21 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
     // tombstone real picks.
     if (weekGames.length === 0) {
         console.warn(`[Sync] No schedule for week ${week}, skipping sync`);
+        return 'deferred';
+    }
+
+    // The same goes for picks this device has not seen. Until the backup has
+    // been read once, this device's copy of the week is missing everything
+    // already saved from elsewhere, and the snapshot would write blanks over
+    // all of it. October 2026: a pick made on a freshly opened page erased the
+    // picker's own pick from the night before. Wait for the read, which merges
+    // the sheet's picks around this device's changes and then sends.
+    if (!backupMergedOnce) {
+        console.warn(`[Sync] Backup not read yet, holding week ${week} for ${picker}`);
+        if (initialLoadComplete && !backupFetchInFlight) {
+            backupFetchedThisSession = false;
+            loadAllPicksFromBackup();
+        }
         return 'deferred';
     }
 
@@ -12488,7 +12672,14 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
             return 'failed';
         }
 
-        if (result.success) {
+        // The Apps Script says success for the request as a whole even when
+        // savePicks() refused it (no week or picker) and wrote nothing, so an
+        // error reported against the picks themselves is a failure too. Only
+        // an explicit error counts: requiring a row count instead would turn
+        // every save into a retry, writing the week again each time, if the
+        // deployed script ever replies in a different shape than the repo copy.
+        const picksError = result.results?.picks?.error;
+        if (result.success && !picksError) {
             // Only remember it once the write actually landed, so a failure
             // retries rather than being skipped as a duplicate.
             lastSyncedSignature[signatureKey] = signature;
@@ -12498,9 +12689,10 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
             }
             return 'sent';
         }
-        console.error('[Sync] Sync failed:', result.error);
+        const failure = result.error || picksError;
+        console.error('[Sync] Sync failed:', failure);
         if (displayToast) {
-            showToast('Sync failed: ' + (result.error || 'Unknown error'), 'error');
+            showToast('Sync failed: ' + (failure || 'Unknown error'), 'error');
         }
         return 'failed';
     } catch (error) {
@@ -12717,6 +12909,7 @@ async function loadPicksFromGoogleSheets(week, picker) {
 const PICKS_REFRESH_AFTER_MS = 5 * 60 * 1000;
 let lastBackupFetchAt = 0;
 let backupFetchInFlight = false;
+let backupMergedOnce = false; // the sheet's picks have been read and merged at least once
 
 /**
  * Re-read the backup if the last read is older than PICKS_REFRESH_AFTER_MS.
@@ -12821,7 +13014,26 @@ async function loadAllPicksFromBackup() {
 
                 for (const picker in result.picks[sheetWeek]) {
                     if (isUnsynced(week, picker)) {
-                        console.log(`[Picks Load] ${picker} week ${week} has unsynced local changes, keeping them`);
+                        // Keep this device's changes, which are newer than the
+                        // sheet, but only those: every game it has not touched
+                        // takes the sheet's pick. Keeping the whole local week
+                        // is what let a pick made before this read erase the
+                        // rest of the week. A whole-week change (or a queue from
+                        // before games were tracked) still keeps everything.
+                        const changed = unsyncedGames[unsyncedKey(week, picker)];
+                        if (!changed || changed.includes('*')) {
+                            console.log(`[Picks Load] ${picker} week ${week} has unsynced local changes, keeping them`);
+                            continue;
+                        }
+                        if (!allPicks[weekNum]) allPicks[weekNum] = {};
+                        if (!allPicks[weekNum][picker]) allPicks[weekNum][picker] = {};
+                        for (const rawKey in result.picks[sheetWeek][picker]) {
+                            const key = normalizePickKey(rawKey);
+                            if (changed.includes(key)) continue;
+                            allPicks[weekNum][picker][key] = result.picks[sheetWeek][picker][rawKey];
+                            totalPicks++;
+                        }
+                        console.log(`[Picks Load] ${picker} week ${week}: kept ${changed.length} unsynced game(s), took the rest from the sheet`);
                         continue;
                     }
 
@@ -12855,6 +13067,7 @@ async function loadAllPicksFromBackup() {
         } else {
             console.log('[Picks Load] No picks in response');
         }
+        backupMergedOnce = true;
 
     } catch (error) {
         console.error('[Picks Load] Failed to load picks from Google Sheets backup:', error);
@@ -12865,8 +13078,12 @@ async function loadAllPicksFromBackup() {
     // Anything left unconfirmed by an earlier visit - a failed write, or a tab
     // closed inside the debounce - goes out now rather than waiting for the
     // next pick. A slate whose schedule is not in yet defers and retries.
+    // If the sheet has never been read, sending would be held anyway, so wait
+    // out the retry backoff instead: the held send asks for the read again,
+    // and going straight back round would hammer a sheet that is not answering.
     if (Object.keys(unsyncedPicks).length > 0) {
-        scheduleSync(0);
+        scheduleSync(backupMergedOnce ? 0
+            : SYNC_RETRY_MS[Math.min(syncRetryAttempt, SYNC_RETRY_MS.length - 1)]);
     }
 
     // Draw what landed, rather than leaving it sitting in memory until the

@@ -560,6 +560,68 @@ header h1 {
     font-weight: 500;
 }
 
+/* Card sync line: a thin line across the top of a game card while that
+   game's pick is on its way to the sheet. Added, moved and removed by
+   refreshCardSyncLines() in app.js, which times it to the debounce and the
+   write; only the sheet's confirmation fills it. */
+.card-sync {
+    /* Covers the whole card, border included, with the card's own radius, so
+       the line runs along the top border and bends into the corners with it */
+    position: absolute;
+    inset: -1px;
+    border-radius: 12px;
+    overflow: hidden;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.card-sync.is-leaving {
+    opacity: 0;
+}
+
+.card-sync-track {
+    height: 3px;
+}
+
+.card-sync-fill {
+    /* width is set from app.js, which knows how long each wait has left */
+    height: 100%;
+    width: 0;
+    background: var(--accent-green);
+}
+
+.card-sync.is-retrying .card-sync-fill {
+    background: var(--accent-amber);
+    animation: card-sync-pulse 1.6s ease-in-out infinite;
+}
+
+/* Centred: the card header's corners hold the kickoff time and day badge. */
+.card-sync-label {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-light);
+}
+
+.card-sync.is-retrying .card-sync-label {
+    color: var(--accent-amber);
+}
+
+@keyframes card-sync-pulse {
+    50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .card-sync.is-retrying .card-sync-fill {
+        animation: none;
+    }
+}
+
 /* Toast Notification */
 .toast {
     position: fixed;
@@ -3205,6 +3267,7 @@ footer a:hover {
 }
 
 .game-card {
+    position: relative; /* anchors .card-sync */
     background: var(--bg-primary);
     border-radius: 12px;
     padding: 20px;
@@ -6831,6 +6894,10 @@ body.standings-provisional #records-analysis-section {
         max-width: 100%;
         box-sizing: border-box;
         overflow: hidden;
+        /* Clip at the border's outer edge instead, so the sync line can run
+           along the border itself. Browsers without clip keep hidden. */
+        overflow: clip;
+        overflow-clip-margin: 1px;
     }
 
     .games-list {
