@@ -951,6 +951,10 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     broadcast: competition.broadcasts?.[0]?.names?.[0] || '',
                     // Game status and scores from ESPN
                     status: status,
+                    // The quarter and clock too: a card drawn before the first
+                    // live poll lands reads its badge off this snapshot.
+                    period: event.status?.period,
+                    clock: event.status?.displayClock,
                     completed: completed,
                     homeScore: homeScore,
                     awayScore: awayScore
@@ -1067,6 +1071,8 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             stadium: espnMatch.stadium || histGame.stadium,
                             broadcast: espnMatch.broadcast,
                             status: espnMatch.status,
+                            period: espnMatch.period,
+                            clock: espnMatch.clock,
                             completed: espnMatch.completed,
                             homeScore: espnMatch.homeScore,
                             awayScore: espnMatch.awayScore
@@ -5879,8 +5885,10 @@ function liveClockLabel(live) {
     if (!live) return '';
     if (live.status === 'STATUS_DELAYED') return 'Delayed';
     if (live.status === 'STATUS_HALFTIME') return 'Half';
-    if (live.status === 'STATUS_END_PERIOD') return `End Q${live.period}`;
-    return live.clock ? `${live.clock} Q${live.period}` : 'Live';
+    // A snapshot from an older cached schedule has no quarter: never print
+    // "End Qundefined", as one did on a Sunday in October 2026.
+    if (live.status === 'STATUS_END_PERIOD') return live.period ? `End Q${live.period}` : 'End of quarter';
+    return live.clock && live.period ? `${live.clock} Q${live.period}` : 'Live';
 }
 
 /** Whether a game is being played right now. */
@@ -6687,9 +6695,10 @@ function renderBlazinGameBox({ game, sides }, weekResults, category = liveSubcat
         state = 'in-progress';
         status = detail?.statusDetail
             || (live.status === 'STATUS_HALFTIME' ? 'Halftime'
-                : live.status === 'STATUS_END_PERIOD' ? `End of ${live.period}`
+                : live.status === 'STATUS_END_PERIOD'
+                    ? (live.period ? `End of ${live.period}` : 'End of quarter')
                 : live.status === 'STATUS_DELAYED' ? 'Delayed'
-                : (live.clock ? `${live.clock} - Q${live.period}` : 'Live'));
+                : (live.clock && live.period ? `${live.clock} - Q${live.period}` : 'Live'));
     } else if (result) {
         state = 'final';
         status = 'Final';

@@ -281,6 +281,9 @@ check('the badge says Delayed rather than showing a frozen clock', () => {
     assert.strictEqual(api.liveClockLabel({ status: 'STATUS_IN_PROGRESS', clock: '2:00', period: 4 }), '2:00 Q4');
     assert.strictEqual(api.liveClockLabel({ status: 'STATUS_HALFTIME' }), 'Half');
     assert.strictEqual(api.liveClockLabel({ status: 'STATUS_END_PERIOD', period: 3 }), 'End Q3');
+    // A schedule snapshot cached before it carried the quarter.
+    assert.strictEqual(api.liveClockLabel({ status: 'STATUS_END_PERIOD' }), 'End of quarter');
+    assert.strictEqual(api.liveClockLabel({ status: 'STATUS_IN_PROGRESS', clock: '2:00' }), 'Live');
 });
 
 section('The as-is table is the settled one with today counted in');
