@@ -1409,6 +1409,18 @@ function lineStillOpen(game, week) {
 }
 
 /**
+ * True while a game should show the sheet's line over the one it holds: any
+ * game of the current week or later whose kickoff is known, started or not.
+ * Nothing writes a kicked-off game's line to the sheet (spreadsStillOpen, and
+ * the worker's /sync), so after kickoff the sheet holds the line it kicked off
+ * at, or an admin's correction of it, and that is what it is graded at.
+ */
+function lineFollowsSheet(game, week) {
+    if (parseInt(week) < CURRENT_NFL_WEEK) return false;
+    return Boolean(game.kickoff);
+}
+
+/**
  * Apply saved spreads to the games in memory.
  *
  * A game with no line takes the saved one - that is how a completed game keeps
@@ -1420,8 +1432,9 @@ function lineStillOpen(game, week) {
  * screen through a whole Sunday of everyone else seeing -3.5 because this only
  * ever filled in a blank.
  *
- * A game that has kicked off keeps the line it has: the same rule as
- * applyOddsData(), which stops writing spreads at kickoff.
+ * A game of this week that has kicked off follows the sheet too
+ * (lineFollowsSheet), since nothing writes its line there after kickoff; that
+ * is how a corrected line reaches every screen. A past week keeps its lines.
  */
 function applySavedSpreads() {
     const saved = getSavedSpreads();
@@ -1447,7 +1460,7 @@ function applySavedSpreads() {
             const differs = Number(savedLine.spread) !== Number(game.spread)
                 || savedLine.favorite !== game.favorite;
             const takeSaved = !hasUsableSpread(game)
-                || (differs && lineStillOpen(game, week));
+                || (differs && lineFollowsSheet(game, week));
             if (!takeSaved) return;
 
             game.spread = savedLine.spread;
@@ -12872,6 +12885,24 @@ async function syncClearedStatusToGoogleSheets(week, picker, cleared) {
 }
 
 /**
+ * The part of a week's saved lines that may still be written to the sheet:
+ * games that have not kicked off. A kicked-off game's line in the sheet is the
+ * one it is graded at, and this device's copy of it can be hours old. A page
+ * left open since before a line move would otherwise put the old number back
+ * the next time it refreshed the later games: Bengals -6.5 at kickoff went back
+ * to -7 at 2:43pm, and the two unlocked picks on it were graded a push.
+ */
+function spreadsStillOpen(week, weekSpreads) {
+    const games = NFL_GAMES_BY_WEEK[week] || [];
+    const open = {};
+    Object.entries(weekSpreads || {}).forEach(([key, line]) => {
+        const game = games.find(g => `${g.away.toLowerCase()}_${g.home.toLowerCase()}` === key);
+        if (game && lineStillOpen(game, week)) open[key] = line;
+    });
+    return open;
+}
+
+/**
  * Sync spreads to Google Sheets for backup
  * This ensures spreads are preserved even if localStorage is cleared
  */
@@ -12885,8 +12916,8 @@ async function syncSpreadsToGoogleSheets() {
     }
 
     for (const week of weeksToSync) {
-        const weekSpreads = savedSpreads[week];
-        if (!weekSpreads || Object.keys(weekSpreads).length === 0) {
+        const weekSpreads = spreadsStillOpen(week, savedSpreads[week]);
+        if (Object.keys(weekSpreads).length === 0) {
             continue;
         }
 

@@ -60,6 +60,7 @@ function makeEnv() {
         COWHERD, COWHERD_CATEGORY, PICKERS_WITH_COWHERD, cowherdWeeklyResults,
         __window: window,
         applySavedSpreads, saveSpread, getSavedSpreads, loadSpreadsFromGoogleSheets,
+        syncSpreadsToGoogleSheets,
         CURRENT_NFL_WEEK,
         spreadsNeedRefresh, GAME_DAY_REFRESH_MS, updateOddsFromAPI, cacheOdds,
         standingsFromComputed, weeklySeriesFromComputed, recordPercentage,
@@ -716,17 +717,62 @@ check('a saved line can flip the favourite before kickoff', () => {
         'same number, other side - still a different line');
 });
 
-check('a game that has kicked off keeps the line it has', () => {
+check('a game of this week that has kicked off follows the sheet', () => {
+    // Bengals at Dolphins, October 2026: -6.5 at kickoff, but this screen had
+    // picked up a stale -7 and graded the riding picks a push. Nothing writes
+    // a started game's line to the sheet any more, so the sheet's number is
+    // the kickoff line (or the admin's correction of it), and it must land.
     const api = setup({});
     const week = upcomingWeek(api);
     api.NFL_GAMES_BY_WEEK[week] = [{
-        id: 1, away: 'Seahawks', home: 'Cardinals', spread: 3.5, favorite: 'away',
-        kickoff: new Date(Date.now() - 1 * HOUR).toISOString()
+        id: 1, away: 'Bengals', home: 'Dolphins', spread: 7, favorite: 'away',
+        kickoff: new Date(Date.now() - 3 * HOUR).toISOString()
     }];
-    api.saveSpread(week, 'Seahawks', 'Cardinals', 4.5, 'away');
+    api.saveSpread(week, 'Bengals', 'Dolphins', 6.5, 'away');
     api.applySavedSpreads();
-    assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].spread, 3.5,
-        'the line is fixed at kickoff, whatever the sheet says afterwards');
+    assert.strictEqual(api.NFL_GAMES_BY_WEEK[week][0].spread, 6.5);
+});
+
+section('Only lines still open are written to the sheet');
+
+async function syncedSpreads(api) {
+    const bodies = [];
+    api.__window.fetch = async (url, init) => {
+        bodies.push(JSON.parse(init.body));
+        return { json: async () => ({ success: true }) };
+    };
+    await api.syncSpreadsToGoogleSheets();
+    return bodies;
+}
+
+check('a kicked-off game is left out of the sync, an upcoming one is sent', async () => {
+    const api = setup({});
+    const week = upcomingWeek(api);
+    api.__setState({ currentWeek: Number(week) });
+    api.NFL_GAMES_BY_WEEK[week] = [
+        { id: 1, away: 'Bengals', home: 'Dolphins', spread: 7, favorite: 'away',
+            kickoff: new Date(Date.now() - 2 * HOUR).toISOString() },
+        { id: 2, away: 'Lions', home: 'Cardinals', spread: 5.5, favorite: 'away',
+            kickoff: new Date(Date.now() + 2 * HOUR).toISOString() }
+    ];
+    api.saveSpread(week, 'Bengals', 'Dolphins', 7, 'away');
+    api.saveSpread(week, 'Lions', 'Cardinals', 5.5, 'away');
+    const bodies = await syncedSpreads(api);
+    assert.strictEqual(bodies.length, 1);
+    assert.deepStrictEqual(Object.keys(bodies[0].spreads), ['lions_cardinals'],
+        "this device's copy of a started game's line can be hours old");
+});
+
+check('nothing open: nothing is sent', async () => {
+    const api = setup({});
+    const week = upcomingWeek(api);
+    api.__setState({ currentWeek: Number(week) });
+    api.NFL_GAMES_BY_WEEK[week] = [
+        { id: 1, away: 'Bengals', home: 'Dolphins', spread: 7, favorite: 'away',
+            kickoff: new Date(Date.now() - 2 * HOUR).toISOString() }
+    ];
+    api.saveSpread(week, 'Bengals', 'Dolphins', 7, 'away');
+    assert.deepStrictEqual(await syncedSpreads(api), []);
 });
 
 check('a past week keeps its line even with a kickoff in the future', () => {

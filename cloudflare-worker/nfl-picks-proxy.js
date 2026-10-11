@@ -307,6 +307,46 @@ async function handleSheets(request, url) {
 }
 
 /**
+ * A /sync POST with any line for a game that has kicked off taken out. The
+ * sheet's line for a started game is the one its riding picks are graded at,
+ * and a page left open since before a line move sends its stale copy with the
+ * next refresh: Bengals -6.5 at kickoff became -7 at 2:43pm (October 2026).
+ * The site stopped sending them, but a page still running the old script does
+ * not know that. Regular-season weeks only ("2026_5"); anything else, or no
+ * answer from ESPN, goes through as it came.
+ *
+ * Returns { body } to forward, or { skip } - the reply to send instead -
+ * when nothing is left to write.
+ */
+async function withoutKickedOffLines(body) {
+  let data;
+  try { data = JSON.parse(body); } catch { return { body }; }
+  const spreads = data?.spreads;
+  const week = String(data?.week || '').match(/^(\d{4})_(\d+)$/);
+  if (!spreads || typeof spreads !== 'object' || !week || Number(week[2]) > 18) return { body };
+
+  let board;
+  try {
+    board = await fetchScoreboard({ season: week[1], week: week[2] });
+  } catch {
+    return { body };
+  }
+  const started = new Set(board.games.filter(g => g.state !== 'pre').map(g => g.key));
+  const open = Object.fromEntries(
+    Object.entries(spreads).filter(([key]) => !started.has(normalizeKey(key))));
+  if (Object.keys(open).length === Object.keys(spreads).length) return { body };
+
+  const rest = { ...data };
+  if (Object.keys(open).length) rest.spreads = open;
+  else delete rest.spreads;
+  const left = ['picks', 'results', 'cleared'].some(k => rest[k] !== undefined);
+  if (!rest.spreads && !left) {
+    return { skip: { success: true, results: { spreads: { message: 'Every game has kicked off; lines kept' } } } };
+  }
+  return { body: JSON.stringify(rest) };
+}
+
+/**
  * Proxy Google Apps Script for picks/spreads sync
  * GET: Fetch spreads or picks from Google Sheets
  * POST: Save picks and/or spreads to Google Sheets
@@ -344,7 +384,10 @@ async function handleSync(request, env) {
 
   if (request.method === 'POST') {
     // Forward the request body to Apps Script
-    const body = await request.text();
+    let body = await request.text();
+    const guarded = await withoutKickedOffLines(body);
+    if (guarded.skip) return jsonResponse(guarded.skip);
+    body = guarded.body;
 
     const response = await fetch(appsScriptUrl, {
       method: 'POST',

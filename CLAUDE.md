@@ -219,11 +219,23 @@ Two rules now:
   (`loadSpreadsFromGoogleSheets`). It is rewritten by whichever device last
   hit the API and is where a manual correction lands, so it is never older
   than one device's copy.
-- **`applySavedSpreads()` replaces a differing line on any game whose kickoff
-  is known and still ahead** (`lineStillOpen`). A game that has kicked off
-  keeps the line it has, same as `applyOddsData()`; a game with no kickoff is
-  left alone rather than guessed at. Completed games still take a saved line
-  when they have none - that part is unchanged.
+- **`applySavedSpreads()` replaces a differing line on any game of the current
+  week or later whose kickoff is known** (`lineFollowsSheet`), kicked off or
+  not. A game with no kickoff is left alone rather than guessed at, and a past
+  week keeps its lines. Completed games still take a saved line when they have
+  none - that part is unchanged.
+
+**Nothing writes a kicked-off game's line to the sheet**, which is what lets
+the rule above follow the sheet after kickoff. Week 5, 2026: Bengals -7 moved
+to -6.5 before the 1pm kickoff, and at 2:43pm a page that had been open since
+before the move refreshed the 4pm lines and synced its whole saved bucket,
+stale Bengals -7 included. Dylan and Jason were riding the line, so a 7-point
+win became a push for them. `syncSpreadsToGoogleSheets` now sends only
+`spreadsStillOpen()` (kickoff known and still ahead). The worker's `/sync`
+also drops kicked-off games from any spreads POST, checked against ESPN's
+scoreboard for that week (`withoutKickedOffLines`), because a page left open
+keeps running the old script. A correction therefore has to go to the Apps
+Script directly, not through the worker.
 
 `applyOddsData()` remains the only thing that writes a *new* number into the
 system; this only moves numbers the sheet already holds onto the games in

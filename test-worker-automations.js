@@ -96,6 +96,7 @@ function fullPicks() {
 let world;   // { board, picks, spreads }
 const sent = [];
 const appsScriptCalls = [];
+const posted = [];   // bodies POSTed to the Apps Script
 const kv = new Map();
 
 globalThis.fetch = async (url, init = {}) => {
@@ -103,6 +104,10 @@ globalThis.fetch = async (url, init = {}) => {
     if (u.startsWith('https://site.api.espn.com/')) {
         const week = new URL(u).searchParams.get('week');
         return new Response(JSON.stringify(week ? world.weekBoards[week] : world.board));
+    }
+    if (u.startsWith(APPS_SCRIPT_URL) && init.method === 'POST') {
+        posted.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ success: true, results: {} }));
     }
     if (u.startsWith(APPS_SCRIPT_URL)) {
         const action = new URL(u).searchParams.get('action');
@@ -152,7 +157,7 @@ async function tick(nowMs, env = ENV) {
 let failures = 0, total = 0;
 async function check(name, fn) {
     total++;
-    sent.length = 0; appsScriptCalls.length = 0; kv.clear();
+    sent.length = 0; appsScriptCalls.length = 0; posted.length = 0; kv.clear();
     world = { board: scoreboard(ALL_FINAL, FINALS), picks: fullPicks(), spreads: SPREADS,
         earlierPicks: {}, results: {}, resultsDown: false, weekBoards: {} };
     try { await fn(); console.log(`  ok  ${name}`); }
@@ -490,6 +495,55 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         const r = await preview('blazin_results', 'Bearer wrong');
         assert.strictEqual(r.status, 401);
         assert.strictEqual(sent.length, 0);
+    });
+
+    section('/sync keeps the line a game kicked off at');
+
+    async function syncPost(payload) {
+        const r = await worker.fetch(new Request('https://w.test/sync', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }), ENV, {});
+        return r.json();
+    }
+    const line = spread => ({ spread, favorite: 'away', overUnder: 44.5 });
+
+    await check('a kicked-off game’s line is dropped, later games still written', async () => {
+        // Thursday is final and the 1pm games are on: only the two night games are open.
+        world.weekBoards['5'] = scoreboard(['post', 'in', 'in', 'in', 'pre', 'pre']);
+        await syncPost({ week: '2026_5', spreads: Object.fromEntries(KEYS.map(k => [k, line(7)])) });
+        assert.strictEqual(posted.length, 1);
+        assert.deepStrictEqual(Object.keys(posted[0].spreads), ['giants_eagles', 'cowboys_commanders']);
+        assert.strictEqual(posted[0].week, '2026_5');
+    });
+
+    await check('nothing open: the sheet is not written at all', async () => {
+        world.weekBoards['5'] = scoreboard(['post', 'post', 'in', 'in', 'in', 'in']);
+        const r = await syncPost({ week: '2026_5', spreads: { jets_dolphins: line(7) } });
+        assert.strictEqual(posted.length, 0);
+        assert.strictEqual(r.success, true);
+    });
+
+    await check('picks, and lines for games still to come, go through untouched', async () => {
+        world.weekBoards['5'] = scoreboard(['pre', 'pre', 'pre', 'pre', 'pre', 'pre']);
+        const picks = { week: '2026_5', picker: 'Stephen', picks: [{ game: 'jets_dolphins' }] };
+        await syncPost(picks);
+        const spreads = { week: '2026_5', spreads: { jets_dolphins: line(6.5) } };
+        await syncPost(spreads);
+        assert.deepStrictEqual(posted, [picks, spreads]);
+    });
+
+    await check('no answer from ESPN: the write goes through as it came', async () => {
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url, init) => String(url).startsWith('https://site.api.espn.com/')
+            ? new Response('down', { status: 503 }) : realFetch(url, init);
+        try {
+            await syncPost({ week: '2026_5', spreads: { jets_dolphins: line(7) } });
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        assert.strictEqual(posted.length, 1);
+        assert.ok(posted[0].spreads.jets_dolphins);
     });
 
     section('The worker grades exactly as the site does');
