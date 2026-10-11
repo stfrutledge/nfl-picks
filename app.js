@@ -5271,6 +5271,62 @@ function isPickFrozen(pick) {
     return Boolean(pick && pick.frozenAt);
 }
 
+// --- Unlocking (admin only) ------------------------------------------------
+// A lock is final for players, but a pick locked under the wrong picker - the
+// phone had someone else selected - has to be undoable, so the app's Admin
+// Settings (appLockedPicks / appUnlockPicks) can put a locked pick back to
+// riding the line.
+//
+// The sheet is the hard part. foldPickRow gives a frozen row precedence over
+// any later row without a freeze, so a plain unlocked row would lose to the
+// lock it is meant to undo and the lock would come back on the next load. An
+// unlocked pick therefore writes UNLOCK_MARKER + time into the Frozen At
+// column: a non-blank cell, so the row is in the same class as the lock and
+// beats it on timestamp. The marker rides on every later row for that game
+// (pick.unlockedAt) so later edits beat the marker row in turn.
+//
+// The current Apps Script reads the marker as an unlock and treats the rows
+// after it as ordinary ones; an older deployment hands it back as a freeze,
+// and fromSheetPick() turns it back into an unlock on the way in.
+const UNLOCK_MARKER = 'unlocked ';
+
+function isUnlockMarker(value) {
+    return typeof value === 'string' && value.startsWith(UNLOCK_MARKER);
+}
+
+/** A pick as read from the sheet, with an unlock marker turned back into an unlock. */
+function fromSheetPick(pick) {
+    if (!pick || !isUnlockMarker(pick.frozenAt)) return pick;
+    const { frozenAt, frozenSpread, frozenFavorite, frozenOverUnder, ...rest } = pick;
+    return { ...rest, unlockedAt: frozenAt.slice(UNLOCK_MARKER.length) };
+}
+
+/** What a pick writes into the sheet's Frozen At column. */
+function frozenCellForPick(pick) {
+    if (pick.frozenAt) return pick.frozenAt;
+    if (pick.unlockedAt) return UNLOCK_MARKER + pick.unlockedAt;
+    return '';
+}
+
+/**
+ * Put a locked pick back to riding the line. The picks themselves are kept;
+ * only the frozen line goes, so it is graded at the current line again.
+ */
+function applyUnfreeze(game, week, picker) {
+    const pick = { ...getPicksForGame(getPickerPicksForWeek(week, picker), game) };
+    delete pick.frozenAt;
+    delete pick.frozenSpread;
+    delete pick.frozenFavorite;
+    delete pick.frozenOverUnder;
+    pick.unlockedAt = new Date().toISOString();
+
+    if (!allPicks[week]) allPicks[week] = {};
+    if (!allPicks[week][picker]) allPicks[week][picker] = {};
+    allPicks[week][picker][pickKey(game)] = pick;
+
+    return pick;
+}
+
 const MAX_BLAZIN_PICKS = 5;
 
 /**
@@ -5554,8 +5610,10 @@ function freezeGameByKey(key) {
           + ' and locking this game locks its star too.'
         : '';
 
+    // The picker is named because the likeliest mistake is locking the wrong
+    // person's card - a shared device with someone else still selected.
     return requestConfirmation(
-        `Lock ${game.away} @ ${game.home} at ${line}?`,
+        `Lock ${currentPicker}'s pick: ${game.away} @ ${game.home} at ${line}?`,
         'These picks become final: you will not be able to change them, and you ' +
         'will be graded at this line however it moves.' + starWarning,
         { confirmLabel: 'Lock Pick', dontShowKey: 'lockPick' },
@@ -5607,10 +5665,11 @@ function freezeAllCompleteGames() {
         return false;
     }
 
+    const who = currentPicker;
     const summary = notReady > 0
-        ? `Lock ${ready.length} completed pick${ready.length === 1 ? '' : 's'}? ` +
+        ? `Lock ${ready.length} of ${who}'s completed pick${ready.length === 1 ? '' : 's'}? ` +
           `${notReady} game${notReady === 1 ? ' is' : 's are'} incomplete and will keep riding the line.`
-        : `Lock all ${ready.length} pick${ready.length === 1 ? '' : 's'} at their current lines?`;
+        : `Lock all ${ready.length} of ${who}'s pick${ready.length === 1 ? '' : 's'} at their current lines?`;
 
     // Deliberately NOT suppressible: this finalises the whole week at once, so
     // it should always ask.
@@ -5627,6 +5686,79 @@ function freezeAllCompleteGames() {
                 ? `Locked ${ready.length} picks. ${notReady} incomplete and still riding the line.`
                 : `Locked all ${ready.length} picks.`);
         });
+}
+
+/** Every locked pick in the week, grouped by picker. Cowherd's are not locks. */
+function lockedPicksForWeek(week = currentWeek) {
+    const games = getGamesForWeekAndSeason(week, currentSeason) || [];
+    return PICKERS.map(picker => {
+        const picks = getPickerPicksForWeek(week, picker);
+        const locked = games
+            .map(game => ({ game, pick: getPicksForGame(picks, game) }))
+            .filter(entry => isPickFrozen(entry.pick));
+        return { picker, locked };
+    }).filter(group => group.locked.length > 0);
+}
+
+/**
+ * Unlock some of a picker's locked games in a week. The picks are kept and go
+ * back to riding the line. No confirmation here: the app's Admin Settings, the
+ * only place this is offered, asks natively before it calls.
+ *
+ * Returns how many games were unlocked.
+ */
+function unlockPicks(picker, keys, week = currentWeek) {
+    if (isHistoricalSeason()) return 0;
+    const group = lockedPicksForWeek(week).find(g => g.picker === picker);
+    const games = (group ? group.locked : [])
+        .map(entry => entry.game)
+        .filter(game => keys.includes(pickKey(game)));
+    if (games.length === 0) return 0;
+
+    games.forEach(game => applyUnfreeze(game, week, picker));
+    savePicksToStorage(false, false, week, picker, games.map(pickKey));
+    renderGames();
+    renderScoringSummary();
+    return games.length;
+}
+
+/**
+ * The week's locked picks for the app's Admin Settings (app 1.13+), as plain
+ * data: the app draws the list and asks for confirmation itself.
+ */
+function appLockedPicks() {
+    return {
+        week: currentWeek,
+        weekLabel: isPlayoffWeek(currentWeek)
+            ? getWeekDisplayName(currentWeek)
+            : `Week ${getWeekDisplayName(currentWeek)}`,
+        historical: isHistoricalSeason(),
+        pickers: (isHistoricalSeason() ? [] : lockedPicksForWeek(currentWeek)).map(({ picker, locked }) => ({
+            picker,
+            picks: locked.map(({ game, pick }) => ({
+                key: pickKey(game),
+                game: `${game.away} @ ${game.home}`,
+                line: describeLineForSide(game, pick.line, pick),
+                started: isGameLocked(game, currentWeek)
+            }))
+        }))
+    };
+}
+
+/**
+ * Unlock picks for the app's Admin Settings, which has already confirmed.
+ * `week` is the one the list was drawn for, so a page that has since moved to
+ * another week still unlocks the games that were shown.
+ */
+function appUnlockPicks(picker, keys, week) {
+    try {
+        const count = unlockPicks(picker, keys, Number(week) || currentWeek);
+        return count > 0
+            ? { ok: true, message: count === 1 ? `Unlocked ${picker}'s pick.` : `Unlocked ${count} of ${picker}'s picks.` }
+            : { ok: false, message: 'Nothing to unlock. It may already have been unlocked.' };
+    } catch (e) {
+        return { ok: false, message: e?.message || 'Something went wrong.' };
+    }
 }
 
 // --- Cowherd's Blazin' 5 ---------------------------------------------------
@@ -12617,7 +12749,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
             blazin: pickData.blazin || false,
             overUnder: pickData.overUnder || '',
             totalLine: pickData.totalLine || '',
-            frozenAt: pickData.frozenAt || tombstoneStamp
+            frozenAt: frozenCellForPick(pickData) || tombstoneStamp
         };
     });
 
@@ -12874,7 +13006,7 @@ async function loadPicksFromGoogleSheets(week, picker) {
 
             for (const [rawKey, pickData] of Object.entries(result.picks)) {
                 // Overwrite with backup data (backup is source of truth)
-                allPicks[week][picker][normalizePickKey(rawKey)] = pickData;
+                allPicks[week][picker][normalizePickKey(rawKey)] = fromSheetPick(pickData);
             }
 
             // Save to localStorage for future loads (skip sync - we just loaded from backup)
@@ -13030,7 +13162,7 @@ async function loadAllPicksFromBackup() {
                         for (const rawKey in result.picks[sheetWeek][picker]) {
                             const key = normalizePickKey(rawKey);
                             if (changed.includes(key)) continue;
-                            allPicks[weekNum][picker][key] = result.picks[sheetWeek][picker][rawKey];
+                            allPicks[weekNum][picker][key] = fromSheetPick(result.picks[sheetWeek][picker][rawKey]);
                             totalPicks++;
                         }
                         console.log(`[Picks Load] ${picker} week ${week}: kept ${changed.length} unsynced game(s), took the rest from the sheet`);
@@ -13055,7 +13187,7 @@ async function loadAllPicksFromBackup() {
                     // raw team names without going through TEAM_NAME_MAP.
                     for (const rawKey in result.picks[sheetWeek][picker]) {
                         const key = normalizePickKey(rawKey);
-                        allPicks[weekNum][picker][key] = result.picks[sheetWeek][picker][rawKey];
+                        allPicks[weekNum][picker][key] = fromSheetPick(result.picks[sheetWeek][picker][rawKey]);
                         totalPicks++;
                     }
                 }

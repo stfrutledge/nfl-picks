@@ -42,6 +42,13 @@ three things a web page cannot do:
   credits line is read off the page (`appAdminInfo`) as Settings opens.
   Cowherd's Blazin' 5 entry stays with the picks, by choice: it is weekly
   data entry tied to the week on screen.
+- **Unlock picks (1.13+).** Admin Settings lists the locked picks for the
+  week the page is on, by picker, with *Unlock* per game and *Unlock all* per
+  picker, for a card locked under the wrong picker. It asks first, natively,
+  then calls the site's `appUnlockPicks` on the page behind Settings, which
+  saves and syncs like any pick change; the list comes from `appLockedPicks`.
+  The site has no unlock control of its own. How an unlock survives the
+  Backup sheet's "a lock is final" rule is in the Unlocking comment in app.js.
 
 The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
 `openSettings()`, `hasAdminTools()`). The site's side is

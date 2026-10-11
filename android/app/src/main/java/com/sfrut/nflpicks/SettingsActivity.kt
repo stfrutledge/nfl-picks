@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -348,7 +349,7 @@ class SettingsActivity : ComponentActivity() {
                     Card {
                         Label("Admin")
                         Body(
-                            if (prefs.adminUnlocked) "Spreads, export and messaging the group."
+                            if (prefs.adminUnlocked) "Spreads, export, unlocking picks and messaging the group."
                             else "Needs the admin key."
                         )
                         PrimaryButton("Admin Settings  ›", modifier = Modifier.fillMaxWidth()) {
@@ -625,6 +626,172 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
+    /** What an unlock will undo, for the confirmation: whose picks, which games. */
+    private data class UnlockAsk(val week: Int, val picker: String, val picks: List<LockedPick>)
+
+    /**
+     * The week's locked picks, by picker, with a way to unlock them - for a
+     * card locked by mistake, usually under the wrong picker on a shared phone.
+     * The list and the unlock are the site's own (appLockedPicks /
+     * appUnlockPicks), run on the page open behind Settings, so the change is
+     * saved and synced exactly as a lock is.
+     */
+    @Composable
+    private fun UnlockPicksCard() {
+        val site = LocalSite.current
+        var week by remember { mutableStateOf<LockedWeek?>(null) }
+        var problem by remember { mutableStateOf<String?>(null) }
+        var busy by remember { mutableStateOf(false) }
+        var status by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+        var asking by remember { mutableStateOf<UnlockAsk?>(null) }
+
+        fun load() {
+            PageBridge.lockedPicks { reply ->
+                when (reply) {
+                    PageBridge.Reply.NoPage ->
+                        problem = "The site isn't open behind Settings. Close Settings, let the page load, then come back."
+                    PageBridge.Reply.OldPage ->
+                        problem = "The site on this phone is out of date. Close Settings, reload the page, then come back."
+                    is PageBridge.Reply.Ok -> { problem = null; week = reply.value }
+                }
+            }
+        }
+        LaunchedEffect(Unit) { load() }
+
+        fun unlock(ask: UnlockAsk) {
+            busy = true
+            status = null
+            PageBridge.unlockPicks(ask.week, ask.picker, ask.picks.map { it.key }) { reply ->
+                busy = false
+                status = when (reply) {
+                    PageBridge.Reply.NoPage -> false to "The site closed. Reopen it and try again."
+                    PageBridge.Reply.OldPage -> false to "The site on this phone is out of date. Reload it and try again."
+                    is PageBridge.Reply.Ok -> reply.value
+                }
+                load()
+            }
+        }
+
+        Card {
+            Label(week?.let { "Unlock picks · ${it.label}" } ?: "Unlock picks")
+            Body("For a pick locked by mistake, such as under the wrong picker. The picks stay; they go back to riding the line.")
+            val current = week
+            when {
+                problem != null -> StatusLine(on = false, problem!!)
+                current == null -> Body("Loading...")
+                current.historical -> Body("That's a past season. Picks there can't be changed.")
+                current.groups.isEmpty() -> Body("No locked picks this week.", color = site.text)
+                else -> current.groups.forEach { group ->
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(group.picker, Modifier.weight(1f), style = TextStyle(fontFamily = Inter,
+                                fontWeight = FontWeight.Bold, fontSize = 16.sp, color = site.text))
+                            if (group.picks.size > 1) {
+                                SmallButton("Unlock all ${group.picks.size}", enabled = !busy) {
+                                    asking = UnlockAsk(current.week, group.picker, group.picks)
+                                }
+                            }
+                        }
+                        group.picks.forEach { pick ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, site.border, RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text(pick.game, style = TextStyle(fontFamily = Inter,
+                                        fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = site.text))
+                                    Body(if (pick.started) "${pick.line} · started" else pick.line, size = 13.sp)
+                                }
+                                SmallButton("Unlock", enabled = !busy) {
+                                    asking = UnlockAsk(current.week, group.picker, listOf(pick))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (busy) Body("Unlocking...")
+            status?.let { (ok, text) -> StatusLine(on = ok, text) }
+        }
+
+        asking?.let { ask ->
+            val one = ask.picks.singleOrNull()
+            ConfirmDialog(
+                title = if (one != null) "Unlock ${ask.picker}'s pick?" else "Unlock all ${ask.picks.size} of ${ask.picker}'s picks?",
+                message = (if (one != null) "${one.game}, locked at ${one.line}.\n\n" else "") +
+                    "The picks stay as they are but go back to riding the line: graded at the current line, " +
+                    "and changeable again until kickoff.",
+                confirm = if (one != null) "Unlock" else "Unlock ${ask.picks.size}",
+                onDismiss = { asking = null }
+            ) {
+                asking = null
+                unlock(ask)
+            }
+        }
+    }
+
+    /** A compact `.btn-small`: the primary button's look at row size. */
+    @Composable
+    private fun SmallButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+        val site = LocalSite.current
+        Box(
+            Modifier
+                .background(if (enabled) site.button else site.border, RoundedCornerShape(4.dp))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 9.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text.uppercase(),
+                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                    letterSpacing = 0.05.em, color = if (enabled) Color.White else site.textLight)
+            )
+        }
+    }
+
+    /** The site's confirm modal: title, message, Cancel and a confirm button. */
+    @Composable
+    private fun ConfirmDialog(title: String, message: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+        val site = LocalSite.current
+        Dialog(onDismissRequest = onDismiss) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(site.card, RoundedCornerShape(8.dp))
+                    .border(1.dp, site.border, RoundedCornerShape(8.dp))
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(title, style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp, color = site.text))
+                Body(message)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+                    Text(
+                        "CANCEL",
+                        style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            letterSpacing = 0.05.em, color = site.text),
+                        modifier = Modifier
+                            .border(2.dp, site.border, RoundedCornerShape(4.dp))
+                            .clickable(onClick = onDismiss)
+                            .padding(horizontal = 18.dp, vertical = 12.dp)
+                    )
+                    Box(
+                        Modifier
+                            .background(site.red, RoundedCornerShape(4.dp))
+                            .clickable(onClick = onConfirm)
+                            .padding(horizontal = 18.dp, vertical = 12.dp)
+                    ) {
+                        Text(confirm.uppercase(), style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp, letterSpacing = 0.05.em, color = Color.White))
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Admin Settings: the admin tools and messaging the group, behind the
      * admin key. The key is checked against a SHA-256 built into the APK
@@ -661,6 +828,7 @@ class SettingsActivity : ComponentActivity() {
                     UnlockCard(onUnlocked = { unlocked = true })
                 } else {
                     AdminToolsCard()
+                    UnlockPicksCard()
                     AdminCard()
                     if (NflPicksApp.pushConfigured) TestCard()
                     Text(

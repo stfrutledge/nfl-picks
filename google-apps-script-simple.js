@@ -174,6 +174,16 @@ function isBlankCell(value) {
   return value === '' || value === null || value === undefined;
 }
 
+// What the client writes into Frozen At when the admin unlocks a pick: a
+// non-blank cell, so the current and older deployments alike let it beat the
+// lock it undoes. Must match UNLOCK_MARKER in app.js.
+const UNLOCK_MARKER = 'unlocked ';
+
+/** A Frozen At cell recording an unlock rather than a freeze. */
+function isUnlockCell(value) {
+  return typeof value === 'string' && value.indexOf(UNLOCK_MARKER) === 0;
+}
+
 /**
  * Fold one Backup row into the accumulating pick for its game.
  *
@@ -181,6 +191,16 @@ function isBlankCell(value) {
  * Newer batch -> replace: the newest sync is the client's full state.
  */
 function foldPickRow(existing, row) {
+  // An unlock: the admin put a locked pick back to riding the line. It beats
+  // anything older, frozen or not, and leaves an ordinary riding pick behind,
+  // so later rows fold against it by timestamp as usual. Must match
+  // UNLOCK_MARKER in app.js.
+  if (isUnlockCell(row.frozenAt)) {
+    if (existing && row.timestamp < existing.timestamp) return existing;
+    row.frozenAt = '';
+    return row;
+  }
+
   if (!existing) return row;
 
   // A freeze is final. Once a row records one, a later row that does not carry
@@ -863,7 +883,7 @@ function calculateAndSaveOutcomes(week, gameKey, result) {
       // score it against the spread stored on the row itself.
       let rowSpread = spread;
       let rowFavorite = favorite;
-      if (!isBlankCell(backupData[i][16])) {
+      if (!isBlankCell(backupData[i][16]) && !isUnlockCell(backupData[i][16])) {
         const frozenLine = lineFromRow(readPickRow(backupData[i]));
         if (frozenLine) {
           rowSpread = frozenLine.spread;
