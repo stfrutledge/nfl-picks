@@ -49,6 +49,10 @@ three things a web page cannot do:
   saves and syncs like any pick change; the list comes from `appLockedPicks`.
   The site has no unlock control of its own. How an unlock survives the
   Backup sheet's "a lock is final" rule is in the Unlocking comment in app.js.
+- **Held reminders are re-checked (1.14+).** A pick reminder held through
+  quiet hours asks the worker's `/reminder-check` as it is released: picks
+  made in the meantime mean it is dropped, and anything still to do is
+  reworded for now. No answer (offline, an older worker) shows it as it was.
 
 The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
 `openSettings()`, `hasAdminTools()`). The site's side is

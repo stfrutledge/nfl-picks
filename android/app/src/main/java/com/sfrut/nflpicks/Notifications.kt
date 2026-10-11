@@ -132,9 +132,28 @@ object Notifications {
  */
 class HeldNotificationWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val data = inputData.keyValueMap.mapValues { it.value.toString() }
-        val msg = Notifications.parse(data) ?: return Result.success()
+        var data = inputData.keyValueMap.mapValues { it.value.toString() }
         val settings = Prefs(applicationContext).deliverySettings().copy(quietOn = false)
+
+        // A pick reminder was true when it was written, hours ago; the picks
+        // may be in by now. Ask before showing it: nothing left means nothing
+        // shown, and anything left is worded for now. No answer (no signal,
+        // the worker down) shows it as it was - a stale reminder beats none.
+        val id = data["id"]
+        val picker = settings.picker
+        if (data["category"] == Category.PICK_REMINDERS.id && id != null && picker != null) {
+            when (val now = ReminderCheck.ask(id, picker)) {
+                ReminderCheck.Answer.NothingLeft -> {
+                    Log.i("NflPicksNotify", "Dropped held $id: $picker's picks are in")
+                    return Result.success()
+                }
+                is ReminderCheck.Answer.StillDue ->
+                    data = data + ("personal" to JSONObject(mapOf(picker to now.body)).toString())
+                ReminderCheck.Answer.Unknown -> Unit
+            }
+        }
+
+        val msg = Notifications.parse(data) ?: return Result.success()
         val decision = Delivery.decide(msg, settings, ZonedDateTime.now())
         if (decision is Decision.Show) {
             Notifications.show(applicationContext, msg.category, decision.title, decision.body, data["id"], data["week"])

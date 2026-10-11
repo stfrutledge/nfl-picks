@@ -171,6 +171,8 @@ export default {
         return await handleEspn(request, url, ctx);
       } else if (path === '/notify') {
         return await handleNotify(request, env);
+      } else if (path === '/reminder-check') {
+        return await handleReminderCheck(url, env);
       } else {
         return jsonResponse({ error: 'Unknown endpoint', path }, 404);
       }
@@ -974,6 +976,46 @@ function reminderMessage(season, week, slate, games, picks, regularSeason) {
     personal,
     expiresAt: slate.kickoff,
   };
+}
+
+/**
+ * GET /reminder-check?id=reminder-2026-5-weekend&picker=Stephen
+ *
+ * A pick reminder held through a phone's quiet hours is shown hours after it
+ * was written, by which time the picks may well be in - October 2026: picks
+ * made before 8am, then "you still have picks to make" at 8am. The app asks
+ * this as it releases one: the same reminder rebuilt for that picker from the
+ * sheet as it stands now.
+ *
+ * { remind: true, body } - still something to do, worded for now.
+ * { remind: false }      - nothing left, or the slate has kicked off.
+ *
+ * Read-only and unauthenticated: it says no more than the site already shows
+ * anyone. Any failure is an error status, and the app then shows the reminder
+ * as it was rather than losing it.
+ */
+async function handleReminderCheck(url, env) {
+  const match = String(url.searchParams.get('id') || '').match(/^reminder-(\d{4})-(\d+)-(first|weekend)$/);
+  const picker = url.searchParams.get('picker') || '';
+  if (!match || !NFL_PICKERS.includes(picker)) return jsonResponse({ error: 'Bad request' }, 400);
+  if (!env.APPS_SCRIPT_URL) return jsonResponse({ error: 'Not configured' }, 503);
+  const [season, week, kind] = [Number(match[1]), Number(match[2]), match[3]];
+
+  // The reminder's own week is the current one until well after its kickoff,
+  // which is when the phone drops it anyway (expiresAt).
+  const board = await fetchScoreboard();
+  if (board.season !== season || board.week !== week) return jsonResponse({ remind: false });
+  const slate = reminderSlates(board.games).find(s => s.kind === kind);
+  if (!slate || Date.now() >= slate.kickoff) return jsonResponse({ remind: false });
+
+  // One picker's week, not the season: this runs on a phone's clock.
+  const data = await appsScriptGet(env, { action: 'picks', week: `${season}_${week}`, picker });
+  const mine = {};
+  for (const [key, pick] of Object.entries(data.picks || {})) mine[normalizeKey(key)] = pick;
+
+  const message = reminderMessage(season, week, slate, board.games, { [picker]: mine }, board.seasonType === 2);
+  const body = message?.personal?.[picker];
+  return jsonResponse(body ? { remind: true, body } : { remind: false });
 }
 
 async function alreadySent(env, id) {

@@ -108,6 +108,10 @@ globalThis.fetch = async (url, init = {}) => {
         const action = new URL(u).searchParams.get('action');
         appsScriptCalls.push(action);
         if (action === 'allpicks') return new Response(JSON.stringify({ picks: { ...world.earlierPicks, '2026_5': world.picks } }));
+        if (action === 'picks') {
+            const p = new URL(u).searchParams;
+            return new Response(JSON.stringify({ picks: p.get('week') === '2026_5' ? (world.picks[p.get('picker')] || {}) : {} }));
+        }
         if (action === 'spreads') return new Response(JSON.stringify({ spreads: world.spreads }));
         if (action === 'allresults') {
             if (world.resultsDown) return new Response('down', { status: 500 });
@@ -340,6 +344,48 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(sent.length, 0, '11:50 GMT is before noon');
         await tick(Date.parse('2026-11-05T12:05:00Z'));
         assert.strictEqual(sent.length, 1);
+    });
+
+/** The worker's /reminder-check at [nowMs]. */
+    async function reminderCheck(query, nowMs) {
+        Date.now = () => nowMs;
+        try {
+            const response = await worker.fetch(new Request('https://w.test/reminder-check?' + query), ENV, {});
+            return { status: response.status, body: await response.json() };
+        } finally {
+            Date.now = realNow;
+        }
+    }
+
+    await check('a held reminder is re-checked: picks made since mean nothing to show', async () => {
+        // Sean is reminded overnight; by the time his quiet hours end the
+        // Thursday game is picked.
+        world.board = scoreboard(PRE);
+        world.picks = { Sean: { bills_chiefs: plain('home') } };
+        const r = await reminderCheck('id=reminder-2026-5-first&picker=Sean', T.thu - 4 * 60 * 60 * 1000);
+        assert.deepStrictEqual(r, { status: 200, body: { remind: false } });
+        assert.deepStrictEqual(appsScriptCalls, ['picks'], 'one picker’s week, not the whole season');
+    });
+
+    await check('still something to do: the reminder is reworded for now', async () => {
+        world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        world.picks = { Sean: { rams_seahawks: star('home'), jets_dolphins: star('home'), bears_packers: plain('home') } };
+        const r = await reminderCheck('id=reminder-2026-5-weekend&picker=Sean', T.sun - 60 * 60 * 1000);
+        assert.deepStrictEqual(r.body, { remind: true, body: 'You still have 2 games to pick and 3 Blazin’ 5 picks to make.' });
+    });
+
+    await check('a slate that has kicked off, or another week, has nothing to remind', async () => {
+        world.board = scoreboard(PRE);
+        world.picks = {};
+        assert.deepStrictEqual((await reminderCheck('id=reminder-2026-5-first&picker=Sean', T.thu + 60 * 1000)).body, { remind: false });
+        assert.deepStrictEqual((await reminderCheck('id=reminder-2026-4-first&picker=Sean', T.thu - 60 * 60 * 1000)).body, { remind: false });
+    });
+
+    await check('a malformed id or an unknown picker is refused', async () => {
+        world.board = scoreboard(PRE);
+        assert.strictEqual((await reminderCheck('id=blazin-2026-5&picker=Sean', T.thu)).status, 400);
+        assert.strictEqual((await reminderCheck('id=reminder-2026-5-first&picker=Cowherd', T.thu)).status, 400);
+        assert.strictEqual(sent.length, 0, 'and it never sends anything');
     });
 
     await check('the weekend still has exactly one reminder, three hours before', async () => {

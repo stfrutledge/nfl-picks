@@ -30,8 +30,8 @@ android {
         applicationId = "com.sfrut.nflpicks"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.13"
+        versionCode = 15
+        versionName = "1.14"
         buildConfigField("String", "FIREBASE_API_KEY", quoted(firebase.getProperty("apiKey")))
         buildConfigField("String", "FIREBASE_APP_ID", quoted(firebase.getProperty("appId")))
         buildConfigField("String", "FIREBASE_PROJECT_ID", quoted(firebase.getProperty("projectId")))
