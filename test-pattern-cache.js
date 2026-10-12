@@ -195,6 +195,34 @@ check('a tie on percentage goes to the bigger sample', () => {
     assert.deepStrictEqual(out.map(p => p.team), ['Bills']);
 });
 
+// Stephen's real 2026 Seahawks games: he took them three times (W, P, P) and
+// went against them twice (both wins).
+check('a team gets a "taking" record and an "in games" record', () => {
+    const api = makeEnv();
+    const slate = [
+        ['Patriots', 'Seahawks', 'home', 21, 24],   // Seahawks -3: push
+        ['Seahawks', 'Cardinals', 'away', 30, 20],  // Seahawks -3 win
+        ['Seahawks', 'Commanders', 'home', 17, 20], // took Commanders +3: win
+        ['Chargers', 'Seahawks', 'home', 21, 24],   // Seahawks -3: push
+        ['49ers', 'Seahawks', 'away', 24, 21]       // took 49ers: win
+    ];
+    const picks = {};
+    slate.forEach(([away, home, line, as, hs], i) => {
+        const week = i + 1;
+        const seaHome = home === 'Seahawks';
+        api.NFL_GAMES_BY_WEEK[week] = [{ id: 1, away, home, spread: 3, favorite: seaHome ? 'home' : 'away',
+            day: 'Sunday', time: '1:00 PM' }];
+        api.NFL_RESULTS_BY_WEEK[week] = { 1: { winner: as > hs ? 'away' : 'home', awayScore: as, homeScore: hs } };
+        picks[week] = { Stephen: { [`${away.toLowerCase()}_${home.toLowerCase()}`]: { line } } };
+    });
+    api.setPicks(picks);
+    const all = api.InsightsManager.getInsights(true).Stephen.teamPatterns;
+    const taking = all.find(p => p.kind === 'taking' && p.team === 'Seahawks');
+    const games = all.find(p => p.kind === 'games' && p.team === 'Seahawks');
+    assert.strictEqual(taking.headline, 'Stephen is 1-0-2 taking the Seahawks');
+    assert.strictEqual(games.headline, 'Stephen is 3-0-2 in Seahawks games');
+});
+
 check('the panel draws one card per extreme', () => {
     const { dom, grid } = patternsDom();
     const api = makeEnv(dom);

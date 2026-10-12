@@ -11387,21 +11387,32 @@ const PatternEngine = {
     },
 
     /**
-     * Detect team-specific patterns
-     * Returns patterns for each team the picker has picked
+     * Detect team-specific patterns, two for each team:
+     *   - taking:  the picker's record when they took that team to cover
+     *   - games:   their record in every game that team played, whichever
+     *              side they took ("3-0-2 in Seahawks games")
+     * A pick against the Seahawks counts toward the opponent's "taking"
+     * record, so the two can disagree, and both are worth seeing.
      */
     detectTeamPatterns: function(picker) {
-        const teamStats = {}; // { teamName: { wins, losses, pushes, games: [] } }
+        const taking = {}; // { teamName: { wins, losses, pushes } }
+        const games = {};
+        const tally = (bucket, team, outcome) => {
+            if (!bucket[team]) bucket[team] = { wins: 0, losses: 0, pushes: 0 };
+            if (outcome === 'win') bucket[team].wins++;
+            else if (outcome === 'loss') bucket[team].losses++;
+            else bucket[team].pushes++;
+        };
 
         // Iterate through all weeks
         for (let week = 1; week <= TOTAL_WEEKS; week++) {
-            const games = getGamesForWeek(week);
+            const weekGames = getGamesForWeek(week);
             const results = getResultsForWeek(week);
             const weekPicks = allPicks[week] && allPicks[week][picker];
 
-            if (!games || !results || !weekPicks) continue;
+            if (!weekGames || !results || !weekPicks) continue;
 
-            games.forEach(game => {
+            weekGames.forEach(game => {
                 const pick = getPicksForGame(weekPicks, game);
                 if (!pick || !pick.line) return;
 
@@ -11411,36 +11422,16 @@ const PatternEngine = {
                 const atsResult = atsWinnerForPick(game, pick, result);
                 if (!atsResult) return;
 
-                // Determine which team was picked
-                const pickedTeam = pick.line === 'away' ? game.away : game.home;
-                const normalizedTeam = TEAM_NAME_MAP[pickedTeam] || pickedTeam;
-
-                if (!teamStats[normalizedTeam]) {
-                    teamStats[normalizedTeam] = { wins: 0, losses: 0, pushes: 0, games: [] };
-                }
-
                 const outcome = pick.line === atsResult ? 'win' : (atsResult === 'push' ? 'push' : 'loss');
-                if (outcome === 'win') teamStats[normalizedTeam].wins++;
-                else if (outcome === 'loss') teamStats[normalizedTeam].losses++;
-                else teamStats[normalizedTeam].pushes++;
-
-                teamStats[normalizedTeam].games.push({
-                    week,
-                    gameId: game.id,
-                    away: game.away,
-                    home: game.home,
-                    spread: game.spread,
-                    favorite: game.favorite,
-                    pick: pick.line,
-                    outcome
-                });
+                const pickedTeam = pick.line === 'away' ? game.away : game.home;
+                tally(taking, TEAM_NAME_MAP[pickedTeam] || pickedTeam, outcome);
+                [game.away, game.home].forEach(team => tally(games, TEAM_NAME_MAP[team] || team, outcome));
             });
         }
 
-        // Convert to pattern objects
         const patterns = [];
-        Object.keys(teamStats).forEach(team => {
-            const stats = teamStats[team];
+        const build = (bucket, kind) => Object.keys(bucket).forEach(team => {
+            const stats = bucket[team];
             const total = stats.wins + stats.losses + stats.pushes;
             const percentage = total > 0 ? (stats.wins / (stats.wins + stats.losses || 1)) * 100 : 0;
 
@@ -11456,14 +11447,15 @@ const PatternEngine = {
             if (percentage < 40) sentiment = 'negative';
             else if (percentage > 60) sentiment = 'positive';
 
-            // Generate headline
             let headline = `${picker} is ${stats.wins}-${stats.losses}`;
             if (stats.pushes > 0) headline += `-${stats.pushes}`;
-            headline += ` picking ${team}`;
+            headline += kind === 'taking' ? ` taking the ${team}` : ` in ${team} games`;
 
+            const slug = team.toLowerCase().replace(/[^a-z0-9]/g, '');
             patterns.push({
-                id: `${picker.toLowerCase()}_team_${team.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+                id: kind === 'taking' ? `${picker.toLowerCase()}_team_${slug}` : `${picker.toLowerCase()}_games_${slug}`,
                 type: 'team',
+                kind,
                 picker,
                 team,
                 wins: stats.wins,
@@ -11478,6 +11470,8 @@ const PatternEngine = {
                 relevantTeams: [team]
             });
         });
+        build(taking, 'taking');
+        build(games, 'games');
 
         return patterns.sort((a, b) => b.total - a.total);
     },
