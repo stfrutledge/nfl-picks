@@ -2759,17 +2759,25 @@ function setupAppSettingsButton() {
 
 /**
  * Where a tapped notification lands, called by the Android app (1.12+):
- * Blazin' 5 results open Standings on the Blazin' 5 table, a pick reminder
- * opens Make Picks on its week. A cold start is still loading when the app
- * calls, so this waits for the first load to finish.
+ * Blazin' 5 results open Standings on the Blazin' 5 table for the week the
+ * results are about (Individual Weeks), a pick reminder opens Make Picks on
+ * its week. A cold start is still loading when the app calls, so this waits
+ * for the first load to finish.
  */
 async function openFromApp(target, week) {
     for (let i = 0; !initialLoadComplete && i < 150; i++) {
         await new Promise(resolve => setTimeout(resolve, 200));
     }
     if (target === 'standings-blazin') {
+        // A week with no results yet is not in the dropdown, and
+        // populateStandingsWeeks() falls back to the latest one that is.
+        standingsScope = 'week';
+        const w = Number(week);
+        standingsWeek = w >= 1 ? w : (currentWeek || null);
         await setActiveCategory('standings');
         await setActiveSubcategory('blazin');
+        // Draws the week table and syncs the toggle, whatever tab it came from.
+        setStandingsScope('week');
     } else if (target === 'make-picks') {
         await setActiveCategory('make-picks');
         const w = Number(week);

@@ -96,7 +96,12 @@ function makeAppEnv() {
         CURRENT_SEASON, COWHERD, FIRST_PLAYOFF_WEEK,
         standingsWeeks, populateStandingsWeeks, standingsWeekStats,
         updateStandingsScopeControls, setStandingsScope, renderStandingsTable,
-        renderDashboard, calculateStatsForWeeks, standingsFromComputed, PICKERS_WITH_COWHERD,
+        renderDashboard, calculateStatsForWeeks, openFromApp,
+        __appReady: () => {
+            initialLoadComplete = true;
+            setActiveCategory = async c => { currentCategory = c; };
+            setActiveSubcategory = async c => { currentSubcategory = c; renderDashboard(); };
+        }, standingsFromComputed, PICKERS_WITH_COWHERD,
         __scope: () => standingsScope,
         __week: () => standingsWeek,
         __setWeek: w => { standingsWeek = w; },
@@ -304,5 +309,27 @@ check('nothing played yet says so', () => {
     assert.match(api.__written['standings-table-body'], /No weeks played yet/);
 });
 
-console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);
-process.exit(failures ? 1 : 0);
+section('A Blazin’ 5 results notification opens that week');
+
+(async () => {
+    total++;
+    const name = 'results open Individual Weeks on the notification’s week';
+    try {
+        const api = setup();
+        api.__appReady();
+        await api.openFromApp('standings-blazin', 1);
+        assert.strictEqual(api.__scope(), 'week', 'Individual Weeks');
+        assert.strictEqual(api.__week(), 1, 'the week the results are about, not the latest');
+        assert.ok(!api.__node('standings-week-selector').classList.contains('hidden'));
+        assert.match(api.__written['standings-week'], /value="1" selected/);
+
+        const later = setup();
+        later.__appReady();
+        await later.openFromApp('standings-blazin', 3);
+        assert.strictEqual(later.__week(), 2, 'a week with no results yet falls back to the latest');
+        console.log(`  ok  ${name}`);
+    } catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+
+    console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);
+    process.exit(failures ? 1 : 0);
+})();
