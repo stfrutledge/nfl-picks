@@ -29,7 +29,7 @@ function makeEnv(dom = {}) {
     const src = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8')
         + '\nconst HISTORICAL_DATA_SEASON=2026,HISTORICAL_GAMES={},HISTORICAL_RESULTS={},HISTORICAL_PICKS={};\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return { InsightsManager, NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, renderPatternsPanel,
+        + `;return { InsightsManager, NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK, renderPatternsPanel, patternExtremes,
             setPicks: p => { allPicks = p; } };`;
     return new Function('window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date', src)(
@@ -171,6 +171,37 @@ check('hidden while selected, the filter goes back to All', () => {
     assert.strictEqual(buttons.primetime.classList.contains('active'), false);
     assert.strictEqual(buttons.all.classList.contains('active'), true);
     assert.ok(/Chiefs/.test(grid.innerHTML), 'showing every pattern, not an empty panel');
+});
+
+// --- Only the extremes -----------------------------------------------------
+
+const pat = (picker, team, percentage, total) =>
+    ({ picker, team, percentage, total, type: 'team', headline: `${picker} ${team}` });
+
+check('each picker shows just their best and worst record', () => {
+    const api = makeEnv();
+    const out = api.patternExtremes([
+        pat('Stephen', 'Chiefs', 0, 4), pat('Stephen', 'Bills', 80, 5),
+        pat('Stephen', 'Rams', 100, 3), pat('Stephen', 'Jets', 25, 4),
+        pat('Sean', 'Lions', 75, 4)
+    ]);
+    assert.deepStrictEqual(out.map(p => `${p.picker} ${p.team} ${p.extreme}`),
+        ['Stephen Rams best', 'Stephen Chiefs worst', 'Sean Lions best']);
+});
+
+check('a tie on percentage goes to the bigger sample', () => {
+    const api = makeEnv();
+    const out = api.patternExtremes([pat('Stephen', 'Rams', 100, 3), pat('Stephen', 'Bills', 100, 6)]);
+    assert.deepStrictEqual(out.map(p => p.team), ['Bills']);
+});
+
+check('the panel draws one card per extreme', () => {
+    const { dom, grid } = patternsDom();
+    const api = makeEnv(dom);
+    loadSeason(api);
+    api.renderPatternsPanel();
+    assert.strictEqual((grid.innerHTML.match(/class="pattern-card/g) || []).length, 1);
+    assert.ok(/Worst · Team/.test(grid.innerHTML), grid.innerHTML);
 });
 
 if (failures > 0) {

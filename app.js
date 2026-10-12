@@ -9093,6 +9093,35 @@ function populatePatternsPickerOptions() {
 }
 
 /**
+ * Each picker's two extremes out of a list of patterns: the best record (the
+ * highest win rate above 50%) and the worst (the lowest below it). A picker
+ * whose patterns all lean one way gets only that one. Ties go to the larger
+ * sample. Returns copies tagged `extreme: 'best' | 'worst'`, best before
+ * worst, pickers in the order they first appear.
+ */
+function patternExtremes(patterns) {
+    const byPicker = new Map();
+    patterns.forEach(p => {
+        if (!byPicker.has(p.picker)) byPicker.set(p.picker, { best: null, worst: null });
+        const slot = byPicker.get(p.picker);
+        if (p.percentage > 50 && (!slot.best || p.percentage > slot.best.percentage
+                || (p.percentage === slot.best.percentage && p.total > slot.best.total))) {
+            slot.best = p;
+        }
+        if (p.percentage < 50 && (!slot.worst || p.percentage < slot.worst.percentage
+                || (p.percentage === slot.worst.percentage && p.total > slot.worst.total))) {
+            slot.worst = p;
+        }
+    });
+    const out = [];
+    byPicker.forEach(({ best, worst }) => {
+        if (best) out.push({ ...best, extreme: 'best' });
+        if (worst) out.push({ ...worst, extreme: 'worst' });
+    });
+    return out;
+}
+
+/**
  * Render Pattern Insights panel
  */
 function renderPatternsPanel() {
@@ -9133,6 +9162,8 @@ function renderPatternsPanel() {
         insights = insights.filter(i => i.type === selectedType);
     }
 
+    insights = patternExtremes(insights);
+
     if (insights.length === 0) {
         grid.innerHTML = `
             <div class="no-patterns-message">
@@ -9147,13 +9178,14 @@ function renderPatternsPanel() {
         const sentimentClass = pattern.sentiment === 'negative' ? 'pattern-negative' :
                                pattern.sentiment === 'positive' ? 'pattern-positive' : 'pattern-neutral';
         const typeBadge = pattern.type === 'primetime' ? 'Primetime' : 'Team';
+        const extremeLabel = pattern.extreme === 'best' ? 'Best' : 'Worst';
         const pushText = pattern.pushes > 0 ? `-${pattern.pushes}` : '';
 
         return `
             <div class="pattern-card ${sentimentClass}">
                 <div class="pattern-header">
                     <span class="pattern-picker">${pattern.picker}</span>
-                    <span class="pattern-type-badge">${typeBadge}</span>
+                    <span class="pattern-type-badge">${extremeLabel} · ${typeBadge}</span>
                 </div>
                 <div class="pattern-stat">${pattern.wins}-${pattern.losses}${pushText}</div>
                 <div class="pattern-percentage ${sentimentClass}">${pattern.percentage}%</div>
