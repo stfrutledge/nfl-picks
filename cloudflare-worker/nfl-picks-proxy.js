@@ -633,8 +633,10 @@ async function signJwt(header, claims, privateKeyPem) {
 // Two kinds, both sent to the whole group through sendToGroup():
 //
 //   blazin_results   when every starred game of the week is final
-//   pick_reminders   3 hours before the week's first kickoff and before the
-//                    first weekend kickoff, to whoever still has picks to make
+//   pick_reminders   to whoever still has picks to make: noon (Irish time) on
+//                    the day of a midweek opener, naming the game and its line;
+//                    3 hours before the weekend's first kickoff; and a "Last
+//                    chance" 30 minutes before it
 //
 // Each phone then decides whether to show it (categories, quiet hours,
 // spoilers - the app's Delivery.decide). Each is sent once: the NOTIFY_STATE
@@ -649,6 +651,7 @@ const NFL_PICKERS = ['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'];
 const COWHERD_PICKER = 'Cowherd';
 const BLAZIN_PER_WEEK = 5;
 const REMINDER_LEAD_MS = 3 * 60 * 60 * 1000;
+const LAST_CHANCE_LEAD_MS = 30 * 60 * 1000;
 const SENT_TTL_SECONDS = 60 * 60 * 24 * 60;   // forget a week's flags after 60 days
 
 const ESPN_SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
@@ -924,7 +927,8 @@ const WEEKDAY_NAMES = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'T
 /**
  * The week's reminder moments: its first kickoff (usually Thursday night), and
  * the first kickoff of the weekend slate after that - usually Sunday's early
- * games, Saturday's late in the season.
+ * games, Saturday's late in the season - twice: 3 hours before, and a last
+ * chance 30 minutes before.
  */
 function reminderSlates(games) {
   const upcoming = [...games].sort((a, b) => a.kickoff - b.kickoff);
@@ -946,8 +950,9 @@ function reminderSlates(games) {
   }
   const weekend = upcoming.find(isWeekend);
   if (weekend) {
-    slates.push({ kind: 'weekend', kickoff: weekend.kickoff, day: easternWeekday(weekend.kickoff),
-      sendAt: weekend.kickoff - REMINDER_LEAD_MS });
+    const day = easternWeekday(weekend.kickoff);
+    slates.push({ kind: 'weekend', kickoff: weekend.kickoff, day, sendAt: weekend.kickoff - REMINDER_LEAD_MS });
+    slates.push({ kind: 'last', kickoff: weekend.kickoff, day, sendAt: weekend.kickoff - LAST_CHANCE_LEAD_MS });
   }
   return slates;
 }
@@ -982,25 +987,54 @@ function plural(n, one, many = one + 's') {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** "Bills @ Chiefs (Chiefs -3.5)", or without the line when the sheet has none. */
+function describeMatchup(game, line) {
+  const matchup = `${game.away} @ ${game.home}`;
+  if (!line || !hasUsableLine(line.spread)) return matchup;
+  const spread = Math.abs(Number(line.spread));
+  if (spread === 0) return `${matchup} (Pick’em)`;
+  return `${matchup} (${line.favorite === 'away' ? game.away : game.home} -${spread})`;
+}
+
+/** The hour on a New York clock: a kickoff from 5pm ET is "tonight". */
+function easternHour(ms) {
+  return Number(new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23' }));
+}
+
+/**
+ * The opener's title: "Game tonight: Bills @ Chiefs (Chiefs -3)". A day with
+ * more than one game (Thanksgiving) lists them all.
+ */
+function openerTitle(dayGames, spreads) {
+  const described = dayGames.map(g => describeMatchup(g, spreads[g.key])).join(' · ');
+  if (dayGames.length > 1) return `Games today: ${described}`;
+  return `Game ${easternHour(dayGames[0].kickoff) >= 17 ? 'tonight' : 'today'}: ${described}`;
+}
+
 /**
  * A reminder before [slate]: for each picker with picks still to make on games
  * not yet started, their own sentence. Null when everyone is done.
  */
-function reminderMessage(season, week, slate, games, picks, regularSeason) {
+function reminderMessage(season, week, slate, games, picks, regularSeason, spreads = {}) {
   // Before the opener, only its own day's games are about to lock; before the
-  // weekend, everything left - and the Blazin' stars, which need placing
-  // before the games they go on.
+  // weekend (both of its reminders), everything left - and the Blazin' stars,
+  // which need placing before the games they go on.
+  const opener = slate.kind === 'first';
   const open = games.filter(g => g.state === 'pre' && g.kickoff >= slate.kickoff
-    && (slate.kind === 'weekend' || easternWeekday(g.kickoff) === slate.day));
+    && (!opener || easternWeekday(g.kickoff) === slate.day));
   const personal = {};
   for (const picker of NFL_PICKERS) {
     const mine = picks[picker] || {};
     const unpicked = open.filter(g => !(mine[g.key]?.line && mine[g.key]?.winner));
     const stars = Object.values(mine).filter(p => p.blazin && p.line).length;
-    const starsLeft = regularSeason && slate.kind === 'weekend' && open.length > 0
+    const starsLeft = regularSeason && !opener && open.length > 0
       ? Math.max(0, BLAZIN_PER_WEEK - stars) : 0;
     if (unpicked.length === 0 && starsLeft === 0) continue;
 
+    if (opener) {
+      personal[picker] = unpicked.length === 1 ? 'Make your pick now.' : 'Make your picks now.';
+      continue;
+    }
     const todo = [];
     if (unpicked.length) todo.push(`${plural(unpicked.length, 'game')} to pick`);
     if (starsLeft) todo.push(`${plural(starsLeft, 'Blazin’ 5 pick')} to make`);
@@ -1009,11 +1043,14 @@ function reminderMessage(season, week, slate, games, picks, regularSeason) {
   if (Object.keys(personal).length === 0) return null;
 
   const day = WEEKDAY_NAMES[slate.day] || 'the first';
+  const title = opener ? openerTitle(open, spreads)
+    : slate.kind === 'last' ? `Last chance: ${day} kickoff in 30 minutes`
+    : `${day} kickoff in 3 hours`;
   return {
     category: 'pick_reminders',
     id: `reminder-${season}-${week}-${slate.kind}`,
     week,
-    title: slate.kind === 'first' ? `${day} night’s game: picks due` : `${day} kickoff in 3 hours`,
+    title,
     // For a phone with no picker chosen: who still has picks to make.
     body: `Still to pick: ${Object.keys(personal).join(', ')}.`,
     personal,
@@ -1038,7 +1075,7 @@ function reminderMessage(season, week, slate, games, picks, regularSeason) {
  * as it was rather than losing it.
  */
 async function handleReminderCheck(url, env) {
-  const match = String(url.searchParams.get('id') || '').match(/^reminder-(\d{4})-(\d+)-(first|weekend)$/);
+  const match = String(url.searchParams.get('id') || '').match(/^reminder-(\d{4})-(\d+)-(first|weekend|last)$/);
   const picker = url.searchParams.get('picker') || '';
   if (!match || !NFL_PICKERS.includes(picker)) return jsonResponse({ error: 'Bad request' }, 400);
   if (!env.APPS_SCRIPT_URL) return jsonResponse({ error: 'Not configured' }, 503);
@@ -1096,6 +1133,12 @@ async function runAutomations(env, now = Date.now()) {
     if (now < slate.sendAt || now >= slate.kickoff) continue;
     if (!(await alreadySent(env, `reminder-${season}-${week}-${slate.kind}`))) dueSlates.push(slate);
   }
+  // The 3-hour reminder missed (the worker down) and the last chance due: one
+  // reminder half an hour out, not two in the same minute.
+  if (dueSlates.some(s => s.kind === 'last')) {
+    const missed = dueSlates.findIndex(s => s.kind === 'weekend');
+    if (missed >= 0) dueSlates.splice(missed, 1);
+  }
 
   if (!blazinCandidate && dueSlates.length === 0) return { season, week, done };
 
@@ -1111,9 +1154,14 @@ async function runAutomations(env, now = Date.now()) {
     if (sent.ok) { await markSent(env, blazinId); done.push(blazinId); }
   }
 
+  // The opener's reminder names its line. No line on the sheet yet, or the
+  // sheet not answering, still sends it, without the number.
+  const spreads = dueSlates.some(s => s.kind === 'first')
+    ? await fetchWeekSpreads(env, season, week).catch(() => ({})) : {};
+
   for (const slate of dueSlates) {
     const id = `reminder-${season}-${week}-${slate.kind}`;
-    const message = reminderMessage(season, week, slate, games, picks, regularSeason);
+    const message = reminderMessage(season, week, slate, games, picks, regularSeason, spreads);
     // Nobody to remind is still "done": the moment has passed for this slate.
     if (!message) { await markSent(env, id); done.push(`${id} (nobody to remind)`); continue; }
     const sent = await sendToGroup(env, message);

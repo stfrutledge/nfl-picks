@@ -1,6 +1,6 @@
 // Tests for the worker's automatic notifications (the cron trigger):
 // Blazin' 5 results once every starred game is final, and pick reminders
-// before the week's first kickoff and before the weekend.
+// before the week's first kickoff and twice before the weekend.
 //
 // The whole worker runs against a fake ESPN, a fake Apps Script, a fake KV and
 // a fake Google, so nothing is fetched and nothing is sent. The most important
@@ -299,13 +299,31 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(sent.length, 1);
         const { data } = sent[0];
         assert.strictEqual(data.category, 'pick_reminders');
-        assert.strictEqual(data.title, 'Thursday night’s game: picks due');
+        assert.strictEqual(data.title, 'Game tonight: Bills @ Chiefs (Chiefs -3)');
         assert.strictEqual(data.expiresAt, String(T.thu), 'stale at kickoff');
         const personal = JSON.parse(data.personal);
         assert.deepStrictEqual(Object.keys(personal).sort(), ['Daniel', 'Dylan', 'Jason', 'Sean']);
-        assert.strictEqual(personal.Sean, 'You still have 1 game to pick.', 'Thursday only, no stars yet');
+        assert.strictEqual(personal.Sean, 'Make your pick now.', 'Thursday only, no stars yet');
         assert.strictEqual(data.body, 'Still to pick: Daniel, Dylan, Jason, Sean.', 'for a phone with no picker');
         assert.strictEqual(data.week, '5', 'where a tap lands');
+    });
+
+    await check('the opener names the away favourite, a pick’em, or no line at all', async () => {
+        world.board = scoreboard(PRE);
+        world.picks = {};
+        world.spreads = { ...SPREADS, bills_chiefs: { spread: 2.5, favorite: 'away' } };
+        await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
+        assert.strictEqual(sent[0].data.title, 'Game tonight: Bills @ Chiefs (Bills -2.5)');
+
+        sent.length = 0; kv.clear();
+        world.spreads = { ...SPREADS, bills_chiefs: { spread: 0, favorite: 'home' } };
+        await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
+        assert.strictEqual(sent[0].data.title, 'Game tonight: Bills @ Chiefs (Pick’em)');
+
+        sent.length = 0; kv.clear();
+        world.spreads = {};
+        await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
+        assert.strictEqual(sent[0].data.title, 'Game tonight: Bills @ Chiefs', 'still sent, without a number');
     });
 
     await check('three hours before the weekend: every game left, and the stars', async () => {
@@ -393,14 +411,57 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(sent.length, 0, 'and it never sends anything');
     });
 
-    await check('the weekend still has exactly one reminder, three hours before', async () => {
+    await check('the weekend has two reminders: three hours before, and a last chance half an hour out', async () => {
         world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
         world.picks = {};
         await tick(T.sun - 3 * 60 * 60 * 1000 - 60 * 1000);
         assert.strictEqual(sent.length, 0, 'not before 3 hours out');
-        for (const minutes of [0, 15, 30, 60, 120, 170]) await tick(T.sun - 3 * 60 * 60 * 1000 + minutes * 60 * 1000);
-        assert.strictEqual(sent.filter(m => m.data.id.endsWith('-weekend')).length, 1);
-        assert.strictEqual(sent.length, 1, 'and nothing else');
+        for (const minutes of [0, 15, 30, 60, 120, 145]) await tick(T.sun - 3 * 60 * 60 * 1000 + minutes * 60 * 1000);
+        assert.strictEqual(sent.length, 1, 'only the 3-hour one before 30 minutes out');
+        for (const minutes of [150, 165, 170]) await tick(T.sun - 3 * 60 * 60 * 1000 + minutes * 60 * 1000);
+        assert.deepStrictEqual(sent.map(m => m.data.id), ['reminder-2026-5-weekend', 'reminder-2026-5-last']);
+        const last = sent[1].data;
+        assert.strictEqual(last.title, 'Last chance: Sunday kickoff in 30 minutes');
+        assert.strictEqual(last.expiresAt, String(T.sun));
+        assert.strictEqual(JSON.parse(last.personal).Sean, 'You still have 5 games to pick and 5 Blazin’ 5 picks to make.');
+    });
+
+    await check('the last chance goes only to those still missing picks', async () => {
+        world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        world.picks = {
+            Stephen: { ...Object.fromEntries(KEYS.map(k => [k, plain('home')])),
+                ...Object.fromEntries(KEYS.slice(1, 6).map(k => [k, star('home')])) }
+        };
+        await tick(T.sun - 30 * 60 * 1000);
+        const last = sent.find(m => m.data.id === 'reminder-2026-5-last');
+        assert.ok(!('Stephen' in JSON.parse(last.data.personal)));
+    });
+
+    await check('a Saturday slate gets its last chance before Saturday’s first game', async () => {
+        // Late season: Saturday 4:30pm ET leads the weekend.
+        const sat = Date.parse('2026-10-10T20:30:00Z');
+        const board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        board.events[1].date = new Date(sat).toISOString();
+        world.board = board;
+        world.picks = {};
+        await tick(sat - 30 * 60 * 1000);
+        const last = sent.find(m => m.data.id === 'reminder-2026-5-last');
+        assert.strictEqual(last.data.title, 'Last chance: Saturday kickoff in 30 minutes');
+        assert.strictEqual(last.data.expiresAt, String(sat));
+    });
+
+    await check('the 3-hour reminder missed: only the last chance goes out', async () => {
+        world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        world.picks = {};
+        await tick(T.sun - 20 * 60 * 1000);
+        assert.deepStrictEqual(sent.map(m => m.data.id), ['reminder-2026-5-last']);
+    });
+
+    await check('a held last chance is re-checked like the others', async () => {
+        world.board = scoreboard(['post', 'pre', 'pre', 'pre', 'pre', 'pre'], FINALS);
+        world.picks = { Sean: { rams_seahawks: star('home'), jets_dolphins: star('home'), bears_packers: plain('home') } };
+        const r = await reminderCheck('id=reminder-2026-5-last&picker=Sean', T.sun - 10 * 60 * 1000);
+        assert.deepStrictEqual(r.body, { remind: true, body: 'You still have 2 games to pick and 3 Blazin’ 5 picks to make.' });
     });
 
     await check('everyone done: nothing sent, and not asked again', async () => {
