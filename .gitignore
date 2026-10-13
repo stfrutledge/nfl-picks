@@ -29,3 +29,6 @@ package-lock.json
 # One-off local debug scripts (kept on disk, not part of the app).
 # The committed suites are test-offseason-reset.js and test-pick-keys.js.
 check-dylan-*.js
+
+# /brag launch-video output (renders, frames, Hyperframes project)
+brag-output/
