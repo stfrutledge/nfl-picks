@@ -175,24 +175,43 @@ check('hidden while selected, the filter goes back to All', () => {
 
 // --- Only the extremes -----------------------------------------------------
 
-const pat = (picker, team, percentage, total) =>
-    ({ picker, team, percentage, total, type: 'team', headline: `${picker} ${team}` });
+// A pattern from its record, 'W-L' or 'W-L-P', shaped as PatternEngine builds them.
+const pat = (picker, team, record) => {
+    const [wins, losses, pushes = 0] = record.split('-').map(Number);
+    const decided = wins + losses;
+    return { picker, team, wins, losses, pushes, total: wins + losses + pushes,
+        percentage: Math.round(decided ? (wins / decided) * 100 : 0), type: 'team', headline: `${picker} ${team}` };
+};
 
 check('each picker shows just their best and worst record', () => {
     const api = makeEnv();
     const out = api.patternExtremes([
-        pat('Stephen', 'Chiefs', 0, 4), pat('Stephen', 'Bills', 80, 5),
-        pat('Stephen', 'Rams', 100, 3), pat('Stephen', 'Jets', 25, 4),
-        pat('Sean', 'Lions', 75, 4)
+        pat('Stephen', 'Chiefs', '0-4'), pat('Stephen', 'Bills', '4-1'),
+        pat('Stephen', 'Rams', '3-0'), pat('Stephen', 'Jets', '1-3'),
+        pat('Sean', 'Lions', '3-1')
     ]);
     assert.deepStrictEqual(out.map(p => `${p.picker} ${p.team} ${p.extreme}`),
         ['Stephen Rams best', 'Stephen Chiefs worst', 'Sean Lions best']);
 });
 
-check('a tie on percentage goes to the bigger sample', () => {
+check('a perfect record goes to the bigger sample, and pushes are not sample', () => {
     const api = makeEnv();
-    const out = api.patternExtremes([pat('Stephen', 'Rams', 100, 3), pat('Stephen', 'Bills', 100, 6)]);
-    assert.deepStrictEqual(out.map(p => p.team), ['Bills']);
+    // Reported 2026-10-13: Seahawks 3-0-2 was named best over Commanders 5-0.
+    const out = api.patternExtremes([pat('Stephen', 'Seahawks', '3-0-2'), pat('Stephen', 'Commanders', '5-0')]);
+    assert.deepStrictEqual(out.map(p => p.team), ['Commanders']);
+});
+
+check('a long strong record beats a short perfect one', () => {
+    const api = makeEnv();
+    const out = api.patternExtremes([pat('Stephen', 'Jets', '2-0'), pat('Stephen', 'Bills', '10-3'),
+        pat('Stephen', 'Rams', '0-1'), pat('Stephen', 'Bears', '2-7')]);
+    assert.deepStrictEqual(out.map(p => `${p.team} ${p.extreme}`), ['Bills best', 'Bears worst']);
+});
+
+check('an all-push record is neither best nor worst', () => {
+    const api = makeEnv();
+    const out = api.patternExtremes([pat('Stephen', 'Lions', '0-0-3')]);
+    assert.deepStrictEqual(out, []);
 });
 
 // Stephen's real 2026 Seahawks games: he took them three times (W, P, P) and

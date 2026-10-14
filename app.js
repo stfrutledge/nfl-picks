@@ -7152,6 +7152,26 @@ function recordPercentage(record) {
     return decided > 0 ? (record.wins / decided) * 100 : null;
 }
 
+/** Imaginary wins, and as many losses, a record is padded with before it is ranked. */
+const RANKING_PADDING = 2;
+
+/**
+ * A win % for putting records in ORDER, never for display: the record padded
+ * with RANKING_PADDING wins and as many losses. A short record is pulled hard
+ * towards 50% and a long one barely moves, so a 10-3 ranks above a 2-0 and a
+ * 5-0 above a 1-0 - the order a person would give them - while every table
+ * still prints the real record and the real percentage.
+ *
+ * Plain win % let a single 1-0 top a list, and the tie-break on `total` did not
+ * help because it counts pushes: 3-0-2 and 5-0 are both "100% over 5".
+ *
+ * Pushes are ignored, as in recordPercentage(). Above 50 means more wins than
+ * losses, below means fewer, exactly 50 means level or nothing decided.
+ */
+function rankingScore(record) {
+    return ((record.wins + RANKING_PADDING) / (record.wins + record.losses + 2 * RANKING_PADDING)) * 100;
+}
+
 /**
  * A percentage for display, or '-' when there is not one.
  *
@@ -7907,10 +7927,14 @@ function sortTeamRecordsData(data, column, direction) {
                 comparison = b.total - a.total;
                 break;
             case 'pct':
-            default:
-                comparison = (b.pct ?? -1) - (a.pct ?? -1);
-                if (comparison === 0) comparison = b.total - a.total;
+            default: {
+                // Ranked by rankingScore, so sample size counts; a row with
+                // nothing decided (pushes only) still sorts last.
+                const rank = r => (r.pct == null ? -1 : rankingScore(r));
+                comparison = rank(b) - rank(a);
+                if (comparison === 0) comparison = (b.wins + b.losses) - (a.wins + a.losses);
                 break;
+            }
         }
         return direction === 'asc' ? -comparison : comparison;
     });
@@ -9102,22 +9126,28 @@ function populatePatternsPickerOptions() {
 
 /**
  * Each picker's two extremes out of a list of patterns: the best record (the
- * highest win rate above 50%) and the worst (the lowest below it). A picker
- * whose patterns all lean one way gets only that one. Ties go to the larger
- * sample. Returns copies tagged `extreme: 'best' | 'worst'`, best before
- * worst, pickers in the order they first appear.
+ * highest rankingScore among those with more wins than losses) and the worst
+ * (the lowest among those with fewer). A picker whose patterns all lean one way
+ * gets only that one. Ties go to more decided picks. Returns copies tagged
+ * `extreme: 'best' | 'worst'`, best before worst, pickers in the order they
+ * first appear.
+ *
+ * rankingScore rather than the percentage, so a 5-0 beats a 3-0-2 and a 10-3
+ * beats a 2-0; and an all-push record (shown as 0%) is neither.
  */
 function patternExtremes(patterns) {
+    const decided = p => p.wins + p.losses;
     const byPicker = new Map();
     patterns.forEach(p => {
         if (!byPicker.has(p.picker)) byPicker.set(p.picker, { best: null, worst: null });
         const slot = byPicker.get(p.picker);
-        if (p.percentage > 50 && (!slot.best || p.percentage > slot.best.percentage
-                || (p.percentage === slot.best.percentage && p.total > slot.best.total))) {
+        const score = rankingScore(p);
+        if (score > 50 && (!slot.best || score > rankingScore(slot.best)
+                || (score === rankingScore(slot.best) && decided(p) > decided(slot.best)))) {
             slot.best = p;
         }
-        if (p.percentage < 50 && (!slot.worst || p.percentage < slot.worst.percentage
-                || (p.percentage === slot.worst.percentage && p.total > slot.worst.total))) {
+        if (score < 50 && (!slot.worst || score < rankingScore(slot.worst)
+                || (score === rankingScore(slot.worst) && decided(p) > decided(slot.worst)))) {
             slot.worst = p;
         }
     });
@@ -11672,8 +11702,8 @@ const InsightsManager = {
         return insights.sort((a, b) => {
             if (a.sentiment === 'negative' && b.sentiment !== 'negative') return -1;
             if (b.sentiment === 'negative' && a.sentiment !== 'negative') return 1;
-            const marginA = Math.abs(50 - a.percentage);
-            const marginB = Math.abs(50 - b.percentage);
+            const marginA = Math.abs(50 - rankingScore(a));
+            const marginB = Math.abs(50 - rankingScore(b));
             return marginB - marginA;
         });
     },
@@ -11694,8 +11724,8 @@ const InsightsManager = {
         return allInsights
             .filter(i => i.isInteresting)
             .sort((a, b) => {
-                const marginA = Math.abs(50 - a.percentage);
-                const marginB = Math.abs(50 - b.percentage);
+                const marginA = Math.abs(50 - rankingScore(a));
+                const marginB = Math.abs(50 - rankingScore(b));
                 return marginB - marginA;
             })
             .slice(0, limit);
@@ -11719,8 +11749,8 @@ const InsightsManager = {
         });
 
         return allInsights.sort((a, b) => {
-            const marginA = Math.abs(50 - a.percentage);
-            const marginB = Math.abs(50 - b.percentage);
+            const marginA = Math.abs(50 - rankingScore(a));
+            const marginB = Math.abs(50 - rankingScore(b));
             return marginB - marginA;
         });
     }

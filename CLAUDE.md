@@ -459,6 +459,14 @@ Until October 2026 each of those panels was its own copy of the loop, about a do
 So: **a new panel that scores picks reads `gradedPicks` rows; it does not loop over weeks itself.** `gradedLinePicks(pickers, season, { blazinOnly })` is the regular-season, graded-line-picks cut most panels want, `bucketRecords(rows, keysFor)` totals rows into `{wins, losses, pushes, games}` by any key, and `pickDetail(row)` is the expanded-row shape, with `line` from `describeLineForSide(game, side, pick)`. The tables render through `recordsTableData` → `recordsRowsHtml`, where a row with no decided picks gets a null percentage and a neutral dash rather than a red 0%.
 
 `node test-records-panels.js` covers each of the drifts above.
+
+### Ranking records: sample size counts
+
+**Anything that puts records in order by how good they are uses `rankingScore(record)`, not the win percentage.** It is the record padded with `RANKING_PADDING` (2) imaginary wins and as many losses, so a short record is pulled towards 50% and a long one barely moves: 5-0 ranks above 3-0-2, 10-3 above 2-0, 2-0 above 1-0. It only decides the order. Every cell still prints the real record and `recordPercentage()`.
+
+It drives the records tables' Win % sort (`sortTeamRecordsData`), Patterns' best and worst (`patternExtremes`), and the Patterns "most notable" ordering. Plain win % let a single 1-0 top a list, and the old tie-break on `total` counted pushes, so 3-0-2 and 5-0 tied as "100% over 5" (reported October 2026). An all-push record scores exactly 50, so Patterns never calls it a best or a worst.
+
+The standings, Lone Wolf and the leaderboard still rank by win %. Those compare pickers over similar numbers of picks, where the plain percentage is the number people expect to see in first place. `RANKING_PADDING` is the dial: larger favours big samples more strongly. `node test-records-panels.js` and `node test-pattern-cache.js` cover it.
 - **ESPN schedule fetches** pin `dates=<CURRENT_SEASON>` — without it, ESPN serves the previous season during the offseason.
 
 Offseason checklist (the only manual step): archive the finished season to `historical-<year>.js` **including playoff weeks 19-22** (historical-2025.js has them; 2016-2024 are regular-season only), and paste in the Cowherd block that `exportCowherdResults()` prints from the browser console. His week-by-week record is the one piece that cannot be re-derived once the season's picks are cleared.

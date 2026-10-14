@@ -62,7 +62,7 @@ Where this review overlaps that doc's open items, it says so.
    - The header line and the locked line differ, and it isn't clear which one was graded.
    - The chart's default button says "Zoom Out".
    - The Lock All tooltip is ambiguous.
-9. **Records sorting doesn't break ties by sample size.** Team Records ranks Seahawks 3-0-2 above Commanders 5-0, and Patterns names the 3-0-2 as "best". Blazin' "Record" sorting puts Saints 3-1 above Jets 2-0. Pushes act like losses that don't count.
+9. **Fixed (2026-10-13): records and Patterns now rank by `rankingScore`, the record padded with two wins and two losses. See CLAUDE.md, "Ranking records".** **Records sorting doesn't break ties by sample size.** Team Records ranks Seahawks 3-0-2 above Commanders 5-0, and Patterns names the 3-0-2 as "best". Blazin' "Record" sorting puts Saints 3-1 above Jets 2-0. Pushes act like losses that don't count.
 10. **"By Spread Size" is mostly noise.** It has a row for every half-point line, so this season it's mostly 1-0 rows, and on Lifetime it runs to about 75 rows. Buckets would read better: ≤3, 3.5–7, 7.5+, favourite/underdog.
 11. **Phone layout:**
     - The standings table scrolls sideways with no hint that it does.

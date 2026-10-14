@@ -65,7 +65,7 @@ function makeEnv() {
         calculateWorstBlazinWeeks,
         calculateLoneWolfPicksWithDetails, calculateStraightUpLoneWolfPicks, calculateBlazinLoneWolfPicks,
         recordsTableData, winPctCell, renderPickerCard, renderSuperBowlPicksSummary,
-        gameDetailRowsHtml,
+        gameDetailRowsHtml, rankingScore, sortTeamRecordsData,
         __setState: s => { if ('allPicks' in s) allPicks = s.allPicks; }
     });`;
     const fn = new Function(
@@ -411,6 +411,43 @@ check('a pooled table names each picker, in name order within a game', () => {
     assert.ok(!/Picked:/.test(html));
     assert.ok(html.indexOf('Dylan: Cowboys') > -1);
     assert.ok(html.indexOf('Dylan: Cowboys') < html.indexOf('Stephen: Cowboys'));
+});
+
+// --- Ranking: sample size counts --------------------------------------------
+// A records table is ordered by rankingScore (the record padded with two wins
+// and two losses), not raw win %, so a 1-0 cannot top a list and a 10-3 beats
+// a 2-0. The cells still print the real record and percentage.
+
+const rec = s => { const [wins, losses, pushes = 0] = s.split('-').map(Number); return { wins, losses, pushes }; };
+
+check('the ranking score pulls short records towards 50%', () => {
+    const api = setup();
+    const near = (a, b) => Math.abs(a - b) < 0.05;
+    assert.ok(near(api.rankingScore(rec('5-0')), 77.8));
+    assert.ok(near(api.rankingScore(rec('3-0-2')), 71.4));
+    assert.ok(near(api.rankingScore(rec('10-3')), 70.6));
+    assert.ok(near(api.rankingScore(rec('1-0')), 60.0));
+    assert.strictEqual(api.rankingScore(rec('0-0-3')), 50);
+});
+
+check('Win % sorts by the ranking score, not raw percentage', () => {
+    const api = setup();
+    const rows = api.recordsTableData({
+        'One-oh': rec('1-0'), 'Two-oh': rec('2-0'), 'Three-one': rec('3-1'),
+        'Ten-three': rec('10-3'), 'Three-oh-two': rec('3-0-2'), 'Five-oh': rec('5-0'),
+        'Pushes': rec('0-0-2'), 'One-four': rec('1-4')
+    }, 'team');
+    const order = api.sortTeamRecordsData(rows, 'pct', 'desc').map(r => r.team);
+    assert.deepStrictEqual(order,
+        ['Five-oh', 'Three-oh-two', 'Ten-three', 'Two-oh', 'Three-one', 'One-oh', 'One-four', 'Pushes']);
+    // The displayed percentage is untouched.
+    assert.strictEqual(rows.find(r => r.team === 'One-oh').pct, 100);
+});
+
+check('ascending Win % is the same order reversed', () => {
+    const api = setup();
+    const rows = api.recordsTableData({ A: rec('1-0'), B: rec('10-3'), C: rec('0-2') }, 'team');
+    assert.deepStrictEqual(api.sortTeamRecordsData(rows, 'pct', 'asc').map(r => r.team), ['C', 'A', 'B']);
 });
 
 console.log(`\n${total - failures}/${total} passed`);
