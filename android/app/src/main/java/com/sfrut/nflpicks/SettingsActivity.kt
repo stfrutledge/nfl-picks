@@ -287,11 +287,17 @@ class SettingsActivity : ComponentActivity() {
         // First launch: the screen is a welcome, not a settings page.
         val firstRun = remember { prefs.picker == null }
         var showAdmin by remember { mutableStateOf(false) }
+        var showChangeLog by remember { mutableStateOf(false) }
 
-        // Admin Settings is a page of its own; back returns to this one.
+        // Admin Settings and the change log are pages of their own; back returns to this one.
         BackHandler(enabled = showAdmin) { showAdmin = false }
+        BackHandler(enabled = showChangeLog) { showChangeLog = false }
         if (showAdmin) {
             AdminScreen(onBack = { showAdmin = false })
+            return
+        }
+        if (showChangeLog) {
+            ChangeLogScreen(onBack = { showChangeLog = false })
             return
         }
 
@@ -355,6 +361,14 @@ class SettingsActivity : ComponentActivity() {
                         PrimaryButton("Admin Settings  ›", modifier = Modifier.fillMaxWidth()) {
                             showAdmin = true
                         }
+                    }
+                }
+
+                Card {
+                    Label("What's new")
+                    Body("What has been fixed and added on the site.")
+                    PrimaryButton("Change log  ›", modifier = Modifier.fillMaxWidth()) {
+                        showChangeLog = true
                     }
                 }
 
@@ -644,6 +658,8 @@ class SettingsActivity : ComponentActivity() {
         var busy by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
         var asking by remember { mutableStateOf<UnlockAsk?>(null) }
+        // Closed until wanted: it is a fix-up tool, not something used every visit.
+        var expanded by remember { mutableStateOf(false) }
 
         fun load() {
             PageBridge.lockedPicks { reply ->
@@ -673,7 +689,31 @@ class SettingsActivity : ComponentActivity() {
         }
 
         Card {
-            Label(week?.let { "Unlock picks · ${it.label}" } ?: "Unlock picks")
+            // The heading opens and closes the card; closed, it still says how many are locked.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Label(week?.let { "Unlock picks · ${it.label}" } ?: "Unlock picks")
+                    val locked = week?.takeUnless { it.historical }?.groups?.sumOf { it.picks.size }
+                    if (!expanded && locked != null) {
+                        Body(
+                            when (locked) { 0 -> "No locked picks"; 1 -> "1 locked pick"; else -> "$locked locked picks" },
+                            size = 13.sp
+                        )
+                    }
+                }
+                Text(
+                    if (expanded) "▾" else "▸",
+                    style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                        color = site.textSecondary)
+                )
+            }
+            if (!expanded) return@Card
             Body("For a pick locked by mistake, such as under the wrong picker. The picks stay; they go back to riding the line.")
             val current = week
             when {
@@ -787,6 +827,69 @@ class SettingsActivity : ComponentActivity() {
                         Text(confirm.uppercase(), style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp, letterSpacing = 0.05.em, color = Color.White))
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * The change log: what has been fixed and added on the site, newest first.
+     * It is read from the site's changelog.json each time it opens, so it is
+     * always current and anyone can see it.
+     */
+    @Composable
+    private fun ChangeLogScreen(onBack: () -> Unit) {
+        val site = LocalSite.current
+        var entries by remember { mutableStateOf<List<ChangeLogEntry>?>(null) }
+        var failed by remember { mutableStateOf(false) }
+        var attempt by remember { mutableStateOf(0) }
+
+        LaunchedEffect(attempt) {
+            failed = false
+            val fetched = withContext(Dispatchers.IO) { ChangeLog.fetch() }
+            if (fetched == null) failed = true else entries = fetched
+        }
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(site.page)
+        ) {
+            Header("Change log")
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "‹  BACK",
+                    style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                        letterSpacing = 0.08.em, color = site.textSecondary),
+                    modifier = Modifier.clickable(onClick = onBack).padding(vertical = 4.dp)
+                )
+
+                val shown = entries
+                when {
+                    shown != null -> shown.forEach { entry ->
+                        Card {
+                            Label(entry.date)
+                            entry.items.forEach { item ->
+                                Row {
+                                    Body("•", color = site.text)
+                                    Spacer(Modifier.width(10.dp))
+                                    Body(item, color = site.text)
+                                }
+                            }
+                        }
+                    }
+                    failed -> Card {
+                        StatusLine(on = false, "Couldn't load the change log. Check your connection.")
+                        PrimaryButton("Try again", modifier = Modifier.fillMaxWidth()) { attempt++ }
+                    }
+                    else -> Body("Loading...")
                 }
             }
         }

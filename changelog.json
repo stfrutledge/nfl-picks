@@ -1,0 +1,116 @@
+{
+  "_note": "Shown in the app's Settings > Change log, newest first. Add an entry when something players will notice ships. Plain words, one line each; no app rebuild needed.",
+  "entries": [
+    {
+      "date": "2026-10-13",
+      "items": [
+        "Records tables and Patterns now weigh sample size: a 5-0 record ranks above 3-0-2, and a single 1-0 no longer tops the list."
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "items": [
+        "Thursday pick reminders name the game and the line, and there's a last-chance reminder 30 minutes before the weekend games.",
+        "Tapping a Blazin' 5 results notification opens that week's results.",
+        "Patterns show each picker's best and worst record only, and add \"in <team> games\" records."
+      ]
+    },
+    {
+      "date": "2026-10-11",
+      "items": [
+        "Fixed: a live game could show \"End Qundefined\".",
+        "Fixed: a game's line could change after kickoff. Picks are now graded at the line at kickoff.",
+        "A pick reminder held overnight by quiet hours is checked again before it shows, so you won't be reminded about picks you've already made.",
+        "Lock confirmations say whose picks are being locked."
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "items": [
+        "Each card shows when its pick is saving.",
+        "Fixed: picks made early in the week could erase the week."
+      ]
+    },
+    {
+      "date": "2026-10-08",
+      "items": [
+        "The Blazin' 5 results notification shows your own result.",
+        "App Settings follows the site's light/dark setting.",
+        "Phone layout fixes: tabs share the full width, records rows fit the screen, and the header buttons stay round.",
+        "History: choose a From/To season range on Lifetime."
+      ]
+    },
+    {
+      "date": "2026-10-06",
+      "items": [
+        "The trend chart on phones shows a few weeks at a time. Swipe or use the arrows to move.",
+        "Fixed: scores and schedules stopped loading after ESPN changed what browsers can fetch.",
+        "Weekly Recap card removed."
+      ]
+    },
+    {
+      "date": "2026-10-05",
+      "items": [
+        "Notifications: choose which kinds you get, set quiet hours, and turn on spoiler-free results.",
+        "Automatic Blazin' 5 results and pick reminders.",
+        "Live tab: switch between Season to Date and This Week.",
+        "History opens on Lifetime."
+      ]
+    },
+    {
+      "date": "2026-10-02",
+      "items": [
+        "The NFL Picks Android app launched, with group notifications.",
+        "Fixed: removing a line pick now removes its Blazin' 5 star too.",
+        "Fixed: a tied game is graded as a straight-up push."
+      ]
+    },
+    {
+      "date": "2026-09-27",
+      "items": [
+        "Coming back to the site after a while loads everyone's latest picks."
+      ]
+    },
+    {
+      "date": "2026-09-24",
+      "items": [
+        "A locked pick shows the line it was locked at."
+      ]
+    },
+    {
+      "date": "2026-09-22",
+      "items": [
+        "Fixed: picks made just before switching picker or week could be lost."
+      ]
+    },
+    {
+      "date": "2026-09-21",
+      "items": [
+        "New Winnings card: what a flat bet on every pick would have made, at -110."
+      ]
+    },
+    {
+      "date": "2026-09-20",
+      "items": [
+        "New 5-0 Blazin' 5 Weeks card, counted across every season.",
+        "Standings and History can show one week at a time.",
+        "Lines refresh every 3 hours on game days."
+      ]
+    },
+    {
+      "date": "2026-09-17",
+      "items": [
+        "Year Chg is filled in, and Last 3-Wk shows a dash until three weeks have been played.",
+        "A pick'em is no longer mixed up with a line that hasn't loaded."
+      ]
+    },
+    {
+      "date": "2026-09-13",
+      "items": [
+        "New Live tab: the week's Blazin' 5 games with live scores, and the standings as they stand right now.",
+        "Cowherd's Blazin' 5 is entered every week and scored like everyone else's.",
+        "Every pick is graded at its own line, locked or not."
+      ]
+    }
+  ]
+}
