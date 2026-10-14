@@ -2,6 +2,12 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry when something players will notice ships. Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-10-14",
+      "items": [
+        "Fixed: live scores could stop updating if the first load failed, and switching tabs during a game could make the page fetch scores twice as often."
+      ]
+    },
+    {
       "date": "2026-10-13",
       "items": [
         "Records tables and Patterns now weigh sample size: a 5-0 record ranks above 3-0-2, and a single 1-0 no longer tops the list."

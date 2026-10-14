@@ -37,7 +37,7 @@ function node(id, written) {
     };
 }
 
-function makeAppEnv({ withDom = false, now = TEST_NOW } = {}) {
+function makeAppEnv({ withDom = false, now = TEST_NOW, fetch = null, timers = null } = {}) {
     const store = new Map();
     const written = {};
     // Stable per id: a test that looks an element up twice has to see the
@@ -66,9 +66,9 @@ function makeAppEnv({ withDom = false, now = TEST_NOW } = {}) {
             documentElement: { setAttribute() {}, classList: { add() {}, remove() {} } }
         },
         navigator: { clipboard: null },
-        fetch: async () => ({ ok: true, json: async () => ({ success: true }), text: async () => '{}' }),
-        setTimeout,
-        clearTimeout,
+        fetch: fetch || (async () => ({ ok: true, json: async () => ({ success: true }), text: async () => '{}' })),
+        setTimeout: timers ? timers.setTimeout : setTimeout,
+        clearTimeout: timers ? timers.clearTimeout : clearTimeout,
         setInterval: () => 0,
         clearInterval: () => {},
         console: { log() {}, warn() {}, error() {}, info() {} },
@@ -76,6 +76,10 @@ function makeAppEnv({ withDom = false, now = TEST_NOW } = {}) {
         alert() {},
         confirm: () => true,
         addEventListener: () => {},
+        // setActiveCategory is async, so a missing stub here is an unhandled
+        // rejection - silent while the file exited synchronously, fatal now
+        // that the polling checks below keep it running.
+        scrollTo: () => {},
         matchMedia: () => ({ matches: false, addEventListener() {} })
     };
     env.window = env;
@@ -109,6 +113,7 @@ function makeAppEnv({ withDom = false, now = TEST_NOW } = {}) {
         setLiveSubcategory, LIVE_SUBCATEGORIES, setLiveScope,
         __liveSubcategory: () => liveSubcategory,
         __setLiveScores: c => { liveScoresCache = c; },
+        startLiveScoresRefresh, stopLiveScoresRefresh,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __category: () => currentCategory,
         __setState: s => {
@@ -121,11 +126,13 @@ function makeAppEnv({ withDom = false, now = TEST_NOW } = {}) {
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date',
+        'setTimeout', 'clearTimeout',
         PARSER + '\n' + snapshot + '\n' + APP + exports
     );
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
-        env.confirm, env.addEventListener, env.matchMedia, fixedClock(now));
+        env.confirm, env.addEventListener, env.matchMedia, fixedClock(now),
+        env.setTimeout, env.clearTimeout);
     api.__written = written;
     api.__node = nodeFor;
     return api;
@@ -1402,7 +1409,7 @@ check('the poll reschedules itself even when a refresh throws', () => {
     // A self-rescheduling timeout that only requeues at the end of its body
     // stops for good the first time anything in it throws - a failed fetch is
     // enough. An interval would have kept firing regardless.
-    const src = APP.match(/function scheduleLiveScoresRefresh\(\)[\s\S]*?\n\}/)[0];
+    const src = APP.match(/async function pollLiveScores\([\s\S]*?\n\}/)[0];
     assert.ok(src.includes('finally'), 'the requeue is in a finally');
     assert.ok(src.includes('catch'), 'and a throw is caught rather than killing it');
 });
@@ -1654,9 +1661,127 @@ check('an unknown scope is ignored', () => {
     assert.ok(!(api.__written['#as-is-standings-table thead'] || '').includes('Move'));
 });
 
-if (failures > 0) {
-    console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
-    process.exit(1);
+section('One poll at a time');
+
+// The poll is a timeout that queues the next one when its fetch lands. A tab
+// change during that fetch used to stop nothing (no timer was set yet) and
+// start a second chain, so two loops polled side by side and `stop` could
+// only ever reach the newer one.
+
+/** Timers that only fire when told to, so a test can count what is queued. */
+function fakeTimers() {
+    const pending = new Map();
+    let next = 1;
+    return {
+        pending,
+        setTimeout: (fn, ms) => { const id = next++; pending.set(id, { fn, ms }); return id; },
+        clearTimeout: id => { pending.delete(id); },
+        /** Fire everything queued now; returns once each callback has started. */
+        fire() {
+            const due = [...pending.values()];
+            pending.clear();
+            return Promise.all(due.map(t => t.fn()));
+        }
+    };
 }
-console.log(`\nALL ${total} CHECKS PASSED\n`);
-process.exit(0);
+
+/** Let every queued promise callback run. */
+const settle = () => new Promise(r => setImmediate(r));
+
+/**
+ * A fetch whose scoreboard replies wait until released, or fail. Anything
+ * else (the results sync) answers at once.
+ */
+function scoreboardFetch({ fail = false } = {}) {
+    const waiting = [];
+    const scoreboard = { events: [espnEvent({ state: 'STATUS_SCHEDULED', shortDetail: '10/18 - 1:00 PM EDT' })] };
+    return {
+        fn: url => {
+            if (!/espn|scoreboard/.test(String(url))) {
+                return Promise.resolve({ ok: true, json: async () => ({ success: true }), text: async () => '{}' });
+            }
+            if (fail) return Promise.reject(new Error('offline'));
+            return new Promise(resolve => waiting.push(() => resolve({ ok: true, json: async () => scoreboard })));
+        },
+        async releaseAll() {
+            for (let i = 0; i < 5; i++) {
+                while (waiting.length) waiting.shift()();
+                await settle();
+            }
+        }
+    };
+}
+
+const asyncChecks = [];
+function checkAsync(name, fn) { asyncChecks.push({ name, fn }); }
+
+checkAsync('switching tab mid-fetch leaves one poll, not two', async () => {
+    const timers = fakeTimers();
+    const espn = scoreboardFetch();
+    const api = makeAppEnv({ fetch: espn.fn, timers });
+    api.startLiveScoresRefresh();   // Make Picks
+    api.startLiveScoresRefresh();   // straight on to Live, first fetch still out
+    await espn.releaseAll();
+    assert.strictEqual(timers.pending.size, 1, 'one poll queued');
+});
+
+checkAsync('leaving the tab mid-fetch stops the poll', async () => {
+    const timers = fakeTimers();
+    const espn = scoreboardFetch();
+    const api = makeAppEnv({ fetch: espn.fn, timers });
+    api.startLiveScoresRefresh();
+    api.stopLiveScoresRefresh();    // off to Standings before the fetch lands
+    await espn.releaseAll();
+    assert.strictEqual(timers.pending.size, 0, 'nothing queued');
+});
+
+checkAsync('a stop during a later fetch is not undone by its finally', async () => {
+    const timers = fakeTimers();
+    const espn = scoreboardFetch();
+    const api = makeAppEnv({ fetch: espn.fn, timers });
+    api.startLiveScoresRefresh();
+    await espn.releaseAll();
+    assert.strictEqual(timers.pending.size, 1, 'polling');
+    const firing = timers.fire();   // the poll's own fetch goes out
+    await settle();
+    api.stopLiveScoresRefresh();    // and the tab changes before it lands
+    await espn.releaseAll();
+    await firing;
+    assert.strictEqual(timers.pending.size, 0, 'stopped for good');
+});
+
+checkAsync('a first fetch that fails keeps trying', async () => {
+    // An empty cache used to read as "no games", so a page whose first fetch
+    // failed never polled at all.
+    const timers = fakeTimers();
+    const api = makeAppEnv({ fetch: scoreboardFetch({ fail: true }).fn, timers });
+    api.startLiveScoresRefresh();
+    for (let i = 0; i < 5; i++) await settle();
+    assert.strictEqual(timers.pending.size, 1, 'a retry is queued');
+    assert.strictEqual([...timers.pending.values()][0].ms, api.LIVE_REFRESH_WAITING_MS, 'at the slow rate');
+});
+
+checkAsync('an empty scoreboard that loaded fine still means nothing to watch', async () => {
+    const timers = fakeTimers();
+    const api = makeAppEnv({
+        timers,
+        fetch: async () => ({ ok: true, json: async () => ({ events: [], success: true }), text: async () => '{}' })
+    });
+    api.startLiveScoresRefresh();
+    for (let i = 0; i < 5; i++) await settle();
+    assert.strictEqual(timers.pending.size, 0);
+});
+
+(async () => {
+    for (const { name, fn } of asyncChecks) {
+        total++;
+        try { await fn(); console.log(`  ok  ${name}`); }
+        catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+    }
+    if (failures > 0) {
+        console.log(`\n${failures} of ${total} CHECKS FAILED\n`);
+        process.exit(1);
+    }
+    console.log(`\nALL ${total} CHECKS PASSED\n`);
+    process.exit(0);
+})();

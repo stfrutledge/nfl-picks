@@ -473,6 +473,13 @@ function isGameLocked(game, week = null) {
 // Live scores cache (populated from ESPN API)
 let liveScoresCache = {};
 let liveScoresRefreshTimer = null;
+// Which run of the poll is current. Starting and stopping both move it on, so
+// a run left behind - its fetch still in flight when the tab changed - sees it
+// has been replaced and ends instead of queuing a second loop beside the new one.
+let liveScoresPollRun = 0;
+// Whether the last scoreboard fetch worked. An empty cache means "nothing to
+// watch" only when it did; after a failure it means "not known yet".
+let liveScoresLastFetchOk = true;
 
 /**
  * Fetch live scores from ESPN API
@@ -492,9 +499,11 @@ async function fetchLiveScores() {
         }
 
         liveScoresCache = scores;
+        liveScoresLastFetchOk = true;
         return scores;
     } catch (error) {
         console.error('Error fetching live scores:', error);
+        liveScoresLastFetchOk = false;
         return liveScoresCache; // Return cached data on error
     }
 }
@@ -1842,7 +1851,10 @@ function liveRefreshDelay() {
  */
 function shouldPollLiveScores() {
     const scores = Object.values(liveScoresCache);
-    if (scores.length === 0) return false;
+    // Nothing cached because the fetch failed is not "no games": a page whose
+    // first fetch failed used to stop here and never poll again, its scores
+    // frozen until somebody changed tab. Keep trying instead.
+    if (scores.length === 0) return !liveScoresLastFetchOk;
 
     for (const scoreData of scores) {
         // Keep polling if any game is in progress (a delay included - it
@@ -1859,31 +1871,10 @@ function shouldPollLiveScores() {
     return false;
 }
 
+/** Start polling with a fetch now, replacing any poll already running. */
 function startLiveScoresRefresh() {
     stopLiveScoresRefresh();
-
-    // Fetch immediately to get current game states
-    fetchLiveScores().then(async () => {
-        // Only render if initial load is complete (odds have been fetched)
-        // During initial load, renderGames is called after updateOddsFromAPI
-        if (initialLoadComplete) {
-            renderActiveTab();
-
-            // Sync any final games to Google Sheets
-            await syncResultsToGoogleSheets(currentWeek, 'ESPN');
-        }
-
-        // Only start polling interval if games are scheduled or in progress
-        if (shouldPollLiveScores()) {
-            console.log('Games scheduled or in progress - starting live refresh');
-            scheduleLiveScoresRefresh();
-        } else {
-            console.log('All games final or no games - skipping live refresh');
-
-            // Even if not polling, sync any final games
-            await syncResultsToGoogleSheets(currentWeek, 'ESPN');
-        }
-    });
+    pollLiveScores(liveScoresPollRun, true);
 }
 
 /**
@@ -2127,42 +2118,58 @@ async function preloadNextWeekIfAvailable() {
  * change between fetches; and at half a minute a slow fetch would otherwise
  * overlap the one behind it.
  */
-function scheduleLiveScoresRefresh() {
-    liveScoresRefreshTimer = setTimeout(async () => {
-        // Anything in here can throw - a failed fetch, a sync that times out
-        // - and a timeout that reschedules itself only at the end would then
-        // never fire again, stopping the afternoon's updates dead. An interval
-        // would have survived it by firing again regardless, so the rescheduling
-        // goes in a finally.
-        let done = false;
-        try {
-            await fetchLiveScores();
-            renderActiveTab();
-
-            // Sync any newly final games to Google Sheets
-            await syncResultsToGoogleSheets(currentWeek, 'ESPN');
-
-            // Stop polling when all games are final
-            if (!shouldPollLiveScores()) {
-                console.log('All games final - stopping live refresh');
-                done = true;
-                stopLiveScoresRefresh();
-
-                // Check if next week's games are available and preload them
-                await preloadNextWeekIfAvailable();
-            }
-        } catch (error) {
-            console.error('[Live] Refresh failed, will try again:', error);
-        } finally {
-            if (!done) scheduleLiveScoresRefresh();
-        }
-    }, liveRefreshDelay());
+function scheduleLiveScoresRefresh(run) {
+    clearTimeout(liveScoresRefreshTimer);
+    liveScoresRefreshTimer = setTimeout(() => pollLiveScores(run, false), liveRefreshDelay());
 }
 
 /**
- * Stop live scores refresh
+ * One fetch of the scores, then the next one queued - as long as `run` is
+ * still the current poll. A fetch takes a moment, and a tab change in that
+ * moment stops this run and may start another; either way this one must not
+ * queue anything, or two loops end up polling side by side and `stop` can
+ * reach neither.
+ */
+async function pollLiveScores(run, first) {
+    // Anything in here can throw - a failed fetch, a sync that times out
+    // - and a timeout that reschedules itself only at the end would then
+    // never fire again, stopping the afternoon's updates dead. An interval
+    // would have survived it by firing again regardless, so the rescheduling
+    // goes in a finally.
+    let done = false;
+    try {
+        await fetchLiveScores();
+        if (run !== liveScoresPollRun) return;
+
+        // The first fetch can land before the page has finished loading, and
+        // the load draws the page itself once the odds are in.
+        if (!first || initialLoadComplete) renderActiveTab();
+
+        // Sync any newly final games to Google Sheets
+        await syncResultsToGoogleSheets(currentWeek, 'ESPN');
+
+        // Stop polling when all games are final
+        if (!shouldPollLiveScores()) {
+            console.log('All games final - stopping live refresh');
+            done = true;
+            if (run === liveScoresPollRun) stopLiveScoresRefresh();
+
+            // Check if next week's games are available and preload them
+            if (!first) await preloadNextWeekIfAvailable();
+        }
+    } catch (error) {
+        console.error('[Live] Refresh failed, will try again:', error);
+    } finally {
+        if (!done && run === liveScoresPollRun) scheduleLiveScoresRefresh(run);
+    }
+}
+
+/**
+ * Stop live scores refresh. Moving the run on also ends a fetch that is in
+ * flight: it finds it is no longer current and queues nothing.
  */
 function stopLiveScoresRefresh() {
+    liveScoresPollRun++;
     if (liveScoresRefreshTimer) {
         clearTimeout(liveScoresRefreshTimer);
         liveScoresRefreshTimer = null;
