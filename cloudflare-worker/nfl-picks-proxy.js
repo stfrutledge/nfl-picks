@@ -655,6 +655,30 @@ const LAST_CHANCE_LEAD_MS = 30 * 60 * 1000;
 const SENT_TTL_SECONDS = 60 * 60 * 24 * 60;   // forget a week's flags after 60 days
 
 const ESPN_SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+// The same scoreboard on ESPN's other host, tried when the first refuses.
+const ESPN_SCOREBOARD_FALLBACK = 'https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+// A bare fetch sends no User-Agent. From October 2026 ESPN answered the cron's
+// requests 403 (cron runs land in other data centres than a visitor's
+// requests, which kept working), and the Thursday reminder never went out.
+const ESPN_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+/**
+ * The scoreboard for [search] ("?week=6..." or ""), from either ESPN host.
+ * Returns the last response, ok or not, so callers keep their own handling.
+ */
+async function fetchEspn(search = '') {
+  let response;
+  for (const base of [ESPN_SCOREBOARD, ESPN_SCOREBOARD_FALLBACK]) {
+    response = await fetch(base + search, { headers: ESPN_HEADERS });
+    if (response.ok) return response;
+    console.warn(`[espn] ${new URL(base).host} answered ${response.status}`);
+  }
+  return response;
+}
 
 // The site's alias map (TEAM_NAME_MAP), so keys built here match the picks'.
 const TEAM_ALIASES = {
@@ -697,7 +721,7 @@ async function fetchScoreboard({ season, week } = {}) {
     url.searchParams.set('seasontype', '2');
     url.searchParams.set('week', week);
   }
-  const response = await fetch(url.toString());
+  const response = await fetchEspn(url.search);
   if (!response.ok) throw new Error(`ESPN answered ${response.status}`);
   const data = await response.json();
   const games = (data.events || []).map(event => {
@@ -1213,7 +1237,7 @@ async function handleEspn(request, url, ctx) {
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
 
-  const response = await fetch(upstream.toString());
+  const response = await fetchEspn(upstream.search);
   if (!response.ok) return jsonResponse({ error: `ESPN answered ${response.status}` }, 502);
   const body = await response.text();
   const seconds = upstream.searchParams.has('week') ? 300 : 20;

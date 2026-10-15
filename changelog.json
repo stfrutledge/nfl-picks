@@ -2,6 +2,12 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry when something players will notice ships. Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-10-15",
+      "items": [
+        "Fixed: automatic notifications stopped when ESPN began turning away the server's requests, so the Thursday pick reminder didn't go out. They're back."
+      ]
+    },
+    {
       "date": "2026-10-14",
       "items": [
         "Fixed: if the picks sheet had a hiccup, a pick reminder could have told everyone they had every game left to pick. Now it waits and tries again.",

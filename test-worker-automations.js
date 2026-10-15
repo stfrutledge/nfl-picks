@@ -506,6 +506,56 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.ok(!('remind' in r.body), 'no verdict either way');
     });
 
+    // October 2026: ESPN answered the cron 403 all Thursday, so the opener's
+    // reminder never went out, while visitors' requests kept working.
+    await check('ESPN refusing the cron: its other host is tried, and the reminder still goes', async () => {
+        world.board = scoreboard(PRE);
+        world.picks = {};
+        const realFetch = globalThis.fetch;
+        const espn = [];
+        globalThis.fetch = async (url, init = {}) => {
+            const u = String(url);
+            if (u.startsWith('https://site.api.espn.com/')) {
+                espn.push({ host: 'site.api', ua: init.headers?.['User-Agent'] });
+                return new Response('Forbidden', { status: 403 });
+            }
+            if (u.startsWith('https://site.web.api.espn.com/')) {
+                espn.push({ host: 'site.web.api', ua: init.headers?.['User-Agent'] });
+                return new Response(JSON.stringify(world.board));
+            }
+            return realFetch(url, init);
+        };
+        try {
+            await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        assert.deepStrictEqual(espn.map(e => e.host), ['site.api', 'site.web.api']);
+        assert.ok(espn.every(e => /Mozilla/.test(e.ua || '')), 'a browser User-Agent on every ESPN request');
+        assert.strictEqual(sent.length, 1);
+        assert.ok(kv.has('sent:reminder-2026-5-first'));
+    });
+
+    await check('both ESPN hosts refusing: nothing sent, and the reminder is still due', async () => {
+        world.board = scoreboard(PRE);
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url, init) => /^https:\/\/site(\.web)?\.api\.espn\.com\//.test(String(url))
+            ? new Response('Forbidden', { status: 403 }) : realFetch(url, init);
+        const errors = [];
+        const realError = console.error, realWarn = console.warn;
+        console.error = (...a) => errors.push(a.join(' '));
+        console.warn = () => {};
+        try {
+            await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
+        } finally {
+            globalThis.fetch = realFetch;
+            console.error = realError; console.warn = realWarn;
+        }
+        assert.strictEqual(sent.length, 0);
+        assert.strictEqual(kv.size, 0);
+        assert.ok(errors.some(e => e.includes('ESPN answered 403')), 'the run logs why');
+    });
+
     section('Admin Settings’ real-data tests');
 
     async function preview(kind, auth = 'Bearer s') {
