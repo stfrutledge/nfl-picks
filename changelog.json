@@ -4,6 +4,7 @@
     {
       "date": "2026-10-14",
       "items": [
+        "Fixed: if the picks sheet had a hiccup, a pick reminder could have told everyone they had every game left to pick. Now it waits and tries again.",
         "Fixed: live scores could stop updating if the first load failed, and switching tabs during a game could make the page fetch scores twice as often."
       ]
     },

@@ -112,6 +112,8 @@ globalThis.fetch = async (url, init = {}) => {
     if (u.startsWith(APPS_SCRIPT_URL)) {
         const action = new URL(u).searchParams.get('action');
         appsScriptCalls.push(action);
+        // How doGet answers its own failures: HTTP 200, with the error in the body.
+        if (world.sheetError) return new Response(JSON.stringify({ error: 'Exception: Service Spreadsheets timed out' }));
         if (action === 'allpicks') return new Response(JSON.stringify({ picks: { ...world.earlierPicks, '2026_5': world.picks } }));
         if (action === 'picks') {
             const p = new URL(u).searchParams;
@@ -159,7 +161,7 @@ async function check(name, fn) {
     total++;
     sent.length = 0; appsScriptCalls.length = 0; posted.length = 0; kv.clear();
     world = { board: scoreboard(ALL_FINAL, FINALS), picks: fullPicks(), spreads: SPREADS,
-        earlierPicks: {}, results: {}, resultsDown: false, weekBoards: {} };
+        earlierPicks: {}, results: {}, resultsDown: false, sheetError: false, weekBoards: {} };
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
@@ -473,6 +475,35 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         appsScriptCalls.length = 0;
         await tick(T.thu - 60 * 60 * 1000);
         assert.deepStrictEqual(appsScriptCalls, [], 'the slate is settled');
+    });
+
+    // The Apps Script answers its own failures with HTTP 200 and an {error}
+    // body. Read as picks, that is nobody having picked anything: everyone
+    // reminded about every game, and the reminder marked as sent.
+
+    await check('a sheet error is not "nobody has picked": nothing sent, and tried again', async () => {
+        world.board = scoreboard(PRE);
+        world.picks = Object.fromEntries(['Daniel', 'Dylan', 'Jason', 'Sean', 'Stephen'].map(p =>
+            [p, { bills_chiefs: plain('home') }]));
+        world.picks.Sean = {};
+        world.sheetError = true;
+        await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
+        assert.strictEqual(sent.length, 0, 'nobody is told they have every game left');
+        assert.strictEqual(kv.size, 0, 'and the reminder is still due');
+
+        world.sheetError = false;
+        await tick(THU_NOON_IRELAND + 20 * 60 * 1000);
+        assert.strictEqual(sent.length, 1, 'the next run sends it');
+        assert.deepStrictEqual(Object.keys(JSON.parse(sent[0].data.personal)), ['Sean'], 'to the one still missing a pick');
+    });
+
+    await check('a held reminder with the sheet in error is shown as it was', async () => {
+        // No "remind" in the answer is what the phone reads as "no answer".
+        world.board = scoreboard(PRE);
+        world.sheetError = true;
+        const r = await reminderCheck('id=reminder-2026-5-first&picker=Sean', T.thu - 4 * 60 * 60 * 1000);
+        assert.strictEqual(r.status, 500);
+        assert.ok(!('remind' in r.body), 'no verdict either way');
     });
 
     section('Admin Settings’ real-data tests');

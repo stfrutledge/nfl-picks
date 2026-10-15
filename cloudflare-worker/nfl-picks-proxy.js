@@ -724,12 +724,22 @@ async function fetchScoreboard({ season, week } = {}) {
   };
 }
 
+/**
+ * A read from the Apps Script. Its doGet answers its own failures with HTTP 200
+ * and an {error} body, so an ok status is not enough: read as picks, that body
+ * is nobody having picked anything, which would remind everyone of every game
+ * and mark the reminder sent. Throwing instead leaves the cron to try again on
+ * its next run, and /reminder-check to answer 500 (the phone then shows the
+ * reminder as it was).
+ */
 async function appsScriptGet(env, params) {
   const url = new URL(env.APPS_SCRIPT_URL);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const response = await fetch(url.toString());
   if (!response.ok) throw new Error(`Apps Script answered ${response.status}`);
-  return response.json();
+  const data = await response.json();
+  if (data?.error) throw new Error(`Apps Script error: ${data.error}`);
+  return data;
 }
 
 /** Every week's picks this season, per week number then picker, keyed like the site's. */

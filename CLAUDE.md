@@ -65,6 +65,8 @@ has not been live for months. The script source code is in `google-apps-script-s
 
 **The repo copy is the source of record, not the running code.** Editing `google-apps-script-simple.js` changes nothing on its own — the script has to be pasted into the Apps Script editor (Extensions > Apps Script) and redeployed as a new version of the existing web app deployment, or the client keeps talking to the old one. `node test-sheet-reader.js` covers the read path locally so a change can be checked before it is deployed.
 
+**An Apps Script failure comes back as HTTP 200.** `doGet` catches its own errors and answers `{ error }` with a 200, so the worker's `appsScriptGet` checks the body as well as the status and throws on either. Read as picks, an `{error}` body is nobody having picked anything: the cron would have reminded all five pickers of every game and marked the reminder sent. `node test-worker-automations.js` has the case.
+
 The Backup sheet is an **append-only log** and should stay that way: `savePicks()` only ever appends, so one game accumulates a row per sync and reading means collapsing rows back down.
 
 **Do not "optimise" this into an upsert.** It was tried, in response to the sheet filling with a row per game per edit, and reverted once the cost was actually measured:
