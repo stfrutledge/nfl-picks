@@ -62,6 +62,13 @@ variables above:
 Without the binding the schedule does nothing. A quiet day costs one ESPN call
 and a couple of KV reads; the sheet is only read when something could be due.
 
+If ESPN refuses a run, it carries on with the week's schedule saved by the
+last run that reached it (`board:current`): reminders still go, Blazin' 5
+results wait. After an hour of failing runs the admin's phone alone gets a
+"Notifications failing" message with the reason (`automations:failing`), and
+the first clean run sends "Notifications working again". The reason is also
+in **Observability** as `[automations] failed: ...`.
+
 Redeploying the Apps Script to a new URL means updating `APPS_SCRIPT_URL` here.
 
 ## Testing

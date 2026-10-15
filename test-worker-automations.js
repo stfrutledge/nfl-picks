@@ -98,9 +98,12 @@ const sent = [];
 const appsScriptCalls = [];
 const posted = [];   // bodies POSTed to the Apps Script
 const kv = new Map();
+/** What the worker recorded as sent; KV also holds the saved schedule and run health. */
+const sentKeys = () => [...kv.keys()].filter(k => k.startsWith('sent:'));
 
 globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
+    if (world.espnDown && /^https:\/\/site(\.web)?\.api\.espn\.com\//.test(u)) return new Response('Forbidden', { status: 403 });
     if (u.startsWith('https://site.api.espn.com/')) {
         const week = new URL(u).searchParams.get('week');
         return new Response(JSON.stringify(week ? world.weekBoards[week] : world.board));
@@ -139,7 +142,8 @@ const ENV = {
     NOTIFY_SECRET: 's',
     NOTIFY_STATE: {
         get: async k => kv.get(k) ?? null,
-        put: async (k, v) => { kv.set(k, v); }
+        put: async (k, v) => { kv.set(k, v); },
+        delete: async k => { kv.delete(k); }
     }
 };
 
@@ -161,7 +165,7 @@ async function check(name, fn) {
     total++;
     sent.length = 0; appsScriptCalls.length = 0; posted.length = 0; kv.clear();
     world = { board: scoreboard(ALL_FINAL, FINALS), picks: fullPicks(), spreads: SPREADS,
-        earlierPicks: {}, results: {}, resultsDown: false, sheetError: false, weekBoards: {} };
+        earlierPicks: {}, results: {}, resultsDown: false, sheetError: false, espnDown: false, weekBoards: {} };
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
@@ -489,7 +493,7 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         world.sheetError = true;
         await tick(THU_NOON_IRELAND + 5 * 60 * 1000);
         assert.strictEqual(sent.length, 0, 'nobody is told they have every game left');
-        assert.strictEqual(kv.size, 0, 'and the reminder is still due');
+        assert.strictEqual(sentKeys().length, 0, 'and the reminder is still due');
 
         world.sheetError = false;
         await tick(THU_NOON_IRELAND + 20 * 60 * 1000);
@@ -552,8 +556,77 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
             console.error = realError; console.warn = realWarn;
         }
         assert.strictEqual(sent.length, 0);
-        assert.strictEqual(kv.size, 0);
+        assert.strictEqual(sentKeys().length, 0);
         assert.ok(errors.some(e => e.includes('ESPN answered 403')), 'the run logs why');
+    });
+
+    /** Runs [fn] with the worker's warnings and errors kept out of the test output. */
+    async function quietly(fn) {
+        const realError = console.error, realWarn = console.warn;
+        console.error = () => {}; console.warn = () => {};
+        try { await fn(); } finally { console.error = realError; console.warn = realWarn; }
+    }
+
+    await check('ESPN refusing after a run that reached it: the reminder goes on the saved schedule', async () => {
+        world.board = scoreboard(PRE);
+        world.picks = {};
+        await tick(THU_NOON_IRELAND - 24 * 60 * 60 * 1000);   // Wednesday: ESPN answers, the schedule is saved
+        assert.ok(kv.has('board:current'));
+        world.espnDown = true;
+        await quietly(() => tick(THU_NOON_IRELAND + 5 * 60 * 1000));
+        assert.strictEqual(sent.length, 1);
+        assert.strictEqual(sent[0].data.title, 'Game tonight: Bills @ Chiefs (Chiefs -3)');
+        assert.ok(kv.has('sent:reminder-2026-5-first'));
+        assert.match(JSON.parse(kv.get('automations:failing')).lastError, /saved schedule/, 'still counts as a problem');
+    });
+
+    await check('a saved schedule never sends Blazin’ 5 results: it has no scores', async () => {
+        await tick(TUE_MORNING - 24 * 60 * 60 * 1000);   // ESPN answers: schedule saved (results also go)
+        sent.length = 0; kv.delete('sent:blazin-2026-5');
+        world.espnDown = true;
+        await quietly(() => tick(TUE_MORNING));
+        assert.strictEqual(sent.length, 0);
+        assert.ok(!kv.has('sent:blazin-2026-5'), 'still due for when ESPN answers');
+    });
+
+    await check('an hour of failing runs: one alert, to the admin alone; the first clean run says so', async () => {
+        world.board = scoreboard(PRE);
+        world.espnDown = true;
+        const start = THU_NOON_IRELAND - 6 * 60 * 60 * 1000;
+        await quietly(async () => {
+            for (let m = 0; m < 60; m += 15) await tick(start + m * 60 * 1000);
+        });
+        assert.strictEqual(sent.length, 0, 'not for the first hour');
+
+        await quietly(() => tick(start + 60 * 60 * 1000));
+        assert.strictEqual(sent.length, 1);
+        const alert = sent[0].data;
+        assert.strictEqual(alert.title, 'Notifications failing');
+        assert.strictEqual(alert.body, '', 'a phone with no picker drops it');
+        const personal = JSON.parse(alert.personal);
+        assert.deepStrictEqual(Object.keys(personal), ['Stephen'], 'every other picker’s phone drops it');
+        assert.match(personal.Stephen, /60 minutes: ESPN answered 403/);
+
+        await quietly(() => tick(start + 75 * 60 * 1000));
+        assert.strictEqual(sent.length, 1, 'once, not every run');
+
+        world.espnDown = false;
+        await tick(start + 90 * 60 * 1000);
+        assert.strictEqual(sent.length, 2);
+        assert.strictEqual(sent[1].data.title, 'Notifications working again');
+        assert.ok(!kv.has('automations:failing'));
+    });
+
+    await check('a run that fails and then recovers within the hour alerts nobody', async () => {
+        world.board = scoreboard(PRE);
+        world.espnDown = true;
+        const start = THU_NOON_IRELAND - 6 * 60 * 60 * 1000;
+        await quietly(() => tick(start));
+        world.espnDown = false;
+        await tick(start + 15 * 60 * 1000);
+        world.espnDown = true;
+        await quietly(() => tick(start + 60 * 60 * 1000));
+        assert.strictEqual(sent.length, 0, 'the clock restarts after a clean run');
     });
 
     section('Admin Settings’ real-data tests');
@@ -579,7 +652,7 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.strictEqual(sent[0].data.body,
             'Jason 3-1-1, Stephen 3-1-1, Dylan 2-2-1, Daniel 1-3-1, Sean 1-3-1. Cowherd 2-0-1.',
             'the same grading as the real notification');
-        assert.ok(!kv.size, 'a test does not count as the week’s real send');
+        assert.ok(!sentKeys().length, 'a test does not count as the week’s real send');
     });
 
     await check('mid-week it says how many starred games are still to finish', async () => {

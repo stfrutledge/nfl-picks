@@ -184,8 +184,14 @@ export default {
   // The cron trigger: automatic notifications. See runAutomations().
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runAutomations(env).then(
-      result => console.log('[automations]', JSON.stringify(result)),
-      error => console.error('[automations] failed:', error.message)));
+      result => {
+        console.log('[automations]', JSON.stringify(result));
+        return trackHealth(env, result.espnError ? `ESPN: ${result.espnError} (ran on the saved schedule)` : null);
+      },
+      error => {
+        console.error('[automations] failed:', error.message);
+        return trackHealth(env, error.message);
+      }).catch(error => console.error('[health] failed:', error.message)));
   },
 };
 
@@ -1132,6 +1138,85 @@ async function handleReminderCheck(url, env) {
   return jsonResponse(body ? { remind: true, body } : { remind: false });
 }
 
+// The week's schedule as of the last run that reached ESPN, for a run it refuses.
+const BOARD_KEY = 'board:current';
+const BOARD_MAX_AGE_MS = 8 * 24 * 60 * 60 * 1000;
+const BOARD_REFRESH_MS = 24 * 60 * 60 * 1000;
+// Failing runs are recorded here; the admin hears about it after an hour.
+const HEALTH_KEY = 'automations:failing';
+const ALERT_AFTER_MS = 60 * 60 * 1000;
+const ADMIN_PICKER = 'Stephen';
+
+/** The parts of a board that say when the games are, which is all a saved one is trusted for. */
+function scheduleSignature({ season, seasonType, week, games }) {
+  return JSON.stringify([season, seasonType, week, games.map(g => [g.key, g.kickoff])]);
+}
+
+/**
+ * The scoreboard for a cron run. A run that reaches ESPN saves the week's
+ * schedule (only when it changes, or once a day); a run ESPN refuses carries
+ * on with that schedule, as `espnError` says. October 2026: ESPN answered the
+ * cron 403 all Thursday morning and the opener's reminder never went out.
+ *
+ * A saved schedule has no scores and stale states, so a game counts as under
+ * way once its kickoff has passed and none is final: reminders go on time,
+ * and Blazin' 5 results wait for ESPN.
+ */
+async function scoreboardForAutomations(env, now) {
+  const saved = JSON.parse(await env.NOTIFY_STATE.get(BOARD_KEY) || 'null');
+  let board;
+  try {
+    board = await fetchScoreboard();
+  } catch (error) {
+    if (!saved || now - saved.savedAt > BOARD_MAX_AGE_MS) throw error;
+    return {
+      ...saved,
+      games: saved.games.map(g => ({
+        ...g, state: g.kickoff <= now ? 'in' : 'pre', final: false, awayScore: 0, homeScore: 0,
+      })),
+      espnError: error.message,
+    };
+  }
+  const usable = board.season && board.week && board.games.length > 0;
+  if (usable && (!saved || now - saved.savedAt > BOARD_REFRESH_MS
+      || scheduleSignature(saved) !== scheduleSignature(board))) {
+    const { season, seasonType, week } = board;
+    const games = board.games.map(({ key, away, home, kickoff }) => ({ key, away, home, kickoff }));
+    await env.NOTIFY_STATE.put(BOARD_KEY, JSON.stringify({ savedAt: now, season, seasonType, week, games }));
+  }
+  return board;
+}
+
+/**
+ * After each cron run: [problem] is why it failed (or ran on the saved
+ * schedule), null for a clean run. An hour of problems sends the admin one
+ * alert, and the first clean run after that says so. Nobody else sees
+ * either: only the admin's picker has a line, and the empty group text means
+ * a phone with no picker drops it (Delivery.decide).
+ */
+async function trackHealth(env, problem, now = Date.now()) {
+  if (!env.NOTIFY_STATE || !env.FCM_SERVICE_ACCOUNT) return;
+  const state = JSON.parse(await env.NOTIFY_STATE.get(HEALTH_KEY) || 'null');
+  const minutes = state ? Math.round((now - state.since) / 60000) : 0;
+  if (!problem) {
+    if (!state) return;
+    await env.NOTIFY_STATE.delete(HEALTH_KEY);
+    if (state.alerted) await alertAdmin(env, now, 'Notifications working again', `Back to normal after ${minutes} minutes.`);
+    return;
+  }
+  const next = { since: state?.since ?? now, lastError: problem, alerted: Boolean(state?.alerted) };
+  if (!next.alerted && now - next.since >= ALERT_AFTER_MS) {
+    const sent = await alertAdmin(env, now, 'Notifications failing',
+      `Every run for ${minutes} minutes: ${problem}. Check the worker's Observability tab.`);
+    next.alerted = sent.ok;
+  }
+  await env.NOTIFY_STATE.put(HEALTH_KEY, JSON.stringify(next));
+}
+
+function alertAdmin(env, now, title, text) {
+  return sendToGroup(env, { category: 'messages', id: `health-${now}`, title, body: '', personal: { [ADMIN_PICKER]: text } });
+}
+
 async function alreadySent(env, id) {
   return Boolean(await env.NOTIFY_STATE.get(`sent:${id}`));
 }
@@ -1149,11 +1234,13 @@ async function runAutomations(env, now = Date.now()) {
   if (!env.NOTIFY_STATE || !env.FCM_SERVICE_ACCOUNT || !env.APPS_SCRIPT_URL) {
     return { skipped: 'not configured' };
   }
-  const board = await fetchScoreboard();
+  const board = await scoreboardForAutomations(env, now);
   const { season, week, games } = board;
   if (!season || !week || games.length === 0) return { skipped: 'no games' };
   const regularSeason = board.seasonType === 2;
   const done = [];
+  // Said in every result, so the logs and trackHealth know ESPN refused.
+  const degraded = board.espnError ? { espnError: board.espnError } : {};
 
   // What could be due on this run, before paying for the sheet.
   const blazinId = `blazin-${season}-${week}`;
@@ -1174,7 +1261,7 @@ async function runAutomations(env, now = Date.now()) {
     if (missed >= 0) dueSlates.splice(missed, 1);
   }
 
-  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done };
+  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done, ...degraded };
 
   const seasonPicks = await fetchSeasonPicks(env, season);
   const picks = seasonPicks[week] || {};
@@ -1202,7 +1289,7 @@ async function runAutomations(env, now = Date.now()) {
     if (sent.ok) { await markSent(env, id); done.push(id); }
   }
 
-  return { season, week, done };
+  return { season, week, done, ...degraded };
 }
 
 /**
