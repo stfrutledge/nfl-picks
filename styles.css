@@ -1820,6 +1820,13 @@ header h1 {
     color: var(--accent-green);
 }
 
+/* 0-5 Blazin' 5 Weeks shares every rule above; only its leader differs -
+   the most 0-5 weeks is nothing to celebrate. */
+.winless-weeks .perfect-weeks-row.leader .lone-wolf-name,
+.winless-weeks .perfect-weeks-row.leader .perfect-weeks-count {
+    color: var(--accent-red);
+}
+
 .perfect-weeks-row.none .lone-wolf-name {
     color: var(--text-secondary);
 }

@@ -94,6 +94,9 @@ function makeAppEnv() {
         perfectBlazinWeeks, perfectBlazinWeeksAllTime, renderPerfectWeeksCard, saveCowherdPicks,
         togglePerfectWeeks, perfectWeeksExpanded, setPerfectWeeksSort, comparePerfectWeeks,
         __sort: () => perfectWeeksSort,
+        winlessBlazinWeeks, winlessBlazinWeeksAllTime, renderWinlessWeeksCard,
+        toggleWinlessWeeks, setWinlessWeeksSort,
+        __winlessSort: () => winlessWeeksSort,
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
@@ -387,6 +390,63 @@ check('the Line Picks and Straight Up sub-tabs hide it', () => {
     api.__setState({ currentSubcategory: 'winner' });
     api.renderPerfectWeeksCard();
     assert.ok(api.__node('perfect-weeks-card').classList.contains('hidden'));
+});
+
+section('0-5 weeks are the same tally, the other way round');
+
+check('0-5 counts, 0-4-1 and 1-4 do not', () => {
+    const api = setup();
+    // Sean: week 1 is 4-1, week 2 is 0-4-1. Stephen took away in week 1 of a
+    // fresh slate: 0-5.
+    api.__setState({ allPicks: { 1: { Stephen: five('away'), Sean: five('home') }, 2: { Sean: five('away') } } });
+    const weeks = api.winlessBlazinWeeks();
+    assert.deepStrictEqual(weeks.Stephen, [1]);
+    assert.deepStrictEqual(weeks.Sean, [], 'a push is not a loss');
+});
+
+check('an archived season and Cowherd’s record count too', () => {
+    const api = setup();
+    const prior = archivePriorSeason(api);
+    api.__window[`COWHERD_${prior}_RESULTS`][6] = { wins: 0, losses: 5, pushes: 0 };
+    const weeks = api.winlessBlazinWeeks(prior);
+    assert.deepStrictEqual(weeks.Stephen, [9], 'week 9 he was 0-5');
+    assert.deepStrictEqual(weeks.Sean, []);
+    assert.deepStrictEqual(weeks[api.COWHERD], [6]);
+});
+
+check('its own card: titled 0-5, own toggle and sort, hidden off the Blazin’ 5 sub-tab', () => {
+    const api = setup();
+    archivePriorSeason(api);
+    fillRemainingSeasons(api);
+    api.renderWinlessWeeksCard();
+    let html = api.__written['winless-weeks-card'];
+    assert.match(html, /0-5 Blazin' 5 Weeks/);
+    assert.match(html, /<img src="blazin-5-winless.jpg"/, 'its own picture');
+    assert.ok(fs.existsSync(path.join(__dirname, 'blazin-5-winless.jpg')), 'and it is in the repo');
+    assert.match(html, /perfect-weeks-row leader [\s\S]*?Stephen[\s\S]*?perfect-weeks-last">\d{4} Wk 9<[\s\S]*?perfect-weeks-count">1</);
+    assert.match(html, /onclick="toggleWinlessWeeks\('Stephen'\)"/);
+    assert.match(html, /onclick="setWinlessWeeksSort\('last'\)"/);
+    assert.doesNotMatch(html, /togglePerfectWeeks|setPerfectWeeksSort/);
+
+    api.toggleWinlessWeeks('Stephen');
+    html = api.__written['winless-weeks-card'];
+    assert.match(html, /perfect-week-chip">\d{4} Wk 9</);
+    assert.strictEqual(api.perfectWeeksExpanded.size, 0, 'the 5-0 card’s rows are its own');
+
+    api.setWinlessWeeksSort('last');
+    assert.strictEqual(api.__winlessSort(), 'last');
+    assert.strictEqual(api.__sort(), 'total', 'and so is its sort');
+
+    api.__setState({ currentSubcategory: 'line' });
+    api.renderWinlessWeeksCard();
+    assert.ok(api.__node('winless-weeks-card').classList.contains('hidden'));
+});
+
+check('nobody yet says so', () => {
+    const api = setup();
+    fillRemainingSeasons(api);
+    api.renderWinlessWeeksCard();
+    assert.match(api.__written['winless-weeks-card'], /Nobody has gone 0-5 yet/);
 });
 
 console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);

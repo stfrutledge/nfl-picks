@@ -8043,19 +8043,27 @@ function isPerfectBlazinWeek(rec) {
 }
 
 /**
- * A season's 5-0 Blazin' 5 weeks, per picker, as a list of week numbers.
+ * Whether a week's record is a winless one: the mirror of a perfect week,
+ * strictly 0-5-0. A push is not a loss, so 0-4-1 does not count.
+ */
+function isWinlessBlazinWeek(rec) {
+    return Boolean(rec) && rec.losses === PERFECT_BLAZIN_WINS && !rec.wins && !rec.pushes;
+}
+
+/**
+ * A season's Blazin' 5 weeks whose record passes `test`, per picker, as a
+ * list of week numbers. The 5-0 and 0-5 cards are this with a different test.
  *
  * Read off calculateStatsForWeeks' per-week breakdown, so a week is scored
- * exactly as the standings score it - each pick at its own line. Strictly
- * 5-0-0: a push is not a win, so 4-0-1 is not a perfect week. Regular season
- * only, which is the only time the star is offered.
+ * exactly as the standings score it - each pick at its own line. Regular
+ * season only, which is the only time the star is offered.
  *
  * Cowherd's picks are not in the archives, only his week-by-week record, so
  * his come from cowherdWeeklyResults() for every season alike. The 2022 and
  * earlier archives hold his as a season aggregate with no weeks in it, so
  * those seasons can say nothing about his.
  */
-function perfectBlazinWeeks(season = CURRENT_SEASON) {
+function blazinWeeksMatching(test, season = CURRENT_SEASON) {
     const lastRegular = FIRST_PLAYOFF_WEEK - 1;
     const last = Number(season) === CURRENT_SEASON
         ? regularSeasonWeekRange().last
@@ -8065,32 +8073,43 @@ function perfectBlazinWeeks(season = CURRENT_SEASON) {
     const out = {};
     pickers.forEach(picker => {
         out[picker] = computed[picker].byWeek
-            .filter(w => isPerfectBlazinWeek(w.blazin))
+            .filter(w => test(w.blazin))
             .map(w => w.week);
     });
 
     const cowherd = cowherdWeeklyResults(season);
     if (cowherd && !cowherd.aggregate) {
         out[COWHERD] = Object.keys(cowherd).map(Number)
-            .filter(week => week <= lastRegular && isPerfectBlazinWeek(cowherd[week]))
+            .filter(week => week <= lastRegular && test(cowherd[week]))
             .sort((a, b) => a - b);
     }
     return out;
 }
 
+/** A season's 5-0 Blazin' 5 weeks, per picker. Strictly 5-0-0: 4-0-1 is not one. */
+function perfectBlazinWeeks(season = CURRENT_SEASON) {
+    return blazinWeeksMatching(isPerfectBlazinWeek, season);
+}
+
+/** A season's 0-5 Blazin' 5 weeks, per picker. Strictly 0-5-0: 0-4-1 is not one. */
+function winlessBlazinWeeks(season = CURRENT_SEASON) {
+    return blazinWeeksMatching(isWinlessBlazinWeek, season);
+}
+
 /**
- * Every picker's 5-0 Blazin' 5 weeks across all the seasons on hand, oldest
- * first, with the count and the most recent one to hand. `missing` names the
- * archived seasons not loaded yet, which the card says while it waits.
+ * Every picker's matching Blazin' 5 weeks across all the seasons on hand,
+ * oldest first, with the count and the most recent one to hand. `weeksFor`
+ * is perfectBlazinWeeks or winlessBlazinWeeks. `missing` names the archived
+ * seasons not loaded yet, which the card says while it waits.
  */
-function perfectBlazinWeeksAllTime() {
+function blazinWeeksAllTime(weeksFor) {
     const seasons = [...AVAILABLE_SEASONS].sort((a, b) => a - b);
     const missing = seasons.filter(s => s !== CURRENT_SEASON && !getSeasonData(s));
     const byPicker = {};
     PICKERS_WITH_COWHERD.forEach(p => { byPicker[p] = { count: 0, weeks: [], last: null }; });
 
     seasons.filter(s => !missing.includes(s)).forEach(season => {
-        const weeks = perfectBlazinWeeks(season);
+        const weeks = weeksFor(season);
         Object.keys(weeks).forEach(picker => {
             const entry = byPicker[picker];
             if (!entry) return;
@@ -8104,23 +8123,41 @@ function perfectBlazinWeeksAllTime() {
     return { byPicker, missing };
 }
 
-// One load of the archives for the all-time card, shared by every render.
+function perfectBlazinWeeksAllTime() {
+    return blazinWeeksAllTime(perfectBlazinWeeks);
+}
+
+function winlessBlazinWeeksAllTime() {
+    return blazinWeeksAllTime(winlessBlazinWeeks);
+}
+
+// One load of the archives for the all-time cards, shared by every render.
 let archivesLoading = null;
 
-// Which pickers' rows on the 5-0 card are open onto their weeks. Outside the
-// render, as asIsExpanded is: the card is redrawn when the archives land and
-// on every dashboard refresh, and an open row must not snap shut.
+// Which pickers' rows on the 5-0 and 0-5 cards are open onto their weeks.
+// Outside the render, as asIsExpanded is: the cards are redrawn when the
+// archives land and on every dashboard refresh, and an open row must not
+// snap shut.
 const perfectWeeksExpanded = new Set();
+const winlessWeeksExpanded = new Set();
 
-// How the 5-0 card is ordered: by total, or by the most recent one. Total is
+// How each card is ordered: by total, or by the most recent one. Total is
 // the default - it is a tally first.
 let perfectWeeksSort = 'total';
+let winlessWeeksSort = 'total';
 
 /** Order the 5-0 card by 'total' or 'last'. */
 function setPerfectWeeksSort(sort) {
     if (sort !== 'total' && sort !== 'last') return;
     perfectWeeksSort = sort;
     renderPerfectWeeksCard();
+}
+
+/** Order the 0-5 card by 'total' or 'last'. */
+function setWinlessWeeksSort(sort) {
+    if (sort !== 'total' && sort !== 'last') return;
+    winlessWeeksSort = sort;
+    renderWinlessWeeksCard();
 }
 
 /**
@@ -8141,9 +8178,16 @@ function togglePerfectWeeks(picker) {
     renderPerfectWeeksCard();
 }
 
+/** Open or close a picker's row on the 0-5 card. */
+function toggleWinlessWeeks(picker) {
+    if (winlessWeeksExpanded.has(picker)) winlessWeeksExpanded.delete(picker);
+    else winlessWeeksExpanded.add(picker);
+    renderWinlessWeeksCard();
+}
+
 /**
- * Load every archived season that is not in yet, quietly, once. The Perfect
- * Weeks card is all-time, and the archives are otherwise only loaded on
+ * Load every archived season that is not in yet, quietly, once. The 5-0 and
+ * 0-5 cards are all-time, and the archives are otherwise only loaded on
  * demand for the History tab. A season that fails to load (the year just
  * finished, before it is archived) resolves to null and is simply not
  * counted; loadSeasonData already swallows that 404.
@@ -8159,30 +8203,65 @@ function ensureArchivesLoaded() {
 
 /**
  * The Perfect Weeks card on the Insights panel: who has gone 5-0, how many
- * times across every season, and when they last did. Blazin' 5 sub-tab
- * only - it is a Blazin' 5 record - and hidden on the others.
+ * times across every season, and when they last did.
+ */
+function renderPerfectWeeksCard() {
+    renderBlazinWeeksCard({
+        cardId: 'perfect-weeks-card',
+        record: '5-0',
+        image: 'blazin-5.png',
+        allTime: perfectBlazinWeeksAllTime,
+        expanded: perfectWeeksExpanded,
+        sort: perfectWeeksSort,
+        toggle: 'togglePerfectWeeks',
+        setSort: 'setPerfectWeeksSort',
+        redraw: renderPerfectWeeksCard
+    });
+}
+
+/**
+ * The Winless Weeks card beside it: the same tally for 0-5. The leader is
+ * the one nobody wants to be, so the card's CSS colours them red.
+ */
+function renderWinlessWeeksCard() {
+    renderBlazinWeeksCard({
+        cardId: 'winless-weeks-card',
+        record: '0-5',
+        image: 'blazin-5-winless.jpg',
+        allTime: winlessBlazinWeeksAllTime,
+        expanded: winlessWeeksExpanded,
+        sort: winlessWeeksSort,
+        toggle: 'toggleWinlessWeeks',
+        setSort: 'setWinlessWeeksSort',
+        redraw: renderWinlessWeeksCard
+    });
+}
+
+/**
+ * One all-time Blazin' 5 weeks card. Blazin' 5 sub-tab only - it is a
+ * Blazin' 5 record - and hidden on the others.
  *
  * Drawn from whatever seasons are loaded, straight away, and again once the
  * rest of the archives arrive, so the current season is never held behind a
  * megabyte of history.
  */
-function renderPerfectWeeksCard() {
-    const card = document.getElementById('perfect-weeks-card');
+function renderBlazinWeeksCard({ cardId, record, image, allTime, expanded, sort, toggle, setSort, redraw }) {
+    const card = document.getElementById(cardId);
     if (!card) return;
     const show = currentSubcategory === 'blazin' && usingComputedStandings();
     card.classList.toggle('hidden', !show);
     if (!show) return;
 
-    const { byPicker, missing } = perfectBlazinWeeksAllTime();
+    const { byPicker, missing } = allTime();
     if (missing.length > 0) {
-        ensureArchivesLoaded().then(() => renderPerfectWeeksCard());
+        ensureArchivesLoaded().then(() => redraw());
     }
 
     // Cowherd is listed once any season has a week of his to count; the
     // others always are, since a zero is the point of a tracker.
     const listed = PICKERS_WITH_COWHERD.filter(p => p !== COWHERD
         || AVAILABLE_SEASONS.some(s => !missing.includes(s) && cowherdWeeklyResults(s) && !cowherdWeeklyResults(s).aggregate));
-    const sorted = listed.sort((a, b) => comparePerfectWeeks(byPicker[a], byPicker[b]));
+    const sorted = listed.sort((a, b) => comparePerfectWeeks(byPicker[a], byPicker[b], sort));
     const best = Math.max(0, ...sorted.map(p => byPicker[p].count));
 
     // One line a picker: name, when they last did it, and the count on the
@@ -8191,14 +8270,14 @@ function renderPerfectWeeksCard() {
     const rows = sorted.map(picker => {
         const { count, last, weeks } = byPicker[picker];
         const leader = best > 0 && count === best;
-        const open = count > 0 && perfectWeeksExpanded.has(picker);
+        const open = count > 0 && expanded.has(picker);
         const detail = open ? `
             <div class="perfect-weeks-detail">
                 ${[...weeks].reverse().map(w => `<span class="perfect-week-chip">${w.season} Wk ${w.week}</span>`).join('')}
             </div>` : '';
         return `
             <div class="perfect-weeks-row ${leader ? 'leader' : ''} ${count ? 'openable' : 'none'} ${open ? 'open' : ''}"
-                ${count ? `onclick="togglePerfectWeeks('${picker}')" title="Show the weeks"` : ''}>
+                ${count ? `onclick="${toggle}('${picker}')" title="Show the weeks"` : ''}>
                 <span class="lone-wolf-name">${picker}</span>
                 <span class="perfect-weeks-last">${last ? `${last.season} Wk ${last.week}` : '&ndash;'}</span>
                 <span class="perfect-weeks-count">${count}</span>
@@ -8208,26 +8287,27 @@ function renderPerfectWeeksCard() {
 
     const note = missing.length > 0
         ? `<p class="insight-description">Loading ${missing.length} earlier season${missing.length === 1 ? '' : 's'}&hellip;</p>`
-        : (best === 0 ? '<p class="insight-description">Nobody has gone 5-0 yet.</p>' : '');
+        : (best === 0 ? `<p class="insight-description">Nobody has gone ${record} yet.</p>` : '');
 
     // The same header as the lone wolf card: a picture, then the title and
     // subtitle. blazin-5.png is a local 160px crop of a Blazin' 5 segment
     // still - the original is a 3.7 MB frame, which is not for hotlinking
-    // into a 60px slot.
+    // into a 60px slot. blazin-5-winless.jpg, on the 0-5 card, is a 160px
+    // crop the same way.
     // The sort controls sit in the header, above the line, over the columns
     // they order; the list then starts where the lone wolf card's does.
     card.innerHTML = `
         <div class="insight-header insight-image-header perfect-weeks-header">
-            <img src="blazin-5.png" alt="Blazin' 5" class="insight-image">
+            <img src="${image}" alt="Blazin' 5" class="insight-image">
             <div>
-                <span class="insight-title">5-0 Blazin' 5 Weeks</span>
+                <span class="insight-title">${record} Blazin' 5 Weeks</span>
                 <p class="insight-subtitle">All seasons</p>
             </div>
             <div class="perfect-weeks-sorts">
                 <button type="button" class="perfect-weeks-sort perfect-weeks-last"
-                    onclick="setPerfectWeeksSort('last')" title="Sort by most recent">Last</button>
+                    onclick="${setSort}('last')" title="Sort by most recent">Last</button>
                 <button type="button" class="perfect-weeks-sort perfect-weeks-count"
-                    onclick="setPerfectWeeksSort('total')" title="Sort by total">Total</button>
+                    onclick="${setSort}('total')" title="Sort by total">Total</button>
             </div>
         </div>
         ${note}
@@ -9039,6 +9119,7 @@ function renderInsights(consensus) {
     }
 
     renderPerfectWeeksCard();
+    renderWinlessWeeksCard();
     renderWinningsCard();
 
     // Calculate lone wolf with game details based on current tab

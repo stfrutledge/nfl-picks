@@ -340,6 +340,8 @@ The Insights panel's third card (`#perfect-weeks-card`), on the Blazin' 5 sub-ta
 
 **It is the one thing that loads every archive.** The archives are otherwise loaded on demand for the History tab, and the prior season for Year Chg. `ensureArchivesLoaded()` loads the rest quietly, once, the first time the card is drawn; the card draws from whatever is in straight away and again when they land, so the current season is not held behind a megabyte of history. Cowherd's picks are not archived, only his weekly record, so his come from `cowherdWeeklyResults()` for every season alike; the 2022 and earlier aggregates can say nothing about his weeks. `node test-perfect-weeks.js` covers it.
 
+**0-5 Blazin' 5 Weeks** (`#winless-weeks-card`) is the same card the other way round, beside it: strictly 0-5-0, so 0-4-1 does not count. Both cards are `renderBlazinWeeksCard(config)` over `blazinWeeksMatching(test, season)`, with their own expanded rows and sort; the only styling difference is a red leader (`.winless-weeks`).
+
 ### Year Chg
 
 **This season's win percentage minus last season's over the same weeks.**
