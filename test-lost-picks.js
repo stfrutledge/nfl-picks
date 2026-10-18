@@ -83,9 +83,13 @@ function makeEnv({ store = new Map(), backup = { picks: {}, cleared: {} } } = {}
         navigator: { clipboard: null },
         fetch: async (url, opts = {}) => {
             if (opts.method === 'POST') {
+                // Counted as it leaves, before any gate: what a closing page
+                // needs is for the request to have gone, not to have landed.
+                net.dispatched = (net.dispatched || 0) + 1;
                 if (net.gate) await net.gate;
                 if (net.failing) throw new TypeError('Failed to fetch');
-                posts.push({ body: JSON.parse(opts.body), keepalive: opts.keepalive });
+                posts.push({ body: JSON.parse(opts.body), keepalive: opts.keepalive,
+                    contentType: opts.headers?.['Content-Type'] });
                 return { ok: true, text: async () => JSON.stringify(net.reply || { success: true }) };
             }
             if (String(url).includes('action=allpicks')) {
@@ -301,6 +305,37 @@ await check('hiding the tab flushes with keepalive', async () => {
     assert.strictEqual(t.posts[0].keepalive, true);
 });
 
+await check('a write is sent as text/plain, so the browser sends no preflight', async () => {
+    const t = start();
+    pick(t, 'rams_seahawks', 'home');
+    await t.api.flushPendingSync({ keepalive: true });
+    assert.match(t.posts[0].contentType, /^text\/plain/);
+});
+
+await check('hiding mid-write sends the newer picks now, not after the write returns', async () => {
+    // Pick, wait for the write to go out, pick again, close the app. The
+    // close used to queue a "send again" behind the write in flight, which a
+    // swiped-away app never lived to run.
+    const t = start();
+    let release;
+    t.net.gate = new Promise(r => { release = r; });
+    pick(t, 'rams_seahawks', 'home');
+    await t.clock.advance(t.api.SYNC_DEBOUNCE_MS);   // the first write is out, and held
+    assert.strictEqual(t.net.dispatched, 1);
+    pick(t, 'bills_chiefs', 'away');
+    await t.api.flushPendingSync({ keepalive: true });
+    assert.strictEqual(t.net.dispatched, 2, 'the close sent the second pick straight away');
+
+    release();
+    await t.clock.advance(t.api.SYNC_DEBOUNCE_MS);
+    const sent = sentFor(t, 'Stephen');
+    const last = sent[sent.length - 1];
+    assert.strictEqual(linePick(last, 'bills_chiefs'), 'Bills', 'the newest write carries both picks');
+    assert.strictEqual(linePick(last, 'rams_seahawks'), 'Seahawks');
+    assert.ok(sent.some(p => p.keepalive && linePick(p, 'bills_chiefs') === 'Bills'), 'and went with keepalive');
+    assert.deepStrictEqual(unsynced(t), {}, 'nothing left queued');
+});
+
 section('The backup does not overwrite what this device has not sent yet');
 
 await check('a reload keeps unsent picks over an older backup, then sends them', async () => {
@@ -482,6 +517,56 @@ await check('a failed first read holds the pick, and the read is retried', async
     const sent = sentFor(t, 'Stephen');
     assert.strictEqual(sent.length, 1, 'sent once the read lands');
     assert.strictEqual(linePick(sent[0], 'rams_seahawks'), 'Rams', 'with the sheet\'s pick merged in');
+});
+
+section('Closing the page before the backup is read still sends the games picked');
+// The Thursday case: open the app, pick the one game, close it while the
+// sheet is still being read. The whole-week snapshot is held (above), so the
+// pick used to stay on the phone until it was next opened.
+
+await check('hiding sends only the changed game, and no blanks for the rest', async () => {
+    const t = freshWithSheetPick();
+    pick(t, 'bills_chiefs', 'away');
+    await t.api.flushPendingSync({ keepalive: true });
+
+    assert.strictEqual(t.posts.length, 1, 'sent as the page was hidden');
+    const post = t.posts[0];
+    assert.strictEqual(post.keepalive, true);
+    assert.deepStrictEqual(post.body.picks.map(p => p.gameId), ['bills_chiefs'],
+        'one row: no blank row to tombstone the sheet’s Rams pick');
+    assert.strictEqual(linePick(post, 'bills_chiefs'), 'Bills');
+    assert.ok(!('cleared' in post.body), 'and the cleared flag is left alone');
+    assert.ok(`${WEEK}|Stephen` in unsynced(t), 'still queued for the full week');
+});
+
+await check('once the read lands, the full week goes out with both picks', async () => {
+    const t = freshWithSheetPick();
+    pick(t, 'bills_chiefs', 'away');
+    await t.api.flushPendingSync({ keepalive: true });
+    await t.api.loadAllPicksFromBackup();
+    await t.clock.advance(1);
+
+    const full = sentFor(t, 'Stephen').filter(p => p.body.picks.length === TEAMS.length);
+    assert.strictEqual(full.length, 1, 'one whole-week snapshot after the read');
+    assert.strictEqual(linePick(full[0], 'rams_seahawks'), 'Rams', 'the sheet’s pick survived');
+    assert.strictEqual(linePick(full[0], 'bills_chiefs'), 'Bills');
+    assert.deepStrictEqual(unsynced(t), {}, 'and the queue is empty');
+});
+
+await check('a whole-slate change (Clear Picks, an import) is still held', async () => {
+    const t = freshWithSheetPick();
+    const { allPicks } = t.api.__state();
+    allPicks[WEEK] = { Stephen: { bills_chiefs: { line: 'away', winner: 'away' } } };
+    t.api.savePicksToStorage(false, false, WEEK, 'Stephen');   // no games named: '*'
+    await t.api.flushPendingSync({ keepalive: true });
+    assert.strictEqual(t.posts.length, 0, 'no games to name, so nothing safe to send');
+});
+
+await check('without the page being hidden, nothing changes: still held', async () => {
+    const t = freshWithSheetPick();
+    pick(t, 'bills_chiefs', 'away');
+    await t.clock.advance(t.api.SYNC_DEBOUNCE_MS);
+    assert.strictEqual(t.posts.length, 0);
 });
 
 if (failures > 0) {

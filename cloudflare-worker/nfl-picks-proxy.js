@@ -166,7 +166,7 @@ export default {
       } else if (path === '/sheets') {
         return await handleSheets(request, url);
       } else if (path === '/sync') {
-        return await handleSync(request, env);
+        return await handleSync(request, env, ctx);
       } else if (path === '/espn') {
         return await handleEspn(request, url, ctx);
       } else if (path === '/notify') {
@@ -357,7 +357,7 @@ async function withoutKickedOffLines(body) {
  * GET: Fetch spreads or picks from Google Sheets
  * POST: Save picks and/or spreads to Google Sheets
  */
-async function handleSync(request, env) {
+async function handleSync(request, env, ctx) {
   const appsScriptUrl = env.APPS_SCRIPT_URL;
   if (!appsScriptUrl) {
     return jsonResponse({ error: 'APPS_SCRIPT_URL not configured' }, 500);
@@ -389,30 +389,44 @@ async function handleSync(request, env) {
   }
 
   if (request.method === 'POST') {
-    // Forward the request body to Apps Script
-    let body = await request.text();
-    const guarded = await withoutKickedOffLines(body);
-    if (guarded.skip) return jsonResponse(guarded.skip);
-    body = guarded.body;
-
-    const response = await fetch(appsScriptUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body,
-    });
-
-    const data = await response.text();
-
-    return new Response(data, {
-      status: response.status,
-      headers: {
-        'Content-Type': 'application/json',
-        ...CORS_HEADERS,
-      },
-    });
+    // The write is finished even if the page that sent it has gone. A page
+    // sends its last picks as it is hidden, and an app swiped away drops the
+    // connection a moment later - while the Apps Script is still taking its
+    // 2-8s. Cloudflare cancels a request's work when its client disconnects;
+    // waitUntil keeps this running to the end. A page that is still there
+    // waits for the real reply as before, so a failure is still retried.
+    const work = forwardSyncPost(request, appsScriptUrl);
+    ctx?.waitUntil?.(work.catch(() => {}));
+    return await work;
   }
 
   return jsonResponse({ error: 'Method not allowed' }, 405);
+}
+
+/** Forward a /sync POST body to the Apps Script and pass its reply back. */
+async function forwardSyncPost(request, appsScriptUrl) {
+  // The site sends text/plain to skip the CORS preflight; the body is JSON
+  // either way, and the Apps Script is always told it is.
+  let body = await request.text();
+  const guarded = await withoutKickedOffLines(body);
+  if (guarded.skip) return jsonResponse(guarded.skip);
+  body = guarded.body;
+
+  const response = await fetch(appsScriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body,
+  });
+
+  const data = await response.text();
+
+  return new Response(data, {
+    status: response.status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+    },
+  });
 }
 
 /**

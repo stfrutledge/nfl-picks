@@ -12738,6 +12738,13 @@ async function flushPendingSync({ keepalive = false } = {}) {
     if (!APPS_SCRIPT_URL) return;
     if (syncRunning) {
         syncAgain = true;
+        // The page is being hidden with a write still out. Waiting for it
+        // means waiting on a page that may not come back: an app swiped away
+        // now is gone before that write returns, and the "send again" above
+        // would never run. So the queue goes out now as well. The write in
+        // flight left first and reaches the sheet first, so this newer
+        // snapshot lands on top of it.
+        if (keepalive) sendQueuedSlates({ keepalive: true });
         return;
     }
     syncRunning = true;
@@ -12749,23 +12756,7 @@ async function flushPendingSync({ keepalive = false } = {}) {
     let outstanding = false;
     let failed = false;
     try {
-        for (const [key, version] of Object.entries(unsyncedPicks)) {
-            const cut = key.indexOf('|');
-            const week = Number(key.slice(0, cut));
-            const picker = key.slice(cut + 1);
-            const outcome = await syncPicksToGoogleSheets(displayToast, picker, week, { keepalive });
-            if (outcome === 'sent' || outcome === 'unchanged') {
-                if (unsyncedPicks[key] === version) {
-                    delete unsyncedPicks[key];
-                    delete unsyncedGames[key];
-                }
-            } else {
-                // 'deferred' (schedule not loaded) or 'failed': try again later.
-                outstanding = true;
-                if (outcome === 'failed') failed = true;
-            }
-        }
-        persistUnsynced();
+        ({ outstanding, failed } = await sendQueuedSlates({ keepalive, displayToast }));
     } finally {
         syncRunning = false;
     }
@@ -12792,6 +12783,61 @@ async function flushPendingSync({ keepalive = false } = {}) {
     } else {
         syncRetryAttempt = 0;
     }
+}
+
+/**
+ * One pass over the queue: send each unconfirmed slate, and clear the ones
+ * the sheet now holds. Returns whether anything is still outstanding and
+ * whether a write failed.
+ *
+ * As the page is hidden (`keepalive`), every slate goes out at once. One
+ * after another, the second would wait on the first's reply, which a closing
+ * page may not live to see; different slates are different rows, so their
+ * order does not matter.
+ */
+async function sendQueuedSlates({ keepalive = false, displayToast = false } = {}) {
+    let outstanding = false;
+    let failed = false;
+    const sendSlate = async ([key, version]) => {
+        const cut = key.indexOf('|');
+        const week = Number(key.slice(0, cut));
+        const picker = key.slice(cut + 1);
+
+        // Hidden before the sheet has been read: a whole-week snapshot is
+        // not safe yet (see syncPicksToGoogleSheets), but the games changed
+        // here are. This is the Thursday case - open the app, pick the one
+        // game, close it inside the read - which otherwise left the pick on
+        // the phone until it was next opened. The slate stays queued either
+        // way, and the whole week goes out once the read lands.
+        if (keepalive && !backupMergedOnce) {
+            await syncPicksToGoogleSheets(false, picker, week, {
+                keepalive, onlyGames: unsyncedGames[key] || ['*']
+            });
+            outstanding = true;
+            return;
+        }
+
+        const outcome = await syncPicksToGoogleSheets(displayToast, picker, week, { keepalive });
+        if (outcome === 'sent' || outcome === 'unchanged') {
+            if (unsyncedPicks[key] === version) {
+                delete unsyncedPicks[key];
+                delete unsyncedGames[key];
+            }
+        } else {
+            // 'deferred' (schedule not loaded) or 'failed': try again later.
+            outstanding = true;
+            if (outcome === 'failed') failed = true;
+        }
+    };
+
+    const slates = Object.entries(unsyncedPicks);
+    if (keepalive) {
+        await Promise.all(slates.map(sendSlate));
+    } else {
+        for (const slate of slates) await sendSlate(slate);
+    }
+    persistUnsynced();
+    return { outstanding, failed };
 }
 
 /**
@@ -12826,8 +12872,17 @@ function savePicksToStorage(showSyncToast = false, skipSync = false, week = curr
  *
  * Returns 'sent' or 'unchanged' when the sheet holds this slate, 'deferred'
  * when it could not be built yet (schedule not loaded), or 'failed'.
+ *
+ * `onlyGames` sends just those games' rows instead of the whole week, for a
+ * page hidden before the sheet has been read. It is safe where the snapshot
+ * is not because the sheet folds rows one game at a time (foldPickRow, per
+ * game key): a row replaces only its own game's, so a write with no other
+ * game in it cannot blank one. It never claims the slate is saved - it
+ * returns 'partial' on success - and leaves the cleared flag out, which
+ * doPost only writes when it is a boolean. ['*'] (Clear Picks, an import)
+ * has no games to name and is deferred.
  */
-async function syncPicksToGoogleSheets(displayToast = true, picker = currentPicker, week = currentWeek, { keepalive = false } = {}) {
+async function syncPicksToGoogleSheets(displayToast = true, picker = currentPicker, week = currentWeek, { keepalive = false, onlyGames = null } = {}) {
     if (!APPS_SCRIPT_URL) {
         return 'unchanged';
     }
@@ -12858,7 +12913,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
     // all of it. October 2026: a pick made on a freshly opened page erased the
     // picker's own pick from the night before. Wait for the read, which merges
     // the sheet's picks around this device's changes and then sends.
-    if (!backupMergedOnce) {
+    if (!backupMergedOnce && !onlyGames) {
         console.warn(`[Sync] Backup not read yet, holding week ${week} for ${picker}`);
         if (initialLoadComplete && !backupFetchInFlight) {
             backupFetchedThisSession = false;
@@ -12893,7 +12948,13 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         }
     }
 
-    const formattedPicks = weekGames.map(game => {
+    if (onlyGames?.includes('*')) return 'deferred';
+    const gamesToSend = onlyGames
+        ? weekGames.filter(game => onlyGames.includes(pickKey(game)))
+        : weekGames;
+    if (gamesToSend.length === 0) return 'deferred';
+
+    const formattedPicks = gamesToSend.map(game => {
         const pickData = weekPicks[pickKey(game)] || {};
 
         // The spread columns record the line this pick is GRADED against, not
@@ -12931,7 +12992,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
     // this, a couple of clicks a few seconds apart write the whole week twice.
     const signature = JSON.stringify(formattedPicks);
     const signatureKey = `${week}|${picker}`;
-    if (lastSyncedSignature[signatureKey] === signature) {
+    if (!onlyGames && lastSyncedSignature[signatureKey] === signature) {
         console.log(`[Sync] Week ${week} unchanged since last sync, skipping`);
         return 'unchanged';
     }
@@ -12952,6 +13013,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         // instead of having its picks suppressed on the next load.
         cleared: Boolean(clearedPicks[week]?.[picker])
     };
+    if (onlyGames) delete payload.cleared;
 
     console.log('[Sync] Syncing picks to Google Sheets:', payload);
 
@@ -12959,7 +13021,11 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         // Use worker proxy to avoid CORS issues
         const response = await fetch(`${WORKER_PROXY_URL}/sync`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // text/plain makes this a "simple" request: no CORS preflight,
+            // so one round trip instead of two, and nothing for a closing
+            // page's keepalive send to stall on. The body is still JSON; the
+            // worker reads it as text and forwards it as application/json.
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
             body: JSON.stringify(payload),
             keepalive
         });
@@ -12985,6 +13051,10 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
         // every save into a retry, writing the week again each time, if the
         // deployed script ever replies in a different shape than the repo copy.
         const picksError = result.results?.picks?.error;
+        if (result.success && !picksError && onlyGames) {
+            console.log('[Sync] Sent ' + gamesToSend.length + ' changed game(s) for week ' + week + ' ahead of the backup read');
+            return 'partial';
+        }
         if (result.success && !picksError) {
             // Only remember it once the write actually landed, so a failure
             // retries rather than being skipped as a duplicate.

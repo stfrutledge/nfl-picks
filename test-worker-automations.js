@@ -748,6 +748,24 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         assert.deepStrictEqual(posted, [picks, spreads]);
     });
 
+    await check('a picks write is finished even if the page has gone (waitUntil)', async () => {
+        // A page hidden mid-write - an app swiped away - drops the connection
+        // while the Apps Script is still working. The write has to be handed
+        // to waitUntil, or Cloudflare cancels it with the request.
+        world.weekBoards['5'] = scoreboard(['pre', 'pre', 'pre', 'pre', 'pre', 'pre']);
+        const kept = [];
+        const picks = { week: '2026_5', picker: 'Stephen', picks: [{ gameId: 'jets_dolphins', linePick: 'Jets' }] };
+        const r = await worker.fetch(new Request('https://w.test/sync', {
+            method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify(picks)
+        }), ENV, { waitUntil: p => kept.push(p) });
+
+        assert.strictEqual(kept.length, 1, 'the write was handed to waitUntil');
+        await Promise.all(kept);
+        assert.deepStrictEqual(posted, [picks], 'a text/plain body is forwarded as the same JSON');
+        assert.strictEqual((await r.json()).success, true, 'and a page still there gets the real reply');
+    });
+
     await check('no answer from ESPN: the write goes through as it came', async () => {
         const realFetch = globalThis.fetch;
         globalThis.fetch = async (url, init) => String(url).startsWith('https://site.api.espn.com/')
