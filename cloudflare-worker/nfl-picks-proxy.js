@@ -169,6 +169,8 @@ export default {
         return await handleSync(request, env, ctx);
       } else if (path === '/espn') {
         return await handleEspn(request, url, ctx);
+      } else if (path === '/splits') {
+        return await handleSplits(request, url, ctx);
       } else if (path === '/notify') {
         return await handleNotify(request, env);
       } else if (path === '/reminder-check') {
@@ -1253,6 +1255,9 @@ async function runAutomations(env, now = Date.now()) {
   if (!season || !week || games.length === 0) return { skipped: 'no games' };
   const regularSeason = board.seasonType === 2;
   const done = [];
+  // Betting splits to the sheet. Its own errors, reported in the result and
+  // kept out of trackHealth: a splits problem is not a notifications problem.
+  const splits = await recordFinalSplits(env, board, now).catch(error => ({ error: error.message }));
   // Said in every result, so the logs and trackHealth know ESPN refused.
   const degraded = board.espnError ? { espnError: board.espnError } : {};
 
@@ -1275,7 +1280,7 @@ async function runAutomations(env, now = Date.now()) {
     if (missed >= 0) dueSlates.splice(missed, 1);
   }
 
-  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done, ...degraded };
+  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done, splits, ...degraded };
 
   const seasonPicks = await fetchSeasonPicks(env, season);
   const picks = seasonPicks[week] || {};
@@ -1303,7 +1308,7 @@ async function runAutomations(env, now = Date.now()) {
     if (sent.ok) { await markSent(env, id); done.push(id); }
   }
 
-  return { season, week, done, ...degraded };
+  return { season, week, done, splits, ...degraded };
 }
 
 /**
@@ -1351,6 +1356,294 @@ async function handleEspn(request, url, ctx) {
   });
   ctx.waitUntil(cache.put(cacheKey, out.clone()));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// /splits - public betting splits on the spread: DraftKings and Circa.
+//
+// Neither has an API. DraftKings publishes its own splits as a page on DK
+// Network; Circa's are republished by VSiN. Both are plain HTML, read here
+// and cached for five minutes (VSiN's own update cycle). DraftKings is the
+// public's book, Circa the sharps': where the money and the tickets disagree
+// is the thing worth seeing.
+//
+// The site shows them on the pick cards. The cron keeps each game's last
+// numbers before kickoff and writes them to the Splits tab, so a later
+// feature can ask how teams carrying 70% of the money did against the spread.
+// ---------------------------------------------------------------------------
+
+const DK_SPLITS_URL = 'https://dknetwork.draftkings.com/draftkings-sportsbook-betting-splits/';
+const DK_NFL_EVENT_GROUP = '88808';
+const DK_MAX_PAGES = 5;
+const DK_PAGE_SIZE = 10;
+const CIRCA_SPLITS_URL = 'https://data.vsin.com/betting-splits/?source=CIRCA&sport=NFL';
+const SPLITS_CACHE_SECONDS = 300;
+const SPLITS_HEADERS = {
+  'User-Agent': ESPN_HEADERS['User-Agent'],
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+/** Markup to text, one space between everything. Comments go first: DK leaves markup in them. */
+function htmlText(html) {
+  return String(html)
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&#0*38;|&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/−/g, '-')          // DK prints odds with a real minus sign
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * The part of a page the splits are in: from `margin` before the first
+ * `first` to `margin` after the last `last`, found with indexOf. The pages
+ * are 200-350 KB of navigation and scripts around the tables, and the free
+ * plan gives a request 10 ms of CPU: regexes over the whole page used most
+ * of that. A page without the markers is returned whole, to parse as before.
+ */
+function splitsRegion(html, first, last, margin) {
+  const start = html.indexOf(first);
+  const end = html.lastIndexOf(last);
+  if (start < 0 || end < 0) return html;
+  return html.slice(Math.max(0, start - margin), Math.min(html.length, end + margin));
+}
+
+/** "-7.5" -> -7.5, "+3" -> 3, "PK" / "EVEN" -> 0; anything else null. */
+function splitLine(raw) {
+  const text = String(raw || '').trim().toUpperCase();
+  if (text === 'PK' || text === 'EVEN' || text === 'PICK') return 0;
+  const n = Number(text.replace(/^\+/, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+const DK_GAME = /([A-Z]{2,3}) ([A-Za-z0-9]+) @ ([A-Z]{2,3}) ([A-Za-z0-9]+) (\d{1,2}\/\d{1,2}), (\d{1,2}:\d{2}[AP]M)/g;
+const DK_SPREAD_SIDE = /[A-Z]{2,3} ([A-Za-z0-9]+) ([+-]?\d+(?:\.\d+)?|PK|pk|EVEN) [+-]?\d+ (\d{1,3})% (\d{1,3})%/g;
+
+/**
+ * One DK Network splits page: each game's spread, both sides, as
+ * { key, away, home, sides: { away: {line, handle, bets}, home } }.
+ * A game is a header ("WAS Commanders @ SF 49ers 10/19, 08:15PM") followed by
+ * Moneyline, Spread and Total blocks; only the Spread block is read.
+ */
+function parseDkSplits(html) {
+  const text = htmlText(splitsRegion(String(html), '% Handle', '% Bets', 8000));
+  const heads = [...text.matchAll(DK_GAME)];
+  const games = [];
+  heads.forEach((head, i) => {
+    const away = head[2], home = head[4];
+    const block = text.slice(head.index + head[0].length, i + 1 < heads.length ? heads[i + 1].index : undefined);
+    const at = block.search(/Spread Odds % Handle % Bets/);
+    if (at < 0) return;
+    const spread = block.slice(at).split(/Total Odds % Handle % Bets/)[0];
+    const sides = {};
+    for (const m of spread.matchAll(DK_SPREAD_SIDE)) {
+      const team = normalizeTeam(m[1]);
+      const side = team === normalizeTeam(away) ? 'away' : team === normalizeTeam(home) ? 'home' : null;
+      if (side && !sides[side]) {
+        sides[side] = { line: splitLine(m[2]), handle: Number(m[3]), bets: Number(m[4]) };
+      }
+    }
+    if (sides.away && sides.home) games.push({ key: matchupKey(away, home), away, home, sides });
+  });
+  return games;
+}
+
+/**
+ * VSiN's splits table: rows in pairs, road team then home, each holding
+ * spread line, handle, bets, then the total's and the moneyline's.
+ */
+function parseVsinSplits(html) {
+  const table = splitsRegion(String(html), 'class="sp-row"', 'class="sp-row"', 4000);
+  const rows = [...table.matchAll(/<tr class="sp-row">([\s\S]*?)<\/tr>/g)].map(m => {
+    const team = (m[1].match(/class="sp-team-link"[^>]*>([^<]+)</) || [])[1];
+    const badges = [...m[1].matchAll(/<span class="sp-badge[^"]*">([^<]*)</g)].map(b => b[1].trim());
+    return { team: teamNickname(htmlText(team || '').trim()), badges };
+  });
+  const games = [];
+  for (let i = 0; i + 1 < rows.length; i += 2) {
+    const [road, home] = [rows[i], rows[i + 1]];
+    if (!road.team || !home.team || road.badges.length < 3 || home.badges.length < 3) continue;
+    const side = row => ({
+      line: splitLine(row.badges[0]),
+      handle: parseInt(row.badges[1], 10),
+      bets: parseInt(row.badges[2], 10),
+    });
+    const sides = { away: side(road), home: side(home) };
+    if ([sides.away, sides.home].some(s => !Number.isFinite(s.handle) || !Number.isFinite(s.bets))) continue;
+    games.push({ key: matchupKey(road.team, home.team), away: road.team, home: home.team, sides });
+  }
+  return games;
+}
+
+async function fetchSplitsPage(url) {
+  const response = await fetch(url, { headers: SPLITS_HEADERS });
+  if (!response.ok) throw new Error(`${new URL(url).host} answered ${response.status}`);
+  return response.text();
+}
+
+/** Every NFL game on DK's pages for the next seven days. A page past the end repeats the last one. */
+async function fetchDkSplits() {
+  const byKey = new Map();
+  for (let page = 1; page <= DK_MAX_PAGES; page++) {
+    const url = new URL(DK_SPLITS_URL);
+    url.searchParams.set('tb_eg', DK_NFL_EVENT_GROUP);
+    url.searchParams.set('tb_edate', 'n7days');
+    url.searchParams.set('tb_emt', '0');
+    url.searchParams.set('tb_page', String(page));
+    const games = parseDkSplits(await fetchSplitsPage(url.toString()));
+    const fresh = games.filter(g => !byKey.has(g.key));
+    fresh.forEach(g => byKey.set(g.key, g));
+    // A short page is the last one; a repeat means the last was already read.
+    if (fresh.length === 0 || games.length < DK_PAGE_SIZE) break;
+  }
+  return [...byKey.values()];
+}
+
+async function fetchCircaSplits() {
+  return parseVsinSplits(await fetchSplitsPage(CIRCA_SPLITS_URL));
+}
+
+/**
+ * Both books, merged per game: { updatedAt, errors, games: { key: { away,
+ * home, dk, circa } } }, each book being { away: {line, handle, bets}, home }
+ * or absent. One book failing still returns the other.
+ */
+async function buildSplits(now = Date.now()) {
+  const [dk, circa] = await Promise.allSettled([fetchDkSplits(), fetchCircaSplits()]);
+  const games = {};
+  const errors = {};
+  const add = (book, result) => {
+    if (result.status !== 'fulfilled') { errors[book] = result.reason?.message || String(result.reason); return; }
+    for (const g of result.value) {
+      games[g.key] ||= { away: g.away, home: g.home };
+      games[g.key][book] = g.sides;
+    }
+  };
+  add('dk', dk);
+  add('circa', circa);
+  return { updatedAt: new Date(now).toISOString(), errors, games };
+}
+
+/** The splits, from the edge cache when it is fresh: the site's requests and the cron share it. */
+async function cachedSplits(origin, ctx) {
+  const cache = caches.default;
+  const cacheKey = new Request(`${origin}/splits`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit.json();
+  const splits = await buildSplits();
+  // Nothing from either book is not worth five minutes of nothing.
+  if (Object.keys(splits.games).length > 0) {
+    const stored = new Response(JSON.stringify(splits), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${SPLITS_CACHE_SECONDS}` },
+    });
+    const put = cache.put(cacheKey, stored);
+    if (ctx?.waitUntil) ctx.waitUntil(put); else await put;
+  }
+  return splits;
+}
+
+async function handleSplits(request, url, ctx) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+  const splits = await cachedSplits(url.origin, ctx);
+  return new Response(JSON.stringify(splits), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': `public, max-age=${SPLITS_CACHE_SECONDS}`,
+      ...CORS_HEADERS,
+    },
+  });
+}
+
+// The cron's half: the last numbers before kickoff, to the Splits tab.
+const SPLITS_PENDING_KEY = 'splits:pending';
+const SPLITS_WATCH_MS = 30 * 60 * 1000;          // start keeping a game's numbers this far out
+const SPLITS_LAST_RUN_MS = 15 * 60 * 1000;       // the cron period: the run this close to kickoff is the last before it
+const SPLITS_KEEP_MS = 7 * 24 * 60 * 60 * 1000;  // an unwritten final waits this long (an Apps Script not redeployed yet)
+const SPLITS_ORIGIN = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
+
+/** The site's week number for a board: 1-18 regular season, 19-22 playoffs. */
+function siteWeekFor(board) {
+  if (board.seasonType !== 3) return board.week;
+  return Math.min(18 + board.week, 22);   // ESPN: 1 wild card ... 5 Super Bowl (4 is the Pro Bowl)
+}
+
+function splitsRow(entry) {
+  const side = (book, s) => {
+    const v = entry[book]?.[s];
+    return v ? [v.line ?? '', v.handle, v.bets] : ['', '', ''];
+  };
+  return {
+    week: `${entry.season}_${entry.week}`,
+    gameKey: entry.key,
+    away: entry.away,
+    home: entry.home,
+    kickoff: new Date(entry.kickoff).toISOString(),
+    takenAt: entry.takenAt,
+    dk: [...side('dk', 'away'), ...side('dk', 'home')],
+    circa: [...side('circa', 'away'), ...side('circa', 'home')],
+  };
+}
+
+async function appsScriptPost(env, payload) {
+  const response = await fetch(env.APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Apps Script answered ${response.status}`);
+  const data = await response.json();
+  if (data?.error) throw new Error(`Apps Script error: ${data.error}`);
+  return data;
+}
+
+/**
+ * Each run: keep the latest splits for every game kicking off in the next
+ * half hour, and write a game's to the sheet on the last run before its
+ * kickoff - or on the first one after, if that run was missed. Its own
+ * try/catch in the caller: a splits problem is not a notifications problem.
+ */
+async function recordFinalSplits(env, board, now = Date.now()) {
+  if (!env.NOTIFY_STATE || !env.APPS_SCRIPT_URL) return { skipped: 'not configured' };
+  const pending = JSON.parse(await env.NOTIFY_STATE.get(SPLITS_PENDING_KEY) || '{}');
+  const before = JSON.stringify(pending);
+  const week = siteWeekFor(board);
+
+  const approaching = board.games.filter(g => g.kickoff > now && g.kickoff - now <= SPLITS_WATCH_MS);
+  if (approaching.length > 0) {
+    const splits = await cachedSplits(SPLITS_ORIGIN, null);
+    for (const g of approaching) {
+      const s = splits.games[g.key];
+      if (!s || (!s.dk && !s.circa)) continue;
+      pending[g.key] = {
+        key: g.key, season: board.season, week, away: g.away, home: g.home,
+        kickoff: g.kickoff, takenAt: splits.updatedAt, dk: s.dk || null, circa: s.circa || null,
+      };
+    }
+  }
+
+  for (const [key, entry] of Object.entries(pending)) {
+    if (now - entry.kickoff > SPLITS_KEEP_MS) delete pending[key];
+  }
+
+  const due = Object.values(pending).filter(e => e.kickoff - now <= SPLITS_LAST_RUN_MS);
+  const written = [];
+  let error = null;
+  if (due.length > 0) {
+    try {
+      await appsScriptPost(env, { splits: due.map(splitsRow) });
+      due.forEach(e => { delete pending[e.key]; written.push(e.key); });
+    } catch (e) {
+      error = e.message;   // kept in pending: the next run tries again
+    }
+  }
+
+  if (JSON.stringify(pending) !== before) {
+    await env.NOTIFY_STATE.put(SPLITS_PENDING_KEY, JSON.stringify(pending));
+  }
+  return { watching: Object.keys(pending).length, written, ...(error ? { error } : {}) };
 }
 
 const PREVIEWS = ['blazin_results', 'pick_reminders'];

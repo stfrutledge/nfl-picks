@@ -7,6 +7,7 @@ It exists so that no secret and no cross-origin request lives in the browser:
 - `/odds` - The Odds API, with the API key held server-side and one shared cache.
 - `/sheets` - Google Sheets CSV exports. Only `https://docs.google.com/spreadsheets/...` is accepted.
 - `/sync` - the Google Apps Script web app that backs picks, results and spreads up to the sheet.
+- `/splits` - public betting splits on the spread for upcoming NFL games: each side's handle % and bets % at DraftKings (read from DK Network's splits page) and Circa (read from VSiN's). Neither has an API, so both are parsed from HTML (`parseDkSplits`, `parseVsinSplits`); cached 5 minutes. One book failing still returns the other, with `errors` naming it. The cron also writes each game's last splits before kickoff to the sheet's **Splits** tab (`recordFinalSplits`), outside the notifications health check.
 - `/notify` - a message from the admin to every phone with the Android app, through Firebase Cloud Messaging. POST `{ title, body }` with `Authorization: Bearer <NOTIFY_SECRET>`. See `android/README.md`.
 
 ## Deploying

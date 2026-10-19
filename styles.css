@@ -3713,6 +3713,28 @@ footer a:hover {
     color: white;
 }
 
+/* Betting splits inside a Line Pick button: a small line per book under the
+   team and its number. Colour is inherited, so a selected (blue) button keeps
+   them legible; opacity alone sets them back from the pick itself. */
+.pick-splits {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 4px;
+}
+
+.pick-split {
+    font-size: 0.65rem;
+    font-weight: 500;
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pick-split-book {
+    font-weight: 700;
+}
+
 /* Pick result states for completed games */
 .pick-btn.selected.correct {
     border-color: var(--accent-green);

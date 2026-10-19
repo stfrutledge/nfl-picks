@@ -498,6 +498,14 @@ Run `node test-offseason-reset.js` to smoke-test the rollover behavior.
 
 When notifications stop, look at the worker's **Observability** tab in Cloudflare first: a failing run logs `[automations] failed: <reason>`, and a reminder that went out leaves a `sent:<id>` key in the `nfl-picks-notify` KV namespace.
 
+## Betting splits
+
+Each open game's Line Pick buttons show that side's share of the money and of the bets on the spread, at DraftKings (the public's book) and Circa (the sharps'): "DK 56% $ · 70% bets". The site reads them from the worker's `/splits` on load and every 10 minutes while visible (`loadBettingSplits`, `pickSplitsHtml`); they disappear once a game is locked, because DraftKings' numbers then turn into live betting.
+
+**Neither book has an API.** The worker parses DK Network's splits page (paged, 10 games a page; a page past the end repeats the last, which is how paging stops) and VSiN's Circa table. A side is matched to its **team**, never its position: DK lists the favourite first. VSiN only lists the current slate, so Circa appears for next week's games once VSiN posts them. If a page is redesigned the parser returns nothing for that book and the other carries on; `errors` in the `/splits` reply names the failing one. `node test-betting-splits.js` covers the parsing against fixtures in the real pages' shape.
+
+**Only the final numbers are stored**: the Splits tab, one row per game, written by the cron on its last run before kickoff (or the first after, if that run was missed). Between runs the latest snapshot for each game within 30 minutes of kickoff sits in KV (`splits:pending`), and stays there up to 7 days if the sheet refuses it, so a write that failed, or an Apps Script not yet redeployed, catches up later. Rows carry DK and Circa line/handle/bets for both sides, plus kickoff and when the numbers were taken; `?action=splits&season=YYYY` reads them back, last row per game. They are not graded yet; the Results tab has everything that needs, joined on week + game key.
+
 ## Winnings
 
 The Winnings card (Insights panel, Blazin' 5 and Line Picks sub-tabs) and the profit line on every leaderboard card answer one question: what would a flat stake on each pick have returned? `calculateWinnings(stake)` is the whole engine, and it is `calculateStatsForWeeks` with money on it - the same picks, results, frozen lines and season scoping as the standings, with `profitForRecord` applied to each week's record. The card and the leaderboard lines are the same call, so the two places money appears cannot disagree.

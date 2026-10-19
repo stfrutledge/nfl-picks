@@ -4610,6 +4610,7 @@ function setupPicksActions() {
             flushPendingSync({ keepalive: true });
         } else {
             refreshPicksIfStale();
+            refreshBettingSplitsIfStale();
         }
     });
     // A page restored from the back/forward cache is resumed, not reloaded.
@@ -4869,6 +4870,8 @@ async function loadFromGoogleSheets() {
                 ? preloadSeasonSchedules()
                 : Promise.resolve();
             const resultsReady = loadAllResultsFromBackup();
+            // Betting splits for the pick cards: not awaited, nothing waits on them.
+            startBettingSplits();
 
             // A result is filed against a game, so the standings need both: the
             // sheet's rows AND the schedules to hang them on.
@@ -10605,6 +10608,78 @@ function renderLeaderboard(stats) {
 /**
  * Render the games list for picks
  */
+// ============================================================================
+// Betting splits on the pick cards
+// ============================================================================
+
+/**
+ * Public betting splits on the spread, from the worker's /splits: for each
+ * side of a game, its share of the money (handle) and of the bets, at
+ * DraftKings (the public's book) and Circa (the sharps'). Shown inside each
+ * Line Pick button while the game is open. The worker writes each game's
+ * last numbers before kickoff to the Splits tab, for later; nothing here
+ * stores them.
+ *
+ * Keyed by pickKey: the worker builds its keys with the same team aliases.
+ * A game either book is not carrying simply shows the other, or nothing.
+ */
+const SPLITS_REFRESH_MS = 10 * 60 * 1000;
+const SPLITS_BOOKS = [['dk', 'DK', 'DraftKings'], ['circa', 'Circa', 'Circa Sports']];
+let bettingSplits = {};
+let splitsFetchedAt = 0;
+let splitsFetchInFlight = false;
+let splitsTimer = null;
+
+async function loadBettingSplits() {
+    if (splitsFetchInFlight) return;
+    splitsFetchInFlight = true;
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/splits`);
+        if (!response.ok) throw new Error(`worker answered ${response.status}`);
+        const data = await response.json();
+        bettingSplits = data.games || {};
+        splitsFetchedAt = Date.now();
+        renderGames();
+    } catch (error) {
+        console.warn('[Splits] Could not load betting splits:', error.message);
+    } finally {
+        splitsFetchInFlight = false;
+    }
+}
+
+/** First load, then every SPLITS_REFRESH_MS while the page is on screen. */
+function startBettingSplits() {
+    loadBettingSplits();
+    if (splitsTimer) return;
+    splitsTimer = setInterval(() => {
+        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') loadBettingSplits();
+    }, SPLITS_REFRESH_MS);
+}
+
+/** Back on the page after a while: the interval did not run while hidden on most phones. */
+function refreshBettingSplitsIfStale(now = Date.now()) {
+    if (splitsFetchedAt && now - splitsFetchedAt >= SPLITS_REFRESH_MS) loadBettingSplits();
+}
+
+/**
+ * The caption inside a Line Pick button: "DK 56% $ · 70% bets", a line per
+ * book. Empty once the game has started or for a past week - the picks are
+ * locked and the numbers have moved on to live betting.
+ */
+function pickSplitsHtml(game, side, hidden) {
+    if (hidden) return '';
+    const splits = bettingSplits[pickKey(game)];
+    if (!splits) return '';
+    const lines = SPLITS_BOOKS
+        .filter(([book]) => splits[book]?.[side])
+        .map(([book, label, name]) => {
+            const { handle, bets } = splits[book][side];
+            return `<span class="pick-split" title="${name}: ${handle}% of the money, ${bets}% of the bets on this side">`
+                + `<span class="pick-split-book">${label}</span> ${handle}% $ · ${bets}% bets</span>`;
+        });
+    return lines.length ? `<span class="pick-splits">${lines.join('')}</span>` : '';
+}
+
 function renderGames() {
     const gamesList = document.getElementById('games-list');
     if (!gamesList) return;
@@ -10674,6 +10749,7 @@ function renderGames() {
         // is the game having started. A frozen card is read-only either way.
         const frozen = isPickFrozen(gamePicks);
         const readOnly = locked || frozen;
+        const splitsHidden = locked || isHistoricalWeek || isHistoricalSeason();
         const frozenLineLabel = frozen
             ? describeLineForSide(
                 { ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite }, linePick)
@@ -10843,11 +10919,13 @@ function renderGames() {
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="away"
                                     ${readOnly ? 'disabled' : ''}>
                                 ${game.away} ${awayPickSpread}
+                                ${pickSplitsHtml(game, 'away', splitsHidden)}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="home"
                                     ${readOnly ? 'disabled' : ''}>
                                 ${game.home} ${homePickSpread}
+                                ${pickSplitsHtml(game, 'home', splitsHidden)}
                             </button>
                         </div>
                     </div>
