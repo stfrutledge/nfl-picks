@@ -11279,10 +11279,17 @@ function gameDetailsHtml(game) {
                 ${chartWhich ? lineChartHtml(game, chartWhich, favoured) : ''}
             </section>` : '';
 
+    // TV and weather ride in the header, where every tab sees them.
     const tv = detailsTvHtml(game);
-    const chips = [['TV', tv ? `<span class="gd-tv">${tv}</span>` : ''], ['Weather', detailsWeather(game)]]
-        .filter(([, value]) => value)
-        .map(([label, value]) => `<span class="gd-chip"><span class="gd-chip-label">${label}</span>${value}</span>`).join('');
+    const weather = detailsWeather(game);
+    const facts = (tv ? `<span class="gd-tv">${tv}</span>` : '') + (weather ? `<span class="gd-hero-weather">${weather}</span>` : '');
+
+    const tabs = GAME_DETAILS_TABS.map(([id, label]) =>
+        `<button type="button" class="gd-tab${id === gameDetailsTab ? ' active' : ''}" data-tab="${id}" role="tab" aria-selected="${id === gameDetailsTab}">${label}</button>`).join('');
+    const panel = gameDetailsTab === 'matchup' ? matchupPanelHtml(game)
+        : gameDetailsTab === 'players' ? playersPanelHtml(game)
+        : gameDetailsTab === 'picks' ? picksPanelHtml(game)
+        : (splitsSection + lineSection) || gdEmpty('No betting numbers for this game yet.');
 
     return `
         <div class="gd-hero">
@@ -11290,11 +11297,307 @@ function gameDetailsHtml(game) {
             <div class="gd-kicker">${detailsKickoff(game)}</div>
             <div class="gd-matchup">${team('away')}${middle}${team('home')}</div>
             ${where ? `<div class="gd-venue">${where}</div>` : ''}
+            ${facts ? `<div class="gd-facts">${facts}</div>` : ''}
         </div>
-        <div class="gd-body">
-            ${splitsSection}${lineSection}
-            ${chips ? `<div class="gd-chips">${chips}</div>` : ''}
-        </div>`;
+        <div class="gd-tabs" role="tablist">${tabs}</div>
+        <div class="gd-body" role="tabpanel">${panel}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Game Details tabs. Under the header, so the popup stays one screen tall
+// with a lot in it (the owner's ask: "not a massive, long, or packed
+// pop-up"): Betting (splits, the line and its charts), Matchup (each team
+// against the spread this season, their last five, head to head), Players
+// (injuries, leaders) and Picks (what everyone took on this game, and the
+// viewer's own record picking each team). The open tab is remembered.
+// ---------------------------------------------------------------------------
+
+const GAME_DETAILS_TABS = [['betting', 'Betting'], ['matchup', 'Matchup'], ['players', 'Players'], ['picks', 'Picks']];
+let gameDetailsTab = 'betting';
+
+function setGameDetailsTab(tab) {
+    if (!GAME_DETAILS_TABS.some(([id]) => id === tab)) return;
+    gameDetailsTab = tab;
+    const game = gameDetailsKey && gameForDetails(gameDetailsKey);
+    // Head to head and the all-seasons records read the archives, loaded on
+    // demand as for the 5-0 card; Players and Matchup read ESPN's summary.
+    if (tab === 'matchup' || tab === 'picks') ensureArchivesLoaded().then(() => refreshGameDetails());
+    if (game && (tab === 'players' || tab === 'matchup')) loadGameSummary(game);
+    refreshGameDetails();
+}
+
+// ESPN's summary for a game, trimmed by the worker's /espn-summary: injuries,
+// last five, leaders. By ESPN event id; refetched after SUMMARY_MAX_AGE_MS.
+const SUMMARY_MAX_AGE_MS = 15 * 60 * 1000;
+const gameSummaries = new Map();   // espnId -> { at, data, failed }
+const gameSummariesInFlight = new Set();
+
+async function loadGameSummary(game) {
+    const id = game?.espnId;
+    if (!id || gameSummariesInFlight.has(id)) return;
+    const have = gameSummaries.get(id);
+    if (have && Date.now() - have.at < SUMMARY_MAX_AGE_MS) return;
+    gameSummariesInFlight.add(id);
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/espn-summary?event=${encodeURIComponent(id)}`);
+        if (!response.ok) throw new Error(`worker answered ${response.status}`);
+        gameSummaries.set(id, { at: Date.now(), data: await response.json() });
+    } catch (error) {
+        console.warn('[Summary] Could not load the game summary:', error.message);
+        gameSummaries.set(id, { at: Date.now() - SUMMARY_MAX_AGE_MS + 60000, failed: true });   // retry in a minute
+    } finally {
+        gameSummariesInFlight.delete(id);
+        refreshGameDetails();
+    }
+}
+
+/** The summary's entry for one side, matched by nickname, or null. */
+function summaryForSide(list, game, side) {
+    const want = normalizeTeamName(game[side]);
+    return (list || []).find(t => normalizeTeamName(t.team) === want) || null;
+}
+
+/** A panel section: a heavy title, an optional note beside it, the body. */
+function gdSection(title, body, note = '') {
+    return `
+            <section class="gd-section">
+                <div class="gd-section-head"><h4>${title}</h4>${note ? `<span>${note}</span>` : ''}</div>
+                ${body}
+            </section>`;
+}
+
+const gdEmpty = text => `<p class="gd-empty">${text}</p>`;
+
+/** "4-2" or "4-2-1": wins, losses and pushes. */
+function recordText({ w, l, p }) {
+    return p ? `${w}-${l}-${p}` : `${w}-${l}`;
+}
+
+/**
+ * A team's record against the spread in one season's regular season, at
+ * the line each game was played at (the board's - no picker's own number).
+ */
+function teamAtsRecord(teamName, season = CURRENT_SEASON) {
+    const team = normalizeTeamName(teamName);
+    const { first, last } = regularSeasonWeekRangeFor(season);
+    const rec = { w: 0, l: 0, p: 0 };
+    for (let week = first; week <= last; week++) {
+        const results = getResultsForWeekAndSeason(week, season);
+        for (const g of getGamesForWeekAndSeason(week, season) || []) {
+            const side = normalizeTeamName(g.away) === team ? 'away' : normalizeTeamName(g.home) === team ? 'home' : null;
+            if (!side) continue;
+            const result = Number(season) === CURRENT_SEASON ? getGameResult(g, results) : (results[g.id] || results[String(g.id)]);
+            const ats = result && atsWinnerForPick(g, null, result);
+            if (!ats) continue;
+            if (ats === 'push') rec.p++;
+            else if (ats === side) rec.w++;
+            else rec.l++;
+        }
+    }
+    return rec;
+}
+
+/** "Wk 9", or the playoff round's name. */
+function weekLabel(week) {
+    return week <= 18 ? `Wk ${week}` : (PLAYOFF_WEEKS?.[week]?.name || `Wk ${week}`);
+}
+
+/**
+ * Every meeting of the two teams on hand, newest first: this season and the
+ * archives that are loaded, each with its score and who covered at its line.
+ * Archived results come from the archive alone - never the live cache, whose
+ * games can share these teams' names.
+ */
+function headToHeadMeetings(game) {
+    const a = normalizeTeamName(game.away), h = normalizeTeamName(game.home);
+    const meetings = [];
+    for (const season of [...AVAILABLE_SEASONS].sort((x, y) => y - x)) {
+        const current = Number(season) === CURRENT_SEASON;
+        if (!current && !getSeasonData(season)) continue;
+        for (let week = 22; week >= 1; week--) {
+            const results = getResultsForWeekAndSeason(week, season);
+            for (const g of getGamesForWeekAndSeason(week, season) || []) {
+                const ga = normalizeTeamName(g.away), gh = normalizeTeamName(g.home);
+                if (!((ga === a && gh === h) || (ga === h && gh === a))) continue;
+                const result = current ? getGameResult(g, results) : (results[g.id] || results[String(g.id)]);
+                if (!result) continue;
+                meetings.push({ season, week, game: g, result, ats: atsWinnerForPick(g, null, result) });
+            }
+        }
+    }
+    return meetings;
+}
+
+function matchupPanelHtml(game) {
+    // Against the spread this season.
+    const ats = side => recordText(teamAtsRecord(game[side]));
+    const atsBody = `
+                <div class="gd-pair">
+                    <div><span class="gd-pair-team">${game.away}</span><span class="gd-pair-value">${ats('away')}</span></div>
+                    <div><span class="gd-pair-team">${game.home}</span><span class="gd-pair-value">${ats('home')}</span></div>
+                </div>`;
+
+    // Last five, from ESPN.
+    const summary = gameSummaries.get(game.espnId);
+    let lastFive;
+    if (!game.espnId) lastFive = gdEmpty('Not available for this game.');
+    else if (!summary) lastFive = gdEmpty('Loading from ESPN&hellip;');
+    else if (summary.failed) lastFive = gdEmpty('Couldn’t load from ESPN. It will try again.');
+    else {
+        const column = side => {
+            const games = summaryForSide(summary.data.lastFive, game, side)?.games || [];
+            if (games.length === 0) return `<div class="gd-col">${gdEmpty('No games yet.')}</div>`;
+            return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${games.map(g => `
+                        <div class="gd-result"><span class="gd-wl ${g.result === 'W' ? 'win' : g.result === 'L' ? 'loss' : 'tie'}">${g.result || '&ndash;'}</span>${g.atVs === '@' ? '@' : 'vs'} ${g.opp} <span class="gd-result-score">${g.score}</span></div>`).join('')}</div>`;
+        };
+        lastFive = `<div class="gd-cols">${column('away')}${column('home')}</div>`;
+    }
+
+    // Head to head, from the archives.
+    const meetings = headToHeadMeetings(game);
+    const missing = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON && !getSeasonData(s)).length;
+    let h2h;
+    if (meetings.length === 0) {
+        h2h = gdEmpty(missing ? 'Loading earlier seasons&hellip;' : 'No meetings since 2016.');
+    } else {
+        const abbr = name => getTeamAbbreviation(name);
+        const covers = { [normalizeTeamName(game.away)]: 0, [normalizeTeamName(game.home)]: 0 };
+        meetings.forEach(m => {
+            if (m.ats && m.ats !== 'push') covers[normalizeTeamName(m.game[m.ats])]++;
+        });
+        const rows = meetings.slice(0, 6).map(m => {
+            const g = m.game, r = m.result;
+            // Abbreviated, so a phone keeps each meeting on two lines.
+            const spread = signedSpreadDisplay(g, g.favorite);
+            const line = !spread ? 'no line' : spread === 'PK' ? 'PK' : `${abbr(g[g.favorite])} ${spread}`;
+            const covered = !m.ats ? '&ndash;' : m.ats === 'push' ? 'Push' : `${abbr(g[m.ats])} covered`;
+            return `<tr class="gd-h2h"><td>${m.season}<br><span class="gd-sub">${weekLabel(m.week)}</span></td><td>${abbr(g.away)} ${r.awayScore} @ ${abbr(g.home)} ${r.homeScore}</td><td>${line}<br><span class="gd-sub">${covered}</span></td></tr>`;
+        }).join('');
+        const note = `${game.away} ${covers[normalizeTeamName(game.away)]}-${covers[normalizeTeamName(game.home)]} ATS in ${meetings.length} ${meetings.length === 1 ? 'meeting' : 'meetings'}`;
+        h2h = `<table class="gd-table gd-compact"><tbody>${rows}</tbody></table>`
+            + `<p class="gd-note">${note}${meetings.length > 6 ? ' · latest 6 shown' : ''}${missing ? ' · loading earlier seasons&hellip;' : ''}</p>`;
+    }
+
+    return gdSection('Against the spread', atsBody, `${CURRENT_SEASON} regular season`)
+        + gdSection('Last five', lastFive, 'ESPN')
+        + gdSection('Head to head', h2h, 'since 2016');
+}
+
+// Injury statuses worst first; anything else after them.
+const INJURY_ORDER = ['Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Physically Unable to Perform', 'Suspension'];
+const INJURIES_SHOWN = 6;
+
+function playersPanelHtml(game) {
+    const summary = gameSummaries.get(game.espnId);
+    if (!game.espnId) return gdEmpty('Not available for this game.');
+    if (!summary) return gdEmpty('Loading from ESPN&hellip;');
+    if (summary.failed) return gdEmpty('Couldn’t load from ESPN. It will try again.');
+
+    const rank = status => { const i = INJURY_ORDER.indexOf(status); return i < 0 ? INJURY_ORDER.length : i; };
+    const chip = status => {
+        const cls = status === 'Out' || status === 'Injured Reserve' ? 'out' : status === 'Doubtful' ? 'doubtful' : 'questionable';
+        const short = { Out: 'OUT', Doubtful: 'DOUBT', Questionable: 'Q', 'Injured Reserve': 'IR', 'Physically Unable to Perform': 'PUP', Suspension: 'SUSP' }[status] || status;
+        return `<span class="gd-status ${cls}" title="${status}">${short}</span>`;
+    };
+    const injuries = side => {
+        const players = [...(summaryForSide(summary.data.injuries, game, side)?.players || [])]
+            .sort((x, y) => rank(x.status) - rank(y.status));
+        if (players.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None listed.')}</div>`;
+        const rows = players.slice(0, INJURIES_SHOWN).map(p => `
+                        <div class="gd-injury">${chip(p.status)}<span class="gd-injury-name">${p.name}</span><span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></div>`).join('');
+        const more = players.length - INJURIES_SHOWN;
+        return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${more > 0 ? `<p class="gd-note">+${more} more</p>` : ''}</div>`;
+    };
+
+    const leaders = side => {
+        const items = summaryForSide(summary.data.leaders, game, side)?.items || [];
+        if (items.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None yet.')}</div>`;
+        return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${items.map(i => `
+                        <div class="gd-leader"><span class="gd-leader-label">${i.label.replace(' Yards', '')}</span><span class="gd-leader-name">${i.name}</span><span class="gd-sub">${i.value}</span></div>`).join('')}</div>`;
+    };
+
+    return gdSection('Injuries', `<div class="gd-cols">${injuries('away')}${injuries('home')}</div>`, 'ESPN')
+        + gdSection('Leaders', `<div class="gd-cols">${leaders('away')}${leaders('home')}</div>`, 'this season');
+}
+
+/**
+ * One picker's line pick on a game, against all seasons on hand or one: wins,
+ * losses and pushes when they took `teamName`, at the line each was graded at.
+ */
+function pickerTeamRecord(picker, teamName, seasons) {
+    const team = normalizeTeamName(teamName);
+    const rec = { w: 0, l: 0, p: 0 };
+    for (const season of seasons) {
+        if (Number(season) !== CURRENT_SEASON && !getSeasonData(season)) continue;
+        if (!getPickersForSeason(season).includes(picker)) continue;
+        const { first, last } = regularSeasonWeekRangeFor(season);
+        for (const row of gradedPicks(first, last, { pickers: [picker], season })) {
+            if (!row.lineOutcome || normalizeTeamName(row.game[row.pick.line]) !== team) continue;
+            if (row.lineOutcome === 'wins') rec.w++;
+            else if (row.lineOutcome === 'losses') rec.l++;
+            else rec.p++;
+        }
+    }
+    return rec;
+}
+
+/**
+ * What everyone took on this game - every picker and Cowherd, before kickoff
+ * too, which is the point: it is there for anyone who wants to fade the
+ * group (the owner's choice, October 2026). Then the viewer's own record
+ * picking each of the two teams, this season and all seasons.
+ */
+function picksPanelHtml(game) {
+    const week = currentWeek;
+    const pickOf = picker => getPicksForGame(getPickerPicksForWeek(week, picker), game);
+    const team = side => side ? game[side] : null;
+
+    // The group's line picks, as a split bar in the teams' colours.
+    const tally = { away: 0, home: 0 };
+    let none = 0;
+    PICKERS.forEach(p => { const s = pickOf(p).line; if (s) tally[s]++; else none++; });
+    const taken = tally.away + tally.home;
+    const colours = splitBarColours(game);
+    const seg = (side, n, colour) =>
+        `<span class="gd-seg${n > tally[side === 'away' ? 'home' : 'away'] ? ' lead' : ''}" style="flex-grow: ${Math.max(n, 0.15)}; background: ${colour}">${getTeamAbbreviation(game[side])} ${n}</span>`;
+    const bar = taken
+        ? `<div class="gd-bar">${seg('away', tally.away, colours.away)}${seg('home', tally.home, colours.home)}</div>`
+        : gdEmpty('Nobody has picked this game yet.');
+
+    const rows = [...PICKERS, COWHERD].map(p => {
+        const pick = pickOf(p);
+        const you = p === currentPicker;
+        const ats = pick.line
+            ? `${describeLineForSide(game, pick.line, pick)}${pick.blazin && p !== COWHERD ? ' <span class="gd-star" title="Blazin’ 5">&#9733;</span>' : ''}${isPickFrozen(pick) && p !== COWHERD ? ' <span class="gd-sub">locked</span>' : ''}`
+            : `<span class="gd-sub">${p === COWHERD ? 'not in his 5' : 'no pick yet'}</span>`;
+        const su = p === COWHERD ? '<span class="gd-sub">&ndash;</span>' : (team(pick.winner) || '<span class="gd-sub">&ndash;</span>');
+        return `<tr class="${you ? 'you' : ''}"><td>${p}${you ? ' <span class="gd-sub">(you)</span>' : ''}</td><td>${ats}</td><td>${su}</td></tr>`;
+    }).join('');
+    const group = `
+                ${bar}
+                <table class="gd-table gd-compact gd-picks">
+                    <thead><tr><th></th><th>Line pick</th><th>Straight up</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+    const groupNote = `${taken} of ${PICKERS.length} picked`;
+
+    // The viewer's own record picking each team.
+    let mine;
+    if (!currentPicker || currentPicker === COWHERD) {
+        mine = gdEmpty('Choose a picker to see your record picking these teams.');
+    } else {
+        const missing = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON && !getSeasonData(s)).length;
+        const row = side => `<tr><td>${game[side]}</td><td>${recordText(pickerTeamRecord(currentPicker, game[side], [CURRENT_SEASON]))}</td><td>${missing ? '&hellip;' : recordText(pickerTeamRecord(currentPicker, game[side], AVAILABLE_SEASONS))}</td></tr>`;
+        mine = `
+                <table class="gd-table gd-compact">
+                    <thead><tr><th>Picking</th><th>${CURRENT_SEASON}</th><th>All seasons</th></tr></thead>
+                    <tbody>${row('away')}${row('home')}</tbody>
+                </table>
+                <p class="gd-note">Your line picks on each team, at the line each was graded at.</p>`;
+    }
+
+    return gdSection('The group’s picks', group, groupNote)
+        + gdSection(currentPicker && currentPicker !== COWHERD ? `${currentPicker}’s record` : 'Your record', mine, 'against the spread');
 }
 
 function gameForDetails(key) {
@@ -11312,6 +11615,8 @@ function openGameDetails(key) {
     modal.classList.add('show');
     loadVenueForecast(game);
     loadLineHistory(currentWeek);
+    loadGameSummary(game);
+    if (gameDetailsTab === 'matchup' || gameDetailsTab === 'picks') ensureArchivesLoaded().then(() => refreshGameDetails());
 }
 
 function closeGameDetails() {
@@ -11338,6 +11643,8 @@ function setupGameDetailsModal() {
         if (event.target === modal || event.target.closest('.gd-close')) { closeGameDetails(); return; }
         const toggle = event.target.closest('.gd-line-toggle');
         if (toggle) toggleLineChart(toggle.dataset.which);
+        const tab = event.target.closest('.gd-tab');
+        if (tab) setGameDetailsTab(tab.dataset.tab);
     });
     // The chart's crosshair follows a mouse, or a finger dragged along it.
     // Off the chart, it goes.

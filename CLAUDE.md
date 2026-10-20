@@ -530,6 +530,15 @@ Team colours too light for white text (Steelers yellow, Saints gold) put dark te
 
 **°F or °C is a setting in the Android app** (Settings > Weather, 1.16+), by the owner's choice: the site asks `window.NFLPicksApp.temperatureUnit()` each time it draws a temperature (`temperatureUnit`, `formatTemperature`), so a change shows without a reload. A browser, or an app older than 1.16, shows °F; there is no browser setting. Temperatures are fetched in °F from both ESPN and Open-Meteo and converted.
 
+**Tabs.** Under the header are four tabs (`GAME_DETAILS_TABS`; the open one is `gameDetailsTab`, remembered between games), so the popup stays one fixed height (`min(760px, 90vh)`) and only the tab's body scrolls. The owner asked for "not a massive, long, or packed pop-up", grouped by relevance. TV and weather moved into the header (`.gd-facts`) so every tab sees them.
+
+- **Betting:** the splits, the Line table and its charts, as above.
+- **Matchup:** each team against the spread this season at the **board** line (`teamAtsRecord`, never a picker's own number); each team's last five from ESPN; head to head across every loaded season (`headToHeadMeetings`, archived results from the archive alone, newest six shown).
+- **Players:** injuries worst first, with short chips (OUT/DOUBT/Q/IR/PUP/SUSP; six a team, then "+N more") and the passing, rushing and receiving leaders, from ESPN.
+- **Picks:** every picker's and Cowherd's line pick, star and lock, plus straight-up picks, with a tally bar in the team colours. It shows **before kickoff too**, deliberately, for anyone who wants to fade the group (the owner's choice, October 2026). Under it is the viewer's own line record picking each team, this season and all seasons (`pickerTeamRecord`, through `gradedPicks`).
+
+Matchup and Picks load the archives on demand (`ensureArchivesLoaded`, as the 5-0 card does). Players and the last five come from the worker's `GET /espn-summary?event=<espnId>`, which trims ESPN's ~110 KB game summary to ~2 KB (`trimEspnSummary`: injuries, last five, three leaders, teams by nickname) and caches it 15 minutes. The site keeps it per event in `gameSummaries` for 15 minutes, and a failed fetch is retried after a minute. `node test-game-details-tabs.js` covers it.
+
 Before the popup there was an inline panel under the picks that a tap on the card opened (October 2026), and before that the splits sat inside the Line Pick buttons.
 
 Records, opening line, roof and forecast come off the ESPN scoreboard the schedule is already read from (`espnRecords`, `espnOpeningLine` in `fetchNFLSchedule`; `SCHEDULE_CACHE_VERSION` 9 added them and 10 the opening total). The merge of ESPN games onto the in-season snapshot copies fields one by one, so a new ESPN field has to be added there too.

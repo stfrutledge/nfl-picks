@@ -598,7 +598,7 @@ function section(name) { console.log(`\n${name}`); }
 
     await check('TV as the networks’ logos, every network carrying it, from the repo', () => {
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /gd-chip-label">TV<\/span><span class="gd-tv"><img class="gd-tv-logo" src="tv-logos\/prime-video.svg" alt="Prime Video"/);
+        assert.match(html, /gd-facts"><span class="gd-tv"><img class="gd-tv-logo" src="tv-logos\/prime-video.svg" alt="Prime Video"/, 'in the header, on every tab');
         const mnf = site.gameDetailsHtml({ ...game, networks: ['ESPN', 'ABC'] });
         assert.match(mnf, /src="tv-logos\/espn.svg"[\s\S]*src="tv-logos\/abc.svg"/, 'both, in order');
         assert.match(site.gameDetailsHtml({ ...game, networks: ['ESPN2'] }), /gd-tv-name">ESPN2</, 'no logo: the name');
@@ -608,9 +608,9 @@ function section(name) { console.log(`\n${name}`); }
     });
 
     await check('weather: the forecast outdoors; under a roof, "Indoors" and the temperature outside', () => {
-        assert.match(site.gameDetailsHtml(game), /gd-chip-label">Weather<\/span>Mostly clear, 60&deg;F/);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors · 60&deg;F outside/);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true, weather: null }), /gd-chip-label">Weather<\/span>Indoors</);
+        assert.match(site.gameDetailsHtml(game), /gd-hero-weather">Mostly clear, 60&deg;F/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-hero-weather">Indoors · 60&deg;F outside/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true, weather: null }), /gd-hero-weather">Indoors</);
     });
 
     await check('°F by default; °C when the app’s Settings says so, asked each time', () => {
@@ -646,7 +646,7 @@ function section(name) { console.log(`\n${name}`); }
         await site.loadVenueForecast(paris);
         assert.match(asked[1], /latitude=48.94&longitude=2.35/, 'the French Saint-Denis, not Réunion’s');
         assert.match(asked[1], /temperature_unit=fahrenheit/);
-        assert.match(site.gameDetailsHtml(paris), /gd-chip-label">Weather<\/span>Mostly clear, 61&deg;F/);
+        assert.match(site.gameDetailsHtml(paris), /gd-hero-weather">Mostly clear, 61&deg;F/);
         assert.match(site.gameDetailsHtml(paris), /gd-venue">Stade de France · Saint-Denis, France</, 'abroad: the country named');
         assert.doesNotMatch(site.gameDetailsHtml({ ...game, country: 'USA' }), /USA/, 'at home: no country');
 
@@ -677,8 +677,9 @@ function section(name) { console.log(`\n${name}`); }
 
     await check('a section with no data is left out', () => {
         const html = site.gameDetailsHtml({ id: 3, away: 'Jets', home: 'Dolphins', broadcast: 'CBS', kickoff: '2099-10-25T17:00:00Z' });
-        assert.match(html, /gd-chip-label">TV<\/span><span class="gd-tv"><img class="gd-tv-logo" src="tv-logos\/cbs.svg"/);
-        assert.doesNotMatch(html, /Betting Splits|gd-table|Weather|gd-record|gd-venue/);
+        assert.match(html, /gd-facts"><span class="gd-tv"><img class="gd-tv-logo" src="tv-logos\/cbs.svg"/);
+        assert.doesNotMatch(html, /Betting Splits|gd-table|gd-hero-weather|gd-record|gd-venue/);
+        assert.match(html, /No betting numbers for this game yet/, 'an empty Betting tab says so');
     });
 
     await check('after kickoff: no splits (live betting by then), and the rest still shows', () => {

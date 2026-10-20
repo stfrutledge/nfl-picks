@@ -173,6 +173,8 @@ export default {
         return await handleSplits(request, url, ctx);
       } else if (path === '/lines') {
         return await handleLines(request, url, env);
+      } else if (path === '/espn-summary') {
+        return await handleEspnSummary(request, url, ctx);
       } else if (path === '/notify') {
         return await handleNotify(request, env);
       } else if (path === '/reminder-check') {
@@ -1895,6 +1897,78 @@ async function handleLines(request, url, env) {
   }), {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...CORS_HEADERS },
   });
+}
+
+// ---------------------------------------------------------------------------
+// /espn-summary?event=ID - one game's injuries, last five games and team
+// leaders, for the site's Game Details (Players and Matchup tabs). ESPN's
+// summary is ~110 KB of box score, news and more; only those three parts go
+// to the phone. Cached 15 minutes: injury reports change through the week.
+// ---------------------------------------------------------------------------
+
+const ESPN_SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary';
+const ESPN_SUMMARY_FALLBACK = 'https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary';
+const SUMMARY_CACHE_SECONDS = 15 * 60;
+const SUMMARY_LEADERS = ['passingYards', 'rushingYards', 'receivingYards'];
+
+/** The three parts the popup shows, each by team nickname (as the site keys teams). */
+function trimEspnSummary(data) {
+  const team = t => teamNickname(t?.displayName);
+  return {
+    injuries: (data?.injuries || []).map(t => ({
+      team: team(t.team),
+      players: (t.injuries || []).map(i => ({
+        name: i.athlete?.displayName || '',
+        pos: i.athlete?.position?.abbreviation || '',
+        status: i.status || '',
+        detail: i.details?.type || '',
+      })).filter(p => p.name),
+    })),
+    lastFive: (data?.lastFiveGames || []).map(t => ({
+      team: team(t.team),
+      games: (t.events || []).slice(0, 5).map(e => ({
+        result: e.gameResult || '', atVs: e.atVs || '', opp: e.opponent?.abbreviation || '',
+        score: e.score || '', date: e.gameDate || '',
+      })),
+    })),
+    leaders: (data?.leaders || []).map(t => ({
+      team: team(t.team),
+      items: (t.leaders || []).filter(l => SUMMARY_LEADERS.includes(l.name)).map(l => ({
+        label: l.displayName || '',
+        name: l.leaders?.[0]?.athlete?.shortName || l.leaders?.[0]?.athlete?.displayName || '',
+        pos: l.leaders?.[0]?.athlete?.position?.abbreviation || '',
+        value: l.leaders?.[0]?.displayValue || '',
+      })).filter(x => x.name),
+    })),
+  };
+}
+
+async function handleEspnSummary(request, url, ctx) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+  const event = url.searchParams.get('event') || '';
+  if (!/^\d{4,12}$/.test(event)) return jsonResponse({ error: 'Give event=<ESPN event id>' }, 400);
+
+  const cache = caches.default;
+  const cacheKey = new Request(`${url.origin}/espn-summary?event=${event}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
+  let response;
+  for (const base of [ESPN_SUMMARY, ESPN_SUMMARY_FALLBACK]) {
+    response = await fetch(`${base}?event=${event}`, { headers: ESPN_HEADERS });
+    if (response.ok) break;
+    console.warn(`[espn-summary] ${new URL(base).host} answered ${response.status}`);
+  }
+  if (!response.ok) return jsonResponse({ error: `ESPN answered ${response.status}` }, 502);
+  const out = new Response(JSON.stringify(trimEspnSummary(await response.json())), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': `public, max-age=${SUMMARY_CACHE_SECONDS}`,
+      ...CORS_HEADERS,
+    },
+  });
+  if (ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, out.clone()));
+  return out;
 }
 
 const PREVIEWS = ['blazin_results', 'pick_reminders'];
