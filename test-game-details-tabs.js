@@ -95,7 +95,8 @@ async function check(name, fn) {
     await check('injuries, last five and three leaders, by nickname; the rest dropped', () => {
         const espn = {
             injuries: [{ team: { displayName: 'San Francisco 49ers' }, injuries: [
-                { athlete: { displayName: 'Nick Bosa', position: { abbreviation: 'DE' } }, status: 'Questionable', details: { type: 'Calf' } },
+                { athlete: { displayName: 'Nick Bosa', position: { abbreviation: 'DE' }, headshot: { href: 'https://a.espncdn.com/i/headshots/nfl/players/full/3051389.png' } }, status: 'Questionable', details: { type: 'Calf' } },
+                { athlete: { displayName: 'Elsewhere', headshot: { href: 'https://evil.example/x.png' } }, status: 'Out' },
                 { athlete: {}, status: 'Out' }
             ] }],
             lastFiveGames: [{ team: { displayName: 'Atlanta Falcons' }, events: Array.from({ length: 7 }, (_, i) => ({ gameResult: i % 2 ? 'L' : 'W', atVs: '@', opponent: { abbreviation: 'CHI' }, score: '31-23', gameDate: '2026-10-12' })) }],
@@ -108,10 +109,13 @@ async function check(name, fn) {
         const out = trimEspnSummary(espn);
         assert.deepStrictEqual(Object.keys(out), ['injuries', 'lastFive', 'leaders']);
         assert.strictEqual(out.injuries[0].team, '49ers');
-        assert.deepStrictEqual(out.injuries[0].players, [{ name: 'Nick Bosa', pos: 'DE', status: 'Questionable', detail: 'Calf' }], 'a nameless entry is dropped');
+        assert.deepStrictEqual(out.injuries[0].players, [
+            { name: 'Nick Bosa', pos: 'DE', status: 'Questionable', detail: 'Calf', headshot: 'https://a.espncdn.com/i/headshots/nfl/players/full/3051389.png' },
+            { name: 'Elsewhere', pos: '', status: 'Out', detail: '', headshot: '' }
+        ], 'a nameless entry is dropped; a headshot only from ESPN’s image host');
         assert.strictEqual(out.lastFive[0].team, 'Falcons');
         assert.strictEqual(out.lastFive[0].games.length, 5, 'five, not seven');
-        assert.deepStrictEqual(out.leaders[0].items, [{ label: 'Passing Yards', name: 'B. Purdy', pos: 'QB', value: '1,640 YDS' }], 'sacks left out');
+        assert.deepStrictEqual(out.leaders[0].items, [{ label: 'Passing Yards', name: 'B. Purdy', pos: 'QB', value: '1,640 YDS', headshot: '' }], 'sacks left out');
         assert.doesNotMatch(JSON.stringify(out), /huge|boxscore/, 'the rest of the summary is not passed on');
     });
 
@@ -170,7 +174,7 @@ async function check(name, fn) {
         assert.match(text(site.gameDetailsHtml(game)), /Loading from ESPN/);
         site.__setSummary(game.espnId, {
             injuries: [{ team: 'Falcons', players: [
-                { name: 'C. Henderson', pos: 'CB', status: 'Questionable', detail: 'Groin' },
+                { name: 'C. Henderson', pos: 'CB', status: 'Questionable', detail: 'Groin', headshot: 'https://a.espncdn.com/i/headshots/nfl/players/full/4240596.png' },
                 { name: 'Y. Abdullah', pos: 'LB', status: 'Out', detail: 'Hamstring' }
             ] }],
             lastFive: [{ team: '49ers', games: [
@@ -198,6 +202,8 @@ async function check(name, fn) {
         assert.match(html, /gd-status questionable" title="Questionable">Q</);
         assert.match(text(html), /PASSING|Passing B. Purdy 1,640 YDS/);
         assert.match(text(html), /None listed/, '49ers: no injuries listed');
+        assert.match(html, /<img src="https:\/\/a.espncdn.com\/combiner\/i\?img=%2Fi%2Fheadshots%2Fnfl%2Fplayers%2Ffull%2F4240596.png&amp;w=96&amp;h=70"/, 'a small headshot through ESPN’s resizer');
+        assert.match(html, /gd-headshot"><\/span><span class="gd-injury-name">Y. Abdullah/, 'no headshot: an empty circle keeps the place');
     });
 
     await check('no ESPN id: says so and asks nobody', async () => {
@@ -265,7 +271,11 @@ async function check(name, fn) {
         assert.deepStrictEqual(site.pickerTeamRecord('Stephen', 'Seahawks', [site.CURRENT_SEASON]), { w: 1, l: 0, p: 0 }, 'SEA +6, lost by 3: covered');
         const t = text(site.gameDetailsHtml(game));
         assert.match(t, /Stephen’s record/);
-        assert.match(t, /49ers 1-0 1-1/);
+        // Week 2 he took the Seahawks against the 49ers: that is an "against" pick.
+        assert.deepStrictEqual(site.pickerTeamRecord('Stephen', '49ers', [site.CURRENT_SEASON], { against: true }), { w: 1, l: 0, p: 0 });
+        assert.deepStrictEqual(site.pickerTeamRecord('Stephen', 'Seahawks', [site.CURRENT_SEASON], { against: true }), { w: 0, l: 0, p: 0 });
+        assert.match(t, /Took the 49ers 1-0 1-1 Against the 49ers 1-0 1-0/, 'every 49ers game counted, one row or the other');
+        assert.match(t, /Took the Falcons 0-0 0-0 Against the Falcons 0-0 0-0/);
     });
 
     await check('no picker chosen: asks for one', () => {

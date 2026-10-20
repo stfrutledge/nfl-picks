@@ -1912,6 +1912,11 @@ const SUMMARY_CACHE_SECONDS = 15 * 60;
 const SUMMARY_LEADERS = ['passingYards', 'rushingYards', 'receivingYards'];
 
 /** The three parts the popup shows, each by team nickname (as the site keys teams). */
+/** A headshot URL, only when it is ESPN's own image host; '' otherwise. */
+function espnImage(href) {
+  return typeof href === 'string' && href.startsWith('https://a.espncdn.com/') ? href : '';
+}
+
 function trimEspnSummary(data) {
   const team = t => teamNickname(t?.displayName);
   return {
@@ -1922,6 +1927,7 @@ function trimEspnSummary(data) {
         pos: i.athlete?.position?.abbreviation || '',
         status: i.status || '',
         detail: i.details?.type || '',
+        headshot: espnImage(i.athlete?.headshot?.href),
       })).filter(p => p.name),
     })),
     lastFive: (data?.lastFiveGames || []).map(t => ({
@@ -1938,6 +1944,7 @@ function trimEspnSummary(data) {
         name: l.leaders?.[0]?.athlete?.shortName || l.leaders?.[0]?.athlete?.displayName || '',
         pos: l.leaders?.[0]?.athlete?.position?.abbreviation || '',
         value: l.leaders?.[0]?.displayValue || '',
+        headshot: espnImage(l.leaders?.[0]?.athlete?.headshot?.href),
       })).filter(x => x.name),
     })),
   };

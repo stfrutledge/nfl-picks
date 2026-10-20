@@ -11509,6 +11509,20 @@ function matchupPanelHtml(game) {
 const INJURY_ORDER = ['Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Physically Unable to Perform', 'Suspension'];
 const INJURIES_SHOWN = 6;
 
+/**
+ * A player's ESPN headshot as a small round photo, fetched through ESPN's
+ * resizer (about 9 KB, against 245 KB for the full image). A grey circle
+ * holds the place when there is none, or it fails to load.
+ */
+function headshotHtml(href) {
+    const path = typeof href === 'string' && href.startsWith('https://a.espncdn.com/')
+        ? href.slice('https://a.espncdn.com'.length) : '';
+    const img = path
+        ? `<img src="https://a.espncdn.com/combiner/i?img=${encodeURIComponent(path)}&amp;w=96&amp;h=70" alt="" loading="lazy" onerror="this.remove()">`
+        : '';
+    return `<span class="gd-headshot">${img}</span>`;
+}
+
 function playersPanelHtml(game) {
     const summary = gameSummaries.get(game.espnId);
     if (!game.espnId) return gdEmpty('Not available for this game.');
@@ -11526,7 +11540,7 @@ function playersPanelHtml(game) {
             .sort((x, y) => rank(x.status) - rank(y.status));
         if (players.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None listed.')}</div>`;
         const rows = players.slice(0, INJURIES_SHOWN).map(p => `
-                        <div class="gd-injury">${chip(p.status)}<span class="gd-injury-name">${p.name}</span><span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></div>`).join('');
+                        <div class="gd-injury">${headshotHtml(p.headshot)}<span class="gd-injury-name">${p.name}</span><span class="gd-injury-meta">${chip(p.status)}<span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></span></div>`).join('');
         const more = players.length - INJURIES_SHOWN;
         return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${more > 0 ? `<p class="gd-note">+${more} more</p>` : ''}</div>`;
     };
@@ -11535,7 +11549,7 @@ function playersPanelHtml(game) {
         const items = summaryForSide(summary.data.leaders, game, side)?.items || [];
         if (items.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None yet.')}</div>`;
         return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${items.map(i => `
-                        <div class="gd-leader"><span class="gd-leader-label">${i.label.replace(' Yards', '')}</span><span class="gd-leader-name">${i.name}</span><span class="gd-sub">${i.value}</span></div>`).join('')}</div>`;
+                        <div class="gd-leader">${headshotHtml(i.headshot)}<span class="gd-leader-label">${i.label.replace(' Yards', '')}</span><span class="gd-leader-name">${i.name}</span><span class="gd-sub">${i.value}</span></div>`).join('')}</div>`;
     };
 
     return gdSection('Injuries', `<div class="gd-cols">${injuries('away')}${injuries('home')}</div>`, 'ESPN')
@@ -11543,10 +11557,11 @@ function playersPanelHtml(game) {
 }
 
 /**
- * One picker's line pick on a game, against all seasons on hand or one: wins,
- * losses and pushes when they took `teamName`, at the line each was graded at.
+ * One picker's line picks over the given seasons: wins, losses and pushes
+ * when they took `teamName` (or, with `against`, took whoever `teamName`
+ * played), at the line each was graded at.
  */
-function pickerTeamRecord(picker, teamName, seasons) {
+function pickerTeamRecord(picker, teamName, seasons, { against = false } = {}) {
     const team = normalizeTeamName(teamName);
     const rec = { w: 0, l: 0, p: 0 };
     for (const season of seasons) {
@@ -11554,7 +11569,11 @@ function pickerTeamRecord(picker, teamName, seasons) {
         if (!getPickersForSeason(season).includes(picker)) continue;
         const { first, last } = regularSeasonWeekRangeFor(season);
         for (const row of gradedPicks(first, last, { pickers: [picker], season })) {
-            if (!row.lineOutcome || normalizeTeamName(row.game[row.pick.line]) !== team) continue;
+            if (!row.lineOutcome) continue;
+            const took = normalizeTeamName(row.game[row.pick.line]);
+            const other = normalizeTeamName(row.game[row.pick.line === 'home' ? 'away' : 'home']);
+            // Taking the team, or (against) taking whoever they played.
+            if ((against ? other : took) !== team) continue;
             if (row.lineOutcome === 'wins') rec.w++;
             else if (row.lineOutcome === 'losses') rec.l++;
             else rec.p++;
@@ -11609,13 +11628,21 @@ function picksPanelHtml(game) {
         mine = gdEmpty('Choose a picker to see your record picking these teams.');
     } else {
         const missing = AVAILABLE_SEASONS.filter(s => s !== CURRENT_SEASON && !getSeasonData(s)).length;
-        const row = side => `<tr><td>${game[side]}</td><td>${recordText(pickerTeamRecord(currentPicker, game[side], [CURRENT_SEASON]))}</td><td>${missing ? '&hellip;' : recordText(pickerTeamRecord(currentPicker, game[side], AVAILABLE_SEASONS))}</td></tr>`;
+        // Taking the team and taking their opponent, so every one of their
+        // games is counted somewhere: "Picking Packers 1-1" alone read as a
+        // record over two games for someone who had picked all six.
+        const cells = (side, against) => {
+            const opts = { against };
+            return `<td>${recordText(pickerTeamRecord(currentPicker, game[side], [CURRENT_SEASON], opts))}</td><td>${missing ? '&hellip;' : recordText(pickerTeamRecord(currentPicker, game[side], AVAILABLE_SEASONS, opts))}</td>`;
+        };
+        const rows = side => `<tr class="gd-rec-team"><td>Took the ${game[side]}</td>${cells(side, false)}</tr>`
+            + `<tr><td>Against the ${game[side]}</td>${cells(side, true)}</tr>`;
         mine = `
-                <table class="gd-table gd-compact">
-                    <thead><tr><th>Picking</th><th>${CURRENT_SEASON}</th><th>All seasons</th></tr></thead>
-                    <tbody>${row('away')}${row('home')}</tbody>
+                <table class="gd-table gd-compact gd-rec">
+                    <thead><tr><th></th><th>${CURRENT_SEASON}</th><th>All seasons</th></tr></thead>
+                    <tbody>${rows('away')}${rows('home')}</tbody>
                 </table>
-                <p class="gd-note">Every line pick on each team, Blazin’ 5 or not, at the line each was graded at.</p>`;
+                <p class="gd-note">Every line pick in each team’s games, Blazin’ 5 or not, at the line each was graded at.</p>`;
     }
 
     return gdSection('The group’s picks', group, groupNote)

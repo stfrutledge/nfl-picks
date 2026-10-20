@@ -4379,25 +4379,89 @@ footer a:hover {
     color: var(--text-secondary);
 }
 
-/* An injury: the status chip in its own column, name over position and injury. */
+/* A player's headshot, round, on a grey circle that stays when there is none. */
+.gd-headshot {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    box-sizing: border-box;
+}
+
+.gd-headshot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+    display: block;
+}
+
+/* An injury: the photo, the name, then the status chip with the position
+   and injury beside it, dropping under the chip when the column is narrow. */
 .gd-injury {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 40px minmax(0, 1fr);
     column-gap: 8px;
-    align-items: start;
-    padding: 5px 0;
+    row-gap: 3px;
+    align-items: center;
+    padding: 6px 0;
     border-bottom: 1px solid var(--border-light);
     font-size: 0.82rem;
     color: var(--text-primary);
 }
 
-.gd-injury .gd-status {
+.gd-injury .gd-headshot {
     grid-row: span 2;
-    margin-top: 2px;
 }
 
-.gd-result,
+.gd-injury .gd-injury-name {
+    line-height: 1.2;
+}
+
+.gd-injury-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 6px;
+}
+
+.gd-injury-meta .gd-sub {
+    white-space: nowrap;
+}
+
+/* Your record: each team's "took" row, then its "against" row, a rule
+   between the two teams. */
+.gd-table.gd-rec td:first-child {
+    font-weight: 600;
+}
+
+.gd-table.gd-rec td:not(:first-child) {
+    white-space: nowrap;
+}
+
+.gd-rec tr.gd-rec-team:not(:first-child) td {
+    border-top: 2px solid var(--border-color);
+}
+
+/* A leader: the photo, then the stat, the name and the numbers. */
 .gd-leader {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+
+.gd-leader .gd-headshot {
+    grid-row: span 3;
+}
+
+.gd-result {
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
@@ -4452,8 +4516,8 @@ footer a:hover {
     font-weight: 700;
 }
 
-.gd-leader .gd-sub {
-    flex-basis: 100%;
+.gd-leader > span:not(.gd-headshot) {
+    line-height: 1.25;
 }
 
 .gd-leader-label {
