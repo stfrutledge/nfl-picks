@@ -3731,6 +3731,16 @@ footer a:hover {
     font-variant-numeric: tabular-nums;
 }
 
+/* Hidden until the card is tapped (handleSplitsToggle). A card that has
+   splits to show says so with its cursor. */
+.game-splits.collapsed {
+    display: none;
+}
+
+.game-card.has-splits {
+    cursor: pointer;
+}
+
 /* The title runs the full width, above the team names. */
 .game-splits-head {
     grid-column: 1 / -1;

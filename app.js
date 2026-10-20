@@ -10664,6 +10664,27 @@ function refreshBettingSplitsIfStale(now = Date.now()) {
     if (splitsFetchedAt && now - splitsFetchedAt >= SPLITS_REFRESH_MS) loadBettingSplits();
 }
 
+// Which games have their splits open, by pickKey. Collapsed by default: a
+// tap on the card opens them. Kept outside the render, as asIsExpanded is -
+// the cards are rebuilt on every splits refresh and live-score poll, and an
+// open strip must not snap shut.
+const splitsOpen = new Set();
+
+/**
+ * A click anywhere on a game card that is not one of its controls toggles
+ * that card's splits. The controls keep their own clicks: a pick, the lock,
+ * the B5 star or an O/U choice never opens or closes the strip too.
+ */
+function handleSplitsToggle(event) {
+    if (event.target.closest('button, a, input, select, label, .ou-picker')) return;
+    const card = event.target.closest('.game-card.has-splits');
+    if (!card) return;
+    const key = card.dataset.pickKey;
+    if (splitsOpen.has(key)) splitsOpen.delete(key);
+    else splitsOpen.add(key);
+    card.querySelector('.game-splits')?.classList.toggle('collapsed', !splitsOpen.has(key));
+}
+
 /**
  * The splits strip under a card's picks: a title naming the source, a column
  * per side (away left, home right, as the buttons above), and a labelled row
@@ -10692,7 +10713,7 @@ function gameSplitsHtml(game, hidden) {
         return `<span class="game-splits-label">${several ? `${name} ` : ''}% of ${word}</span>${cell(away, home)}${cell(home, away)}`;
     })).join('');
     return `
-                <div class="game-splits">
+                <div class="game-splits${splitsOpen.has(pickKey(game)) ? '' : ' collapsed'}">
                     <span class="game-splits-head">Betting splits${several ? '' : ` · ${books[0][1]}`}</span>
                     <span></span>
                     <span class="game-splits-team">${game.away} ${signedSpreadDisplay(game, 'away')}</span>
@@ -10771,6 +10792,7 @@ function renderGames() {
         const frozen = isPickFrozen(gamePicks);
         const readOnly = locked || frozen;
         const splitsHidden = locked || isHistoricalWeek || isHistoricalSeason();
+        const splitsHtml = gameSplitsHtml(game, splitsHidden);
         const frozenLineLabel = frozen
             ? describeLineForSide(
                 { ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite }, linePick)
@@ -10864,7 +10886,8 @@ function renderGames() {
             locked ? 'game-locked' : '',
             frozen ? 'pick-frozen' : '',
             isFinal ? 'game-final' : '',
-            isInProgress ? 'game-in-progress' : ''
+            isInProgress ? 'game-in-progress' : '',
+            splitsHtml ? 'has-splits' : ''
         ].filter(Boolean).join(' ');
 
         // Build status badge
@@ -10964,7 +10987,7 @@ function renderGames() {
                         </div>
                     </div>
                 </div>
-${gameSplitsHtml(game, splitsHidden)}
+${splitsHtml}
 
                 <div class="game-footer">
                     <div class="game-location">
@@ -11015,6 +11038,14 @@ ${gameSplitsHtml(game, splitsHidden)}
             </div>
         `;
     }).join('');
+
+    // A tap on the card itself shows or hides its betting splits. One
+    // delegated listener on the list, attached once: the cards are rebuilt on
+    // every render, the list is not.
+    if (!gamesList.dataset.splitsToggle) {
+        gamesList.dataset.splitsToggle = '1';
+        gamesList.addEventListener('click', handleSplitsToggle);
+    }
 
     // Add click handlers for pick buttons
     document.querySelectorAll('.pick-btn').forEach(btn => {

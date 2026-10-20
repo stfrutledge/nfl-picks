@@ -367,6 +367,30 @@ function section(name) { console.log(`\n${name}`); }
         assert.doesNotMatch(html, /84%|55%|DK|Circa/);
     });
 
+    await check('hidden until the card is tapped, and still open after a redraw', () => {
+        assert.match(site.gameSplitsHtml(game, false), /class="game-splits collapsed"/, 'collapsed by default');
+
+        // A tap on the card body: target inside the card, not inside a control.
+        const strip = { classes: new Set(['game-splits', 'collapsed']) };
+        strip.classList = { toggle: (c, on) => (on ? strip.classes.add(c) : strip.classes.delete(c)) };
+        const card = { dataset: { pickKey: 'patriots_bears' }, querySelector: () => strip };
+        const tap = control => ({ target: { closest: sel => {
+            if (sel.startsWith('button')) return control ? {} : null;
+            return sel === '.game-card.has-splits' ? card : null;
+        } } });
+
+        site.handleSplitsToggle(tap(false));
+        assert.ok(!strip.classes.has('collapsed'), 'opened in place');
+        assert.match(site.gameSplitsHtml(game, false), /class="game-splits"/, 'and a redraw keeps it open');
+
+        site.handleSplitsToggle(tap(true));
+        assert.ok(!strip.classes.has('collapsed'), 'a tap on a pick button leaves it alone');
+
+        site.handleSplitsToggle(tap(false));
+        assert.ok(strip.classes.has('collapsed'), 'a second tap on the card closes it');
+        assert.match(site.gameSplitsHtml(game, false), /class="game-splits collapsed"/);
+    });
+
     await check('nothing once the game is locked, or for a game with no splits', () => {
         assert.strictEqual(site.gameSplitsHtml(game, true), '');
         assert.strictEqual(site.gameSplitsHtml({ ...game, away: 'Jets', home: 'Dolphins' }, false), '');
@@ -404,7 +428,7 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + ';return ({ gameSplitsHtml, __setSplits: s => { bettingSplits = s; } });');
+        + ';return ({ gameSplitsHtml, handleSplitsToggle, __setSplits: s => { bettingSplits = s; } });');
     return fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
 }
