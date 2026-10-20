@@ -4247,21 +4247,6 @@ footer a:hover {
     overscroll-behavior: contain;
 }
 
-/* TV and weather, under the stadium, on every tab. */
-.gd-facts {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 6px;
-}
-
-.gd-hero-weather {
-    font-size: 0.78rem;
-    color: rgba(255, 255, 255, 0.75);
-}
-
 /* The site's own tab bar: uppercase, spaced, a green line under the open one. */
 .gd-tabs {
     display: flex;

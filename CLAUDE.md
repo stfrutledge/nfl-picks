@@ -530,7 +530,7 @@ Team colours too light for white text (Steelers yellow, Saints gold) put dark te
 
 **°F or °C is a setting in the Android app** (Settings > Weather, 1.16+), by the owner's choice: the site asks `window.NFLPicksApp.temperatureUnit()` each time it draws a temperature (`temperatureUnit`, `formatTemperature`), so a change shows without a reload. A browser, or an app older than 1.16, shows °F; there is no browser setting. Temperatures are fetched in °F from both ESPN and Open-Meteo and converted.
 
-**Tabs.** Under the header are four tabs (`GAME_DETAILS_TABS`; the open one is `gameDetailsTab`, remembered between games), so the popup stays one fixed height (`min(760px, 90vh)`) and only the tab's body scrolls. The owner asked for "not a massive, long, or packed pop-up", grouped by relevance. TV and weather moved into the header (`.gd-facts`) so every tab sees them.
+**Tabs.** Under the header are four tabs (`GAME_DETAILS_TABS`; the open one is `gameDetailsTab`, remembered between games), so the popup stays one fixed height (`min(760px, 90vh)`) and only the tab's body scrolls. The owner asked for "not a massive, long, or packed pop-up", grouped by relevance. TV and weather close the Betting tab as pills (they were in the header briefly; the owner moved them back).
 
 - **Betting:** the splits, the Line table and its charts, as above.
 - **Matchup:** each team against the spread this season at the **board** line (`teamAtsRecord`, never a picker's own number); each team's last five from ESPN; head to head across every loaded season (`headToHeadMeetings`, archived results from the archive alone, newest six shown).

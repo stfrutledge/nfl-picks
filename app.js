@@ -11279,17 +11279,19 @@ function gameDetailsHtml(game) {
                 ${chartWhich ? lineChartHtml(game, chartWhich, favoured) : ''}
             </section>` : '';
 
-    // TV and weather ride in the header, where every tab sees them.
+    // TV and weather close the Betting tab, as pills.
     const tv = detailsTvHtml(game);
-    const weather = detailsWeather(game);
-    const facts = (tv ? `<span class="gd-tv">${tv}</span>` : '') + (weather ? `<span class="gd-hero-weather">${weather}</span>` : '');
+    const chips = [['TV', tv ? `<span class="gd-tv">${tv}</span>` : ''], ['Weather', detailsWeather(game)]]
+        .filter(([, value]) => value)
+        .map(([label, value]) => `<span class="gd-chip"><span class="gd-chip-label">${label}</span>${value}</span>`).join('');
+    const betting = splitsSection + lineSection + (chips ? `<div class="gd-chips">${chips}</div>` : '');
 
     const tabs = GAME_DETAILS_TABS.map(([id, label]) =>
         `<button type="button" class="gd-tab${id === gameDetailsTab ? ' active' : ''}" data-tab="${id}" role="tab" aria-selected="${id === gameDetailsTab}">${label}</button>`).join('');
     const panel = gameDetailsTab === 'matchup' ? matchupPanelHtml(game)
         : gameDetailsTab === 'players' ? playersPanelHtml(game)
         : gameDetailsTab === 'picks' ? picksPanelHtml(game)
-        : (splitsSection + lineSection) || gdEmpty('No betting numbers for this game yet.');
+        : betting || gdEmpty('No betting numbers for this game yet.');
 
     return `
         <div class="gd-hero">
@@ -11297,7 +11299,6 @@ function gameDetailsHtml(game) {
             <div class="gd-kicker">${detailsKickoff(game)}</div>
             <div class="gd-matchup">${team('away')}${middle}${team('home')}</div>
             ${where ? `<div class="gd-venue">${where}</div>` : ''}
-            ${facts ? `<div class="gd-facts">${facts}</div>` : ''}
         </div>
         <div class="gd-tabs" role="tablist">${tabs}</div>
         <div class="gd-body" role="tabpanel">${panel}</div>`;
