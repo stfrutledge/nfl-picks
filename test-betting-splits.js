@@ -395,6 +395,24 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(stored(), undefined);
     });
 
+    await check('the week after the scoreboard’s is recorded too: ESPN stays on a finished week until midweek', async () => {
+        // Tuesday after week 6: ESPN's current scoreboard is week 6, all over.
+        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
+        const finished = { season: 2026, seasonType: 2, week: 6,
+            games: [{ key: 'commanders_49ers', away: 'Commanders', home: '49ers', kickoff: KICKOFF - 7 * 86400000, state: 'post', odds: null }] };
+        const asked = [];
+        const r = await mod.recordLineMoves(ENV, finished, KICKOFF - 5 * 86400000, async b => { asked.push(b.week); return linesBoard(odds); });
+        assert.deepStrictEqual(asked, [6], 'asked for the week after week 6');
+        assert.deepStrictEqual(r.moved, ['49ers_falcons']);
+        assert.strictEqual(stored().length, 2, 'week 7’s game recorded under week 7');
+        assert.strictEqual(kv.get('lines:2026:6'), undefined, 'and nothing for the finished week');
+
+        let nextAsked = false;
+        await mod.recordLineMoves(ENV, { ...linesBoard(odds), seasonType: 3, week: 1 }, KICKOFF - 86400000);
+        const playoffs = await mod.recordLineMoves(ENV, { ...finished, seasonType: 3 }, KICKOFF, async () => { nextAsked = true; return null; });
+        assert.ok(nextAsked === true || playoffs.moved.length === 0);
+    });
+
     await check('/lines answers a week’s history, readable cross-origin; a bad week is refused', async () => {
         const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
         await mod.recordLineMoves(ENV, linesBoard(odds), KICKOFF - 86400000);

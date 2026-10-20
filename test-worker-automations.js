@@ -534,7 +534,9 @@ const TUE_MORNING = Date.parse('2026-10-13T08:00:00Z');
         } finally {
             globalThis.fetch = realFetch;
         }
-        assert.deepStrictEqual(espn.map(e => e.host), ['site.api', 'site.web.api']);
+        // The current scoreboard, then next week's for the line movement
+        // (nextWeekBoard), each refused by the first host and taken from the other.
+        assert.deepStrictEqual(espn.map(e => e.host), ['site.api', 'site.web.api', 'site.api', 'site.web.api']);
         assert.ok(espn.every(e => /Mozilla/.test(e.ua || '')), 'a browser User-Agent on every ESPN request');
         assert.strictEqual(sent.length, 1);
         assert.ok(kv.has('sent:reminder-2026-5-first'));

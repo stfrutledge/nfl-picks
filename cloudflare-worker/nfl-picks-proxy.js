@@ -1729,31 +1729,56 @@ function linesKey(season, week) {
 }
 
 /**
- * Each run: add a point for every game still to kick off whose spread or
- * total differs from its last one. Not on a run ESPN refused - the saved
- * schedule it falls back on carries no odds, and a guess is not a move.
- * Its own try/catch in the caller, as the splits have.
+ * The regular-season week after the board's, by number. ESPN's current
+ * scoreboard stays on a finished week until midweek - on the Tuesday after
+ * week 6's Monday game it was still week 6, every game over and its odds
+ * gone - while next week's lines have been up since Sunday night and move
+ * most on Monday and Tuesday. Null after week 18 and in the playoffs.
  */
-async function recordLineMoves(env, board, now = Date.now()) {
-  if (!env.NOTIFY_STATE || board.espnError) return { skipped: board.espnError ? 'no ESPN' : 'not configured' };
-  const key = linesKey(board.season, siteWeekFor(board));
-  const history = JSON.parse(await env.NOTIFY_STATE.get(key) || '{}');
-  const moved = [];
-  for (const game of board.games) {
-    if (game.state !== 'pre' || !game.odds) continue;
-    const points = history[game.key] ||= [];
-    const o = game.odds;
-    if (points.length === 0 && o.openAway && o.openHome) {
-      points.push({ at: null, away: o.openAway, home: o.openHome, total: o.openTotal });
-    }
-    const last = points[points.length - 1];
-    if (!last || last.away !== o.away || last.home !== o.home || last.total !== o.total) {
-      points.push({ at: now, away: o.away, home: o.home, total: o.total });
-      moved.push(game.key);
-    }
+async function nextWeekBoard(board) {
+  if (board.seasonType !== 2 || !(board.week < 18)) return null;
+  try {
+    return await fetchScoreboard({ season: board.season, week: board.week + 1 });
+  } catch {
+    return null;
   }
-  if (moved.length > 0) {
-    await env.NOTIFY_STATE.put(key, JSON.stringify(history), { expirationTtl: LINES_TTL_SECONDS });
+}
+
+/**
+ * Each run: add a point for every game still to kick off whose spread or
+ * total differs from its last one, on the current scoreboard and the next
+ * week's (see nextWeekBoard). Not on a run ESPN refused - the saved schedule
+ * it falls back on carries no odds, and a guess is not a move. Its own
+ * try/catch in the caller, as the splits have.
+ */
+async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeekBoard) {
+  if (!env.NOTIFY_STATE || board.espnError) return { skipped: board.espnError ? 'no ESPN' : 'not configured' };
+  const boards = [board];
+  const next = await loadNext(board);
+  if (next?.games?.length) boards.push(next);
+
+  const moved = [];
+  for (const b of boards) {
+    const key = linesKey(b.season, siteWeekFor(b));
+    const history = JSON.parse(await env.NOTIFY_STATE.get(key) || '{}');
+    let changed = false;
+    for (const game of b.games) {
+      if (game.state !== 'pre' || !game.odds) continue;
+      const points = history[game.key] ||= [];
+      const o = game.odds;
+      if (points.length === 0 && o.openAway && o.openHome) {
+        points.push({ at: null, away: o.openAway, home: o.openHome, total: o.openTotal });
+      }
+      const last = points[points.length - 1];
+      if (!last || last.away !== o.away || last.home !== o.home || last.total !== o.total) {
+        points.push({ at: now, away: o.away, home: o.home, total: o.total });
+        moved.push(game.key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      await env.NOTIFY_STATE.put(key, JSON.stringify(history), { expirationTtl: LINES_TTL_SECONDS });
+    }
   }
   return { moved };
 }
