@@ -1711,6 +1711,11 @@ const LINES_TTL_SECONDS = 60 * 24 * 60 * 60;   // forget a week's history after 
 // The Sunday night game ends about 3.5 hours after kickoff; an open taken
 // later than this after the last Sunday kickoff was not Sunday night's.
 const OPEN_LATE_AFTER_MS = 6 * 60 * 60 * 1000;
+// Weeks whose open the group agreed to take late, as "season:week": the line
+// when tracking first saw it counts as the open. Only 2026 week 7, the week
+// tracking began - on its Tuesday, which the owner judged close enough.
+// Every other week opens on Sunday night or reads "first seen".
+const OPENS_TAKEN_LATE = new Set(['2026:7']);
 
 /**
  * DraftKings' current spread and total off a scoreboard competition, the
@@ -1790,6 +1795,9 @@ async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeek
     if (!entry.open) {
       entry.open = previous ? weekOpening(previous, now) : { at: now, late: true };
       if (!entry.open) continue;   // not open yet: lookahead lines are not kept
+      if (entry.open.late && OPENS_TAKEN_LATE.has(`${b.season}:${siteWeekFor(b)}`)) {
+        entry.open = { at: now, late: false, agreed: true };
+      }
       changed = true;
     }
     for (const game of b.games) {

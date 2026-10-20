@@ -345,8 +345,10 @@ function section(name) { console.log(`\n${name}`); }
     const SUN_1PM = Date.parse('2026-10-18T17:00:00Z');
     const SUN_NIGHT = Date.parse('2026-10-19T00:20:00Z');   // 8:20 PM ET Sunday
     const MON_NIGHT = Date.parse('2026-10-20T00:15:00Z');   // 8:15 PM ET Monday
-    const week6 = (sundayState, mondayState = 'pre') => ({
-        season: 2026, seasonType: 2, week: 6, games: [
+    // A season with no agreed late open (OPENS_TAKEN_LATE): the rule as it stands.
+    const SEASON = 2025;
+    const week6 = (sundayState, mondayState = 'pre', season = SEASON) => ({
+        season, seasonType: 2, week: 6, games: [
             { key: 'giants_eagles', kickoff: SUN_1PM, state: 'post', odds: null },
             { key: 'chiefs_bills', kickoff: SUN_NIGHT, state: sundayState, odds: null },
             { key: 'commanders_49ers', kickoff: MON_NIGHT, state: mondayState,
@@ -355,9 +357,9 @@ function section(name) { console.log(`\n${name}`); }
     const espnLine = (away, home, total) => mod.espnOdds({ odds: [{
         pointSpread: { away: { close: { line: away } }, home: { close: { line: home } } },
         total: { over: { close: { line: `o${total}` } } } }] });
-    const week7 = odds => ({ season: 2026, seasonType: 2, week: 7,
+    const week7 = (odds, season = SEASON) => ({ season, seasonType: 2, week: 7,
         games: [{ key: '49ers_falcons', away: '49ers', home: 'Falcons', kickoff: KICKOFF, state: 'pre', odds }] });
-    const entry7 = () => JSON.parse(kv.get('lines:2026:7') || 'null');
+    const entry7 = (season = SEASON) => JSON.parse(kv.get(`lines:${season}:7`) || 'null');
     const SUN_MIDNIGHT = Date.parse('2026-10-19T04:00:00Z');   // the first run after the night game ends
 
     await check('ESPN’s odds read: the spread as printed, the total as a number', () => {
@@ -396,6 +398,18 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(e.games['49ers_falcons'][0].kind, 'first');
     });
 
+    await check('2026 week 7, the week tracking began: its Tuesday line is the open, by agreement', async () => {
+        const tuesday = Date.parse('2026-10-20T21:15:00Z');
+        await mod.recordLineMoves(ENV, week6('post', 'post', 2026), tuesday, async () => week7(espnLine('-3', '+3', 50.5), 2026));
+        const e = entry7(2026);
+        assert.deepStrictEqual(e.open, { at: tuesday, late: false, agreed: true });
+        assert.strictEqual(e.games['49ers_falcons'][0].kind, 'open');
+        // Week 8 is back to the rule: the same late start reads "first seen".
+        const wk8 = { season: 2026, seasonType: 2, week: 8, games: [{ ...week7(null).games[0], key: 'jets_patriots', odds: espnLine('+2', '-2', 41) }] };
+        await mod.recordLineMoves(ENV, { ...week7(null, 2026), games: [{ ...week7(null).games[0], state: 'post' }] }, tuesday + 7 * 86400000, async () => wk8);
+        assert.strictEqual(JSON.parse(kv.get('lines:2026:8')).games.jets_patriots[0].kind, 'first');
+    });
+
     await check('a week first seen on the current scoreboard is "first seen" too', async () => {
         await mod.recordLineMoves(ENV, week7(espnLine('-3', '+3', 50.5)), KICKOFF - 86400000, async () => null);
         assert.strictEqual(entry7().games['49ers_falcons'][0].kind, 'first');
@@ -419,13 +433,13 @@ function section(name) { console.log(`\n${name}`); }
 
     await check('/lines: the week’s open and history, readable cross-origin; a bad week is refused', async () => {
         await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
-        const r = await worker.fetch(new Request('https://w.test/lines?season=2026&week=7'), ENV, {});
+        const r = await worker.fetch(new Request(`https://w.test/lines?season=${SEASON}&week=7`), ENV, {});
         assert.strictEqual(r.headers.get('Access-Control-Allow-Origin'), '*');
         const body = await r.json();
         assert.deepStrictEqual(body.open, { at: SUN_MIDNIGHT, late: false });
         assert.strictEqual(body.games['49ers_falcons'][0].kind, 'open');
         assert.strictEqual((await worker.fetch(new Request('https://w.test/lines?season=x&week=7'), ENV, {})).status, 400);
-        const empty = await (await worker.fetch(new Request('https://w.test/lines?season=2026&week=8'), ENV, {})).json();
+        const empty = await (await worker.fetch(new Request(`https://w.test/lines?season=${SEASON}&week=8`), ENV, {})).json();
         assert.deepStrictEqual([empty.open, empty.games], [null, {}], 'a week not open yet');
     });
 
