@@ -338,13 +338,17 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(net.posted[0].splits[0].week, '2026_19');
     });
 
-    section('The details panel on the pick cards');
+    section('Game Details');
 
     const site = loadSite();
+    site.__viewCurrentWeek();   // as the site opens: splits are for this week's games
     const game = {
-        id: 1, away: 'Patriots', home: 'Bears', spread: 3, favorite: 'home', broadcast: 'Prime Video',
+        id: 1, away: 'Patriots', home: 'Bears', spread: 3, favorite: 'home', overUnder: 44.5,
+        day: 'Thursday', time: '8:15 PM ET', kickoff: '2099-10-23T00:15:00Z',
+        broadcast: 'Prime Video', stadium: 'Soldier Field', location: 'Chicago, IL',
         records: { away: { total: '4-2', home: '3-0', road: '1-2' }, home: { total: '4-2', home: '2-1', road: '2-1' } },
-        openLine: { away: '+1.5', home: '-1.5' }, indoor: false, weather: { text: 'Mostly clear', temp: 60 }
+        openLine: { away: '+1.5', home: '-1.5', total: 42.5 }, indoor: false, weather: { text: 'Mostly clear', temp: 60 },
+        awayMoneyline: 135, homeMoneyline: -160
     };
     const BOTH = {
         an: { away: { line: 3, handle: 74, bets: 77 }, home: { line: -3, handle: 26, bets: 23 }, count: 2923 },
@@ -353,82 +357,93 @@ function section(name) { console.log(`\n${name}`); }
     };
     site.__setSplits({ patriots_bears: BOTH });
 
-    await check('teams across the top, away first, as the buttons', () => {
-        const html = site.gameDetailsHtml(game, false);
+    await check('the card header: "8:15 PM ET, Thur." on the left, a Game Details button on the right', () => {
+        assert.strictEqual(site.cardKickoffLabel(game), '8:15 PM ET, Thur.');
+        assert.strictEqual(site.cardKickoffLabel({ ...game, day: 'Tuesday', time: '7:00 PM ET' }), '7:00 PM ET, Tues.');
+        assert.strictEqual(site.cardKickoffLabel({ ...game, day: 'Sunday', time: '1:00 PM ET' }), '1:00 PM ET, Sun.');
+        const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+        assert.match(src, /<span class="game-time">\$\{cardKickoffLabel\(game\)\}<\/span>\s*\$\{statusBadge\}\s*<button type="button" class="game-details-btn" data-pick-key="\$\{key\}">Game Details<\/button>/);
+    });
+
+    await check('when and where, then the teams with their lines, away first', () => {
+        const html = site.gameDetailsHtml(game);
+        assert.match(html, /modal-title">Patriots @ Bears</);
+        assert.match(html, /game-details-when">Thursday, Oct 22 · 8:15 PM ET</);
+        assert.match(html, /game-details-where">Soldier Field · Chicago, IL</);
         assert.match(html, /game-details-team">Patriots \+3<[\s\S]*game-details-team">Bears -3</);
     });
 
-    await check('records: overall, then road for the away team and home for the home team', () => {
-        const html = site.gameDetailsHtml(game, false);
+    await check('records and moneylines, a column per side', () => {
+        const html = site.gameDetailsHtml(game);
         assert.match(html, /Record<\/span><span class="game-details-cell">4-2 · 1-2 road<\/span><span class="game-details-cell">4-2 · 2-1 home</);
+        assert.match(html, /Moneyline<\/span><span class="game-details-cell">\+135<\/span><span class="game-details-cell">-160</);
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, awayMoneyline: null }), /Moneyline/, 'not without both');
     });
 
-    await check('splits: source and number of bets in the title, a labelled row per measure, bigger in bold', () => {
-        const html = site.gameDetailsHtml(game, false);
-        assert.match(html, /Betting splits · Action Network · 2,923 bets/);
+    await check('splits: source and number of bets, a labelled row per measure, bigger in bold', () => {
+        const html = site.gameDetailsHtml(game);
+        assert.match(html, /Betting splits · Action Network<span class="game-details-count">2,923 bets<\/span>/, 'the count on its own line');
         assert.match(html, /% of money<\/span><span class="game-details-cell lead">74%<\/span><span class="game-details-cell">26%</);
         assert.match(html, /% of bets<\/span><span class="game-details-cell lead">77%<\/span><span class="game-details-cell">23%</);
         assert.doesNotMatch(html, /84%|55%|DK|Circa/, 'the consensus only: DraftKings and Circa are stored, not shown');
     });
 
-    await check('line movement: from the side favoured now, opening number to the card’s', () => {
-        assert.match(site.gameDetailsHtml(game, false), /Line<\/span><span class="game-details-wide">opened Bears -1.5 &rarr; now -3</);
-        const flat = { ...game, openLine: { away: '+3', home: '-3' } };
-        assert.match(site.gameDetailsHtml(flat, false), /opened Bears -3, no move since/);
-        const noLine = { ...game, spread: null, favorite: null };
-        assert.match(site.gameDetailsHtml(noLine, false), /opened Bears -1.5</, 'no line on the card yet: the opener alone');
+    await check('the line: spread and total under "Opened" and "Now", the spread from the side favoured now', () => {
+        const html = site.gameDetailsHtml(game);
+        assert.match(html, />Line<\/span><span class="game-details-subhead">Opened<\/span><span class="game-details-subhead">Now</);
+        assert.match(html, /Spread · Bears<\/span><span class="game-details-cell">-1.5<\/span><span class="game-details-cell">-3</);
+        assert.match(html, /Total<\/span><span class="game-details-cell">42.5<\/span><span class="game-details-cell">44.5</);
+        const noLine = site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null });
+        assert.match(noLine, /Spread · Bears<\/span><span class="game-details-cell">-1.5<\/span><span class="game-details-cell">&ndash;</, 'no line on the card yet: the opener alone');
+        assert.match(noLine, /Total<\/span><span class="game-details-cell">42.5<\/span><span class="game-details-cell">&ndash;</);
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null, openLine: null }), />Line</, 'nothing at all: no section');
     });
 
     await check('TV, and the weather - or "Indoors" under a roof', () => {
-        const html = site.gameDetailsHtml(game, false);
+        const html = site.gameDetailsHtml(game);
         assert.match(html, /TV<\/span><span class="game-details-wide">Prime Video</);
         assert.match(html, /Weather<\/span><span class="game-details-wide">Mostly clear, 60&deg;</);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }, false), /Weather<\/span><span class="game-details-wide">Indoors</);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /Weather<\/span><span class="game-details-wide">Indoors</);
     });
 
     await check('a source with home and away the other way round is still matched, sides swapped back', () => {
         // Action Network had Eagles @ Cowboys; the schedule has Cowboys @ Eagles.
         site.__setSplits({ eagles_cowboys: { an: { away: { line: 4.5, handle: 20, bets: 34 }, home: { line: -4.5, handle: 80, bets: 66 }, count: 900 } } });
-        const html = site.gameDetailsHtml({ id: 2, away: 'Cowboys', home: 'Eagles', spread: 4.5, favorite: 'away' }, false);
+        const html = site.gameDetailsHtml({ id: 2, away: 'Cowboys', home: 'Eagles', spread: 4.5, favorite: 'away', kickoff: '2099-10-27T00:15:00Z' });
         assert.match(html, /% of money<\/span><span class="game-details-cell lead">80%<\/span><span class="game-details-cell">20%</);
         assert.match(html, /900 bets/);
         site.__setSplits({ patriots_bears: BOTH });
     });
 
-    await check('whatever a game lacks is left out, and a game with nothing has no panel', () => {
-        const bare = { id: 3, away: 'Jets', home: 'Dolphins', spread: 3, favorite: 'home' };
-        assert.strictEqual(site.gameDetailsHtml(bare, false), '');
-        const tvOnly = site.gameDetailsHtml({ ...bare, broadcast: 'CBS' }, false);
-        assert.match(tvOnly, /TV<\/span><span class="game-details-wide">CBS</);
-        assert.doesNotMatch(tvOnly, /Record|Betting splits|Weather|Line</);
+    await check('a row with no data is left out', () => {
+        const html = site.gameDetailsHtml({ id: 3, away: 'Jets', home: 'Dolphins', spread: 3, favorite: 'home', broadcast: 'CBS', kickoff: '2099-10-25T17:00:00Z' });
+        assert.match(html, /TV<\/span><span class="game-details-wide">CBS</);
+        assert.doesNotMatch(html, /Record|Moneyline|Betting splits|Weather|Total</);
     });
 
-    await check('nothing once the game is locked', () => {
-        assert.strictEqual(site.gameDetailsHtml(game, true), '');
+    await check('after kickoff: no splits (live betting by then), and the score', () => {
+        const kicked = { ...game, kickoff: '2000-01-01T00:00:00Z' };
+        const html = site.gameDetailsHtml(kicked);
+        assert.doesNotMatch(html, /Betting splits/);
+        assert.match(html, /Record/, 'the rest still shows');
     });
 
-    await check('hidden until the card is tapped, and still open after a redraw', () => {
-        assert.match(site.gameDetailsHtml(game, false), /class="game-details collapsed"/, 'collapsed by default');
+    await check('the button opens the popup on its game, Close shuts it, and new data redraws it', () => {
+        site.__setGames([game]);
+        site.openGameDetails('patriots_bears');
+        assert.ok(site.__el('game-details-modal').classList.contains('show'));
+        assert.match(site.__el('game-details-body').innerHTML, /Patriots @ Bears/);
 
-        // A tap on the card body: target inside the card, not inside a control.
-        const panel = { classes: new Set(['game-details', 'collapsed']) };
-        panel.classList = { toggle: (c, on) => (on ? panel.classes.add(c) : panel.classes.delete(c)) };
-        const card = { dataset: { pickKey: 'patriots_bears' }, querySelector: () => panel };
-        const tap = control => ({ target: { closest: sel => {
-            if (sel.startsWith('button')) return control ? {} : null;
-            return sel === '.game-card.has-details' ? card : null;
-        } } });
+        site.__setSplits({ patriots_bears: { an: { ...BOTH.an, count: 5000 } } });
+        site.refreshGameDetails();
+        assert.match(site.__el('game-details-body').innerHTML, /5,000 bets/, 'redrawn with the new numbers');
 
-        site.handleDetailsToggle(tap(false));
-        assert.ok(!panel.classes.has('collapsed'), 'opened in place');
-        assert.match(site.gameDetailsHtml(game, false), /class="game-details"/, 'and a redraw keeps it open');
-
-        site.handleDetailsToggle(tap(true));
-        assert.ok(!panel.classes.has('collapsed'), 'a tap on a pick button leaves it alone');
-
-        site.handleDetailsToggle(tap(false));
-        assert.ok(panel.classes.has('collapsed'), 'a second tap on the card closes it');
-        assert.match(site.gameDetailsHtml(game, false), /class="game-details collapsed"/);
+        site.closeGameDetails();
+        assert.ok(!site.__el('game-details-modal').classList.contains('show'));
+        site.__el('game-details-body').innerHTML = 'untouched';
+        site.refreshGameDetails();
+        assert.strictEqual(site.__el('game-details-body').innerHTML, 'untouched', 'a closed popup is not redrawn');
+        site.__setSplits({ patriots_bears: BOTH });
     });
 
     fs.unlinkSync(tmp);
@@ -439,10 +454,21 @@ function section(name) { console.log(`\n${name}`); }
 /** app.js in Node with browser stubs, for the card caption. */
 function loadSite() {
     const el = () => ({ style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, setAttribute() {}, appendChild() {} });
+    // The popup's elements, with a class list that remembers.
+    const elements = {};
+    for (const id of ['game-details-modal', 'game-details-body', 'game-details-close']) {
+        const classes = new Set();
+        elements[id] = {
+            id, innerHTML: '', dataset: {},
+            classList: { add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c),
+                toggle: (c, on) => ((on ?? !classes.has(c)) ? classes.add(c) : classes.delete(c)) },
+            addEventListener() {}
+        };
+    }
     const env = {
         localStorage: { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 },
         document: {
-            addEventListener() {}, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
+            addEventListener() {}, getElementById: id => elements[id] || null, querySelector: () => null, querySelectorAll: () => [],
             createElement: el, head: { appendChild() {} },
             body: { appendChild() {}, classList: { add() {}, remove() {}, toggle() {} } },
             documentElement: { setAttribute() {}, classList: { add() {}, remove() {} } }
@@ -458,7 +484,12 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + ';return ({ gameDetailsHtml, handleDetailsToggle, __setSplits: s => { bettingSplits = s; } });');
-    return fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
+        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails,
+            __setSplits: s => { bettingSplits = s; },
+            __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
+            __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; } });`);
+    const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
+    api.__el = id => elements[id];
+    return api;
 }
