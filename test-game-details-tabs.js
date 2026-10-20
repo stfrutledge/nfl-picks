@@ -383,6 +383,21 @@ async function check(name, fn) {
         assert.deepStrictEqual(Object.keys(demo.__allPicks()[demo.__week()]), ['Jason'], 'nothing added to the real picks');
     });
 
+    await check('?demo=all and ?demo=lines,picks turn on both demos; ?demo=picks alone leaves the lines real', () => {
+        const draw = (search, tab) => {
+            const s = loadSite(search);
+            setWeeks(s, { [s.__week()]: [game] });
+            s.__setTab(tab);
+            return s.gameDetailsHtml(game);
+        };
+        for (const search of ['?demo=all', '?demo=lines,picks']) {
+            assert.match(draw(search, 'picks'), /gd-sample">SAMPLE</, `${search}: sample picks`);
+            assert.match(draw(search, 'betting'), /SAMPLE moves/, `${search}: sample line moves`);
+        }
+        assert.doesNotMatch(draw('?demo=picks', 'betting'), /SAMPLE moves/);
+        assert.doesNotMatch(draw('?demo=lines', 'picks'), /gd-sample/);
+    });
+
     fs.unlinkSync(tmp);
     console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);
     process.exit(failures ? 1 : 0);

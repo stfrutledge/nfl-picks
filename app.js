@@ -10789,6 +10789,15 @@ const lineHistory = new Map();   // week -> { at, games }
 const lineHistoryInFlight = new Set();
 
 /**
+ * Whether ?demo= names this demo: "?demo=lines", "?demo=picks",
+ * "?demo=lines,picks", or "?demo=all" for every one.
+ */
+function demoRequested(name) {
+    const wanted = String(new URLSearchParams(window.location.search).get('demo') || '').split(',').map(s => s.trim());
+    return wanted.includes(name) || wanted.includes('all');
+}
+
+/**
  * A private demo of the line charts: open the site with ?demo=lines and every
  * game that has not moved yet gets a made-up week of moves, ending at its real
  * current line, so the charts can be seen before a real move. Built in this
@@ -10797,7 +10806,7 @@ const lineHistoryInFlight = new Set();
  */
 const LINE_DEMO = (() => {
     try {
-        return new URLSearchParams(window.location.search).get('demo') === 'lines';
+        return demoRequested('lines');
     } catch (e) {
         return false;
     }
@@ -10812,7 +10821,7 @@ const LINE_DEMO = (() => {
  */
 const PICKS_DEMO = (() => {
     try {
-        return new URLSearchParams(window.location.search).get('demo') === 'picks';
+        return demoRequested('picks');
     } catch (e) {
         return false;
     }
