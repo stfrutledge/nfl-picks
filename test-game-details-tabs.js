@@ -20,7 +20,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, 'cloudflare-worker', 'nfl-pi
 const tmp = path.join(os.tmpdir(), `nfl-picks-tabs-${process.pid}.mjs`);
 fs.writeFileSync(tmp, SOURCE + '\nexport { trimEspnSummary };\n');
 
-function loadSite() {
+function loadSite(search = '') {
     const elements = {};
     const el = () => ({ style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, setAttribute() {}, addEventListener() {}, appendChild() {}, querySelector: () => null, querySelectorAll: () => [] });
     elements['game-details-modal'] = el();
@@ -41,6 +41,7 @@ function loadSite() {
         addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} })
     };
     env.window = env;
+    env.location = { search };
     const snapshot = `const HISTORICAL_DATA_SEASON = 0; const HISTORICAL_GAMES = {}; const HISTORICAL_RESULTS = {}; const HISTORICAL_PICKS = {};`;
     const fn = new Function('window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date',
@@ -55,7 +56,7 @@ function loadSite() {
             __injuriesOpen: () => injuriesOpen,
             weatherKind,
             __setPicks: p => { allPicks = p; },
-            __setPicker: p => { currentPicker = p; } });`);
+            __setPicker: p => { currentPicker = p; }, __allPicks: () => allPicks });`);
     const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia, fixedClock(TEST_NOW));
     api.__net = net;
@@ -364,6 +365,22 @@ async function check(name, fn) {
     await check('no picker chosen: asks for one', () => {
         site.__setPicker(null);
         assert.match(text(site.gameDetailsHtml(game)), /Choose a picker/);
+    });
+
+    await check('?demo=picks: sample picks on the Picks tab only, never in allPicks; a real pick wins', () => {
+        assert.doesNotMatch(site.gameDetailsHtml(game), /SAMPLE/, 'the plain site: no sample');
+        const demo = loadSite('?demo=picks');
+        setWeeks(demo, { [demo.__week()]: [game] });
+        demo.__setTab('picks');
+        demo.__setPicker('Stephen');
+        demo.__setPicks({ [demo.__week()]: { Jason: { '49ers_falcons': { line: 'home', winner: 'home' } } } });
+        const html = demo.gameDetailsHtml(game);
+        assert.match(html, /gd-sample">SAMPLE</);
+        assert.match(text(html), /Jason Falcons \+3 Falcons/, 'Jason’s real pick, not a sample');
+        const rows = (html.match(/<tr class="(?:you)?"><td>/g) || []).length;
+        assert.ok(rows >= 3, `sample rows drawn (${rows})`);
+        assert.strictEqual(demo.gameDetailsHtml(game), html, 'the same samples every draw');
+        assert.deepStrictEqual(Object.keys(demo.__allPicks()[demo.__week()]), ['Jason'], 'nothing added to the real picks');
     });
 
     fs.unlinkSync(tmp);
