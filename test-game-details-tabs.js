@@ -368,37 +368,6 @@ async function check(name, fn) {
         assert.match(text(site.gameDetailsHtml(game)), /Choose a picker/);
     });
 
-    await check('?demo=picks: sample picks on the Picks tab only, never in allPicks; a real pick wins', () => {
-        assert.doesNotMatch(site.gameDetailsHtml(game), /SAMPLE/, 'the plain site: no sample');
-        const demo = loadSite('?demo=picks');
-        setWeeks(demo, { [demo.__week()]: [game] });
-        demo.__setTab('picks');
-        demo.__setPicker('Stephen');
-        demo.__setPicks({ [demo.__week()]: { Jason: { '49ers_falcons': { line: 'home', winner: 'home' } } } });
-        const html = demo.gameDetailsHtml(game);
-        assert.match(html, /gd-sample">SAMPLE</);
-        assert.match(text(html), /Jason ATL \+3 ATL/, 'Jason’s real pick, not a sample');
-        const rows = (html.match(/<tr class="(?:you)?"><td>/g) || []).length;
-        assert.ok(rows >= 3, `sample rows drawn (${rows})`);
-        assert.strictEqual(demo.gameDetailsHtml(game), html, 'the same samples every draw');
-        assert.deepStrictEqual(Object.keys(demo.__allPicks()[demo.__week()]), ['Jason'], 'nothing added to the real picks');
-    });
-
-    await check('?demo=all and ?demo=lines,picks turn on both demos; ?demo=picks alone leaves the lines real', () => {
-        const draw = (search, tab) => {
-            const s = loadSite(search);
-            setWeeks(s, { [s.__week()]: [game] });
-            s.__setTab(tab);
-            return s.gameDetailsHtml(game);
-        };
-        for (const search of ['?demo=all', '?demo=lines,picks']) {
-            assert.match(draw(search, 'picks'), /gd-sample">SAMPLE</, `${search}: sample picks`);
-            assert.match(draw(search, 'betting'), /SAMPLE moves/, `${search}: sample line moves`);
-        }
-        assert.doesNotMatch(draw('?demo=picks', 'betting'), /SAMPLE moves/);
-        assert.doesNotMatch(draw('?demo=lines', 'picks'), /gd-sample/);
-    });
-
     fs.unlinkSync(tmp);
     console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);
     process.exit(failures ? 1 : 0);

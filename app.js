@@ -10788,95 +10788,6 @@ const LINE_HISTORY_MAX_AGE_MS = 5 * 60 * 1000;
 const lineHistory = new Map();   // week -> { at, games }
 const lineHistoryInFlight = new Set();
 
-/**
- * Whether ?demo= names this demo: "?demo=lines", "?demo=picks",
- * "?demo=lines,picks", or "?demo=all" for every one.
- */
-function demoRequested(name) {
-    const wanted = String(new URLSearchParams(window.location.search).get('demo') || '').split(',').map(s => s.trim());
-    return wanted.includes(name) || wanted.includes('all');
-}
-
-/**
- * A private demo of the line charts: open the site with ?demo=lines and every
- * game that has not moved yet gets a made-up week of moves, ending at its real
- * current line, so the charts can be seen before a real move. Built in this
- * browser alone, never saved or sent; every chart, Movement table and Line
- * heading says SAMPLE. Without the flag the site is untouched.
- */
-const LINE_DEMO = (() => {
-    try {
-        return demoRequested('lines');
-    } catch (e) {
-        return false;
-    }
-})();
-
-/**
- * The same for the popup's Picks tab: ?demo=picks fills every pick nobody
- * has made with a made-up one, so the tab can be seen full before the week's
- * picks are in. Drawn by the Picks tab alone - nothing goes into allPicks, so
- * nothing can be saved or synced - and a real pick always shows as itself.
- * The tab's heading says SAMPLE.
- */
-const PICKS_DEMO = (() => {
-    try {
-        return demoRequested('picks');
-    } catch (e) {
-        return false;
-    }
-})();
-
-/** A made-up pick, the same every time for one picker and game. Cowherd's in his 5 for about a third of games. */
-function demoPick(picker, game) {
-    let h = 7;
-    for (const c of `${picker}|${pickKey(game)}`) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    const line = h % 2 ? 'away' : 'home';
-    if (picker === COWHERD) {
-        return h % 3 || !hasUsableSpread(game) ? {} : { line, blazin: true, frozenAt: 'demo', frozenSpread: game.spread, frozenFavorite: game.favorite };
-    }
-    if (h % 7 === 0) return {};   // now and then, someone still to pick
-    const winner = (h >> 3) % 4 ? line : (line === 'away' ? 'home' : 'away');
-    const pick = { line, winner, blazin: (h >> 5) % 3 === 0 };
-    if ((h >> 7) % 4 === 0 && hasUsableSpread(game)) Object.assign(pick, { frozenAt: 'demo', frozenSpread: game.spread, frozenFavorite: game.favorite });
-    return pick;
-}
-
-/** Sample moves for each game with only its open: three or four, ending where the line is now. */
-function demoLineMoves(games) {
-    const out = {};
-    const now = Date.now();
-    for (const [key, points] of Object.entries(games)) {
-        const real = points[points.length - 1];
-        if (points.length > 1 || !real) { out[key] = points; continue; }
-        // A steady per-game pattern, so the same game shows the same sample.
-        let seed = [...key].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
-        const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
-        const moves = 3 + Math.floor(rand() * 2);
-        let spread = spreadNumber(real.away) ?? 0;
-        let total = Number(real.total) || 44.5;
-        const sample = [{ ...real, at: now, kind: undefined }];
-        // Walk backwards from now: each earlier point a half-point or so off.
-        for (let i = 0; i < moves; i++) {
-            const step = () => (rand() < 0.5 ? -1 : 1) * (rand() < 0.25 ? 1 : 0.5);
-            // Every sample point is a move: the spread, the total, or both.
-            const moveSpread = rand() < 0.65, moveTotal = !moveSpread || rand() < 0.5;
-            if (moveSpread) spread += step();
-            if (moveTotal) total += step();
-            sample.unshift({ away: spreadText(spread), home: spreadText(-spread), total });
-        }
-        // Spread from Sunday 11:45 PM-ish, 40 hours ago, to now.
-        const start = now - 40 * 3600000;
-        sample.forEach((p, i) => {
-            if (i < sample.length - 1) p.at = start + Math.round(i / (sample.length - 1) * 40 * 3600000 * (0.7 + rand() * 0.25));
-        });
-        sample[0].kind = 'open';
-        sample[sample.length - 1].at = now - 5 * 60000;
-        out[key] = sample;
-    }
-    return out;
-}
-
 async function loadLineHistory(week, { force = false } = {}) {
     if (isHistoricalSeason() || !week || lineHistoryInFlight.has(week)) return;
     const have = lineHistory.get(week);
@@ -10886,7 +10797,7 @@ async function loadLineHistory(week, { force = false } = {}) {
         const response = await fetch(`${WORKER_PROXY_URL}/lines?season=${CURRENT_SEASON}&week=${week}`);
         if (!response.ok) throw new Error(`worker answered ${response.status}`);
         const data = await response.json();
-        lineHistory.set(week, { at: Date.now(), games: LINE_DEMO ? demoLineMoves(data.games || {}) : (data.games || {}) });
+        lineHistory.set(week, { at: Date.now(), games: data.games || {} });
         refreshGameDetails();
     } catch (error) {
         console.warn('[Lines] Could not load the line history:', error.message);
@@ -11011,7 +10922,7 @@ function lineChartHtml(game, which, side) {
                 <div class="gd-chart" data-which="${which}"
                     data-points='${JSON.stringify(points.map(p => [p.at, p.v]))}'
                     data-t0="${t0}" data-t1="${t1}" data-lo="${lo}" data-hi="${hi}">
-                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>${since}${LINE_DEMO ? ' · <b class="gd-sample">SAMPLE</b>' : ''}</span></span><span class="gd-chart-tip" role="status"></span></div>
+                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>${since}</span></span><span class="gd-chart-tip" role="status"></span></div>
                     <svg viewBox="0 0 ${c.w} ${c.h}" role="img"
                         aria-label="${name}: ${label(points[0].v)} at the open, ${label(last.v)} now, ${points.length - 1} ${points.length === 2 ? 'move' : 'moves'}">
                         ${grid.join('')}
@@ -11340,7 +11251,7 @@ function gameDetailsHtml(game) {
     const chartWhich = lineChartOpen?.key === key && charted(lineChartOpen.which) ? lineChartOpen.which : null;
     const lineSection = lineRows ? `
             <section class="gd-section">
-                <div class="gd-section-head"><h4>Line</h4><span>${LINE_DEMO ? '<b class="gd-sample">SAMPLE moves</b> · ' : ''}DraftKings</span></div>
+                <div class="gd-section-head"><h4>Line</h4><span>DraftKings</span></div>
                 <table class="gd-table">
                     <thead><tr><th></th><th>Opened${open ? ` <span class="gd-th-when">${lineMoveTime(open.at)}</span>` : ''}</th><th>Now</th></tr></thead>
                     <tbody>${lineRows}</tbody>
@@ -11698,10 +11609,7 @@ function pickTeamBadge(name, text = '') {
  */
 function picksPanelHtml(game) {
     const week = currentWeek;
-    const pickOf = picker => {
-        const real = getPicksForGame(getPickerPicksForWeek(week, picker), game);
-        return PICKS_DEMO && !real.line && !real.winner ? demoPick(picker, game) : real;
-    };
+    const pickOf = picker => getPicksForGame(getPickerPicksForWeek(week, picker), game);
     const team = side => side ? game[side] : null;
 
     // The group's line picks, as a split bar in the teams' colours.
@@ -11765,7 +11673,7 @@ function picksPanelHtml(game) {
                 <p class="gd-note">Every line pick in each team’s games, Blazin’ 5 or not, at the line each was graded at.</p>`;
     }
 
-    return gdSection('The group’s picks', group, `${PICKS_DEMO ? '<b class="gd-sample">SAMPLE</b> · ' : ''}${groupNote}`)
+    return gdSection('The group’s picks', group, groupNote)
         + gdSection(currentPicker && currentPicker !== COWHERD ? `${currentPicker}’s record` : 'Your record', mine, 'all ATS picks');
 }
 

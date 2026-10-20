@@ -4151,21 +4151,6 @@ footer a:hover {
     visibility: visible;
 }
 
-/* The ?demo=lines tag: made-up moves, so it is never mistaken for the real ones. */
-.gd-sample {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 3px;
-    background: var(--accent-amber);
-    color: #0a0a0a;
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    vertical-align: middle;
-}
-
-
 /* Pinned under the scrolling body, at the foot of the popup: TV left,
    weather right (right even when there is no TV). */
 .gd-chips {
