@@ -659,7 +659,7 @@ async function fetchEspnScoreboard(query = '') {
     return fetch(`${ESPN_SCHEDULE_URL}${query}`);
 }
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 12; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line; v12 DraftKings' moneylines)
+const SCHEDULE_CACHE_VERSION = 13; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line; v12 DraftKings' moneylines; v13 ESPN's venue id, for the stadium photo)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -977,6 +977,7 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     // Kept for the forecast of a game abroad, which ESPN does not
                     // give: "Saint-Denis" alone finds Réunion first.
                     country: venue?.address?.country || '',
+                    venueId: venue?.id ? String(venue.id) : '',
                     broadcast: competition.broadcasts?.[0]?.names?.[0] || '',
                     // Every network carrying it, for Game Details' logos: a Monday
                     // night game is often ESPN and ABC together.
@@ -1115,6 +1116,7 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             location: espnMatch.location || histGame.location,
                             stadium: espnMatch.stadium || histGame.stadium,
                             country: espnMatch.country,
+                            venueId: espnMatch.venueId,
                             broadcast: espnMatch.broadcast,
                             networks: espnMatch.networks,
                             records: espnMatch.records,
@@ -11045,21 +11047,30 @@ function formatTemperature(fahrenheit) {
 }
 
 /**
- * "Sunny, 64°F"; under a roof "Indoors · 64°F outside" - ESPN forecasts the
- * stadium's town either way, and the temperature outside is still worth
- * knowing (the conditions are not: it is not raining on the field). A game
- * abroad, which ESPN gives no weather for, uses its Open-Meteo forecast.
+ * ESPN's photo of the stadium, for behind the popup's black header: its
+ * inside by day, by ESPN venue id, through ESPN's resizer (about 120 KB at
+ * 640x360, against 1.5 MB). A venue ESPN has no photo for (Buffalo's new
+ * stadium, October 2026) fails to load and leaves the header plain black.
  */
+function stadiumPhoto(game) {
+    const id = String(game?.venueId || '');
+    if (!/^\d{1,6}$/.test(id)) return '';
+    return `https://a.espncdn.com/combiner/i?img=/i/venues/nfl/day/interior/${id}.jpg&w=640&h=360`;
+}
+
 /**
  * The forecast as an icon and the temperature (the owner's choice over
  * ESPN's words: "Intermittent clouds", "Hazy sunshine"). The words stay as
- * the icon's tooltip and label. Indoors keeps its words.
+ * the icon's tooltip and label. The same under a roof: ESPN forecasts the
+ * stadium's town either way. A game abroad, which ESPN gives no weather
+ * for, uses its Open-Meteo forecast.
  */
 function detailsWeather(game) {
     const weather = game.weather || venueForecasts.get(pickKey(game)) || null;
     const temp = weather?.temp != null ? formatTemperature(Number(weather.temp)) : '';
-    if (game.indoor) return temp ? `Indoors · ${temp} outside` : 'Indoors';
-    if (!weather?.text) return '';
+    // Under a roof too: the weather in the town, not marked indoors (the
+    // owner's call). ESPN forecasts domes like any other stadium.
+    if (!weather?.text) return temp;
     const kind = weatherKind(weather.text);
     if (!kind) return temp ? `${weather.text}, ${temp}` : weather.text;   // a phrase no icon fits
     const icon = `<span class="gd-wx" role="img" aria-label="${weather.text}" title="${weather.text}">${WEATHER_ICONS[kind]}</span>`;
@@ -11334,8 +11345,9 @@ function gameDetailsHtml(game) {
         : gameDetailsTab === 'picks' ? picksPanelHtml(game)
         : betting || (chips ? '' : gdEmpty('No betting numbers for this game yet.'));
 
+    const photo = stadiumPhoto(game);
     return `
-        <div class="gd-hero">
+        <div class="gd-hero${photo ? ' gd-hero-photo' : ''}"${photo ? ` style="--gd-stadium: url('${photo}')"` : ''}>
             <button type="button" class="gd-close" aria-label="Close">&times;</button>
             <div class="gd-kicker">${detailsKickoff(game)}</div>
             <div class="gd-matchup">${team('away')}${middle}${team('home')}</div>
@@ -11678,7 +11690,12 @@ function picksPanelHtml(game) {
         ? `<div class="gd-bar">${seg('away', tally.away, colours.away)}${seg('home', tally.home, colours.home)}</div>`
         : gdEmpty('Nobody has picked this game yet.');
 
-    const rows = [...PICKERS, COWHERD].map(p => {
+    // Only those who have picked this game: a row of "no pick yet" says
+    // nothing the tally above does not (the owner's call).
+    const rows = [...PICKERS, COWHERD].filter(p => {
+        const pick = pickOf(p);
+        return pick.line || (p !== COWHERD && pick.winner);
+    }).map(p => {
         const pick = pickOf(p);
         const you = p === currentPicker;
         const ats = pick.line
@@ -11687,8 +11704,9 @@ function picksPanelHtml(game) {
         const su = p === COWHERD ? '<span class="gd-sub">&ndash;</span>' : (team(pick.winner) || '<span class="gd-sub">&ndash;</span>');
         return `<tr class="${you ? 'you' : ''}"><td>${p}${you ? ' <span class="gd-sub">(you)</span>' : ''}</td><td>${ats}</td><td>${su}</td></tr>`;
     }).join('');
-    const group = `
-                ${bar}
+    // No table at all when nobody has picked; the bar's line says so.
+    const group = !rows ? bar : `
+                ${taken ? bar : ''}
                 <table class="gd-table gd-compact gd-picks">
                     <thead><tr><th></th><th>Line pick</th><th>Straight up</th></tr></thead>
                     <tbody>${rows}</tbody>

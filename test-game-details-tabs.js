@@ -164,6 +164,13 @@ async function check(name, fn) {
         assert.ok(html.indexOf('gd-tabs') > html.indexOf('gd-hero'), 'under the header');
     });
 
+    await check('the header carries ESPN’s stadium photo under the dark, when the venue is known', () => {
+        const html = site.gameDetailsHtml({ ...game, venueId: '5348' });
+        assert.match(html, /class="gd-hero gd-hero-photo" style="--gd-stadium: url\('https:\/\/a.espncdn.com\/combiner\/i\?img=\/i\/venues\/nfl\/day\/interior\/5348.jpg&w=640&h=360'\)"/);
+        assert.match(site.gameDetailsHtml(game), /<div class="gd-hero">/, 'no venue id: plain black');
+        assert.match(site.gameDetailsHtml({ ...game, venueId: "1'); x" }), /<div class="gd-hero">/, 'only a numeric id reaches the style');
+    });
+
     console.log('\nMatchup');
 
     await check('ATS this season at the board line; a picker’s locked number changes nothing', () => {
@@ -309,13 +316,22 @@ async function check(name, fn) {
         assert.match(t, /Stephen \(you\) Falcons \+3 ★ 49ers/);
         assert.match(t, /Cowherd Falcons \+3 –/, 'his line, no locked tag or star: all of his are');
         assert.match(html, /<tr class="you"><td>Stephen/);
-        for (const p of site.PICKERS.filter(p => !['Stephen', 'Daniel'].includes(p))) assert.match(t, new RegExp(`${p} no pick yet`));
+        for (const p of site.PICKERS.filter(p => !['Stephen', 'Daniel'].includes(p))) {
+            assert.doesNotMatch(t, new RegExp(`\\b${p}\\b`), `${p} has not picked: no row`);
+        }
+        assert.doesNotMatch(t, /no pick yet/);
     });
 
-    await check('Cowherd without this game: "not in his 5"', () => {
+    await check('nobody has picked: the line says so, and no table of names', () => {
         site.__setPicks({ [week]: {} });
-        assert.match(text(site.gameDetailsHtml(game)), /Cowherd not in his 5/);
-        assert.match(text(site.gameDetailsHtml(game)), /Nobody has picked this game yet/);
+        const html = site.gameDetailsHtml(game);
+        assert.match(text(html), /Nobody has picked this game yet/);
+        assert.doesNotMatch(html, /gd-picks|not in his 5/);
+        // Cowherd alone: his row, no empty tally bar.
+        site.__setPicks({ [week]: { Cowherd: { '49ers_falcons': { line: 'away', blazin: true, frozenAt: 'x', frozenSpread: 3, frozenFavorite: 'away' } } } });
+        const only = site.gameDetailsHtml(game);
+        assert.match(text(only), /Cowherd 49ers -3/);
+        assert.doesNotMatch(only, /gd-bar|Nobody has picked/);
     });
 
     await check('your record picking each team: line picks only, this season and all seasons', () => {

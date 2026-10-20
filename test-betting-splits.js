@@ -608,10 +608,13 @@ function section(name) { console.log(`\n${name}`); }
         }
     });
 
-    await check('weather: the forecast outdoors; under a roof, "Indoors" and the temperature outside', () => {
-        assert.match(site.gameDetailsHtml(game), /gd-chip-label">Weather<\/span><span class="gd-wx" role="img" aria-label="Mostly clear"[^>]*><svg[^]*?<\/svg><\/span>60&deg;F/);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors · 60&deg;F outside/);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true, weather: null }), /gd-chip-label">Weather<\/span>Indoors</);
+    await check('weather: the town’s forecast, under a roof too, never marked indoors', () => {
+        const forecast = /gd-chip-label">Weather<\/span><span class="gd-wx" role="img" aria-label="Mostly clear"[^>]*><svg[^]*?<\/svg><\/span>60&deg;F/;
+        assert.match(site.gameDetailsHtml(game), forecast);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), forecast, 'a dome: the same');
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, indoor: true }), /Indoors/);
+        assert.match(site.gameDetailsHtml({ ...game, weather: { text: '', temp: 60 } }), /gd-chip-label">Weather<\/span>60&deg;F/, 'a temperature alone');
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, indoor: true, weather: null }), /gd-chip-label">Weather/, 'no forecast: no pill');
     });
 
     await check('°F by default; °C when the app’s Settings says so, asked each time', () => {
@@ -621,7 +624,7 @@ function section(name) { console.log(`\n${name}`); }
         let unit = 'C';
         site.__window.NFLPicksApp = { temperatureUnit: () => unit };
         assert.match(site.gameDetailsHtml(game), /gd-wx" role="img" aria-label="Mostly clear"[^>]*><svg[^]*?<\/svg><\/span>16&deg;C/, '60°F is 16°C');
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /Indoors · 16&deg;C outside/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /<\/svg><\/span>16&deg;C/);
         unit = 'F';
         assert.match(site.gameDetailsHtml(game), /gd-wx" role="img" aria-label="Mostly clear"[^>]*><svg[^]*?<\/svg><\/span>60&deg;F/, 'changed in Settings: the next draw follows');
         site.__window.NFLPicksApp = { temperatureUnit: () => { throw new Error('bridge gone'); } };

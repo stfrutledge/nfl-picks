@@ -3769,6 +3769,18 @@ footer a:hover {
     text-align: center;
 }
 
+/* The stadium behind the black, darkened so the header still reads as the
+   site's black and the white text stays legible. A photo that fails to load
+   leaves the background colour alone. */
+.gd-hero.gd-hero-photo {
+    background-color: var(--bg-dark);
+    background-image:
+        linear-gradient(rgba(10, 10, 10, 0.72), rgba(10, 10, 10, 0.86)),
+        var(--gd-stadium);
+    background-size: cover;
+    background-position: center;
+}
+
 /* Round, like the header's dark-mode toggle. */
 .gd-close {
     position: absolute;
