@@ -73,6 +73,15 @@ class Prefs(context: Context) {
         get() = prefs.getString("lastPageUrl", null)
         set(value) = prefs.edit().putString("lastPageUrl", value).apply()
 
+    /**
+     * Temperatures in the site's Game Details, "F" or "C". Fahrenheit by
+     * default, as ESPN gives them; the page asks for it each time it draws one
+     * (Bridge.temperatureUnit), so a change shows without a reload.
+     */
+    var temperatureUnit: String
+        get() = if (prefs.getString("temperatureUnit", "F") == "C") "C" else "F"
+        set(value) = prefs.edit().putString("temperatureUnit", if (value == "C") "C" else "F").apply()
+
     /** Whether Settings has already shown the system's permission prompt. */
     var askedForNotifications: Boolean
         get() = prefs.getBoolean("askedForNotifications", false)

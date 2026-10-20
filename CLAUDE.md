@@ -510,6 +510,8 @@ Each pick card's header reads "8:15 PM ET, Thur." on the left (`cardKickoffLabel
 
 Team colours too light for white text (Steelers yellow, Saints gold) put dark text on their splits bar.
 
+**°F or °C is a setting in the Android app** (Settings > Weather, 1.16+), by the owner's choice: the site asks `window.NFLPicksApp.temperatureUnit()` each time it draws a temperature (`temperatureUnit`, `formatTemperature`), so a change shows without a reload. A browser, or an app older than 1.16, shows °F; there is no browser setting. Temperatures are fetched in °F from both ESPN and Open-Meteo and converted.
+
 Before the popup there was an inline panel under the picks that a tap on the card opened (October 2026), and before that the splits sat inside the Line Pick buttons.
 
 Records, opening line, roof and forecast come off the ESPN scoreboard the schedule is already read from (`espnRecords`, `espnOpeningLine` in `fetchNFLSchedule`; `SCHEDULE_CACHE_VERSION` 9 added them and 10 the opening total). The merge of ESPN games onto the in-season snapshot copies fields one by one, so a new ESPN field has to be added there too.

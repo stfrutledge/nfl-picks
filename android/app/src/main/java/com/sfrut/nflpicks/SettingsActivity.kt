@@ -349,6 +349,8 @@ class SettingsActivity : ComponentActivity() {
 
                 if (NflPicksApp.pushConfigured) NotificationChoices()
 
+                WeatherChoice()
+
                 // Anyone can choose Stephen - there are no logins - so the
                 // admin page asks for the admin key before it shows anything.
                 if (picker == ADMIN_PICKER) {
@@ -439,6 +441,21 @@ class SettingsActivity : ComponentActivity() {
                     TimeBox("Until", quietEnd, Modifier.weight(1f)) { quietEnd = it; prefs.quietEnd = it }
                 }
             }
+        }
+    }
+
+    /**
+     * °F or °C for the weather in the site's Game Details. Rows in the picker
+     * list's style: one of two, the chosen one dark-bordered with a tick.
+     */
+    @Composable
+    private fun WeatherChoice() {
+        var unit by remember { mutableStateOf(prefs.temperatureUnit) }
+        Card {
+            Label("Weather")
+            Body("Temperatures in Game Details.")
+            PickerOption("Fahrenheit (°F)", selected = unit == "F") { unit = "F"; prefs.temperatureUnit = "F" }
+            PickerOption("Celsius (°C)", selected = unit == "C") { unit = "C"; prefs.temperatureUnit = "C" }
         }
     }
 

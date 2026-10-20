@@ -431,9 +431,24 @@ function section(name) { console.log(`\n${name}`); }
     });
 
     await check('weather: the forecast outdoors; under a roof, "Indoors" and the temperature outside', () => {
-        assert.match(site.gameDetailsHtml(game), /gd-chip-label">Weather<\/span>Mostly clear, 60&deg;/);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors · 60&deg; outside/);
+        assert.match(site.gameDetailsHtml(game), /gd-chip-label">Weather<\/span>Mostly clear, 60&deg;F/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors · 60&deg;F outside/);
         assert.match(site.gameDetailsHtml({ ...game, indoor: true, weather: null }), /gd-chip-label">Weather<\/span>Indoors</);
+    });
+
+    await check('°F by default; °C when the app’s Settings says so, asked each time', () => {
+        // A browser, or the 1.14 app with no temperatureUnit: °F.
+        site.__window.NFLPicksApp = { picker: () => 'Stephen' };
+        assert.match(site.gameDetailsHtml(game), /Mostly clear, 60&deg;F/, 'an older app: °F');
+        let unit = 'C';
+        site.__window.NFLPicksApp = { temperatureUnit: () => unit };
+        assert.match(site.gameDetailsHtml(game), /Mostly clear, 16&deg;C/, '60°F is 16°C');
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /Indoors · 16&deg;C outside/);
+        unit = 'F';
+        assert.match(site.gameDetailsHtml(game), /Mostly clear, 60&deg;F/, 'changed in Settings: the next draw follows');
+        site.__window.NFLPicksApp = { temperatureUnit: () => { throw new Error('bridge gone'); } };
+        assert.match(site.gameDetailsHtml(game), /60&deg;F/, 'a broken bridge falls back to °F');
+        delete site.__window.NFLPicksApp;
     });
 
     await check('a game abroad: the Open-Meteo forecast for its town and country, at the kickoff hour', async () => {
@@ -454,7 +469,7 @@ function section(name) { console.log(`\n${name}`); }
         await site.loadVenueForecast(paris);
         assert.match(asked[1], /latitude=48.94&longitude=2.35/, 'the French Saint-Denis, not Réunion’s');
         assert.match(asked[1], /temperature_unit=fahrenheit/);
-        assert.match(site.gameDetailsHtml(paris), /gd-chip-label">Weather<\/span>Mostly clear, 61&deg;/);
+        assert.match(site.gameDetailsHtml(paris), /gd-chip-label">Weather<\/span>Mostly clear, 61&deg;F/);
         assert.match(site.gameDetailsHtml(paris), /gd-venue">Stade de France · Saint-Denis, France</, 'abroad: the country named');
         assert.doesNotMatch(site.gameDetailsHtml({ ...game, country: 'USA' }), /USA/, 'at home: no country');
 
@@ -561,5 +576,6 @@ function loadSite() {
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
     api.__el = id => elements[id];
     api.__net = net;
+    api.__window = env;
     return api;
 }

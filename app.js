@@ -10757,14 +10757,34 @@ function detailsRecord(records, side) {
 }
 
 /**
- * "Sunny, 64°"; under a roof "Indoors · 64° outside" - ESPN forecasts the
+ * °F or °C: the Android app's Settings > Weather (1.16+), asked each time so
+ * a change shows straight away. °F everywhere else - a browser, or an older
+ * app without the setting - as ESPN gives it.
+ */
+function temperatureUnit() {
+    try {
+        return window.NFLPicksApp?.temperatureUnit?.() === 'C' ? 'C' : 'F';
+    } catch (e) {
+        return 'F';
+    }
+}
+
+/** A temperature in °F (ESPN's and Open-Meteo's as asked for), in this phone's unit. */
+function formatTemperature(fahrenheit) {
+    return temperatureUnit() === 'C'
+        ? `${Math.round((fahrenheit - 32) * 5 / 9)}&deg;C`
+        : `${Math.round(fahrenheit)}&deg;F`;
+}
+
+/**
+ * "Sunny, 64°F"; under a roof "Indoors · 64°F outside" - ESPN forecasts the
  * stadium's town either way, and the temperature outside is still worth
  * knowing (the conditions are not: it is not raining on the field). A game
  * abroad, which ESPN gives no weather for, uses its Open-Meteo forecast.
  */
 function detailsWeather(game) {
     const weather = game.weather || venueForecasts.get(pickKey(game)) || null;
-    const temp = weather?.temp != null ? `${weather.temp}&deg;` : '';
+    const temp = weather?.temp != null ? formatTemperature(Number(weather.temp)) : '';
     if (game.indoor) return temp ? `Indoors · ${temp} outside` : 'Indoors';
     if (!weather?.text) return '';
     return temp ? `${weather.text}, ${temp}` : weather.text;

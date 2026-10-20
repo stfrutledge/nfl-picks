@@ -316,6 +316,10 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun openSettings() = runOnUiThread { this@MainActivity.openSettings() }
 
+        /** "F" or "C", for the temperatures in the site's Game Details (Settings > Weather). */
+        @JavascriptInterface
+        fun temperatureUnit(): String = prefs.temperatureUnit
+
         /** Tells the page that Settings has the admin actions, so it can drop its own buttons. */
         @JavascriptInterface
         fun hasAdminTools(): Boolean = true

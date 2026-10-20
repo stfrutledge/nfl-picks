@@ -55,7 +55,9 @@ three things a web page cannot do:
   reworded for now. No answer (offline, an older worker) shows it as it was.
 
 The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
-`openSettings()`, `hasAdminTools()`). The site's side is
+`openSettings()`, `hasAdminTools()`, and from 1.16 `temperatureUnit()`, "F" or
+"C" from Settings > Weather, which the site's Game Details asks each time it
+draws a temperature; an older app or a browser shows °F). The site's side is
 `setupAppSettingsButton()`: the header gear shows only when that bridge
 exists, and the page's admin buttons are hidden (`.app-admin-tools`) only when
 `hasAdminTools()` says so. The site and the APK ship separately, so a site
