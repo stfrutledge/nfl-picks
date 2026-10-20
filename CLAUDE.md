@@ -500,7 +500,7 @@ When notifications stop, look at the worker's **Observability** tab in Cloudflar
 
 ## Betting splits
 
-Each open game's card has a splits strip under its picks: a row per source, a column per side (away left, home right, under the buttons), each "money% · bets%" on the spread. Sources, in order: **AN**, Action Network's consensus across books; **DK**, DraftKings alone; **Circa**, the sharps' book. The site reads them from the worker's `/splits` on load and every 10 minutes while visible (`loadBettingSplits`, `gameSplitsHtml`); the strip disappears once a game is locked, because the numbers then turn into live betting.
+Each open game's card has a splits strip under its picks: a column per side (away left, home right, under the buttons), "money% · bets%" on the spread, labelled **Public**. It shows Action Network's consensus only, by the owner's choice: it already combines the books. The worker still gathers DraftKings and Circa too, and the Splits tab stores all three; `SPLITS_BOOKS` in app.js is the list shown, so a source can be put back on the cards there. The site reads them from the worker's `/splits` on load and every 10 minutes while visible (`loadBettingSplits`, `gameSplitsHtml`); the strip disappears once a game is locked, because the numbers then turn into live betting.
 
 Two layouts were tried and dropped, so don't go back to them: inside the Line Pick buttons (it made them taller than the Straight Up buttons beside them), and a column per source (three across cut the team names off on a phone).
 

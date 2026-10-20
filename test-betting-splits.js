@@ -338,31 +338,22 @@ function section(name) { console.log(`\n${name}`); }
 
     const site = loadSite();
     const game = { id: 1, away: 'Patriots', home: 'Bears', spread: 3, favorite: 'home' };
-    site.__setSplits({ patriots_bears: {
+    const BOTH = {
+        an: { away: { line: 3, handle: 74, bets: 77 }, home: { line: -3, handle: 26, bets: 23 } },
         dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } },
         circa: { away: { line: 3, handle: 55, bets: 37 }, home: { line: -3, handle: 45, bets: 63 } }
-    } });
+    };
+    site.__setSplits({ patriots_bears: BOTH });
 
-    await check('a strip of its own: a row per book, away then home, money then bets', () => {
+    await check('a strip of its own: away then home, money then bets', () => {
         const html = site.gameSplitsHtml(game, false);
         assert.match(html, /game-splits-team">Patriots \+3<[\s\S]*game-splits-team">Bears -3</, 'away column first, as the buttons');
-        assert.match(html, /book"[^>]*>DK<\/span><span[^>]*>84% · 78%<\/span><span[^>]*>16% · 22%</);
-        assert.match(html, /book"[^>]*>Circa<\/span><span[^>]*>55% · 37%<\/span><span[^>]*>45% · 63%</);
-        assert.ok(html.indexOf('>DK<') < html.indexOf('>Circa<'), 'books in a fixed order');
+        assert.match(html, /book"[^>]*>Public<\/span><span[^>]*>74% · 77%<\/span><span[^>]*>26% · 23%</);
     });
 
-    await check('Action Network leads when it is there', () => {
-        site.__setSplits({ patriots_bears: {
-            an: { away: { line: 3, handle: 74, bets: 77 }, home: { line: -3, handle: 26, bets: 23 } },
-            dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } }
-        } });
+    await check('the consensus only: DraftKings and Circa are stored, not shown', () => {
         const html = site.gameSplitsHtml(game, false);
-        assert.ok(html.indexOf('>AN<') >= 0 && html.indexOf('>AN<') < html.indexOf('>DK<'));
-        assert.match(html, />AN<\/span><span[^>]*>74% · 77%</);
-        site.__setSplits({ patriots_bears: {
-            dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } },
-            circa: { away: { line: 3, handle: 55, bets: 37 }, home: { line: -3, handle: 45, bets: 63 } }
-        } });
+        assert.doesNotMatch(html, /84%|55%|DK|Circa/);
     });
 
     await check('nothing once the game is locked, or for a game with no splits', () => {
@@ -370,12 +361,9 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(site.gameSplitsHtml({ ...game, away: 'Jets', home: 'Dolphins' }, false), '');
     });
 
-    await check('one book only shows that book alone', () => {
-        site.__setSplits({ patriots_bears: { dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } } } });
-        const html = site.gameSplitsHtml(game, false);
-        assert.match(html, /DK<\/span>/);
-        assert.doesNotMatch(html, /Circa/);
-
+    await check('a game only DraftKings or Circa carries shows no strip', () => {
+        site.__setSplits({ patriots_bears: { dk: BOTH.dk, circa: BOTH.circa } });
+        assert.strictEqual(site.gameSplitsHtml(game, false), '');
     });
 
     fs.unlinkSync(tmp);

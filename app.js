@@ -10614,18 +10614,20 @@ function renderLeaderboard(stats) {
 
 /**
  * Public betting splits on the spread, from the worker's /splits: for each
- * side of a game, its share of the money (handle) and of the bets - Action
- * Network's consensus across books, DraftKings (one public book, thin early
- * in the week) and Circa (the sharps'). Shown inside each
- * Line Pick button while the game is open. The worker writes each game's
- * last numbers before kickoff to the Splits tab, for later; nothing here
- * stores them.
+ * side of a game, its share of the money (handle) and of the bets. Shown in
+ * a strip under the picks while the game is open.
+ *
+ * The worker gathers three sources - Action Network's consensus across
+ * books, DraftKings alone and Circa - and the Splits tab stores all three at
+ * kickoff. The cards show the consensus only: it already combines the
+ * books, and DraftKings alone was misleading early in the week (October
+ * 2026). SPLITS_BOOKS is what is shown; add a source back here to show it.
  *
  * Keyed by pickKey: the worker builds its keys with the same team aliases.
- * A game either book is not carrying simply shows the other, or nothing.
+ * A game the consensus is not carrying shows no strip.
  */
 const SPLITS_REFRESH_MS = 10 * 60 * 1000;
-const SPLITS_BOOKS = [['an', 'AN', 'Action Network consensus'], ['dk', 'DK', 'DraftKings'], ['circa', 'Circa', 'Circa Sports']];
+const SPLITS_BOOKS = [['an', 'Public', 'Action Network consensus across sportsbooks']];
 let bettingSplits = {};
 let splitsFetchedAt = 0;
 let splitsFetchInFlight = false;
