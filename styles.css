@@ -4063,14 +4063,17 @@ footer a:hover {
     gap: 10px;
     background: #ffffff;
     border-radius: 6px;
-    padding: 3px 8px;
+    padding: 2px 6px;
 }
 
+/* 24px: at 18px the thin marks (Prime Video's) broke up. The SVGs carry a
+   small margin round their artwork, so their edges are never shaved off. */
 .gd-tv-logo {
-    height: 18px;
+    height: 24px;
     width: auto;
-    max-width: 96px;
+    max-width: 120px;
     object-fit: contain;
+    display: block;
 }
 
 .gd-tv-name {
