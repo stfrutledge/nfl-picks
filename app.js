@@ -11050,13 +11050,54 @@ function formatTemperature(fahrenheit) {
  * knowing (the conditions are not: it is not raining on the field). A game
  * abroad, which ESPN gives no weather for, uses its Open-Meteo forecast.
  */
+/**
+ * The forecast as an icon and the temperature (the owner's choice over
+ * ESPN's words: "Intermittent clouds", "Hazy sunshine"). The words stay as
+ * the icon's tooltip and label. Indoors keeps its words.
+ */
 function detailsWeather(game) {
     const weather = game.weather || venueForecasts.get(pickKey(game)) || null;
     const temp = weather?.temp != null ? formatTemperature(Number(weather.temp)) : '';
     if (game.indoor) return temp ? `Indoors · ${temp} outside` : 'Indoors';
     if (!weather?.text) return '';
-    return temp ? `${weather.text}, ${temp}` : weather.text;
+    const kind = weatherKind(weather.text);
+    if (!kind) return temp ? `${weather.text}, ${temp}` : weather.text;   // a phrase no icon fits
+    const icon = `<span class="gd-wx" role="img" aria-label="${weather.text}" title="${weather.text}">${WEATHER_ICONS[kind]}</span>`;
+    return temp ? `${icon}${temp}` : icon;
 }
+
+/**
+ * Which icon a forecast phrase gets. ESPN's are AccuWeather's ("Mostly
+ * sunny", "Intermittent clouds", "T-storms", "Flurries"), Open-Meteo's are
+ * WMO_WEATHER's; the worst weather named wins ("Partly sunny w/ showers"
+ * is rain). Null for a phrase none of them fits.
+ */
+function weatherKind(text) {
+    const t = String(text || '').toLowerCase();
+    if (/thunder|t-storm|storm/.test(t)) return 'storm';
+    if (/snow|flurr|sleet|ice|freezing/.test(t)) return 'snow';
+    if (/rain|shower|drizzle/.test(t)) return 'rain';
+    if (/fog|haze|hazy(?! sunshine)|mist/.test(t)) return 'fog';
+    if (/wind/.test(t)) return 'wind';
+    if (/partly|intermittent|mostly sunny|mostly clear|hazy sunshine|some clouds|few clouds/.test(t)) return 'partly';
+    if (/cloud|overcast|dreary/.test(t)) return 'cloud';
+    if (/sun|clear|fair/.test(t)) return 'sun';
+    return null;
+}
+
+// Drawn inline, 24x24, in fixed colours that read on both themes' panels.
+const WX_SUN = '<circle cx="12" cy="12" r="4.2" fill="#f59e0b"/><g stroke="#f59e0b" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g>';
+const WX_CLOUD = (y = 0) => `<path transform="translate(0 ${y})" d="M7 18.5h10.2a3.8 3.8 0 0 0 .4-7.6 5.6 5.6 0 0 0-10.8 1.3A3.2 3.2 0 0 0 7 18.5z" fill="#94a3b8"/>`;
+const WEATHER_ICONS = Object.fromEntries(Object.entries({
+    sun: WX_SUN,
+    partly: '<g transform="translate(-0.6 -0.6) scale(.7)">' + WX_SUN + '</g>' + WX_CLOUD(1.5),
+    cloud: WX_CLOUD(0),
+    rain: WX_CLOUD(-3) + '<g stroke="#3b82f6" stroke-width="2" stroke-linecap="round"><path d="M8.5 18.5l-1 2.5M12.5 18.5l-1 2.5M16.5 18.5l-1 2.5"/></g>',
+    storm: WX_CLOUD(-3) + '<path d="M12.8 15.5l-3 4.5h2.6l-1.2 3.5 4-5.2h-2.6l1.4-2.8z" fill="#f59e0b"/>',
+    snow: WX_CLOUD(-3) + '<g fill="#60a5fa"><circle cx="8.5" cy="19.5" r="1.2"/><circle cx="12.5" cy="21.5" r="1.2"/><circle cx="16.5" cy="19.5" r="1.2"/></g>',
+    fog: '<g stroke="#94a3b8" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M3 12h18M5 16h14M7 20h10"/></g>',
+    wind: '<g stroke="#94a3b8" stroke-width="2" stroke-linecap="round" fill="none"><path d="M3 9h11a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h7"/></g>'
+}).map(([kind, body]) => [kind, `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">${body}</svg>`]));
 
 // Forecasts for games abroad, by pickKey, from Open-Meteo: ESPN gives no
 // weather for a stadium outside the US (the Paris and London games). Free,
@@ -11528,7 +11569,6 @@ function matchupPanelHtml(game) {
 
 // Injury statuses worst first; anything else after them.
 const INJURY_ORDER = ['Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Physically Unable to Perform', 'Suspension'];
-const INJURIES_SHOWN = 6;
 // Sides whose whole injury list is open: outside the render, which redraws
 // while the popup is up; cleared when another game opens.
 const injuriesOpen = new Set();
@@ -11560,15 +11600,20 @@ function playersPanelHtml(game) {
         return `<span class="gd-status ${cls}" title="${status}">${short}</span>`;
     };
     const injuries = side => {
-        const players = [...(summaryForSide(summary.data.injuries, game, side)?.players || [])]
-            .sort((x, y) => rank(x.status) - rank(y.status));
+        // ESPN's own list first (the same players ESPN shows, by the owner's
+        // choice), and the whole roster list behind "Show all" when the
+        // worker sent one with more in it.
+        const entry = summaryForSide(summary.data.injuries, game, side);
+        const worstFirst = list => [...(list || [])].sort((x, y) => rank(x.status) - rank(y.status));
+        const espn = worstFirst(entry?.players);
+        const all = worstFirst(entry?.all);
+        const open = injuriesOpen.has(side) && all.length > espn.length;
+        const players = open ? all : espn;
         if (players.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None listed.')}</div>`;
-        const open = injuriesOpen.has(side);
-        const rows = players.slice(0, open ? players.length : INJURIES_SHOWN).map(p => `
+        const rows = players.map(p => `
                         <div class="gd-injury">${headshotHtml(p.headshot)}<span class="gd-injury-name">${p.name}</span><span class="gd-injury-meta">${chip(p.status)}<span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></span></div>`).join('');
-        const more = players.length - INJURIES_SHOWN;
-        const toggle = more > 0
-            ? `<button type="button" class="gd-more" data-injuries="${side}">${open ? 'Show fewer' : `Show all ${players.length}`}</button>`
+        const toggle = all.length > espn.length
+            ? `<button type="button" class="gd-more" data-injuries="${side}">${open ? 'Show fewer' : `Show all ${all.length}`}</button>`
             : '';
         return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${toggle}</div>`;
     };

@@ -4203,6 +4203,16 @@ footer a:hover {
     flex-shrink: 0;
 }
 
+/* The forecast's icon, ahead of the temperature. */
+.gd-wx {
+    display: inline-flex;
+    margin-right: 4px;
+}
+
+.gd-wx svg {
+    display: block;
+}
+
 .gd-chip.weather {
     margin-left: auto;
     min-width: 0;

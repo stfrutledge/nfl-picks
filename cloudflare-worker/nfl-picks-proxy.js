@@ -1919,11 +1919,11 @@ function espnImage(href) {
 }
 
 /**
- * A team's whole injury list off its roster: every player whose latest
- * injury entry is not "Active", newest first. The summary's list stops at
- * the five newest updates, which left long-term IR players out entirely
- * (the 49ers had 25 listed, the summary 5). The roster gives no injury
- * type, so `detail` is taken from the summary where it names the player.
+ * A team's whole injury list off its roster, for the popup's "Show all":
+ * every player whose latest injury entry is not "Active", newest first. The
+ * summary's own list (shown first) stops at five, which leaves long-term IR
+ * players out (the 49ers had 25 listed, the summary 5). The roster gives no
+ * injury type, so `detail` is taken from the summary where it names the player.
  */
 function rosterInjuries(roster, detailByName) {
   return (roster?.athletes || []).flatMap(g => g.items || [])
@@ -1960,9 +1960,12 @@ function trimEspnSummary(data, rosters = {}) {
     injuries: injuryTeams.map(name => {
       const summary = summaryTeams.find(t => t.name === name)?.players || [];
       const details = new Map(summary.filter(p => p.detail).map(p => [p.name, p.detail]));
+      // `players` is ESPN's own five, what the popup shows first (the
+      // owner's choice); `all` the roster's whole list, behind "Show all".
       return {
         team: teamNickname(name),
-        players: rosters[name] ? rosterInjuries(rosters[name], details) : summary,
+        players: summary,
+        all: rosters[name] ? rosterInjuries(rosters[name], details) : summary,
       };
     }),
     lastFive: (data?.lastFiveGames || []).map(t => ({

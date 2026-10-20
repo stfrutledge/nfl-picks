@@ -53,6 +53,7 @@ function loadSite() {
             __setSummary: (id, data) => { gameSummaries.set(id, { at: Date.now(), data }); },
             __summary: id => gameSummaries.get(id),
             __injuriesOpen: () => injuriesOpen,
+            weatherKind,
             __setPicks: p => { allPicks = p; },
             __setPicker: p => { currentPicker = p; } });`);
     const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
@@ -127,15 +128,11 @@ async function check(name, fn) {
         assert.deepStrictEqual(trimEspnSummary(null), { injuries: [], lastFive: [], leaders: [] });
     });
 
-    await check('injuries from the roster: everyone not Active, newest first, the summary’s injury type kept', () => {
-        const athlete = (name, status, date, extra = {}) => ({ displayName: name, position: { abbreviation: 'WR' }, injuries: status ? [{ status, date }] : [], ...extra });
+    await check('injuries: ESPN’s own list as `players`, the roster’s whole list as `all`', () => {
+        const athlete = (name, status, date) => ({ displayName: name, position: { abbreviation: 'WR' }, injuries: status ? [{ status, date }] : [] });
         const roster = { athletes: [
-            { items: [
-                athlete('Brandon Aiyuk', 'Out', '2026-09-21T15:27Z'),
-                athlete('Deebo Samuel Sr.', 'Out', '2026-10-20T16:04Z', { headshot: { href: 'https://a.espncdn.com/i/headshots/nfl/players/full/1.png' } }),
-                athlete('George Kittle', 'Active', '2026-10-01T00:00Z'),
-                athlete('Brock Purdy', null)
-            ] },
+            { items: [athlete('Brandon Aiyuk', 'Out', '2026-09-21T15:27Z'), athlete('Deebo Samuel Sr.', 'Out', '2026-10-20T16:04Z'),
+                athlete('George Kittle', 'Active', '2026-10-01T00:00Z'), athlete('Brock Purdy', null)] },
             { items: [athlete('Ricky Pearsall', 'Injured Reserve', '2026-08-13T15:11Z')] }
         ] };
         const summary = { injuries: [{ team: { displayName: 'San Francisco 49ers' }, injuries: [
@@ -144,12 +141,14 @@ async function check(name, fn) {
             { athlete: { displayName: 'C.J. Henderson' }, status: 'Questionable', details: { type: 'Groin' } }
         ] }] };
         const out = trimEspnSummary(summary, { 'San Francisco 49ers': roster });
-        const sf = out.injuries.find(t => t.team === '49ers').players;
-        assert.deepStrictEqual(sf.map(p => `${p.name}:${p.status}:${p.detail}`),
+        const sf = out.injuries.find(t => t.team === '49ers');
+        assert.deepStrictEqual(sf.players.map(p => p.name), ['Deebo Samuel Sr.'], 'ESPN’s list unchanged');
+        assert.deepStrictEqual(sf.all.map(p => `${p.name}:${p.status}:${p.detail}`),
             ['Deebo Samuel Sr.:Out:Hamstring', 'Brandon Aiyuk:Out:', 'Ricky Pearsall:Injured Reserve:'], 'Active and healthy players left out');
-        assert.strictEqual(sf[0].headshot, 'https://a.espncdn.com/i/headshots/nfl/players/full/1.png');
-        assert.deepStrictEqual(out.injuries.find(t => t.team === 'Falcons').players.map(p => p.name), ['C.J. Henderson'], 'no roster: the summary’s list');
+        const atl = out.injuries.find(t => t.team === 'Falcons');
+        assert.deepStrictEqual(atl.all, atl.players, 'no roster: the summary’s list for both');
     });
+
 
     const site = loadSite();
     const week = site.__week();
@@ -238,19 +237,41 @@ async function check(name, fn) {
         assert.match(html, /gd-headshot"><\/span><span class="gd-injury-name">Y. Abdullah/, 'no headshot: an empty circle keeps the place');
     });
 
-    await check('six injuries a team, then "Show all", which opens the rest', () => {
-        const many = Array.from({ length: 8 }, (_, i) => ({ name: `Player ${i + 1}`, pos: 'LB', status: 'Injured Reserve', detail: '' }));
-        site.__setSummary(game.espnId, { injuries: [{ team: '49ers', players: many }], lastFive: [], leaders: [] });
+    await check('ESPN’s own injuries first; "Show all" opens the roster’s whole list', () => {
+        const p = (name, status) => ({ name, pos: 'LB', status, detail: '' });
+        const espn = [p('Nick Bosa', 'Questionable'), p('Deebo Samuel Sr.', 'Out')];
+        const all = [...espn, p('Brandon Aiyuk', 'Out'), p('Ricky Pearsall', 'Injured Reserve')];
+        site.__setSummary(game.espnId, { injuries: [{ team: '49ers', players: espn, all }], lastFive: [], leaders: [] });
         site.__setTab('players');
         let html = site.gameDetailsHtml(game);
-        assert.match(html, /Player 6</);
-        assert.doesNotMatch(html, /Player 7</);
-        assert.match(html, /class="gd-more" data-injuries="away">Show all 8</);
+        assert.ok(html.indexOf('Deebo Samuel Sr.') < html.indexOf('Nick Bosa'), 'worst first');
+        assert.doesNotMatch(html, /Brandon Aiyuk/, 'only ESPN’s players until asked');
+        assert.match(html, /class="gd-more" data-injuries="away">Show all 4</);
         site.__injuriesOpen().add('away');
         html = site.gameDetailsHtml(game);
-        assert.match(html, /Player 8</);
+        assert.match(html, /Brandon Aiyuk[\s\S]*Ricky Pearsall/);
         assert.match(html, /data-injuries="away">Show fewer</);
         site.__injuriesOpen().clear();
+        site.__setSummary(game.espnId, { injuries: [{ team: '49ers', players: espn }], lastFive: [], leaders: [] });
+        assert.doesNotMatch(site.gameDetailsHtml(game), /gd-more/, 'an older worker with no full list: no button');
+    });
+
+    console.log('\nWeather');
+
+    await check('an icon for each kind of forecast, the worst weather named winning', () => {
+        const cases = {
+            Sunny: 'sun', Clear: 'sun', 'Mostly sunny': 'partly', 'Intermittent clouds': 'partly', 'Partly cloudy': 'partly',
+            'Mostly cloudy': 'cloud', Cloudy: 'cloud', Dreary: 'cloud', Showers: 'rain', 'Light rain': 'rain',
+            'Partly sunny w/ showers': 'rain', 'T-storms': 'storm', Thunderstorms: 'storm', Flurries: 'snow',
+            'Freezing rain': 'snow', Fog: 'fog', Windy: 'wind', 'Hazy sunshine': 'partly', Gibberish: null
+        };
+        for (const [phrase, kind] of Object.entries(cases)) assert.strictEqual(site.weatherKind(phrase), kind, phrase);
+        site.__setTab('betting');
+        const html = site.gameDetailsHtml({ ...game, weather: { text: 'Intermittent clouds', temp: 58 } });
+        assert.match(html, /<span class="gd-wx" role="img" aria-label="Intermittent clouds" title="Intermittent clouds"><svg/);
+        assert.doesNotMatch(html.replace(/aria-label="[^"]*"|title="[^"]*"/g, ''), /Intermittent clouds/, 'the words only as the label');
+        assert.match(site.gameDetailsHtml({ ...game, weather: { text: 'Gibberish', temp: 58 } }), /Gibberish, 58&deg;F/, 'no icon fits: the words');
+        site.__setTab('players');
     });
 
     await check('no ESPN id: says so and asks nobody', async () => {
