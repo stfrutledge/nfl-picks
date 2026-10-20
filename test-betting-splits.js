@@ -16,7 +16,7 @@ const { pathToFileURL } = require('url');
 // a temporary .mjs copy, with its internals exported for the test.
 const SOURCE = fs.readFileSync(path.join(__dirname, 'cloudflare-worker', 'nfl-picks-proxy.js'), 'utf8');
 const tmp = path.join(os.tmpdir(), `nfl-picks-splits-${process.pid}.mjs`);
-fs.writeFileSync(tmp, SOURCE + '\nexport { parseDkSplits, parseVsinSplits, parseActionNetworkSplits, recordFinalSplits, splitLine };\n');
+fs.writeFileSync(tmp, SOURCE + '\nexport { parseDkSplits, parseVsinSplits, parseActionNetworkSplits, recordFinalSplits, splitLine, recordLineMoves, espnOdds };\n');
 
 // --- page fixtures, in the shape the real pages use -----------------------------
 
@@ -338,6 +338,76 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(net.posted[0].splits[0].week, '2026_19');
     });
 
+    section('Line movement: a point each time the spread or total moves');
+
+    // DraftKings' numbers as ESPN's scoreboard gives them.
+    const scoreboardOdds = (away, home, total, openAway, openHome, openTotal) => ({
+        odds: [{ pointSpread: {
+            away: { close: { line: away }, open: { line: openAway } },
+            home: { close: { line: home }, open: { line: openHome } }
+        }, total: { over: { close: { line: `o${total}` }, open: { line: `o${openTotal}` } } } }]
+    });
+    const linesBoard = (odds, state = 'pre') => ({
+        season: 2026, seasonType: 2, week: 7,
+        games: [{ key: '49ers_falcons', away: '49ers', home: 'Falcons', kickoff: KICKOFF, state, odds }]
+    });
+    const stored = () => JSON.parse(kv.get('lines:2026:7') || '{}')['49ers_falcons'];
+
+    await check('ESPN’s odds read: spread as printed, total as a number, now and at the open', () => {
+        assert.deepStrictEqual(mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5)),
+            { away: '-3.5', home: '+3.5', total: 49.5, openAway: '-4.5', openHome: '+4.5', openTotal: 47.5 });
+        assert.strictEqual(mod.espnOdds({}), null, 'no odds, no line');
+    });
+
+    await check('the first run keeps the opening line, then the line as it is', async () => {
+        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
+        const r = await mod.recordLineMoves(ENV, linesBoard(odds), KICKOFF - 3 * 86400000);
+        assert.deepStrictEqual(r.moved, ['49ers_falcons']);
+        assert.deepStrictEqual(stored(), [
+            { at: null, away: '-4.5', home: '+4.5', total: 47.5 },
+            { at: KICKOFF - 3 * 86400000, away: '-3.5', home: '+3.5', total: 49.5 }
+        ]);
+    });
+
+    await check('nothing moved: nothing written; a move: one more point', async () => {
+        const at = KICKOFF - 3 * 86400000;
+        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
+        await mod.recordLineMoves(ENV, linesBoard(odds), at);
+        const writes = kv.size;
+        const same = await mod.recordLineMoves(ENV, linesBoard(odds), at + 15 * MIN);
+        assert.deepStrictEqual(same.moved, [], 'the same numbers 15 minutes on');
+        assert.strictEqual(stored().length, 2);
+
+        const totalOnly = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 50.5, '-4.5', '+4.5', 47.5));
+        await mod.recordLineMoves(ENV, linesBoard(totalOnly), at + 30 * MIN);
+        const spread = mod.espnOdds(scoreboardOdds('-3', '+3', 50.5, '-4.5', '+4.5', 47.5));
+        await mod.recordLineMoves(ENV, linesBoard(spread), at + 45 * MIN);
+        assert.deepStrictEqual(stored().slice(-2).map(p => [p.away, p.total]), [['-3.5', 50.5], ['-3', 50.5]], 'a total move counts too');
+        assert.ok(kv.size >= writes);
+    });
+
+    await check('not after kickoff, and not on a run ESPN refused', async () => {
+        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
+        await mod.recordLineMoves(ENV, linesBoard(odds, 'in'), KICKOFF + MIN);
+        assert.strictEqual(stored(), undefined, 'live betting is not the line');
+        const r = await mod.recordLineMoves(ENV, { ...linesBoard(odds), espnError: 'ESPN answered 403' }, KICKOFF - MIN);
+        assert.match(r.skipped, /ESPN/);
+        assert.strictEqual(stored(), undefined);
+    });
+
+    await check('/lines answers a week’s history, readable cross-origin; a bad week is refused', async () => {
+        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
+        await mod.recordLineMoves(ENV, linesBoard(odds), KICKOFF - 86400000);
+        const r = await worker.fetch(new Request('https://w.test/lines?season=2026&week=7'), ENV, {});
+        assert.strictEqual(r.headers.get('Access-Control-Allow-Origin'), '*');
+        const body = await r.json();
+        assert.strictEqual(body.games['49ers_falcons'].length, 2);
+        const bad = await worker.fetch(new Request('https://w.test/lines?season=x&week=7'), ENV, {});
+        assert.strictEqual(bad.status, 400);
+        const empty = await (await worker.fetch(new Request('https://w.test/lines?season=2026&week=8'), ENV, {})).json();
+        assert.deepStrictEqual(empty.games, {}, 'a week with nothing yet');
+    });
+
     section('Game Details');
 
     const site = loadSite();
@@ -510,6 +580,41 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(html, /gd-record/);
     });
 
+    await check('Movement: oldest first, from the side favoured now, the latest in bold, times in ET', () => {
+        // Bears favoured now at -3 (the card's line); opened at -1.5.
+        site.__setLineHistory({ patriots_bears: [
+            { at: null, away: '+1.5', home: '-1.5', total: 47.5 },
+            { at: Date.parse('2026-10-20T13:15:00Z'), away: '+2.5', home: '-2.5', total: 48.5 },
+            { at: Date.parse('2026-10-22T18:30:00Z'), away: '+3', home: '-3', total: 50.5 }
+        ] });
+        const html = site.gameDetailsHtml(game);
+        assert.match(html, /<th>Movement \(ET\)<\/th><th>Bears<\/th><th>Total<\/th>/);
+        assert.match(html, /<tr class=""><td>Open<\/td><td>-1.5<\/td><td>47.5<\/td><\/tr>/);
+        assert.match(html, /<tr class=""><td>Tue 9:15 AM<\/td><td>-2.5<\/td><td>48.5<\/td><\/tr>/, '13:15 UTC is 9:15 AM ET');
+        assert.match(html, /<tr class="latest"><td>Thu 2:30 PM<\/td><td>-3<\/td><td>50.5<\/td><\/tr>/);
+    });
+
+    await check('a favourite that flipped reads + then -, from the side favoured now', () => {
+        site.__setLineHistory({ patriots_bears: [
+            { at: null, away: '-1', home: '+1', total: 47.5 },
+            { at: Date.parse('2026-10-21T15:00:00Z'), away: '+3', home: '-3', total: 47.5 }
+        ] });
+        assert.match(site.gameDetailsHtml(game), /<td>Open<\/td><td>\+1<\/td>[\s\S]*<td>-3<\/td>/);
+    });
+
+    await check('no table until something has moved; a long week shows the opener and the latest seven', () => {
+        site.__setLineHistory({ patriots_bears: [{ at: null, away: '+3', home: '-3', total: 44.5 }] });
+        assert.doesNotMatch(site.gameDetailsHtml(game), /gd-moves/);
+        const many = [{ at: null, away: '+1', home: '-1', total: 44 }];
+        for (let i = 1; i <= 10; i++) many.push({ at: Date.parse('2026-10-20T12:00:00Z') + i * 3600000, away: `+${1 + i / 2}`, home: `-${1 + i / 2}`, total: 44 });
+        site.__setLineHistory({ patriots_bears: many });
+        const html = site.gameDetailsHtml(game);
+        assert.strictEqual((html.match(/<tr class="(latest)?"><td>/g) || []).length, 8);
+        assert.match(html, /<td>Open<\/td>/);
+        assert.match(html, /3 earlier moves not shown/);
+        site.__setLineHistory({});
+    });
+
     await check('the button opens the popup on its game, it closes, and new data redraws it', () => {
         site.__setGames([game]);
         site.openGameDetails('patriots_bears');
@@ -571,7 +676,8 @@ function loadSite() {
         + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast,
             __setSplits: s => { bettingSplits = s; },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
-            __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; } });`);
+            __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; },
+            __setLineHistory: games => { lineHistory.set(currentWeek, { at: Date.now(), games }); } });`);
     const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
     api.__el = id => elements[id];

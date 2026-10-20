@@ -171,6 +171,8 @@ export default {
         return await handleEspn(request, url, ctx);
       } else if (path === '/splits') {
         return await handleSplits(request, url, ctx);
+      } else if (path === '/lines') {
+        return await handleLines(request, url, env);
       } else if (path === '/notify') {
         return await handleNotify(request, env);
       } else if (path === '/reminder-check') {
@@ -760,6 +762,7 @@ async function fetchScoreboard({ season, week } = {}) {
       final: Boolean(status.completed),
       awayScore: Number(side('away').score) || 0,
       homeScore: Number(side('home').score) || 0,
+      odds: espnOdds(comp),
     };
   });
   return {
@@ -1258,6 +1261,8 @@ async function runAutomations(env, now = Date.now()) {
   // Betting splits to the sheet. Its own errors, reported in the result and
   // kept out of trackHealth: a splits problem is not a notifications problem.
   const splits = await recordFinalSplits(env, board, now).catch(error => ({ error: error.message }));
+  // The spread and total through the week: the same terms as the splits.
+  const lines = await recordLineMoves(env, board, now).catch(error => ({ error: error.message }));
   // Said in every result, so the logs and trackHealth know ESPN refused.
   const degraded = board.espnError ? { espnError: board.espnError } : {};
 
@@ -1280,7 +1285,7 @@ async function runAutomations(env, now = Date.now()) {
     if (missed >= 0) dueSlates.splice(missed, 1);
   }
 
-  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done, splits, ...degraded };
+  if (!blazinCandidate && dueSlates.length === 0) return { season, week, done, splits, lines, ...degraded };
 
   const seasonPicks = await fetchSeasonPicks(env, season);
   const picks = seasonPicks[week] || {};
@@ -1308,7 +1313,7 @@ async function runAutomations(env, now = Date.now()) {
     if (sent.ok) { await markSent(env, id); done.push(id); }
   }
 
-  return { season, week, done, splits, ...degraded };
+  return { season, week, done, splits, lines, ...degraded };
 }
 
 /**
@@ -1683,6 +1688,88 @@ async function recordFinalSplits(env, board, now = Date.now()) {
     await env.NOTIFY_STATE.put(SPLITS_PENDING_KEY, JSON.stringify(pending));
   }
   return { watching: Object.keys(pending).length, written, ...(error ? { error } : {}) };
+}
+
+// ---------------------------------------------------------------------------
+// /lines - each game's spread and total through the week, as they moved.
+//
+// The cron reads the scoreboard every 15 minutes anyway, and ESPN's carries
+// DraftKings' current spread and total (and the opening ones), so a change is
+// noticed within a run of it and costs no Odds API credit. A point is kept
+// only when the spread or the total has moved, so a week is a few dozen
+// points in one KV entry. The first point of a game is its opening line,
+// which ESPN gives no time for.
+// ---------------------------------------------------------------------------
+
+const LINES_TTL_SECONDS = 60 * 24 * 60 * 60;   // forget a week's history after 60 days
+
+/**
+ * DraftKings' spread and total off a scoreboard competition, as ESPN prints
+ * the spread ("-3.5", "+3.5"), now and at the open; null with no spread.
+ */
+function espnOdds(comp) {
+  const odds = comp?.odds?.[0];
+  const ps = odds?.pointSpread;
+  const total = side => {
+    const n = parseFloat(String(odds?.total?.over?.[side]?.line || '').replace(/^[ou]/i, ''));
+    return Number.isFinite(n) ? n : null;
+  };
+  const away = ps?.away?.close?.line, home = ps?.home?.close?.line;
+  if (!away || !home) return null;
+  return {
+    away: String(away), home: String(home), total: total('close'),
+    openAway: ps?.away?.open?.line ? String(ps.away.open.line) : null,
+    openHome: ps?.home?.open?.line ? String(ps.home.open.line) : null,
+    openTotal: total('open'),
+  };
+}
+
+function linesKey(season, week) {
+  return `lines:${season}:${week}`;
+}
+
+/**
+ * Each run: add a point for every game still to kick off whose spread or
+ * total differs from its last one. Not on a run ESPN refused - the saved
+ * schedule it falls back on carries no odds, and a guess is not a move.
+ * Its own try/catch in the caller, as the splits have.
+ */
+async function recordLineMoves(env, board, now = Date.now()) {
+  if (!env.NOTIFY_STATE || board.espnError) return { skipped: board.espnError ? 'no ESPN' : 'not configured' };
+  const key = linesKey(board.season, siteWeekFor(board));
+  const history = JSON.parse(await env.NOTIFY_STATE.get(key) || '{}');
+  const moved = [];
+  for (const game of board.games) {
+    if (game.state !== 'pre' || !game.odds) continue;
+    const points = history[game.key] ||= [];
+    const o = game.odds;
+    if (points.length === 0 && o.openAway && o.openHome) {
+      points.push({ at: null, away: o.openAway, home: o.openHome, total: o.openTotal });
+    }
+    const last = points[points.length - 1];
+    if (!last || last.away !== o.away || last.home !== o.home || last.total !== o.total) {
+      points.push({ at: now, away: o.away, home: o.home, total: o.total });
+      moved.push(game.key);
+    }
+  }
+  if (moved.length > 0) {
+    await env.NOTIFY_STATE.put(key, JSON.stringify(history), { expirationTtl: LINES_TTL_SECONDS });
+  }
+  return { moved };
+}
+
+/** GET /lines?season=2026&week=7 - that week's history, by game key. */
+async function handleLines(request, url, env) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+  const season = url.searchParams.get('season'), week = url.searchParams.get('week');
+  if (!/^\d{4}$/.test(season || '') || !/^\d{1,2}$/.test(week || '')) {
+    return jsonResponse({ error: 'Give season=YYYY and week=N' }, 400);
+  }
+  if (!env.NOTIFY_STATE) return jsonResponse({ error: 'Not configured' }, 500);
+  const games = JSON.parse(await env.NOTIFY_STATE.get(linesKey(season, Number(week))) || '{}');
+  return new Response(JSON.stringify({ season: Number(season), week: Number(week), games }), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...CORS_HEADERS },
+  });
 }
 
 const PREVIEWS = ['blazin_results', 'pick_reminders'];

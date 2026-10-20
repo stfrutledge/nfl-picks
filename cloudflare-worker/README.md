@@ -8,6 +8,7 @@ It exists so that no secret and no cross-origin request lives in the browser:
 - `/sheets` - Google Sheets CSV exports. Only `https://docs.google.com/spreadsheets/...` is accepted.
 - `/sync` - the Google Apps Script web app that backs picks, results and spreads up to the sheet.
 - `/splits` - public betting splits on the spread for upcoming NFL games: each side's handle % and bets % from Action Network's consensus (the JSON scoreboard its site reads), DraftKings (DK Network's splits page) and Circa (VSiN's). None has an official API: `parseActionNetworkSplits`, `parseDkSplits`, `parseVsinSplits`; cached 5 minutes. A source failing still returns the others, with `errors` naming it. The cron also writes each game's last splits before kickoff to the sheet's **Splits** tab (`recordFinalSplits`), outside the notifications health check.
+- `/lines?season=YYYY&week=N` - that week's line history by game: a point each time DraftKings' spread or total moved, kept by the cron off ESPN's scoreboard (`recordLineMoves`), the first point the opening line.
 - `/notify` - a message from the admin to every phone with the Android app, through Firebase Cloud Messaging. POST `{ title, body }` with `Authorization: Bearer <NOTIFY_SECRET>`. See `android/README.md`.
 
 ## Deploying

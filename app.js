@@ -10687,6 +10687,8 @@ async function loadBettingSplits() {
         bettingSplits = data.games || {};
         splitsFetchedAt = Date.now();
         renderGames();
+        // The line history on the same beat, for an open Game Details.
+        if (gameDetailsKey) loadLineHistory(currentWeek, { force: true });
     } catch (error) {
         console.warn('[Splits] Could not load betting splits:', error.message);
     } finally {
@@ -10747,6 +10749,71 @@ function splitsForGame(game) {
             : sides;
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Line movement, from the worker's /lines: each game's spread and total as
+// they moved through the week, a point each time either changed (the worker
+// checks every 15 minutes), the first point being the opening line, which
+// has no time. By week, fetched when a Game Details popup opens and with the
+// splits while one is open, at most every LINE_HISTORY_MAX_AGE_MS.
+// ---------------------------------------------------------------------------
+const LINE_HISTORY_MAX_AGE_MS = 5 * 60 * 1000;
+const LINE_MOVES_SHOWN = 8;   // the opener and the latest seven
+const lineHistory = new Map();   // week -> { at, games }
+const lineHistoryInFlight = new Set();
+
+async function loadLineHistory(week, { force = false } = {}) {
+    if (isHistoricalSeason() || !week || lineHistoryInFlight.has(week)) return;
+    const have = lineHistory.get(week);
+    if (have && !force && Date.now() - have.at < LINE_HISTORY_MAX_AGE_MS) return;
+    lineHistoryInFlight.add(week);
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/lines?season=${CURRENT_SEASON}&week=${week}`);
+        if (!response.ok) throw new Error(`worker answered ${response.status}`);
+        const data = await response.json();
+        lineHistory.set(week, { at: Date.now(), games: data.games || {} });
+        refreshGameDetails();
+    } catch (error) {
+        console.warn('[Lines] Could not load the line history:', error.message);
+    } finally {
+        lineHistoryInFlight.delete(week);
+    }
+}
+
+/** "Tue 9:15 AM", in ET like the rest of the site; the opening line has no time. */
+function lineMoveWhen(at) {
+    if (!at) return 'Open';
+    const date = new Date(at);
+    const day = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' });
+    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+    return `${day} ${time}`;
+}
+
+/**
+ * The Movement table under the Line one: when, the spread from the side the
+ * line favours now (as the table above reads it, so a favourite that flipped
+ * shows as + then -), and the total. Oldest first, the latest in bold; the
+ * opener and the last LINE_MOVES_SHOWN - 1 when there are more. Nothing until
+ * there has been a move: a single point says nothing the table above does not.
+ */
+function movementTableHtml(game, side) {
+    const points = lineHistory.get(currentWeek)?.games?.[pickKey(game)];
+    if (!side || !points || points.length < 2) return '';
+    const shown = points.length > LINE_MOVES_SHOWN
+        ? [points[0], ...points.slice(-(LINE_MOVES_SHOWN - 1))]
+        : points;
+    const rows = shown.map((p, i) => {
+        const latest = i === shown.length - 1;
+        return `<tr class="${latest ? 'latest' : ''}"><td>${lineMoveWhen(p.at)}</td><td>${p[side] ?? '&ndash;'}</td><td>${p.total ?? '&ndash;'}</td></tr>`;
+    }).join('');
+    const hidden = points.length - shown.length;
+    return `
+                <table class="gd-table gd-moves">
+                    <thead><tr><th>Movement (ET)</th><th>${game[side]}</th><th>Total</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                ${hidden > 0 ? `<div class="gd-moves-note">${hidden} earlier ${hidden === 1 ? 'move' : 'moves'} not shown</div>` : ''}`;
 }
 
 /** "6-0 · 2-0 road" for the away team, "2-4 · 0-3 home" for the home team. */
@@ -10994,6 +11061,7 @@ function gameDetailsHtml(game) {
                     <thead><tr><th></th><th>Opened</th><th>Now</th></tr></thead>
                     <tbody>${lineRows}</tbody>
                 </table>
+                ${movementTableHtml(game, favoured)}
             </section>` : '';
 
     const tv = detailsTvHtml(game);
@@ -11028,6 +11096,7 @@ function openGameDetails(key) {
     body.innerHTML = gameDetailsHtml(game);
     modal.classList.add('show');
     loadVenueForecast(game);
+    loadLineHistory(currentWeek);
 }
 
 function closeGameDetails() {

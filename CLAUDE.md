@@ -510,6 +510,8 @@ Each pick card's header reads "8:15 PM ET, Thur." on the left (`cardKickoffLabel
 
 Team colours too light for white text (Steelers yellow, Saints gold) put dark text on their splits bar.
 
+**Line movement.** The worker's 15-minute cron reads DraftKings' current spread and total off ESPN's scoreboard (`espnOdds`, on every game `fetchScoreboard` returns) and `recordLineMoves` keeps a point whenever either changed, for games still to kick off: one KV entry a week (`lines:<season>:<week>`, 60 days), the first point of a game its opening line with `at: null` (ESPN gives it no time). Not on a run ESPN refused: the saved schedule carries no odds. `GET /lines?season=&week=` serves it; the popup loads it (`loadLineHistory`) and draws a Movement table under the Line one (`movementTableHtml`), times in ET, the spread from the side favoured now, the opener plus the latest seven. The first timed point is when tracking began, not necessarily a move. The latest point can be half a point ahead of the Line table's "Now": that is the card's own line, refreshed from the Odds API only every few hours, while the history reads DraftKings every 15 minutes.
+
 **°F or °C is a setting in the Android app** (Settings > Weather, 1.16+), by the owner's choice: the site asks `window.NFLPicksApp.temperatureUnit()` each time it draws a temperature (`temperatureUnit`, `formatTemperature`), so a change shows without a reload. A browser, or an app older than 1.16, shows °F; there is no browser setting. Temperatures are fetched in °F from both ESPN and Open-Meteo and converted.
 
 Before the popup there was an inline panel under the picks that a tap on the card opened (October 2026), and before that the splits sat inside the Line Pick buttons.
