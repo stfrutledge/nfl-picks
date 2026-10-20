@@ -10812,6 +10812,154 @@ function movementTableHtml(game, side) {
                 ${hidden > 0 ? `<div class="gd-moves-note">${hidden} earlier ${hidden === 1 ? 'move' : 'moves'} not shown</div>` : ''}`;
 }
 
+// ---------------------------------------------------------------------------
+// Line charts: tapping "Spread · Bears" or "Total" in the Line table draws
+// that number through the week, from the open to now, as a step line - a line
+// holds its value until it jumps, so it is never drawn as a slope between
+// points. One series a chart, so its title names it and there is no legend;
+// the Movement table under it is the same data as a table. Inline SVG, no
+// library. Colour: --chart-line, the site's live blue, which passed the
+// dataviz validator on both themes' surfaces (the NFL navy failed: too dark
+// to read as a line on white).
+// ---------------------------------------------------------------------------
+
+// Which chart is open, { key, which: 'spread' | 'total' }, outside the
+// render: the popup is redrawn when splits or the history refresh.
+let lineChartOpen = null;
+
+function toggleLineChart(which) {
+    if (!gameDetailsKey || (which !== 'spread' && which !== 'total')) return;
+    lineChartOpen = lineChartOpen?.key === gameDetailsKey && lineChartOpen.which === which
+        ? null : { key: gameDetailsKey, which };
+    refreshGameDetails();
+}
+
+/** A spread as printed ("-3", "+2.5", "PK") as a number; null if it is none. */
+function spreadNumber(text) {
+    if (text === 'PK' || text === 'EVEN') return 0;
+    const n = parseFloat(text);
+    return Number.isFinite(n) ? n : null;
+}
+
+/** "+3", "-3.5", "PK": a spread back to how the site prints it. */
+function spreadText(n) {
+    return n === 0 ? 'PK' : (n > 0 ? `+${n}` : String(n));
+}
+
+/**
+ * The points a chart draws, oldest first: { at, v }, the spread read from
+ * `side` (the side favoured now, as the Line table reads it) or the total.
+ */
+function lineChartPoints(game, which, side) {
+    const points = lineHistory.get(currentWeek)?.games?.[pickKey(game)] || [];
+    return points
+        .map(p => ({ at: p.at, v: which === 'total' ? Number(p.total) : spreadNumber(p[side]) }))
+        .filter(p => p.at && Number.isFinite(p.v));
+}
+
+// The chart's own coordinates; the SVG scales to the popup's width.
+const LINE_CHART = { w: 400, h: 170, left: 40, right: 48, top: 14, bottom: 26 };
+
+/**
+ * The chart for one line: hairline grid at clean half-point ticks, day ticks
+ * along the bottom in ET, the step line in --chart-line with an 8px dot (and
+ * a 2px surface ring) at each move, and the current value at the right end.
+ * The points ride on data-points for the crosshair (showLineChartPoint).
+ */
+function lineChartHtml(game, which, side) {
+    const points = lineChartPoints(game, which, side);
+    if (points.length < 2) return '';
+    const c = LINE_CHART;
+    const plotW = c.w - c.left - c.right, plotH = c.h - c.top - c.bottom;
+    const t0 = points[0].at;
+    const kickoff = Date.parse(game.kickoff);
+    // To now - or kickoff, when that has passed and the line with it.
+    const t1 = Math.max(points[points.length - 1].at + 60000,
+        Number.isFinite(kickoff) ? Math.min(Date.now(), kickoff) : Date.now());
+    const values = points.map(p => p.v);
+    let lo = Math.min(...values), hi = Math.max(...values);
+    const step = hi - lo > 4 ? 1 : 0.5;
+    lo = Math.floor(lo / step) * step - step;
+    hi = Math.ceil(hi / step) * step + step;
+    const x = t => c.left + (t - t0) / (t1 - t0) * plotW;
+    const y = v => c.top + (hi - v) / (hi - lo) * plotH;
+    const label = v => which === 'total' ? String(v) : spreadText(v);
+
+    const grid = [];
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+        const gy = y(v).toFixed(1);
+        grid.push(`<line class="gd-chart-grid" x1="${c.left}" x2="${c.w - c.right}" y1="${gy}" y2="${gy}"/>`
+            + `<text class="gd-chart-tick" x="${c.left - 6}" y="${gy}" text-anchor="end" dominant-baseline="middle">${label(+v.toFixed(1))}</text>`);
+    }
+    // A tick at each ET midnight the line crosses, named for the day it starts.
+    const dayTicks = [];
+    let lastDay = lineMoveTime(t0).split(' ')[0];
+    for (let t = t0 + 3600000; t < t1; t += 3600000) {
+        const day = lineMoveTime(t).split(' ')[0];
+        if (day !== lastDay) {
+            dayTicks.push(`<text class="gd-chart-tick" x="${x(t).toFixed(1)}" y="${c.h - 8}" text-anchor="middle">${day}</text>`);
+            lastDay = day;
+        }
+    }
+
+    let d = `M${x(points[0].at).toFixed(1)},${y(points[0].v).toFixed(1)}`;
+    for (let i = 1; i < points.length; i++) {
+        d += ` H${x(points[i].at).toFixed(1)} V${y(points[i].v).toFixed(1)}`;
+    }
+    d += ` H${x(t1).toFixed(1)}`;
+    const dots = points.map(p => `<circle class="gd-chart-dot" cx="${x(p.at).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="4"/>`).join('');
+    const last = points[points.length - 1];
+    const name = which === 'total' ? 'Total' : `Spread · ${game[side]}`;
+
+    return `
+                <div class="gd-chart" data-which="${which}"
+                    data-points='${JSON.stringify(points.map(p => [p.at, p.v]))}'
+                    data-t0="${t0}" data-t1="${t1}" data-lo="${lo}" data-hi="${hi}">
+                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>since the open</span></span><span class="gd-chart-tip" role="status"></span></div>
+                    <svg viewBox="0 0 ${c.w} ${c.h}" role="img"
+                        aria-label="${name}: ${label(points[0].v)} at the open, ${label(last.v)} now, ${points.length - 1} ${points.length === 2 ? 'move' : 'moves'}">
+                        ${grid.join('')}
+                        ${dayTicks.join('')}
+                        <path class="gd-chart-line" d="${d}"/>
+                        ${dots}
+                        <text class="gd-chart-end" x="${(x(t1) + 6).toFixed(1)}" y="${y(last.v).toFixed(1)}" dominant-baseline="middle">${label(last.v)}</text>
+                        <line class="gd-chart-cross" x1="0" x2="0" y1="${c.top}" y2="${c.h - c.bottom}"/>
+                        <circle class="gd-chart-cross-dot" cx="0" cy="0" r="4"/>
+                    </svg>
+                </div>`;
+}
+
+/** The crosshair at the pointer: the line as it stood at that moment, and when. */
+function showLineChartPoint(chart, clientX) {
+    const svg = chart.querySelector('svg');
+    const box = svg.getBoundingClientRect();
+    const c = LINE_CHART;
+    const scale = box.width / c.w;
+    const px = (clientX - box.left) / scale;
+    const plotW = c.w - c.left - c.right, plotH = c.h - c.top - c.bottom;
+    if (px < c.left || px > c.w - c.right) { hideLineChartPoint(chart); return; }
+    const t0 = Number(chart.dataset.t0), t1 = Number(chart.dataset.t1);
+    const lo = Number(chart.dataset.lo), hi = Number(chart.dataset.hi);
+    const t = t0 + (px - c.left) / plotW * (t1 - t0);
+    const points = JSON.parse(chart.dataset.points);
+    let at = points[0];
+    for (const p of points) if (p[0] <= t) at = p;
+    const value = at[1];
+    const cy = c.top + (hi - value) / (hi - lo) * plotH;
+    const cross = svg.querySelector('.gd-chart-cross');
+    const dot = svg.querySelector('.gd-chart-cross-dot');
+    cross.setAttribute('x1', px); cross.setAttribute('x2', px);
+    dot.setAttribute('cx', px); dot.setAttribute('cy', cy);
+    chart.classList.add('hovering');
+    const tip = chart.querySelector('.gd-chart-tip');
+    tip.textContent = `${lineMoveTime(t)} · ${chart.dataset.which === 'total' ? value : spreadText(value)}`;
+}
+
+function hideLineChartPoint(chart) {
+    const charts = chart ? [chart] : document.querySelectorAll('.gd-chart.hovering');
+    charts.forEach(ch => ch.classList.remove('hovering'));
+}
+
 /** "6-0 · 2-0 road" for the away team, "2-4 · 0-3 home" for the home team. */
 function detailsRecord(records, side) {
     if (!records?.total) return '';
@@ -11049,13 +11197,21 @@ function gameDetailsHtml(game) {
         : (latest ? (String(latest.away).startsWith('-') ? 'away' : 'home') : null);
     const totalNow = Number(game.overUnder) > 0 ? Number(game.overUnder) : null;
     const totalOpen = open?.total ?? null;
-    const lineRow = (label, opened, now) => {
+    // Once the line has moved, each row's label opens its chart (lineChartHtml).
+    const key = pickKey(game);
+    const charted = which => lineChartPoints(game, which, favoured).length >= 2;
+    const lineRow = (label, which, opened, now) => {
         const moved = opened != null && now != null && parseFloat(opened) !== parseFloat(now)
             && !(now === 'PK' && parseFloat(opened) === 0);
-        return `<tr><td>${label}</td><td>${opened ?? '&ndash;'}</td><td class="${moved ? 'moved' : ''}">${now ?? '&ndash;'}</td></tr>`;
+        const open = lineChartOpen?.key === key && lineChartOpen.which === which;
+        const name = charted(which)
+            ? `<button type="button" class="gd-line-toggle${open ? ' open' : ''}" data-which="${which}" aria-expanded="${open}">${label}</button>`
+            : label;
+        return `<tr><td>${name}</td><td>${opened ?? '&ndash;'}</td><td class="${moved ? 'moved' : ''}">${now ?? '&ndash;'}</td></tr>`;
     };
-    const lineRows = (favoured ? lineRow(`Spread · ${game[favoured]}`, open ? open[favoured] : null, hasNow ? signedSpreadDisplay(game, favoured) : null) : '')
-        + (totalNow !== null || totalOpen !== null ? lineRow('Total', totalOpen, totalNow) : '');
+    const lineRows = (favoured ? lineRow(`Spread · ${game[favoured]}`, 'spread', open ? open[favoured] : null, hasNow ? signedSpreadDisplay(game, favoured) : null) : '')
+        + (totalNow !== null || totalOpen !== null ? lineRow('Total', 'total', totalOpen, totalNow) : '');
+    const chartWhich = lineChartOpen?.key === key && charted(lineChartOpen.which) ? lineChartOpen.which : null;
     const lineSection = lineRows ? `
             <section class="gd-section">
                 <div class="gd-section-head"><h4>Line</h4><span>DraftKings</span></div>
@@ -11063,6 +11219,7 @@ function gameDetailsHtml(game) {
                     <thead><tr><th></th><th>Opened${open ? ` <span class="gd-th-when">${lineMoveTime(open.at)}</span>` : ''}</th><th>Now</th></tr></thead>
                     <tbody>${lineRows}</tbody>
                 </table>
+                ${chartWhich ? lineChartHtml(game, chartWhich, favoured) : ''}
                 ${movementTableHtml(game, favoured)}
             </section>` : '';
 
@@ -11119,10 +11276,22 @@ function setupGameDetailsModal() {
     const modal = document.getElementById('game-details-modal');
     if (!modal || modal.dataset.wired) return;
     modal.dataset.wired = '1';
-    // The × is drawn with the popup's contents, so it is caught here too.
+    // The × and the chart toggles are drawn with the popup's contents, so they
+    // are caught here, on the popup itself.
     modal.addEventListener('click', event => {
-        if (event.target === modal || event.target.closest('.gd-close')) closeGameDetails();
+        if (event.target === modal || event.target.closest('.gd-close')) { closeGameDetails(); return; }
+        const toggle = event.target.closest('.gd-line-toggle');
+        if (toggle) toggleLineChart(toggle.dataset.which);
     });
+    // The chart's crosshair follows a mouse, or a finger dragged along it.
+    // Off the chart, it goes.
+    const follow = event => {
+        const chart = event.target.closest('.gd-chart');
+        if (chart) showLineChartPoint(chart, event.clientX);
+        else hideLineChartPoint();
+    };
+    modal.addEventListener('pointermove', follow);
+    modal.addEventListener('pointerdown', follow);
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && gameDetailsKey) closeGameDetails(); });
 }
 

@@ -519,8 +519,9 @@ function section(name) { console.log(`\n${name}`); }
         ] });
         const html = site.gameDetailsHtml(game);
         assert.match(html, /<th>Opened <span class="gd-th-when">Mon 12:00 AM<\/span><\/th><th>Now<\/th>/, '04:00 UTC is midnight ET');
-        assert.match(html, /<tr><td>Spread · Bears<\/td><td>-1.5<\/td><td class="moved">-3<\/td><\/tr>/);
-        assert.match(html, /<tr><td>Total<\/td><td>42.5<\/td><td class="moved">44.5<\/td><\/tr>/);
+        // Moved, so each label is its chart's button.
+        assert.match(html, /<tr><td><button[^>]*>Spread · Bears<\/button><\/td><td>-1.5<\/td><td class="moved">-3<\/td><\/tr>/);
+        assert.match(html, /<tr><td><button[^>]*>Total<\/button><\/td><td>42.5<\/td><td class="moved">44.5<\/td><\/tr>/);
         site.__setLineHistory({});
     });
 
@@ -667,6 +668,47 @@ function section(name) { console.log(`\n${name}`); }
         site.__setLineHistory({});
     });
 
+    const MOVED = { patriots_bears: [
+        { at: Date.parse('2026-10-19T04:00:00Z'), away: '+1.5', home: '-1.5', total: 47.5, kind: 'open' },
+        { at: Date.parse('2026-10-20T13:00:00Z'), away: '+2.5', home: '-2.5', total: 47.5 },
+        { at: Date.parse('2026-10-21T13:00:00Z'), away: '+3', home: '-3', total: 50.5 }
+    ] };
+
+    await check('charts: Spread and Total open from their labels once the line has moved', () => {
+        site.__setLineHistory({ patriots_bears: [MOVED.patriots_bears[0]] });
+        assert.doesNotMatch(site.gameDetailsHtml(game), /gd-line-toggle/, 'nothing has moved: plain labels');
+        site.__setLineHistory(MOVED);
+        const html = site.gameDetailsHtml(game);
+        assert.match(html, /<button type="button" class="gd-line-toggle" data-which="spread" aria-expanded="false">Spread · Bears<\/button>/);
+        assert.match(html, /<button type="button" class="gd-line-toggle" data-which="total" aria-expanded="false">Total<\/button>/);
+        assert.doesNotMatch(html, /class="gd-chart"/, 'closed until asked');
+    });
+
+    await check('a chart: the spread from the side favoured now, a step line, a dot at each point, the latest at the end', () => {
+        site.__setLineHistory(MOVED);
+        assert.deepStrictEqual(site.lineChartPoints(game, 'spread', 'home').map(p => p.v), [-1.5, -2.5, -3]);
+        assert.deepStrictEqual(site.lineChartPoints(game, 'total', 'home').map(p => p.v), [47.5, 47.5, 50.5]);
+        site.__setGames([game]);
+        site.openGameDetails('patriots_bears');
+        site.toggleLineChart('spread');
+        const html = site.__el('game-details-body').innerHTML;
+        assert.match(html, /gd-line-toggle open" data-which="spread" aria-expanded="true"/);
+        assert.match(html, /class="gd-chart" data-which="spread"/);
+        assert.match(html, /Spread · Bears <span>since the open<\/span>/);
+        const path = html.match(/class="gd-chart-line" d="([^"]+)"/)[1];
+        assert.match(path, /^M[\d.]+,[\d.]+ H[\d.]+ V[\d.]+ H[\d.]+ V[\d.]+ H[\d.]+$/, 'horizontal then vertical: a step, never a slope');
+        assert.strictEqual((html.match(/class="gd-chart-dot"/g) || []).length, 3);
+        assert.match(html, /class="gd-chart-end"[^>]*>-3</);
+        assert.match(html, /aria-label="Spread · Bears: -1.5 at the open, -3 now, 2 moves"/);
+
+        site.toggleLineChart('total');
+        assert.match(site.__el('game-details-body').innerHTML, /Total <span>since the open[\s\S]*class="gd-chart-end"[^>]*>50.5</, 'one chart at a time: Total replaces Spread');
+        site.toggleLineChart('total');
+        assert.doesNotMatch(site.__el('game-details-body').innerHTML, /class="gd-chart"/, 'and the same label closes it');
+        site.closeGameDetails();
+        site.__setLineHistory({});
+    });
+
     await check('the button opens the popup on its game, it closes, and new data redraws it', () => {
         site.__setGames([game]);
         site.openGameDetails('patriots_bears');
@@ -725,7 +767,7 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast,
+        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast, toggleLineChart, lineChartPoints,
             __setSplits: s => { bettingSplits = s; },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
             __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; },

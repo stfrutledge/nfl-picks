@@ -37,6 +37,9 @@
        between themes, so defining it here would take that button over with
        the wrong polarity. */
     --live-blue: #2563eb;
+    /* The line-movement charts' line: passed the dataviz validator on white
+       (the NFL navy did not - too dark to read as a line). */
+    --chart-line: #2563eb;
 
     /* Borders & Shadows */
     --border-color: #e5e7eb;
@@ -64,6 +67,7 @@
     --accent-teal: #14b8a6;
     --accent-amber: #f59e0b;
     --live-blue: #3b82f6;
+    --chart-line: #3b82f6;   /* validated on the dark card, #1a1a1a */
 
     --border-color: #2a2a2a;
     --border-light: #1f1f1f;
@@ -4027,6 +4031,145 @@ footer a:hover {
 .gd-table.gd-moves tr.latest td {
     font-weight: 900;
     color: var(--text-primary);
+}
+
+/* A Line row's label, once the line has moved: it opens that line's chart. */
+.gd-line-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--chart-line);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
+.gd-line-toggle::after {
+    content: "\25BE";
+    display: inline-block;   /* so the underline stops at the label */
+    margin-left: 4px;
+    color: var(--text-light);
+    font-size: 0.75em;
+}
+
+.gd-line-toggle.open::after {
+    content: "\25B4";
+}
+
+/* The step-line chart: hairline grid, muted ticks, one 2px line with 8px
+   dots ringed in the chart's background, the latest value in ink at the end. */
+.gd-chart {
+    position: relative;
+    margin-top: 12px;
+    padding: 10px 4px 2px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    touch-action: pan-y;
+}
+
+/* The title on the left; while a pointer is on the chart, the time and value
+   at the crosshair on the right, in the title row rather than over the plot. */
+.gd-chart-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    min-height: 22px;
+    padding: 0 8px 4px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+}
+
+.gd-chart-name > span {
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-light);
+}
+
+.gd-chart svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.gd-chart-grid {
+    stroke: var(--border-color);
+    stroke-width: 1;
+}
+
+.gd-chart-tick {
+    fill: var(--text-light);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+.gd-chart-line {
+    fill: none;
+    stroke: var(--chart-line);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+.gd-chart-dot {
+    fill: var(--chart-line);
+    stroke: var(--bg-secondary);
+    stroke-width: 2;
+}
+
+.gd-chart-end {
+    fill: var(--text-primary);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+/* The crosshair and its tooltip, only while a pointer is on the chart. */
+.gd-chart-cross,
+.gd-chart-cross-dot {
+    visibility: hidden;
+}
+
+.gd-chart-cross {
+    stroke: var(--text-light);
+    stroke-width: 1;
+}
+
+.gd-chart-cross-dot {
+    fill: var(--chart-line);
+    stroke: var(--bg-secondary);
+    stroke-width: 2;
+}
+
+.gd-chart.hovering .gd-chart-cross,
+.gd-chart.hovering .gd-chart-cross-dot {
+    visibility: visible;
+}
+
+.gd-chart-tip {
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--bg-dark);
+    color: white;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+    pointer-events: none;
+    visibility: hidden;
+}
+
+.gd-chart.hovering .gd-chart-tip {
+    visibility: visible;
 }
 
 .gd-moves-note {
