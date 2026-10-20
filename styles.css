@@ -4179,9 +4179,13 @@ footer a:hover {
 }
 
 /* One row on a phone: compact pills, the weather text shortening last. */
+/* One height for both pills, whatever is inside (the TV logo is taller
+   than the weather text); widths follow their content. */
 .gd-chips .gd-chip {
+    box-sizing: border-box;
+    height: 36px;
     gap: 5px;
-    padding: 4px 9px;
+    padding: 0 9px;
     font-size: 0.7rem;
     white-space: nowrap;
 }
