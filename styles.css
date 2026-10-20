@@ -3748,6 +3748,14 @@ footer a:hover {
     background: var(--bg-card);
 }
 
+/* On a phone the popup's black hero sits over the page's black header and
+   the two run together: a thin grey edge keeps the popup apart from it. */
+@media (max-width: 768px) {
+    .modal-content.game-details-modal {
+        border: 1px solid #6b7280;
+    }
+}
+
 .gd-hero {
     position: relative;
     background: var(--bg-dark);
