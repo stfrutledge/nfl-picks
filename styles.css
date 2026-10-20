@@ -4013,26 +4013,6 @@ footer a:hover {
     color: var(--text-light);
 }
 
-/* The Movement table under the Line one: oldest first, the latest in bold. */
-.gd-table.gd-moves {
-    margin-top: 12px;
-}
-
-.gd-table.gd-moves td {
-    padding: 7px 12px;
-    font-size: 0.8rem;
-}
-
-.gd-table.gd-moves td:first-child {
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.gd-table.gd-moves tr.latest td {
-    font-weight: 900;
-    color: var(--text-primary);
-}
-
 /* A Line row's label, once the line has moved: it opens that line's chart. */
 .gd-line-toggle {
     background: none;
@@ -4186,11 +4166,6 @@ footer a:hover {
     vertical-align: middle;
 }
 
-.gd-moves-note {
-    margin-top: 6px;
-    font-size: 0.72rem;
-    color: var(--text-light);
-}
 
 .gd-chips {
     display: flex;

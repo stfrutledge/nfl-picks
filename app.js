@@ -10745,7 +10745,6 @@ function splitsForGame(game) {
 // splits while one is open, at most every LINE_HISTORY_MAX_AGE_MS.
 // ---------------------------------------------------------------------------
 const LINE_HISTORY_MAX_AGE_MS = 5 * 60 * 1000;
-const LINE_MOVES_SHOWN = 8;   // the opener and the latest seven
 const lineHistory = new Map();   // week -> { at, games }
 const lineHistoryInFlight = new Set();
 
@@ -10825,49 +10824,13 @@ function lineMoveTime(at) {
     return `${day} ${time}`;
 }
 
-/**
- * A point's label: "Open · Sun 11:45 PM" for the Sunday-night open, "First
- * seen · Tue 5:15 PM" for a game the tracker first met later (that Sunday
- * night was missed), and the time alone for a move.
- */
-function lineMoveWhen(point) {
-    if (point.kind === 'open') return `Open · ${lineMoveTime(point.at)}`;
-    if (point.kind === 'first') return `First seen · ${lineMoveTime(point.at)}`;
-    return lineMoveTime(point.at);
-}
-
-/**
- * The Movement table under the Line one: when, the spread from the side the
- * line favours now (as the table above reads it, so a favourite that flipped
- * shows as + then -), and the total. Oldest first, the latest in bold; the
- * opener and the last LINE_MOVES_SHOWN - 1 when there are more. Nothing until
- * there has been a move: a single point says nothing the table above does not.
- */
-function movementTableHtml(game, side) {
-    const points = lineHistory.get(currentWeek)?.games?.[pickKey(game)];
-    if (!side || !points || points.length < 2) return '';
-    const shown = points.length > LINE_MOVES_SHOWN
-        ? [points[0], ...points.slice(-(LINE_MOVES_SHOWN - 1))]
-        : points;
-    const rows = shown.map((p, i) => {
-        const latest = i === shown.length - 1;
-        return `<tr class="${latest ? 'latest' : ''}"><td>${lineMoveWhen(p)}</td><td>${p[side] ?? '&ndash;'}</td><td>${p.total ?? '&ndash;'}</td></tr>`;
-    }).join('');
-    const hidden = points.length - shown.length;
-    return `
-                <table class="gd-table gd-moves">
-                    <thead><tr><th>Movement (ET)${LINE_DEMO ? ' <b class="gd-sample">SAMPLE</b>' : ''}</th><th>${game[side]}</th><th>Total</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>
-                ${hidden > 0 ? `<div class="gd-moves-note">${hidden} earlier ${hidden === 1 ? 'move' : 'moves'} not shown</div>` : ''}`;
-}
-
 // ---------------------------------------------------------------------------
 // Line charts: tapping "Spread · Bears" or "Total" in the Line table draws
 // that number through the week, from the open to now, as a step line - a line
 // holds its value until it jumps, so it is never drawn as a slope between
 // points. One series a chart, so its title names it and there is no legend;
-// the Movement table under it is the same data as a table. Inline SVG, no
+// the crosshair gives each point's time and value (a Movement table listed
+// them too, until the owner judged the charts enough). Inline SVG, no
 // library. Colour: --chart-line, the site's live blue, which passed the
 // dataviz validator on both themes' surfaces (the NFL navy failed: too dark
 // to read as a line on white).
@@ -10960,12 +10923,16 @@ function lineChartHtml(game, which, side) {
     const dots = points.map(p => `<circle class="gd-chart-dot" cx="${x(p.at).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="4"/>`).join('');
     const last = points[points.length - 1];
     const name = which === 'total' ? 'Total' : `Spread · ${game[side]}`;
+    // From the open; or, for a week whose Sunday night the tracker missed, from
+    // when it first saw the line - said here, the one place the history shows.
+    const first = lineHistory.get(currentWeek)?.games?.[pickKey(game)]?.[0];
+    const since = first?.kind === 'first' ? `since first seen ${lineMoveTime(first.at)}` : 'since the open';
 
     return `
                 <div class="gd-chart" data-which="${which}"
                     data-points='${JSON.stringify(points.map(p => [p.at, p.v]))}'
                     data-t0="${t0}" data-t1="${t1}" data-lo="${lo}" data-hi="${hi}">
-                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>since the open${LINE_DEMO ? ' · <b class="gd-sample">SAMPLE</b>' : ''}</span></span><span class="gd-chart-tip" role="status"></span></div>
+                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>${since}${LINE_DEMO ? ' · <b class="gd-sample">SAMPLE</b>' : ''}</span></span><span class="gd-chart-tip" role="status"></span></div>
                     <svg viewBox="0 0 ${c.w} ${c.h}" role="img"
                         aria-label="${name}: ${label(points[0].v)} at the open, ${label(last.v)} now, ${points.length - 1} ${points.length === 2 ? 'move' : 'moves'}">
                         ${grid.join('')}
@@ -11270,7 +11237,6 @@ function gameDetailsHtml(game) {
                     <tbody>${lineRows}</tbody>
                 </table>
                 ${chartWhich ? lineChartHtml(game, chartWhich, favoured) : ''}
-                ${movementTableHtml(game, favoured)}
             </section>` : '';
 
     const tv = detailsTvHtml(game);

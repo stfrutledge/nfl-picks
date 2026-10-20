@@ -626,45 +626,37 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(html, /gd-record/);
     });
 
-    await check('Movement: "Open · Sun ..." then each move, oldest first, the latest bold, times in ET', () => {
+    await check('no Movement table: the charts show the history', () => {
         site.__setLineHistory({ patriots_bears: [
             { at: Date.parse('2026-10-19T03:45:00Z'), away: '+1.5', home: '-1.5', total: 47.5, kind: 'open' },
-            { at: Date.parse('2026-10-20T13:15:00Z'), away: '+2.5', home: '-2.5', total: 48.5 },
-            { at: Date.parse('2026-10-22T18:30:00Z'), away: '+3', home: '-3', total: 50.5 }
+            { at: Date.parse('2026-10-20T13:15:00Z'), away: '+3', home: '-3', total: 50.5 }
         ] });
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /<th>Movement \(ET\)<\/th><th>Bears<\/th><th>Total<\/th>/);
-        assert.match(html, /<tr class=""><td>Open · Sun 11:45 PM<\/td><td>-1.5<\/td><td>47.5<\/td><\/tr>/);
-        assert.match(html, /<tr class=""><td>Tue 9:15 AM<\/td><td>-2.5<\/td><td>48.5<\/td><\/tr>/, '13:15 UTC is 9:15 AM ET');
-        assert.match(html, /<tr class="latest"><td>Thu 2:30 PM<\/td><td>-3<\/td><td>50.5<\/td><\/tr>/);
+        assert.doesNotMatch(html, /Movement|gd-moves/);
+        assert.match(html, /gd-line-toggle/, 'the charts are there instead');
+        site.__setLineHistory({});
     });
 
-    await check('a missed Sunday night reads "First seen", with its time', () => {
+    await check('a missed Sunday night: the chart says "since first seen" and when', () => {
         site.__setLineHistory({ patriots_bears: [
             { at: Date.parse('2026-10-20T21:15:00Z'), away: '+2.5', home: '-2.5', total: 48.5, kind: 'first' },
             { at: Date.parse('2026-10-21T15:00:00Z'), away: '+3', home: '-3', total: 50.5 }
         ] });
-        assert.match(site.gameDetailsHtml(game), /<td>First seen · Tue 5:15 PM<\/td>/);
+        site.__setGames([game]);
+        site.openGameDetails('patriots_bears');
+        site.toggleLineChart('spread');
+        assert.match(site.__el('game-details-body').innerHTML, /Spread · Bears <span>since first seen Tue 5:15 PM<\/span>/);
+        site.toggleLineChart('spread');
+        site.closeGameDetails();
+        site.__setLineHistory({});
     });
 
-    await check('a favourite that flipped reads + then -, from the side favoured now', () => {
+    await check('a favourite that flipped charts as + then -, from the side favoured now', () => {
         site.__setLineHistory({ patriots_bears: [
             { at: Date.parse('2026-10-19T04:00:00Z'), away: '-1', home: '+1', total: 47.5, kind: 'open' },
             { at: Date.parse('2026-10-21T15:00:00Z'), away: '+3', home: '-3', total: 47.5 }
         ] });
-        assert.match(site.gameDetailsHtml(game), /<td>Open · Mon 12:00 AM<\/td><td>\+1<\/td>[\s\S]*<td>-3<\/td>/);
-    });
-
-    await check('no table until something has moved; a long week shows the first point and the latest seven', () => {
-        site.__setLineHistory({ patriots_bears: [{ at: Date.parse('2026-10-19T04:00:00Z'), away: '+3', home: '-3', total: 44.5, kind: 'open' }] });
-        assert.doesNotMatch(site.gameDetailsHtml(game), /gd-moves/);
-        const many = [{ at: Date.parse('2026-10-19T04:00:00Z'), away: '+1', home: '-1', total: 44, kind: 'open' }];
-        for (let i = 1; i <= 10; i++) many.push({ at: Date.parse('2026-10-20T12:00:00Z') + i * 3600000, away: `+${1 + i / 2}`, home: `-${1 + i / 2}`, total: 44 });
-        site.__setLineHistory({ patriots_bears: many });
-        const html = site.gameDetailsHtml(game);
-        assert.strictEqual((html.match(/<tr class="(latest)?"><td>/g) || []).length, 8);
-        assert.match(html, /<td>Open · Mon 12:00 AM<\/td>/);
-        assert.match(html, /3 earlier moves not shown/);
+        assert.deepStrictEqual(site.lineChartPoints(game, 'spread', 'home').map(p => p.v), [1, -3]);
         site.__setLineHistory({});
     });
 
