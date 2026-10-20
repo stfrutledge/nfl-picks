@@ -11434,11 +11434,25 @@ function teamNameForAbbreviation(abbr) {
     return Object.keys(TEAM_ABBREVIATIONS).find(name => TEAM_ABBREVIATIONS[name] === abbr) || null;
 }
 
-/** "10/18/26": the game's date in ET, so a Sunday night game stays on Sunday. */
-function lastFiveDate(iso) {
-    const d = new Date(iso);
-    if (isNaN(d)) return '';
-    return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', year: '2-digit' });
+/**
+ * "Week 6" for a last-five game: ESPN's week when the worker passes it,
+ * otherwise the week this season's schedule has the two teams meeting
+ * within a day of that kickoff. A game from an earlier season, which the
+ * schedule does not hold, gets its year instead of a week.
+ */
+function lastFiveWeek(g, teamName) {
+    const label = week => (week >= FIRST_PLAYOFF_WEEK ? weekLabel(week) : `Week ${week}`);
+    if (g.week) return label(g.week);
+    const at = Date.parse(g.date);
+    const team = normalizeTeamName(teamName), opp = normalizeTeamName(teamNameForAbbreviation(g.opp) || '');
+    for (let week = 1; week <= 22 && !isNaN(at); week++) {
+        const found = (getGamesForWeekAndSeason(week, CURRENT_SEASON) || []).some(x => {
+            const teams = [normalizeTeamName(x.away), normalizeTeamName(x.home)];
+            return teams.includes(team) && teams.includes(opp) && Math.abs(Date.parse(x.kickoff) - at) < 86400000;
+        });
+        if (found) return label(week);
+    }
+    return isNaN(at) ? '' : String(new Date(at).getUTCFullYear());
 }
 
 function matchupPanelHtml(game) {
@@ -11468,9 +11482,9 @@ function matchupPanelHtml(game) {
                 const opp = teamNameForAbbreviation(g.opp);
                 const logo = opp ? `<img class="gd-l5-opp-logo" src="${getTeamLogo(opp)}" alt="" onerror="this.remove()">` : '';
                 const cls = g.result === 'W' ? 'win' : g.result === 'L' ? 'loss' : '';
-                return `<tr><td>${lastFiveDate(g.date)}</td><td><span class="gd-l5-opp"><span class="gd-l5-at">${g.atVs === '@' ? '@' : 'vs'}</span>${logo}${g.opp}</span></td><td><span class="gd-l5-wl ${cls}">${g.result || '&ndash;'}</span> ${g.score}</td></tr>`;
+                return `<tr><td>${lastFiveWeek(g, game[side])}</td><td><span class="gd-l5-opp"><span class="gd-l5-at">${g.atVs === '@' ? '@' : 'vs'}</span>${logo}${g.opp}</span></td><td><span class="gd-l5-wl ${cls}">${g.result || '&ndash;'}</span> ${g.score}</td></tr>`;
             }).join('');
-            return `<div class="gd-l5">${head}<table class="gd-table gd-l5-table"><thead><tr><th>Date</th><th>Opp</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+            return `<div class="gd-l5">${head}<table class="gd-table gd-l5-table"><thead><tr><th>Week</th><th>Opp</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>`;
         };
         lastFive = block('away') + block('home');
     }

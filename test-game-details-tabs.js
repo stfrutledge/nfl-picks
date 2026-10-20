@@ -115,6 +115,8 @@ async function check(name, fn) {
         ], 'a nameless entry is dropped; a headshot only from ESPN’s image host');
         assert.strictEqual(out.lastFive[0].team, 'Falcons');
         assert.strictEqual(out.lastFive[0].games.length, 5, 'five, not seven');
+        assert.strictEqual(out.lastFive[0].games[0].week, null, 'no week from ESPN: null');
+        assert.strictEqual(trimEspnSummary({ lastFiveGames: [{ team: {}, events: [{ week: 6 }] }] }).lastFive[0].games[0].week, 6);
         assert.deepStrictEqual(out.leaders[0].items, [{ label: 'Passing Yards', name: 'B. Purdy', pos: 'QB', value: '1,640 YDS', headshot: '' }], 'sacks left out');
         assert.doesNotMatch(JSON.stringify(out), /huge|boxscore/, 'the rest of the summary is not passed on');
     });
@@ -170,22 +172,27 @@ async function check(name, fn) {
         assert.match(t, /AGAINST THE SPREAD|Against the spread/i);
     });
 
-    await check('last five: loading, then a table a team, newest first, dates in ET, opponents with logos', () => {
+    await check('last five: loading, then a table a team, newest first, by week, opponents with logos', () => {
         assert.match(text(site.gameDetailsHtml(game)), /Loading from ESPN/);
+        // The schedule has 49ers @ Rams in week 1; ESPN's entry for it carries no week.
+        site.NFL_GAMES_BY_WEEK[1][0].kickoff = '2026-09-13T20:25:00Z';
         site.__setSummary(game.espnId, {
             injuries: [{ team: 'Falcons', players: [
                 { name: 'C. Henderson', pos: 'CB', status: 'Questionable', detail: 'Groin', headshot: 'https://a.espncdn.com/i/headshots/nfl/players/full/4240596.png' },
                 { name: 'Y. Abdullah', pos: 'LB', status: 'Out', detail: 'Hamstring' }
             ] }],
             lastFive: [{ team: '49ers', games: [
-                { result: 'L', atVs: 'vs', opp: 'CAR', score: '34-3', date: '2026-09-20T17:00Z' },
-                { result: 'W', atVs: '@', opp: 'SEA', score: '32-29', date: '2026-10-13T00:15Z' }
+                { result: 'W', atVs: '@', opp: 'LAR', score: '24-20', date: '2026-09-13T20:25Z' },
+                { result: 'L', atVs: 'vs', opp: 'CAR', score: '34-3', date: '2025-12-28T18:00Z' },
+                { result: 'W', atVs: '@', opp: 'SEA', score: '32-29', date: '2026-10-13T00:15Z', week: 6 }
             ] }],
             leaders: [{ team: '49ers', items: [{ label: 'Passing Yards', name: 'B. Purdy', pos: 'QB', value: '1,640 YDS' }] }]
         });
         const html = site.gameDetailsHtml(game);
         const t = text(html);
-        assert.match(t, /49ers Date Opp Result 10\/12\/26 @ SEA W 32-29 9\/20\/26 vs CAR L 34-3/, 'Sunday night stays Sunday; newest first');
+        assert.match(t, /49ers Week Opp Result Week 6 @ SEA W 32-29 Week 1 @ LAR W 24-20 2025 vs CAR L 34-3/,
+            'ESPN’s week; else the schedule’s; a game from last season gets its year; newest first');
+        assert.doesNotMatch(t, /\d+\/\d+\/\d+/, 'no US dates');
         assert.match(html, /gd-l5-opp-logo" src="https:\/\/a.espncdn.com\/i\/teamlogos\/nfl\/500\/sea.png"/);
         assert.match(html, /gd-l5-wl win">W<\/span> 32-29/);
         assert.match(html, /gd-l5-wl loss">L<\/span> 34-3/);

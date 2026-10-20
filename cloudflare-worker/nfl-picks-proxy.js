@@ -1934,7 +1934,7 @@ function trimEspnSummary(data) {
       team: team(t.team),
       games: (t.events || []).slice(0, 5).map(e => ({
         result: e.gameResult || '', atVs: e.atVs || '', opp: e.opponent?.abbreviation || '',
-        score: e.score || '', date: e.gameDate || '',
+        score: e.score || '', date: e.gameDate || '', week: Number(e.week) || null,
       })),
     })),
     leaders: (data?.leaders || []).map(t => ({
