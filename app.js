@@ -11279,19 +11279,21 @@ function gameDetailsHtml(game) {
                 ${chartWhich ? lineChartHtml(game, chartWhich, favoured) : ''}
             </section>` : '';
 
-    // TV and weather close the Betting tab, as pills.
+    // TV and weather: pills pinned to the foot of the popup on the Betting
+    // tab, TV on the left and weather on the right.
     const tv = detailsTvHtml(game);
-    const chips = [['TV', tv ? `<span class="gd-tv">${tv}</span>` : ''], ['Weather', detailsWeather(game)]]
-        .filter(([, value]) => value)
-        .map(([label, value]) => `<span class="gd-chip"><span class="gd-chip-label">${label}</span>${value}</span>`).join('');
-    const betting = splitsSection + lineSection + (chips ? `<div class="gd-chips">${chips}</div>` : '');
+    const chips = [['TV', 'tv', tv ? `<span class="gd-tv">${tv}</span>` : ''], ['Weather', 'weather', detailsWeather(game)]]
+        .filter(([, , value]) => value)
+        .map(([label, cls, value]) => `<span class="gd-chip ${cls}"><span class="gd-chip-label">${label}</span>${value}</span>`).join('');
+    const footer = gameDetailsTab === 'betting' && chips ? `<div class="gd-chips">${chips}</div>` : '';
+    const betting = splitsSection + lineSection;
 
     const tabs = GAME_DETAILS_TABS.map(([id, label]) =>
         `<button type="button" class="gd-tab${id === gameDetailsTab ? ' active' : ''}" data-tab="${id}" role="tab" aria-selected="${id === gameDetailsTab}">${label}</button>`).join('');
     const panel = gameDetailsTab === 'matchup' ? matchupPanelHtml(game)
         : gameDetailsTab === 'players' ? playersPanelHtml(game)
         : gameDetailsTab === 'picks' ? picksPanelHtml(game)
-        : betting || gdEmpty('No betting numbers for this game yet.');
+        : betting || (chips ? '' : gdEmpty('No betting numbers for this game yet.'));
 
     return `
         <div class="gd-hero">
@@ -11301,7 +11303,7 @@ function gameDetailsHtml(game) {
             ${where ? `<div class="gd-venue">${where}</div>` : ''}
         </div>
         <div class="gd-tabs" role="tablist">${tabs}</div>
-        <div class="gd-body" role="tabpanel">${panel}</div>`;
+        <div class="gd-body" role="tabpanel">${panel}</div>${footer}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -11594,11 +11596,11 @@ function picksPanelHtml(game) {
                     <thead><tr><th>Picking</th><th>${CURRENT_SEASON}</th><th>All seasons</th></tr></thead>
                     <tbody>${row('away')}${row('home')}</tbody>
                 </table>
-                <p class="gd-note">Your line picks on each team, at the line each was graded at.</p>`;
+                <p class="gd-note">Every line pick on each team, Blazin’ 5 or not, at the line each was graded at.</p>`;
     }
 
     return gdSection('The group’s picks', group, groupNote)
-        + gdSection(currentPicker && currentPicker !== COWHERD ? `${currentPicker}’s record` : 'Your record', mine, 'against the spread');
+        + gdSection(currentPicker && currentPicker !== COWHERD ? `${currentPicker}’s record` : 'Your record', mine, 'all ATS picks');
 }
 
 function gameForDetails(key) {

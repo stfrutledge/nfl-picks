@@ -4167,11 +4167,43 @@ footer a:hover {
 }
 
 
+/* Pinned under the scrolling body, at the foot of the popup: TV left,
+   weather right (right even when there is no TV). */
 .gd-chips {
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
-    margin-top: 18px;
+    flex-shrink: 0;
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* One row on a phone: compact pills, the weather text shortening last. */
+.gd-chips .gd-chip {
+    gap: 5px;
+    padding: 4px 9px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.gd-chips .gd-chip-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+}
+
+.gd-chips .gd-tv {
+    padding: 1px 4px;
+}
+
+.gd-chips .gd-chip.tv {
+    flex-shrink: 0;
+}
+
+.gd-chip.weather {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* The site's pills, with a green edge. */
