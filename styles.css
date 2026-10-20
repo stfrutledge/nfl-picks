@@ -4420,6 +4420,19 @@ footer a:hover {
     line-height: 1.2;
 }
 
+/* "Show all 25" under a team's injuries: a quiet text button. */
+.gd-more {
+    margin-top: 8px;
+    padding: 4px 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent-green);
+    cursor: pointer;
+}
+
 .gd-injury-meta {
     display: flex;
     flex-wrap: wrap;
@@ -4619,8 +4632,37 @@ footer a:hover {
 .gd-l5-wl.win { color: var(--accent-green); }
 .gd-l5-wl.loss { color: var(--accent-red); }
 
-.gd-h2h td {
-    white-space: nowrap;
+/* Head to head, in the Last five's table: the numbers lighter than the team. */
+.gd-h2h-num {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.gd-table.gd-h2h-table td:last-child {
+    font-weight: 400;
+}
+
+/* Three wide cells in a phone's width: a little smaller and tighter than
+   the Last five, so "Week 15, 2021" and "ATL 41-13" each keep their column. */
+.gd-h2h-table th:nth-child(1) { width: 35%; }
+.gd-h2h-table th:nth-child(2) { width: 35%; }
+
+.gd-table.gd-h2h-table td {
+    padding: 7px 6px;
+    font-size: 0.78rem;
+}
+
+.gd-table.gd-h2h-table td:first-child {
+    padding-left: 10px;
+}
+
+.gd-h2h-table .gd-l5-opp {
+    gap: 4px;
+}
+
+.gd-h2h-table .gd-l5-opp-logo {
+    width: 18px;
+    height: 18px;
 }
 
 /* Pick result states for completed games */

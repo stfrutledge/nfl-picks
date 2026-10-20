@@ -1908,28 +1908,63 @@ async function handleLines(request, url, env) {
 
 const ESPN_SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary';
 const ESPN_SUMMARY_FALLBACK = 'https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary';
+const ESPN_TEAMS = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams';
+const ESPN_TEAMS_FALLBACK = 'https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/teams';
 const SUMMARY_CACHE_SECONDS = 15 * 60;
 const SUMMARY_LEADERS = ['passingYards', 'rushingYards', 'receivingYards'];
 
-/** The three parts the popup shows, each by team nickname (as the site keys teams). */
 /** A headshot URL, only when it is ESPN's own image host; '' otherwise. */
 function espnImage(href) {
   return typeof href === 'string' && href.startsWith('https://a.espncdn.com/') ? href : '';
 }
 
-function trimEspnSummary(data) {
+/**
+ * A team's whole injury list off its roster: every player whose latest
+ * injury entry is not "Active", newest first. The summary's list stops at
+ * the five newest updates, which left long-term IR players out entirely
+ * (the 49ers had 25 listed, the summary 5). The roster gives no injury
+ * type, so `detail` is taken from the summary where it names the player.
+ */
+function rosterInjuries(roster, detailByName) {
+  return (roster?.athletes || []).flatMap(g => g.items || [])
+    .map(a => ({ a, injury: (a.injuries || [])[0] }))
+    .filter(({ injury }) => injury?.status && injury.status !== 'Active')
+    .sort((x, y) => String(y.injury.date || '').localeCompare(String(x.injury.date || '')))
+    .map(({ a, injury }) => ({
+      name: a.displayName || '',
+      pos: a.position?.abbreviation || '',
+      status: injury.status,
+      detail: detailByName.get(a.displayName) || '',
+      headshot: espnImage(a.headshot?.href),
+    }))
+    .filter(p => p.name);
+}
+
+/**
+ * The three parts the popup shows, each by team nickname (as the site keys
+ * teams). `rosters` maps a team's display name to its ESPN roster; a team whose
+ * roster could not be read keeps the summary's short list.
+ */
+function trimEspnSummary(data, rosters = {}) {
   const team = t => teamNickname(t?.displayName);
+  const fromSummary = t => (t.injuries || []).map(i => ({
+    name: i.athlete?.displayName || '',
+    pos: i.athlete?.position?.abbreviation || '',
+    status: i.status || '',
+    detail: i.details?.type || '',
+    headshot: espnImage(i.athlete?.headshot?.href),
+  })).filter(p => p.name);
+  const summaryTeams = (data?.injuries || []).map(t => ({ name: t.team?.displayName, players: fromSummary(t) }));
+  const injuryTeams = [...new Set([...summaryTeams.map(t => t.name), ...Object.keys(rosters)])].filter(Boolean);
   return {
-    injuries: (data?.injuries || []).map(t => ({
-      team: team(t.team),
-      players: (t.injuries || []).map(i => ({
-        name: i.athlete?.displayName || '',
-        pos: i.athlete?.position?.abbreviation || '',
-        status: i.status || '',
-        detail: i.details?.type || '',
-        headshot: espnImage(i.athlete?.headshot?.href),
-      })).filter(p => p.name),
-    })),
+    injuries: injuryTeams.map(name => {
+      const summary = summaryTeams.find(t => t.name === name)?.players || [];
+      const details = new Map(summary.filter(p => p.detail).map(p => [p.name, p.detail]));
+      return {
+        team: teamNickname(name),
+        players: rosters[name] ? rosterInjuries(rosters[name], details) : summary,
+      };
+    }),
     lastFive: (data?.lastFiveGames || []).map(t => ({
       team: team(t.team),
       games: (t.events || []).slice(0, 5).map(e => ({
@@ -1967,7 +2002,26 @@ async function handleEspnSummary(request, url, ctx) {
     console.warn(`[espn-summary] ${new URL(base).host} answered ${response.status}`);
   }
   if (!response.ok) return jsonResponse({ error: `ESPN answered ${response.status}` }, 502);
-  const out = new Response(JSON.stringify(trimEspnSummary(await response.json())), {
+  const data = await response.json();
+
+  // Both teams' rosters, for the full injury list. One failing leaves that
+  // team on the summary's five.
+  const rosters = {};
+  await Promise.all((data?.header?.competitions?.[0]?.competitors || []).map(async c => {
+    const id = c?.team?.id, name = c?.team?.displayName;
+    if (!/^\d{1,3}$/.test(String(id || '')) || !name) return;
+    for (const base of [ESPN_TEAMS, ESPN_TEAMS_FALLBACK]) {
+      try {
+        const r = await fetch(`${base}/${id}/roster`, { headers: ESPN_HEADERS });
+        if (r.ok) { rosters[name] = await r.json(); return; }
+        console.warn(`[espn-summary] roster ${id}: ${new URL(base).host} answered ${r.status}`);
+      } catch (error) {
+        console.warn(`[espn-summary] roster ${id}: ${error.message}`);
+      }
+    }
+  }));
+
+  const out = new Response(JSON.stringify(trimEspnSummary(data, rosters)), {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': `public, max-age=${SUMMARY_CACHE_SECONDS}`,

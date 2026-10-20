@@ -52,6 +52,7 @@ function loadSite() {
             __setTab: t => { gameDetailsTab = t; },
             __setSummary: (id, data) => { gameSummaries.set(id, { at: Date.now(), data }); },
             __summary: id => gameSummaries.get(id),
+            __injuriesOpen: () => injuriesOpen,
             __setPicks: p => { allPicks = p; },
             __setPicker: p => { currentPicker = p; } });`);
     const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
@@ -126,6 +127,30 @@ async function check(name, fn) {
         assert.deepStrictEqual(trimEspnSummary(null), { injuries: [], lastFive: [], leaders: [] });
     });
 
+    await check('injuries from the roster: everyone not Active, newest first, the summary’s injury type kept', () => {
+        const athlete = (name, status, date, extra = {}) => ({ displayName: name, position: { abbreviation: 'WR' }, injuries: status ? [{ status, date }] : [], ...extra });
+        const roster = { athletes: [
+            { items: [
+                athlete('Brandon Aiyuk', 'Out', '2026-09-21T15:27Z'),
+                athlete('Deebo Samuel Sr.', 'Out', '2026-10-20T16:04Z', { headshot: { href: 'https://a.espncdn.com/i/headshots/nfl/players/full/1.png' } }),
+                athlete('George Kittle', 'Active', '2026-10-01T00:00Z'),
+                athlete('Brock Purdy', null)
+            ] },
+            { items: [athlete('Ricky Pearsall', 'Injured Reserve', '2026-08-13T15:11Z')] }
+        ] };
+        const summary = { injuries: [{ team: { displayName: 'San Francisco 49ers' }, injuries: [
+            { athlete: { displayName: 'Deebo Samuel Sr.' }, status: 'Out', details: { type: 'Hamstring' } }
+        ] }, { team: { displayName: 'Atlanta Falcons' }, injuries: [
+            { athlete: { displayName: 'C.J. Henderson' }, status: 'Questionable', details: { type: 'Groin' } }
+        ] }] };
+        const out = trimEspnSummary(summary, { 'San Francisco 49ers': roster });
+        const sf = out.injuries.find(t => t.team === '49ers').players;
+        assert.deepStrictEqual(sf.map(p => `${p.name}:${p.status}:${p.detail}`),
+            ['Deebo Samuel Sr.:Out:Hamstring', 'Brandon Aiyuk:Out:', 'Ricky Pearsall:Injured Reserve:'], 'Active and healthy players left out');
+        assert.strictEqual(sf[0].headshot, 'https://a.espncdn.com/i/headshots/nfl/players/full/1.png');
+        assert.deepStrictEqual(out.injuries.find(t => t.team === 'Falcons').players.map(p => p.name), ['C.J. Henderson'], 'no roster: the summary’s list');
+    });
+
     const site = loadSite();
     const week = site.__week();
     const game = { id: 70, espnId: '401772900', away: '49ers', home: 'Falcons', spread: 3, favorite: 'away', kickoff: '2026-10-25T17:00:00Z' };
@@ -166,8 +191,8 @@ async function check(name, fn) {
         assert.deepStrictEqual(meetings.map(m => `${m.season}:${m.week}:${m.ats}`), ['2025:7:home', '2022:6:home']);
         site.__setTab('matchup');
         const t = text(site.gameDetailsHtml(game));
-        assert.match(t, /2025 Wk 7 ATL 10 @ SF 20 SF -1.5 SF covered/);
-        assert.match(t, /2022 Wk 6 SF 14 @ ATL 28 SF -4.5 ATL covered/);
+        assert.match(t, /Week Winner Covered Week 7, 2025 SF 20-10 SF -1.5 Week 6, 2022 ATL 28-14 ATL \+4.5/,
+            'as the Last five: when, the winner and score, the side that covered at its line');
         assert.match(t, /49ers 1-1 ATS in 2 meetings/);
         assert.match(t, /AGAINST THE SPREAD|Against the spread/i);
     });
@@ -211,6 +236,21 @@ async function check(name, fn) {
         assert.match(text(html), /None listed/, '49ers: no injuries listed');
         assert.match(html, /<img src="https:\/\/a.espncdn.com\/combiner\/i\?img=%2Fi%2Fheadshots%2Fnfl%2Fplayers%2Ffull%2F4240596.png&amp;w=96&amp;h=70"/, 'a small headshot through ESPN’s resizer');
         assert.match(html, /gd-headshot"><\/span><span class="gd-injury-name">Y. Abdullah/, 'no headshot: an empty circle keeps the place');
+    });
+
+    await check('six injuries a team, then "Show all", which opens the rest', () => {
+        const many = Array.from({ length: 8 }, (_, i) => ({ name: `Player ${i + 1}`, pos: 'LB', status: 'Injured Reserve', detail: '' }));
+        site.__setSummary(game.espnId, { injuries: [{ team: '49ers', players: many }], lastFive: [], leaders: [] });
+        site.__setTab('players');
+        let html = site.gameDetailsHtml(game);
+        assert.match(html, /Player 6</);
+        assert.doesNotMatch(html, /Player 7</);
+        assert.match(html, /class="gd-more" data-injuries="away">Show all 8</);
+        site.__injuriesOpen().add('away');
+        html = site.gameDetailsHtml(game);
+        assert.match(html, /Player 8</);
+        assert.match(html, /data-injuries="away">Show fewer</);
+        site.__injuriesOpen().clear();
     });
 
     await check('no ESPN id: says so and asks nobody', async () => {

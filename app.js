@@ -11501,16 +11501,23 @@ function matchupPanelHtml(game) {
         meetings.forEach(m => {
             if (m.ats && m.ats !== 'push') covers[normalizeTeamName(m.game[m.ats])]++;
         });
+        // As the Last five tables: when, the winner with its logo and the
+        // score, and the side that covered with its logo and its line.
+        const teamCell = (name, text) => `<span class="gd-l5-opp"><img class="gd-l5-opp-logo" src="${getTeamLogo(name)}" alt="" onerror="this.remove()">${abbr(name)}${text ? ` <span class="gd-h2h-num">${text}</span>` : ''}</span>`;
         const rows = meetings.slice(0, 6).map(m => {
             const g = m.game, r = m.result;
-            // Abbreviated, so a phone keeps each meeting on two lines.
-            const spread = signedSpreadDisplay(g, g.favorite);
-            const line = !spread ? 'no line' : spread === 'PK' ? 'PK' : `${abbr(g[g.favorite])} ${spread}`;
-            const covered = !m.ats ? '&ndash;' : m.ats === 'push' ? 'Push' : `${abbr(g[m.ats])} covered`;
-            return `<tr class="gd-h2h"><td>${m.season}<br><span class="gd-sub">${weekLabel(m.week)}</span></td><td>${abbr(g.away)} ${r.awayScore} @ ${abbr(g.home)} ${r.homeScore}</td><td>${line}<br><span class="gd-sub">${covered}</span></td></tr>`;
+            const when = `${m.week >= FIRST_PLAYOFF_WEEK ? weekLabel(m.week) : `Week ${m.week}`}, ${m.season}`;
+            const winner = r.awayScore > r.homeScore ? 'away' : r.homeScore > r.awayScore ? 'home' : null;
+            const hi = Math.max(r.awayScore, r.homeScore), lo = Math.min(r.awayScore, r.homeScore);
+            const won = winner ? teamCell(g[winner], `${hi}-${lo}`) : `<span class="gd-sub">Tie</span> ${hi}-${lo}`;
+            const spread = m.ats && m.ats !== 'push' ? signedSpreadDisplay(g, m.ats) : '';
+            const covered = !m.ats ? '<span class="gd-sub">no line</span>'
+                : m.ats === 'push' ? `<span class="gd-sub">Push</span> ${abbr(g[g.favorite])} ${signedSpreadDisplay(g, g.favorite)}`
+                : teamCell(g[m.ats], spread);
+            return `<tr><td>${when}</td><td>${won}</td><td>${covered}</td></tr>`;
         }).join('');
         const note = `${game.away} ${covers[normalizeTeamName(game.away)]}-${covers[normalizeTeamName(game.home)]} ATS in ${meetings.length} ${meetings.length === 1 ? 'meeting' : 'meetings'}`;
-        h2h = `<table class="gd-table gd-compact"><tbody>${rows}</tbody></table>`
+        h2h = `<table class="gd-table gd-l5-table gd-h2h-table"><thead><tr><th>Week</th><th>Winner</th><th>Covered</th></tr></thead><tbody>${rows}</tbody></table>`
             + `<p class="gd-note">${note}${meetings.length > 6 ? ' · latest 6 shown' : ''}${missing ? ' · loading earlier seasons&hellip;' : ''}</p>`;
     }
 
@@ -11522,6 +11529,9 @@ function matchupPanelHtml(game) {
 // Injury statuses worst first; anything else after them.
 const INJURY_ORDER = ['Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Physically Unable to Perform', 'Suspension'];
 const INJURIES_SHOWN = 6;
+// Sides whose whole injury list is open: outside the render, which redraws
+// while the popup is up; cleared when another game opens.
+const injuriesOpen = new Set();
 
 /**
  * A player's ESPN headshot as a small round photo, fetched through ESPN's
@@ -11553,10 +11563,14 @@ function playersPanelHtml(game) {
         const players = [...(summaryForSide(summary.data.injuries, game, side)?.players || [])]
             .sort((x, y) => rank(x.status) - rank(y.status));
         if (players.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None listed.')}</div>`;
-        const rows = players.slice(0, INJURIES_SHOWN).map(p => `
+        const open = injuriesOpen.has(side);
+        const rows = players.slice(0, open ? players.length : INJURIES_SHOWN).map(p => `
                         <div class="gd-injury">${headshotHtml(p.headshot)}<span class="gd-injury-name">${p.name}</span><span class="gd-injury-meta">${chip(p.status)}<span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></span></div>`).join('');
         const more = players.length - INJURIES_SHOWN;
-        return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${more > 0 ? `<p class="gd-note">+${more} more</p>` : ''}</div>`;
+        const toggle = more > 0
+            ? `<button type="button" class="gd-more" data-injuries="${side}">${open ? 'Show fewer' : `Show all ${players.length}`}</button>`
+            : '';
+        return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${toggle}</div>`;
     };
 
     const leaders = side => {
@@ -11673,6 +11687,7 @@ function openGameDetails(key) {
     const body = document.getElementById('game-details-body');
     const game = gameForDetails(key);
     if (!modal || !body || !game) return;
+    if (key !== gameDetailsKey) injuriesOpen.clear();
     gameDetailsKey = key;
     body.innerHTML = gameDetailsHtml(game);
     modal.classList.add('show');
@@ -11692,7 +11707,14 @@ function refreshGameDetails() {
     if (!gameDetailsKey) return;
     const body = document.getElementById('game-details-body');
     const game = gameForDetails(gameDetailsKey);
-    if (body && game) body.innerHTML = gameDetailsHtml(game);
+    if (!body || !game) return;
+    // The open tab scrolls inside itself; a redraw on the same tab keeps
+    // the reader where they were rather than jumping back to the top.
+    const old = body.querySelector?.('.gd-body');
+    const keep = old && body.dataset.tab === gameDetailsTab ? old.scrollTop : 0;
+    body.innerHTML = gameDetailsHtml(game);
+    body.dataset.tab = gameDetailsTab;
+    if (keep) { const next = body.querySelector?.('.gd-body'); if (next) next.scrollTop = keep; }
 }
 
 /** Close on the ×, a tap outside the card, or Escape. Wired once. */
@@ -11708,6 +11730,12 @@ function setupGameDetailsModal() {
         if (toggle) toggleLineChart(toggle.dataset.which);
         const tab = event.target.closest('.gd-tab');
         if (tab) setGameDetailsTab(tab.dataset.tab);
+        const more = event.target.closest('.gd-more');
+        if (more) {
+            const side = more.dataset.injuries;
+            if (injuriesOpen.has(side)) injuriesOpen.delete(side); else injuriesOpen.add(side);
+            refreshGameDetails();
+        }
     });
     // The chart's crosshair follows a mouse, or a finger dragged along it.
     // Off the chart, it goes.
