@@ -10763,87 +10763,133 @@ function detailsKickoff(game) {
     return `${date} · ${game.time || formatGameTime(game.kickoff)}`;
 }
 
+/** "#0b162a" -> [11, 22, 42]; anything unreadable is mid grey. */
+function hexRgb(hex) {
+    const m = String(hex || '').match(/^#?([0-9a-f]{6})$/i);
+    if (!m) return [102, 102, 102];
+    const n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 /**
- * Everything the site knows about one game, for the Game Details popup: when
- * and where, then a column per side (away left, home right, as the buttons)
- * for the records, moneylines and betting splits, then full-width lines for
- * the spread and total (each from its opening number to now), TV, weather
- * and - once it has started - the score. A row with no data is left out.
+ * The two teams' colours for the splits bars. Some pairs are near-identical
+ * (Patriots and Bears are both navy, 49ers and Falcons both red), and a bar
+ * in one colour cannot be read as a split, so a home colour too close to the
+ * away one gives way to a neutral slate. Lightening it instead turned the
+ * Falcons' red pink.
+ */
+const SPLIT_BAR_NEUTRAL = '#6b7280';
+function splitBarColours(game) {
+    const away = getTeamColor(game.away), home = getTeamColor(game.home);
+    const [a, b] = [hexRgb(away), hexRgb(home)];
+    const close = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 90;
+    return { away, home: close ? SPLIT_BAR_NEUTRAL : home };
+}
+
+/**
+ * Everything the site knows about one game, for the Game Details popup, in
+ * the site's own dress: a black hero like the page header - kickoff in the
+ * green kicker, both teams with their logos, lines (the score once it has
+ * started), records and moneylines, and the stadium - then sections under
+ * heavy uppercase titles: the betting splits as bars in the teams' colours,
+ * the line in the standings tables' style, and TV and weather as chips.
+ * Anything a game has no data for is left out.
  *
- * The splits only before kickoff: after it they are live betting. They read
- * as a title naming the source and the number of bets, then a labelled row
- * for "% of money" and "% of bets", the bigger share in bold. Layouts dropped
- * on the way (October 2026): inside the Line Pick buttons; a column per book;
- * "53% · 69%" under a "$ · bets" key; and a panel opened by tapping the card.
+ * The splits only before kickoff: after it they are live betting. The popup
+ * replaced, in October 2026, a plain grid that "looked sad" beside the rest
+ * of the site; before that came an inline panel opened by tapping the card,
+ * and before that the splits sat inside the Line Pick buttons.
  */
 function gameDetailsHtml(game) {
     const live = getLiveGameStatus(game);
-    const started = Boolean(live && (LIVE_IN_PROGRESS_STATUSES.includes(live.status) || live.status === 'STATUS_FINAL' || live.completed));
+    const final = Boolean(live && (live.status === 'STATUS_FINAL' || live.completed));
+    const started = Boolean(live && (final || LIVE_IN_PROGRESS_STATUSES.includes(live.status)));
     const showSplits = !(isGameLocked(game) || started || isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK);
     const splits = showSplits ? splitsForGame(game) : null;
     const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
-    const several = books.length > 1;
+    const haveMoneylines = game.awayMoneyline != null && game.homeMoneyline != null;
 
-    const sideRow = (label, away, home, bold) =>
-        `<span class="game-details-label">${label}</span>`
-        + `<span class="game-details-cell${bold && bold(away, home) ? ' lead' : ''}">${away}</span>`
-        + `<span class="game-details-cell${bold && bold(home, away) ? ' lead' : ''}">${home}</span>`;
-    const gameRow = (label, value) => value
-        ? `<span class="game-details-label">${label}</span><span class="game-details-wide">${value}</span>` : '';
-    const bigger = (a, b) => parseFloat(a) > parseFloat(b);
+    const team = side => {
+        const record = detailsRecord(game.records?.[side], side);
+        const line = signedSpreadDisplay(game, side);
+        const won = final && live[`${side}Score`] > live[`${side === 'away' ? 'home' : 'away'}Score`];
+        return `
+            <div class="gd-team${won ? ' gd-won' : ''}">
+                <img class="gd-logo" src="${getTeamLogo(game[side])}" alt="${game[side]} logo" onerror="handleLogoError(this, '${game[side]}')">
+                <div class="gd-team-name">${game[side]}</div>
+                ${started ? `<div class="gd-score">${live[`${side}Score`]}</div>` : (line ? `<div class="gd-line">${line}</div>` : '')}
+                ${record ? `<div class="gd-record">${record}</div>` : ''}
+                ${haveMoneylines ? `<div class="gd-record">ML ${formatMoneyline(game[`${side}Moneyline`])}</div>` : ''}
+            </div>`;
+    };
+    const middle = started
+        ? `<div class="gd-vs gd-status${final ? '' : ' live'}">${final ? 'Final' : liveClockLabel(live)}</div>`
+        : '<div class="gd-vs">@</div>';
+    const where = [game.stadium, game.location].filter(Boolean).join(' · ');
 
-    const recordAway = detailsRecord(game.records?.away, 'away');
-    const recordHome = detailsRecord(game.records?.home, 'home');
-    const records = recordAway || recordHome ? sideRow('Record', recordAway || '&ndash;', recordHome || '&ndash;') : '';
-    const moneylines = game.awayMoneyline != null && game.homeMoneyline != null
-        ? sideRow('Moneyline', formatMoneyline(game.awayMoneyline), formatMoneyline(game.homeMoneyline)) : '';
-
-    // The bet count on a line of its own under the title: beside it, the
-    // title wrapped on a phone.
-    const splitRows = books.map(([book, name]) => {
+    const colours = splitBarColours(game);
+    const bar = (label, field, book) => {
+        const away = Number(splits[book].away[field]), home = Number(splits[book].home[field]);
+        const seg = (side, pct, colour, other) =>
+            `<span class="gd-seg${pct > other ? ' lead' : ''}"`
+            + ` style="flex-grow: ${Math.max(pct, 1)}; background: ${colour}">${getTeamAbbreviation(game[side])} ${pct}%</span>`;
+        return `
+            <div class="gd-split">
+                <div class="gd-split-label">${label}</div>
+                <div class="gd-bar">${seg('away', away, colours.away, home)}${seg('home', home, colours.home, away)}</div>
+            </div>`;
+    };
+    const splitsSection = books.map(([book, name]) => {
         const count = Number(splits[book].count);
-        const bets = count > 0 ? `<span class="game-details-count">${count.toLocaleString('en-US')} bets</span>` : '';
-        return `<span class="game-details-head">${several ? name : `Betting splits · ${name}`}${bets}</span>`
-            + sideRow('% of money', `${splits[book].away.handle}%`, `${splits[book].home.handle}%`, bigger)
-            + sideRow('% of bets', `${splits[book].away.bets}%`, `${splits[book].home.bets}%`, bigger);
+        return `
+            <section class="gd-section">
+                <div class="gd-section-head">
+                    <h4>Betting Splits</h4>
+                    <span>${name}${count > 0 ? ` · ${count.toLocaleString('en-US')} bets` : ''}</span>
+                </div>
+                ${bar('% of money', 'handle', book)}
+                ${bar('% of bets', 'bets', book)}
+            </section>`;
     }).join('');
 
-    // The line as it opened and as it is now, in the two columns, under
-    // "Opened" / "Now". The spread is read from the side it favours now (the
-    // opener's, when the card has no line yet): opening is ESPN's DraftKings
-    // number, now is the card's own, the one on its buttons.
+    // The spread is read from the side it favours now (the opener's when the
+    // card has no line yet): opening is ESPN's DraftKings number, now is the
+    // card's own, the one on its buttons. A number that has moved is bold.
     const open = game.openLine;
     const hasNow = hasUsableSpread(game);
     const favoured = hasNow ? game.favorite : (open ? (String(open.away).startsWith('-') ? 'away' : 'home') : null);
     const totalNow = Number(game.overUnder) > 0 ? Number(game.overUnder) : null;
     const totalOpen = open?.total ?? null;
-    const lineRows = (favoured ? sideRow(`Spread · ${game[favoured]}`,
-            open ? open[favoured] : '&ndash;', hasNow ? signedSpreadDisplay(game, favoured) : '&ndash;') : '')
-        + (totalNow !== null || totalOpen !== null ? sideRow('Total', totalOpen ?? '&ndash;', totalNow ?? '&ndash;') : '');
-    const lines = lineRows
-        ? `<span class="game-details-head game-details-head-left">Line</span>`
-            + `<span class="game-details-subhead">Opened</span><span class="game-details-subhead">Now</span>${lineRows}`
-        : '';
+    const lineRow = (label, opened, now) => {
+        const moved = opened != null && now != null && parseFloat(opened) !== parseFloat(now)
+            && !(now === 'PK' && parseFloat(opened) === 0);
+        return `<tr><td>${label}</td><td>${opened ?? '&ndash;'}</td><td class="${moved ? 'moved' : ''}">${now ?? '&ndash;'}</td></tr>`;
+    };
+    const lineRows = (favoured ? lineRow(`Spread · ${game[favoured]}`, open ? open[favoured] : null, hasNow ? signedSpreadDisplay(game, favoured) : null) : '')
+        + (totalNow !== null || totalOpen !== null ? lineRow('Total', totalOpen, totalNow) : '');
+    const lineSection = lineRows ? `
+            <section class="gd-section">
+                <div class="gd-section-head"><h4>Line</h4><span>DraftKings</span></div>
+                <table class="gd-table">
+                    <thead><tr><th></th><th>Opened</th><th>Now</th></tr></thead>
+                    <tbody>${lineRows}</tbody>
+                </table>
+            </section>` : '';
 
-    const score = started
-        ? `${game.away} ${live.awayScore} &ndash; ${live.homeScore} ${game.home} (${live.status === 'STATUS_FINAL' || live.completed ? 'Final' : liveClockLabel(live)})`
-        : '';
-    const facts = lines
-        + gameRow('Score', score)
-        + gameRow('TV', game.broadcast || '')
-        + gameRow('Weather', detailsWeather(game));
+    const chips = [['TV', game.broadcast], ['Weather', detailsWeather(game)]]
+        .filter(([, value]) => value)
+        .map(([label, value]) => `<span class="gd-chip"><span class="gd-chip-label">${label}</span>${value}</span>`).join('');
 
-    const where = [game.stadium, game.location].filter(Boolean).join(' · ');
     return `
-        <h3 class="modal-title">${game.away} @ ${game.home}</h3>
-        <p class="game-details-when">${detailsKickoff(game)}</p>
-        ${where ? `<p class="game-details-where">${where}</p>` : ''}
-        <div class="game-details">
-            <span></span>
-            <span class="game-details-team">${game.away} ${signedSpreadDisplay(game, 'away')}</span>
-            <span class="game-details-team">${game.home} ${signedSpreadDisplay(game, 'home')}</span>
-            ${records}${moneylines}${splitRows}
-            ${facts ? `<span class="game-details-rule"></span>${facts}` : ''}
+        <div class="gd-hero">
+            <button type="button" class="gd-close" aria-label="Close">&times;</button>
+            <div class="gd-kicker">${detailsKickoff(game)}</div>
+            <div class="gd-matchup">${team('away')}${middle}${team('home')}</div>
+            ${where ? `<div class="gd-venue">${where}</div>` : ''}
+        </div>
+        <div class="gd-body">
+            ${splitsSection}${lineSection}
+            ${chips ? `<div class="gd-chips">${chips}</div>` : ''}
         </div>`;
 }
 
@@ -10875,13 +10921,15 @@ function refreshGameDetails() {
     if (body && game) body.innerHTML = gameDetailsHtml(game);
 }
 
-/** Close on the button, a tap outside the card, or Escape. Wired once. */
+/** Close on the ×, a tap outside the card, or Escape. Wired once. */
 function setupGameDetailsModal() {
     const modal = document.getElementById('game-details-modal');
     if (!modal || modal.dataset.wired) return;
     modal.dataset.wired = '1';
-    document.getElementById('game-details-close')?.addEventListener('click', closeGameDetails);
-    modal.addEventListener('click', event => { if (event.target === modal) closeGameDetails(); });
+    // The × is drawn with the popup's contents, so it is caught here too.
+    modal.addEventListener('click', event => {
+        if (event.target === modal || event.target.closest('.gd-close')) closeGameDetails();
+    });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && gameDetailsKey) closeGameDetails(); });
 }
 

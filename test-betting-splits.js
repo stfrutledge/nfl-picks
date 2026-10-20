@@ -356,6 +356,12 @@ function section(name) { console.log(`\n${name}`); }
         circa: { away: { line: 3, handle: 55, bets: 37 }, home: { line: -3, handle: 45, bets: 63 } }
     };
     site.__setSplits({ patriots_bears: BOTH });
+    // The text of one block of the popup, tags stripped, for reading.
+    const text = html => html.replace(/<[^>]+>/g, ' ').replace(/&middot;/g, '·').replace(/\s+/g, ' ').trim();
+    const block = (html, cls) => {
+        const at = html.indexOf(`class="${cls}`);
+        return at < 0 ? '' : html.slice(html.indexOf('>', at) + 1, html.indexOf('</div>', at));
+    };
 
     await check('the card header: "8:15 PM ET, Thur." on the left, a Game Details button on the right', () => {
         assert.strictEqual(site.cardKickoffLabel(game), '8:15 PM ET, Thur.');
@@ -365,74 +371,87 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(src, /<span class="game-time">\$\{cardKickoffLabel\(game\)\}<\/span>\s*\$\{statusBadge\}\s*<button type="button" class="game-details-btn" data-pick-key="\$\{key\}">Game Details<\/button>/);
     });
 
-    await check('when and where, then the teams with their lines, away first', () => {
+    await check('the hero: kickoff, both teams with logo, line, record and moneyline, the stadium, a close button', () => {
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /modal-title">Patriots @ Bears</);
-        assert.match(html, /game-details-when">Thursday, Oct 22 · 8:15 PM ET</);
-        assert.match(html, /game-details-where">Soldier Field · Chicago, IL</);
-        assert.match(html, /game-details-team">Patriots \+3<[\s\S]*game-details-team">Bears -3</);
+        assert.match(html, /class="gd-hero"/);
+        assert.match(html, /class="gd-close" aria-label="Close"/);
+        assert.match(text(block(html, 'gd-kicker')), /^Thursday, Oct 22 · 8:15 PM ET$/);
+        const [away, home] = html.split(/class="gd-team(?: gd-won)?"/).slice(1, 3).map(part => text(part.split('gd-vs')[0]));
+        assert.match(away, /Patriots \+3 4-2 · 1-2 road ML \+135/, 'away first, as the buttons');
+        assert.match(home, /Bears -3 4-2 · 2-1 home ML -160/);
+        assert.match(html, /<img class="gd-logo"[^>]*alt="Patriots logo"/);
+        assert.match(text(block(html, 'gd-venue')), /Soldier Field · Chicago, IL/);
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, awayMoneyline: null }), /ML /, 'no moneylines without both');
     });
 
-    await check('records and moneylines, a column per side', () => {
+    await check('splits: one bar per measure in the teams’ colours, each side as wide as its share', () => {
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /Record<\/span><span class="game-details-cell">4-2 · 1-2 road<\/span><span class="game-details-cell">4-2 · 2-1 home</);
-        assert.match(html, /Moneyline<\/span><span class="game-details-cell">\+135<\/span><span class="game-details-cell">-160</);
-        assert.doesNotMatch(site.gameDetailsHtml({ ...game, awayMoneyline: null }), /Moneyline/, 'not without both');
+        assert.match(text(html), /Betting Splits Action Network · 2,923 bets/);
+        const bars = html.split('class="gd-split"').slice(1);
+        assert.strictEqual(bars.length, 2);
+        assert.match(text(bars[0]), /% of money NE 74% CHI 26%/);
+        assert.match(text(bars[1]), /% of bets NE 77% CHI 23%/);
+        assert.match(bars[0], /gd-seg lead" style="flex-grow: 74; background: #/, 'the bigger share leads');
+        assert.match(bars[0], /gd-seg" style="flex-grow: 26;/);
+        assert.doesNotMatch(html, /84%|55%|>DK<|Circa/, 'the consensus only: DraftKings and Circa are stored, not shown');
     });
 
-    await check('splits: source and number of bets, a labelled row per measure, bigger in bold', () => {
+    await check('teams in the same colour: the home side gives way to a neutral slate', () => {
+        // Patriots and Bears are both navy: a bar in one colour is not a split.
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /Betting splits · Action Network<span class="game-details-count">2,923 bets<\/span>/, 'the count on its own line');
-        assert.match(html, /% of money<\/span><span class="game-details-cell lead">74%<\/span><span class="game-details-cell">26%</);
-        assert.match(html, /% of bets<\/span><span class="game-details-cell lead">77%<\/span><span class="game-details-cell">23%</);
-        assert.doesNotMatch(html, /84%|55%|DK|Circa/, 'the consensus only: DraftKings and Circa are stored, not shown');
+        assert.match(html, /CHI 26%/);
+        assert.match(html.split('class="gd-split"')[1], /flex-grow: 26; background: #6b7280"/);
+        site.__setSplits({ dolphins_bears: { an: BOTH.an } });
+        const distinct = site.gameDetailsHtml({ ...game, away: 'Dolphins' });
+        assert.doesNotMatch(distinct, /#6b7280/, 'teal against navy keeps both teams’ colours');
+        site.__setSplits({ patriots_bears: BOTH });
     });
 
-    await check('the line: spread and total under "Opened" and "Now", the spread from the side favoured now', () => {
+    await check('the line: spread and total under Opened and Now, a moved number in bold', () => {
         const html = site.gameDetailsHtml(game);
-        assert.match(html, />Line<\/span><span class="game-details-subhead">Opened<\/span><span class="game-details-subhead">Now</);
-        assert.match(html, /Spread · Bears<\/span><span class="game-details-cell">-1.5<\/span><span class="game-details-cell">-3</);
-        assert.match(html, /Total<\/span><span class="game-details-cell">42.5<\/span><span class="game-details-cell">44.5</);
+        assert.match(html, /<th>Opened<\/th><th>Now<\/th>/);
+        assert.match(html, /<tr><td>Spread · Bears<\/td><td>-1.5<\/td><td class="moved">-3<\/td><\/tr>/);
+        assert.match(html, /<tr><td>Total<\/td><td>42.5<\/td><td class="moved">44.5<\/td><\/tr>/);
+        const flat = site.gameDetailsHtml({ ...game, openLine: { away: '+3', home: '-3', total: 44.5 } });
+        assert.match(flat, /<td>-3<\/td><td class="">-3<\/td>/, 'unchanged: not bold');
         const noLine = site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null });
-        assert.match(noLine, /Spread · Bears<\/span><span class="game-details-cell">-1.5<\/span><span class="game-details-cell">&ndash;</, 'no line on the card yet: the opener alone');
-        assert.match(noLine, /Total<\/span><span class="game-details-cell">42.5<\/span><span class="game-details-cell">&ndash;</);
-        assert.doesNotMatch(site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null, openLine: null }), />Line</, 'nothing at all: no section');
+        assert.match(noLine, /<td>Spread · Bears<\/td><td>-1.5<\/td><td class="">&ndash;<\/td>/, 'no line on the card yet: the opener alone');
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null, openLine: null }), /gd-table/, 'nothing at all: no section');
     });
 
-    await check('TV, and the weather - or "Indoors" under a roof', () => {
+    await check('TV and weather as chips - "Indoors" under a roof', () => {
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /TV<\/span><span class="game-details-wide">Prime Video</);
-        assert.match(html, /Weather<\/span><span class="game-details-wide">Mostly clear, 60&deg;</);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /Weather<\/span><span class="game-details-wide">Indoors</);
+        assert.match(html, /gd-chip-label">TV<\/span>Prime Video/);
+        assert.match(html, /gd-chip-label">Weather<\/span>Mostly clear, 60&deg;/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors/);
     });
 
     await check('a source with home and away the other way round is still matched, sides swapped back', () => {
         // Action Network had Eagles @ Cowboys; the schedule has Cowboys @ Eagles.
         site.__setSplits({ eagles_cowboys: { an: { away: { line: 4.5, handle: 20, bets: 34 }, home: { line: -4.5, handle: 80, bets: 66 }, count: 900 } } });
         const html = site.gameDetailsHtml({ id: 2, away: 'Cowboys', home: 'Eagles', spread: 4.5, favorite: 'away', kickoff: '2099-10-27T00:15:00Z' });
-        assert.match(html, /% of money<\/span><span class="game-details-cell lead">80%<\/span><span class="game-details-cell">20%</);
-        assert.match(html, /900 bets/);
+        assert.match(text(html.split('class="gd-split"')[1]), /% of money DAL 80% PHI 20%/);
+        assert.match(text(html), /900 bets/);
         site.__setSplits({ patriots_bears: BOTH });
     });
 
-    await check('a row with no data is left out', () => {
-        const html = site.gameDetailsHtml({ id: 3, away: 'Jets', home: 'Dolphins', spread: 3, favorite: 'home', broadcast: 'CBS', kickoff: '2099-10-25T17:00:00Z' });
-        assert.match(html, /TV<\/span><span class="game-details-wide">CBS</);
-        assert.doesNotMatch(html, /Record|Moneyline|Betting splits|Weather|Total</);
+    await check('a section with no data is left out', () => {
+        const html = site.gameDetailsHtml({ id: 3, away: 'Jets', home: 'Dolphins', broadcast: 'CBS', kickoff: '2099-10-25T17:00:00Z' });
+        assert.match(html, /gd-chip-label">TV<\/span>CBS/);
+        assert.doesNotMatch(html, /Betting Splits|gd-table|Weather|gd-record|gd-venue/);
     });
 
-    await check('after kickoff: no splits (live betting by then), and the score', () => {
-        const kicked = { ...game, kickoff: '2000-01-01T00:00:00Z' };
-        const html = site.gameDetailsHtml(kicked);
-        assert.doesNotMatch(html, /Betting splits/);
-        assert.match(html, /Record/, 'the rest still shows');
+    await check('after kickoff: no splits (live betting by then), and the rest still shows', () => {
+        const html = site.gameDetailsHtml({ ...game, kickoff: '2000-01-01T00:00:00Z' });
+        assert.doesNotMatch(html, /Betting Splits/);
+        assert.match(html, /gd-record/);
     });
 
-    await check('the button opens the popup on its game, Close shuts it, and new data redraws it', () => {
+    await check('the button opens the popup on its game, it closes, and new data redraws it', () => {
         site.__setGames([game]);
         site.openGameDetails('patriots_bears');
         assert.ok(site.__el('game-details-modal').classList.contains('show'));
-        assert.match(site.__el('game-details-body').innerHTML, /Patriots @ Bears/);
+        assert.match(site.__el('game-details-body').innerHTML, /PATRIOTS|Patriots/);
 
         site.__setSplits({ patriots_bears: { an: { ...BOTH.an, count: 5000 } } });
         site.refreshGameDetails();

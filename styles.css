@@ -3714,26 +3714,6 @@ footer a:hover {
     color: white;
 }
 
-/* The Game Details popup: the confirm dialog's overlay and card, wider,
-   and scrolling on a short screen. */
-.modal-content.game-details-modal {
-    max-width: 440px;
-    max-height: 88vh;
-    overflow-y: auto;
-}
-
-.game-details-when {
-    font-size: 0.85rem;
-    color: var(--text-primary);
-    margin-top: -6px;
-}
-
-.game-details-where {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-top: 2px;
-}
-
 /* The Game Details button, in the corner the day used to have, in its style. */
 .game-details-btn {
     background: var(--bg-secondary);
@@ -3754,94 +3734,286 @@ footer a:hover {
     background: var(--bg-hover);
 }
 
-/* Inside the popup: a column per side - away left, home right, as the
-   buttons on the card - and full-width lines for the game itself. */
-.game-details {
+/* ---- Game Details popup ------------------------------------------------
+   Dressed like the rest of the site: a black hero like the page header (navy
+   underline, green kicker, heavy uppercase), sections under the same heavy
+   titles, a table in the standings' style, and green pill chips. The confirm
+   dialog's overlay and fade, with the card's padding taken off so the hero
+   can run to its edges. */
+.modal-content.game-details-modal {
+    max-width: 460px;
+    max-height: 90vh;
+    padding: 0;
+    overflow-y: auto;
+    background: var(--bg-card);
+}
+
+.gd-hero {
+    position: relative;
+    background: var(--bg-dark);
+    color: white;
+    border-bottom: 3px solid var(--nfl-blue);
+    padding: 18px 20px 16px;
+    text-align: center;
+}
+
+/* Round, like the header's dark-mode toggle. */
+.gd-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.gd-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* The header's subtitle style: green, small, uppercase, spaced. */
+.gd-kicker {
+    color: var(--accent-green);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 0 36px;
+}
+
+.gd-matchup {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 12px;
-    row-gap: 3px;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.gd-team {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.gd-logo,
+.gd-team .team-logo-fallback {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    margin-bottom: 6px;
+}
+
+.gd-team .team-logo-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 800;
+}
+
+.gd-team-name {
+    font-size: 1.05rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+}
+
+.gd-line {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.gd-score {
+    font-size: 1.8rem;
+    font-weight: 900;
+    line-height: 1.1;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.gd-won .gd-score {
+    color: white;
+}
+
+.gd-record {
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.gd-vs {
+    padding-top: 24px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.gd-status {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-top: 30px;
+}
+
+.gd-status.live {
+    color: var(--accent-green);
+}
+
+.gd-venue {
+    margin-top: 12px;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.gd-body {
+    padding: 4px 20px 20px;
+}
+
+.gd-section {
+    margin-top: 18px;
+}
+
+/* The site's section titles: heavy and uppercase, with the source beside. */
+.gd-section-head {
+    display: flex;
+    justify-content: space-between;
     align-items: baseline;
-    margin: 14px 0 18px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: var(--bg-secondary);
-    font-size: 0.8rem;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.gd-section-head h4 {
+    font-size: 0.85rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+}
+
+.gd-section-head span {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-light);
+    text-align: right;
+}
+
+.gd-split + .gd-split {
+    margin-top: 10px;
+}
+
+.gd-split-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+/* One bar, two teams: each side in its own colour, as wide as its share. */
+.gd-bar {
+    display: flex;
+    gap: 2px;
+    height: 30px;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.gd-seg {
+    flex-basis: 0;
+    min-width: 58px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
 
-/* A section title runs the full width. */
-.game-details-head {
-    grid-column: 1 / -1;
-    margin-top: 6px;
-    font-size: 0.65rem;
+.gd-seg + .gd-seg {
+    justify-content: flex-end;
+}
+
+.gd-seg.lead {
+    font-weight: 900;
+}
+
+/* The standings tables' style. */
+.gd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.gd-table th {
+    background: var(--bg-secondary);
+    padding: 8px 12px;
+    font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.game-details-label {
-    white-space: nowrap;
-}
-
-/* "Line" sits in the label column, with "Opened" / "Now" over the two
-   value columns beside it. */
-.game-details-head.game-details-head-left {
-    grid-column: 1;
-}
-
-.game-details-subhead {
-    margin-top: 6px;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
     text-align: center;
-    font-size: 0.65rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gd-table td {
+    padding: 9px 12px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-primary);
+}
+
+.gd-table td:first-child {
+    text-align: left;
     font-weight: 700;
+}
+
+.gd-table td.moved {
+    font-weight: 900;
+}
+
+.gd-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+/* The site's pills, with a green edge. */
+.gd-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--accent-green);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.gd-chip-label {
+    font-size: 0.65rem;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+    color: var(--accent-green);
 }
 
-/* The bet count under the splits title, in ordinary type. */
-.game-details-count {
-    display: block;
-    margin-top: 1px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    text-transform: none;
-    letter-spacing: 0;
-}
-
-.game-details-team {
-    font-weight: 700;
-    color: var(--text-primary);
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* Wraps rather than overflowing: a long record on a phone takes two lines. */
-.game-details-cell {
-    text-align: center;
-    overflow-wrap: anywhere;
-}
-
-/* The bigger share of each splits row. */
-.game-details-cell.lead {
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-/* Line, TV and weather belong to the game, not a side: across both columns. */
-.game-details-wide {
-    grid-column: 2 / -1;
-    color: var(--text-primary);
-}
-
-.game-details-rule {
-    grid-column: 1 / -1;
-    margin: 4px 0 2px;
-    border-top: 1px solid var(--border-color);
-}
 
 /* Pick result states for completed games */
 .pick-btn.selected.correct {
