@@ -1818,7 +1818,67 @@ async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeek
       await env.NOTIFY_STATE.put(key, JSON.stringify(entry), { expirationTtl: LINES_TTL_SECONDS });
     }
   }
-  return { moved };
+  // The site's lines, from the same read: its own errors, so a sheet that
+  // will not take them does not stop the history being kept.
+  const sheet = await syncSheetLines(env, weeks.map(w => w.board), now).catch(error => ({ error: error.message }));
+  return { moved, sheet };
+}
+
+// ---------------------------------------------------------------------------
+// The site's lines, written by the worker. The pick buttons read the sheet's
+// Spreads tab; until October 2026 a phone filled it, the first visitor after
+// it went stale (3 hours on a game day, a day otherwise) spending Odds API
+// credits. DraftKings' line is already read here every 15 minutes for the
+// history, so it is written straight to the sheet - the same number the
+// charts show, at most a run behind, and no credits.
+//
+// The tab is rewritten at least every SHEET_LINES_REFRESH_MS even when
+// nothing moved: a phone checks the tab's newest timestamp, and so long as
+// it is fresh never asks the Odds API. If the worker stops - ESPN refusing,
+// a broken deploy - the timestamp ages, and the phones' own refresh takes
+// over exactly as it used to. That is the fallback; there is no other.
+// ---------------------------------------------------------------------------
+
+const SHEET_LINES_REFRESH_MS = 2 * 60 * 60 * 1000;   // under the phones' 3-hour game-day window
+
+/** "-3.5" for the away side -> the sheet's { spread: 3.5, favorite: 'away' }. */
+function sheetLine(odds) {
+  const away = odds.away === 'PK' || odds.away === 'EVEN' ? 0 : parseFloat(odds.away);
+  if (!Number.isFinite(away)) return null;
+  return {
+    spread: Math.abs(away),
+    favorite: away < 0 ? 'away' : 'home',   // a pick'em keeps a side, as the site's own lines do
+    overUnder: odds.total ?? '',
+  };
+}
+
+/**
+ * Write each board's lines - games still to kick off, with DraftKings odds -
+ * to the Spreads tab, when they differ from what was last written or the
+ * last write is SHEET_LINES_REFRESH_MS old. A game that has kicked off is
+ * never written: its line is the one its riding picks are graded at.
+ */
+async function syncSheetLines(env, boards, now = Date.now()) {
+  if (!env.NOTIFY_STATE || !env.APPS_SCRIPT_URL) return { skipped: 'not configured' };
+  const written = [];
+  for (const b of boards) {
+    const week = `${b.season}_${siteWeekFor(b)}`;
+    const spreads = {};
+    for (const game of b.games) {
+      if (game.state !== 'pre' || !game.odds || !(game.kickoff > now)) continue;
+      const line = sheetLine(game.odds);
+      if (line) spreads[game.key] = line;
+    }
+    if (Object.keys(spreads).length === 0) continue;
+    const stateKey = `sheetLines:${week}`;
+    const last = JSON.parse(await env.NOTIFY_STATE.get(stateKey) || 'null');
+    const signature = JSON.stringify(spreads);
+    if (last && last.signature === signature && now - last.at < SHEET_LINES_REFRESH_MS) continue;
+    await appsScriptPost(env, { week, spreads });
+    await env.NOTIFY_STATE.put(stateKey, JSON.stringify({ signature, at: now }), { expirationTtl: LINES_TTL_SECONDS });
+    written.push(week);
+  }
+  return { written };
 }
 
 /** GET /lines?season=2026&week=7 - that week's history: when it opened, and each game's points. */

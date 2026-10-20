@@ -16,7 +16,7 @@ const { pathToFileURL } = require('url');
 // a temporary .mjs copy, with its internals exported for the test.
 const SOURCE = fs.readFileSync(path.join(__dirname, 'cloudflare-worker', 'nfl-picks-proxy.js'), 'utf8');
 const tmp = path.join(os.tmpdir(), `nfl-picks-splits-${process.pid}.mjs`);
-fs.writeFileSync(tmp, SOURCE + '\nexport { parseDkSplits, parseVsinSplits, parseActionNetworkSplits, recordFinalSplits, splitLine, recordLineMoves, espnOdds };\n');
+fs.writeFileSync(tmp, SOURCE + '\nexport { parseDkSplits, parseVsinSplits, parseActionNetworkSplits, recordFinalSplits, splitLine, recordLineMoves, espnOdds, sheetLine, syncSheetLines };\n');
 
 // --- page fixtures, in the shape the real pages use -----------------------------
 
@@ -443,6 +443,67 @@ function section(name) { console.log(`\n${name}`); }
         assert.deepStrictEqual([empty.open, empty.games], [null, {}], 'a week not open yet');
     });
 
+    section('The site’s lines: the worker writes DraftKings’ to the Spreads tab');
+
+    const linesWeek = (games, extra = {}) => ({ season: 2026, seasonType: 2, week: 7, games, ...extra });
+    const pre = (key, away, home, total, kickoff = KICKOFF) =>
+        ({ key, kickoff, state: 'pre', odds: { away, home, total } });
+    const spreadPosts = () => net.posted.filter(p => p.spreads);
+
+    await check('a line in the sheet’s shape: the size, and which side gives it', () => {
+        assert.deepStrictEqual(mod.sheetLine({ away: '-3.5', home: '+3.5', total: 49.5 }), { spread: 3.5, favorite: 'away', overUnder: 49.5 });
+        assert.deepStrictEqual(mod.sheetLine({ away: '+3', home: '-3', total: 44 }), { spread: 3, favorite: 'home', overUnder: 44 });
+        assert.deepStrictEqual(mod.sheetLine({ away: 'PK', home: 'PK', total: 41 }), { spread: 0, favorite: 'home', overUnder: 41 }, 'a pick’em is 0, a real line');
+        assert.strictEqual(mod.sheetLine({ away: 'x', home: 'y', total: 1 }), null);
+    });
+
+    await check('written for games still to kick off, never one that has', async () => {
+        const r = await mod.syncSheetLines(ENV, [linesWeek([
+            pre('49ers_falcons', '-3', '+3', 50.5),
+            { ...pre('patriots_bears', '+3', '-3', 50.5, KICKOFF - 86400000), state: 'post' },
+            { ...pre('cowboys_eagles', '-4.5', '+4.5', 44.5), state: 'in' }
+        ])], KICKOFF - 3600000);
+        assert.deepStrictEqual(r.written, ['2026_7']);
+        assert.deepStrictEqual(spreadPosts(), [{ week: '2026_7', spreads: { '49ers_falcons': { spread: 3, favorite: 'away', overUnder: 50.5 } } }]);
+    });
+
+    await check('nothing new within two hours: not written; a move, or two hours on: written', async () => {
+        const at = KICKOFF - 2 * 86400000;
+        const week = spread => [linesWeek([pre('49ers_falcons', spread, spread.startsWith('-') ? spread.replace('-', '+') : spread.replace('+', '-'), 50.5)])];
+        await mod.syncSheetLines(ENV, week('-3'), at);
+        await mod.syncSheetLines(ENV, week('-3'), at + 15 * MIN);
+        assert.strictEqual(spreadPosts().length, 1, 'unchanged: the sheet is left alone');
+        await mod.syncSheetLines(ENV, week('-3.5'), at + 30 * MIN);
+        assert.strictEqual(spreadPosts().length, 2, 'moved: written');
+        assert.strictEqual(spreadPosts()[1].spreads['49ers_falcons'].spread, 3.5);
+        await mod.syncSheetLines(ENV, week('-3.5'), at + 30 * MIN + 2 * 3600000);
+        assert.strictEqual(spreadPosts().length, 3, 'two hours on: written again, so the phones see it is fresh');
+    });
+
+    await check('each run writes both weeks it reads, by the site’s week numbers', async () => {
+        await mod.recordLineMoves(ENV, linesWeek([pre('49ers_falcons', '-3', '+3', 50.5)]), KICKOFF - 86400000,
+            async () => ({ season: 2026, seasonType: 2, week: 8, games: [pre('jets_patriots', '+2', '-2', 41, KICKOFF + 7 * 86400000)] }));
+        assert.deepStrictEqual(spreadPosts().map(p => p.week), ['2026_7', '2026_8']);
+        await mod.syncSheetLines(ENV, [{ season: 2026, seasonType: 3, week: 1, games: [pre('bills_chiefs', '+1', '-1', 47)] }], KICKOFF - MIN);
+        assert.strictEqual(spreadPosts()[2].week, '2026_19', 'the wild card round is the site’s week 19');
+    });
+
+    await check('ESPN refusing the run: nothing written, so the timestamp ages and the phones take over', async () => {
+        const r = await mod.recordLineMoves(ENV, linesWeek([pre('49ers_falcons', '-3', '+3', 50.5)], { espnError: 'ESPN answered 403' }), KICKOFF - 86400000);
+        assert.match(r.skipped, /ESPN/);
+        assert.strictEqual(spreadPosts().length, 0);
+    });
+
+    await check('the sheet refusing: the history is still kept, and the next run tries again', async () => {
+        net.sheetError = 'Service Spreadsheets timed out';
+        const r = await mod.recordLineMoves(ENV, linesWeek([pre('49ers_falcons', '-3', '+3', 50.5)]), KICKOFF - 86400000, async () => null);
+        assert.match(r.sheet.error, /timed out/);
+        assert.ok(JSON.parse(kv.get('lines:2026:7')).games['49ers_falcons'], 'the line history was kept');
+        net.sheetError = null;
+        const again = await mod.recordLineMoves(ENV, linesWeek([pre('49ers_falcons', '-3', '+3', 50.5)]), KICKOFF - 86400000 + 15 * MIN, async () => null);
+        assert.deepStrictEqual(again.sheet.written, ['2026_7'], 'nothing was marked written, so it goes now');
+    });
+
     section('Game Details');
 
     const site = loadSite();
@@ -701,6 +762,27 @@ function section(name) { console.log(`\n${name}`); }
         site.__setLineHistory({});
     });
 
+    await check('moneylines come off ESPN’s DraftKings odds, so the popup keeps them', () => {
+        const comp = { odds: [{ moneyline: { away: { close: { odds: '-170' } }, home: { close: { odds: '+142' } } } }] };
+        assert.strictEqual(site.espnMoneyline(comp, 'away'), -170);
+        assert.strictEqual(site.espnMoneyline(comp, 'home'), 142);
+        assert.strictEqual(site.espnMoneyline({ odds: [{ moneyline: { home: { close: { odds: 'EVEN' } } } }] }, 'home'), 100);
+        assert.strictEqual(site.espnMoneyline({}, 'away'), null);
+    });
+
+    await check('an open page picks up the line the worker wrote, on its next read of the sheet', async () => {
+        const card = { ...game, spread: 3, favorite: 'home', overUnder: 44.5 };
+        site.__setGames([card]);
+        site.__net.fetch = async url => (String(url).includes('action=spreads')
+            ? { ok: true, json: async () => ({ spreads: { patriots_bears: { spread: 3.5, favorite: 'home', overUnder: 45.5 } }, lastUpdated: new Date().toISOString(), count: 1 }) }
+            : { ok: false, json: async () => ({}) });
+        await site.refreshSheetLines();
+        const now = site.__games()[0];
+        assert.strictEqual(Number(now.spread), 3.5, 'the card moved with DraftKings');
+        assert.strictEqual(Number(now.overUnder), 45.5);
+        site.__net.fetch = async () => ({ ok: false, json: async () => ({}) });
+    });
+
     await check('the button opens the popup on its game, it closes, and new data redraws it', () => {
         site.__setGames([game]);
         site.openGameDetails('patriots_bears');
@@ -741,7 +823,8 @@ function loadSite() {
         };
     }
     const env = {
-        localStorage: { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 },
+        // A working store: the sheet re-read keeps lines here before applying them.
+        localStorage: (() => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), key: i => [...m.keys()][i] ?? null, get length() { return m.size; } }; })(),
         document: {
             addEventListener() {}, getElementById: id => elements[id] || null, querySelector: () => null, querySelectorAll: () => [],
             createElement: el, head: { appendChild() {} },
@@ -759,7 +842,7 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast, toggleLineChart, lineChartPoints,
+        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast, toggleLineChart, lineChartPoints, espnMoneyline, refreshSheetLines, __games: () => NFL_GAMES_BY_WEEK[currentWeek],
             __setSplits: s => { bettingSplits = s; },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
             __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; },

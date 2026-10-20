@@ -659,7 +659,7 @@ async function fetchEspnScoreboard(query = '') {
     return fetch(`${ESPN_SCHEDULE_URL}${query}`);
 }
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 11; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line)
+const SCHEDULE_CACHE_VERSION = 12; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line; v12 DraftKings' moneylines)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -866,6 +866,14 @@ function getTeamNickname(fullName) {
  * Fetch NFL schedule from ESPN for a specific week
  */
 /** A competitor's records off the scoreboard: { total, home, road }, e.g. "6-0". */
+/** DraftKings' current moneyline for a side off the scoreboard's odds (-170, +142); null with none. */
+function espnMoneyline(competition, side) {
+    const text = String(competition?.odds?.[0]?.moneyline?.[side]?.close?.odds ?? '').trim().toUpperCase();
+    if (text === 'EVEN') return 100;
+    const n = parseInt(text.replace(/^\+/, ''), 10);
+    return Number.isFinite(n) ? n : null;
+}
+
 function espnRecords(competitor) {
     const out = {};
     for (const r of competitor?.records || []) {
@@ -978,6 +986,10 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     // Not ESPN's opening line: it has no time, and the group's
                     // open is Sunday night's (the worker's /lines).
                     records: { away: espnRecords(awayTeam), home: espnRecords(homeTeam) },
+                    // DraftKings' moneylines, which phones no longer fetch from the
+                    // Odds API now the worker keeps the sheet's lines (Game Details).
+                    awayMoneyline: espnMoneyline(competition, 'away'),
+                    homeMoneyline: espnMoneyline(competition, 'home'),
                     indoor: venue?.indoor === true,
                     weather: event.weather?.displayValue
                         ? { text: event.weather.displayValue, temp: event.weather.temperature ?? null }
@@ -1106,6 +1118,8 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             broadcast: espnMatch.broadcast,
                             networks: espnMatch.networks,
                             records: espnMatch.records,
+                            awayMoneyline: espnMatch.awayMoneyline,
+                            homeMoneyline: espnMatch.homeMoneyline,
                             indoor: espnMatch.indoor,
                             weather: espnMatch.weather,
                             status: espnMatch.status,
@@ -1505,13 +1519,18 @@ function applySavedSpreads() {
                 || savedLine.favorite !== game.favorite;
             const takeSaved = !hasUsableSpread(game)
                 || (differs && lineFollowsSheet(game, week));
+            // The total by the same rule, on its own: it moves without the
+            // spread, and since the worker keeps the sheet's lines current a
+            // total that only filled a blank would leave an open page on the
+            // number it loaded with.
+            const savedTotal = Number(savedLine.overUnder);
+            const takeTotal = savedTotal > 0 && (!(Number(game.overUnder) > 0)
+                || (savedTotal !== Number(game.overUnder) && lineFollowsSheet(game, week)));
+            if (takeTotal) game.overUnder = savedTotal;
             if (!takeSaved) return;
 
             game.spread = savedLine.spread;
             game.favorite = savedLine.favorite;
-            if (savedLine.overUnder && (!game.overUnder || game.overUnder === 0)) {
-                game.overUnder = savedLine.overUnder;
-            }
             appliedCount++;
             console.log(`[Spreads] Applied saved spread for ${game.away} @ ${game.home}: ${game.spread}`);
         });
@@ -10686,13 +10705,34 @@ function startBettingSplits() {
     loadBettingSplits();
     if (splitsTimer) return;
     splitsTimer = setInterval(() => {
-        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') loadBettingSplits();
+        if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+            loadBettingSplits();
+            refreshSheetLines();
+        }
     }, SPLITS_REFRESH_MS);
 }
 
 /** Back on the page after a while: the interval did not run while hidden on most phones. */
 function refreshBettingSplitsIfStale(now = Date.now()) {
-    if (splitsFetchedAt && now - splitsFetchedAt >= SPLITS_REFRESH_MS) loadBettingSplits();
+    if (splitsFetchedAt && now - splitsFetchedAt >= SPLITS_REFRESH_MS) {
+        loadBettingSplits();
+        refreshSheetLines();
+    }
+}
+
+/**
+ * The sheet's lines for the week on screen, read again. Since October 2026
+ * the worker rewrites them every 15 minutes as DraftKings moves (it used to
+ * be the first visitor after they went stale), so a page left open would
+ * otherwise keep the lines it opened with. A changed line on a game still to
+ * kick off replaces the card's, as on any load (applySavedSpreads).
+ */
+async function refreshSheetLines() {
+    if (isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK) return;
+    const result = await loadSpreadsFromGoogleSheets(currentWeek);
+    if (!result) return;
+    applySavedSpreads();
+    renderGames();
 }
 
 // ============================================================================

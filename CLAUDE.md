@@ -25,7 +25,15 @@ Without the hook nothing breaks — the site keeps serving the last stamped vers
 
 Not stamped: the lazily loaded `historical-<year>.js` archives, which app.js injects at runtime where no hash is available. They are effectively immutable once a season is archived. If one is ever regenerated mid-season, expect cached copies to lag.
 
-## Odds API budget
+## Where the site's lines come from (read this first)
+
+**Since October 2026 the worker writes the lines.** Its 15-minute cron reads DraftKings' spread and total off ESPN's scoreboard (`espnOdds`, this week and next by `nextWeekBoard`) and `syncSheetLines` writes every game still to kick off to the Spreads tab through the Apps Script's existing `saveSpreads` - when anything changed, and at least every `SHEET_LINES_REFRESH_MS` (2 hours) even when nothing did. Phones read the sheet: on load as before, and every 10 minutes while open (`refreshSheetLines`, on the splits timer). So the pick buttons, the popup's Line table and the movement charts are one number from one read, at most a run behind DraftKings, at no Odds API cost. A kicked-off game is never written.
+
+**The Odds API path below is now the fallback, and it needed no new code.** A phone still asks the Odds API only when the Spreads tab's newest timestamp is stale (`spreadsNeedRefresh`: 3 hours on a game day, a day otherwise). The worker's 2-hour rewrite keeps it fresh, so while the worker is healthy no phone asks; if it stops - ESPN refusing the cron, a bad deploy - the timestamp ages and the phones take over exactly as they used to. Don't "tidy" the client path away. The Spreads tab and its reader are unchanged, and the two writers agree because both are DraftKings (the site's Odds API request prefers DraftKings, falling back to FanDuel per game).
+
+Moneylines, which only an Odds API fetch used to set (in memory, never stored), now come off ESPN's DraftKings odds with the schedule (`espnMoneyline`, SCHEDULE_CACHE_VERSION 12). `applySavedSpreads` also takes a moved **total** for a game still to come; it used to fill only a blank one, which would have left an open page on its first total now that the sheet's total moves.
+
+## Odds API budget (the fallback)
 
 The Odds API free tier is **500 credits a month**, billed **per market per region** — so the worker's `spreads,h2h,totals` request costs **3 credits**, not 1. That is the single most misread thing here: 30 credits used is 10 calls, not 30.
 
