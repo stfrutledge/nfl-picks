@@ -659,7 +659,7 @@ async function fetchEspnScoreboard(query = '') {
     return fetch(`${ESPN_SCHEDULE_URL}${query}`);
 }
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 11; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country)
+const SCHEDULE_CACHE_VERSION = 11; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -874,20 +874,6 @@ function espnRecords(competitor) {
     return Object.keys(out).length ? out : null;
 }
 
-/**
- * The spread and total as they opened, from the scoreboard's odds
- * (DraftKings, the same book as the card's current line): { away: '+1.5',
- * home: '-1.5', total: 47.5 }, the spread as ESPN prints it, or null when the
- * scoreboard carries no spread.
- */
-function espnOpeningLine(competition) {
-    const odds = competition?.odds?.[0];
-    const away = odds?.pointSpread?.away?.open?.line, home = odds?.pointSpread?.home?.open?.line;
-    if (!away || !home) return null;
-    const total = parseFloat(String(odds?.total?.over?.open?.line || '').replace(/^[ou]/i, ''));
-    return { away: String(away), home: String(home), total: Number.isFinite(total) ? total : null };
-}
-
 async function fetchNFLSchedule(week, forceRefresh = false) {
     // Check cache first unless force refresh
     // Empty arrays are treated as cache misses - always try fresh fetch
@@ -987,11 +973,11 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     // Every network carrying it, for Game Details' logos: a Monday
                     // night game is often ESPN and ABC together.
                     networks: [...new Set((competition.broadcasts || []).flatMap(b => b.names || []))],
-                    // For the details panel: records, the opening line, and the
-                    // forecast. ESPN gives a forecast for indoor games too, so
-                    // the roof is kept with it.
+                    // For Game Details: records and the forecast. ESPN gives a
+                    // forecast for indoor games too, so the roof is kept with it.
+                    // Not ESPN's opening line: it has no time, and the group's
+                    // open is Sunday night's (the worker's /lines).
                     records: { away: espnRecords(awayTeam), home: espnRecords(homeTeam) },
-                    openLine: espnOpeningLine(competition),
                     indoor: venue?.indoor === true,
                     weather: event.weather?.displayValue
                         ? { text: event.weather.displayValue, temp: event.weather.temperature ?? null }
@@ -1120,7 +1106,6 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             broadcast: espnMatch.broadcast,
                             networks: espnMatch.networks,
                             records: espnMatch.records,
-                            openLine: espnMatch.openLine,
                             indoor: espnMatch.indoor,
                             weather: espnMatch.weather,
                             status: espnMatch.status,
@@ -10754,8 +10739,9 @@ function splitsForGame(game) {
 // ---------------------------------------------------------------------------
 // Line movement, from the worker's /lines: each game's spread and total as
 // they moved through the week, a point each time either changed (the worker
-// checks every 15 minutes), the first point being the opening line, which
-// has no time. By week, fetched when a Game Details popup opens and with the
+// checks every 15 minutes). The first point is the week's open - the line
+// once the previous week's last Sunday game was final - or, for a week whose
+// Sunday night the tracker missed, the line when it was first seen. By week, fetched when a Game Details popup opens and with the
 // splits while one is open, at most every LINE_HISTORY_MAX_AGE_MS.
 // ---------------------------------------------------------------------------
 const LINE_HISTORY_MAX_AGE_MS = 5 * 60 * 1000;
@@ -10781,13 +10767,23 @@ async function loadLineHistory(week, { force = false } = {}) {
     }
 }
 
-/** "Tue 9:15 AM", in ET like the rest of the site; the opening line has no time. */
-function lineMoveWhen(at) {
-    if (!at) return 'Open';
+/** "Tue 9:15 AM", in ET like the rest of the site. */
+function lineMoveTime(at) {
     const date = new Date(at);
     const day = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' });
     const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
     return `${day} ${time}`;
+}
+
+/**
+ * A point's label: "Open · Sun 11:45 PM" for the Sunday-night open, "First
+ * seen · Tue 5:15 PM" for a game the tracker first met later (that Sunday
+ * night was missed), and the time alone for a move.
+ */
+function lineMoveWhen(point) {
+    if (point.kind === 'open') return `Open · ${lineMoveTime(point.at)}`;
+    if (point.kind === 'first') return `First seen · ${lineMoveTime(point.at)}`;
+    return lineMoveTime(point.at);
 }
 
 /**
@@ -10805,7 +10801,7 @@ function movementTableHtml(game, side) {
         : points;
     const rows = shown.map((p, i) => {
         const latest = i === shown.length - 1;
-        return `<tr class="${latest ? 'latest' : ''}"><td>${lineMoveWhen(p.at)}</td><td>${p[side] ?? '&ndash;'}</td><td>${p.total ?? '&ndash;'}</td></tr>`;
+        return `<tr class="${latest ? 'latest' : ''}"><td>${lineMoveWhen(p)}</td><td>${p[side] ?? '&ndash;'}</td><td>${p.total ?? '&ndash;'}</td></tr>`;
     }).join('');
     const hidden = points.length - shown.length;
     return `
@@ -11039,12 +11035,18 @@ function gameDetailsHtml(game) {
             </section>`;
     }).join('');
 
-    // The spread is read from the side it favours now (the opener's when the
-    // card has no line yet): opening is ESPN's DraftKings number, now is the
-    // card's own, the one on its buttons. A number that has moved is bold.
-    const open = game.openLine;
+    // Opened is the week's Sunday-night open, from the worker's line history
+    // (the first point, when it is the open rather than a "first seen"); a
+    // dash when the tracker missed that Sunday night. Now is the card's own
+    // line, the one on its buttons. The spread is read from the side it
+    // favours now (the latest tracked point's when the card has no line yet).
+    // A number that has moved since the open is bold.
+    const points = lineHistory.get(currentWeek)?.games?.[pickKey(game)] || [];
+    const open = points[0]?.kind === 'open' ? points[0] : null;
+    const latest = points[points.length - 1] || null;
     const hasNow = hasUsableSpread(game);
-    const favoured = hasNow ? game.favorite : (open ? (String(open.away).startsWith('-') ? 'away' : 'home') : null);
+    const favoured = hasNow ? game.favorite
+        : (latest ? (String(latest.away).startsWith('-') ? 'away' : 'home') : null);
     const totalNow = Number(game.overUnder) > 0 ? Number(game.overUnder) : null;
     const totalOpen = open?.total ?? null;
     const lineRow = (label, opened, now) => {
@@ -11058,7 +11060,7 @@ function gameDetailsHtml(game) {
             <section class="gd-section">
                 <div class="gd-section-head"><h4>Line</h4><span>DraftKings</span></div>
                 <table class="gd-table">
-                    <thead><tr><th></th><th>Opened</th><th>Now</th></tr></thead>
+                    <thead><tr><th></th><th>Opened${open ? ` <span class="gd-th-when">${lineMoveTime(open.at)}</span>` : ''}</th><th>Now</th></tr></thead>
                     <tbody>${lineRows}</tbody>
                 </table>
                 ${movementTableHtml(game, favoured)}

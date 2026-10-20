@@ -1694,46 +1694,52 @@ async function recordFinalSplits(env, board, now = Date.now()) {
 // /lines - each game's spread and total through the week, as they moved.
 //
 // The cron reads the scoreboard every 15 minutes anyway, and ESPN's carries
-// DraftKings' current spread and total (and the opening ones), so a change is
-// noticed within a run of it and costs no Odds API credit. A point is kept
-// only when the spread or the total has moved, so a week is a few dozen
-// points in one KV entry. The first point of a game is its opening line,
-// which ESPN gives no time for.
+// DraftKings' current spread and total, so a change is noticed within a run
+// of it and costs no Odds API credit. A point is kept only when the spread or
+// the total has moved, so a week is a few dozen points in one KV entry.
+//
+// **A week opens on Sunday night, by the group's rule**: its first point is
+// the line on the first run after the previous week's last Sunday game has
+// gone final - not ESPN's "open", a number with no time from whenever
+// DraftKings first posted it (a lookahead line, often the week before).
+// Nothing is kept for a week before then. A week whose Sunday night was
+// missed - tracking began on a Tuesday, or the worker was down - starts with
+// a "first seen" point instead, labelled as such, never as the open.
 // ---------------------------------------------------------------------------
 
 const LINES_TTL_SECONDS = 60 * 24 * 60 * 60;   // forget a week's history after 60 days
+// The Sunday night game ends about 3.5 hours after kickoff; an open taken
+// later than this after the last Sunday kickoff was not Sunday night's.
+const OPEN_LATE_AFTER_MS = 6 * 60 * 60 * 1000;
 
 /**
- * DraftKings' spread and total off a scoreboard competition, as ESPN prints
- * the spread ("-3.5", "+3.5"), now and at the open; null with no spread.
+ * DraftKings' current spread and total off a scoreboard competition, the
+ * spread as ESPN prints it ("-3.5", "+3.5"); null with no spread.
  */
 function espnOdds(comp) {
   const odds = comp?.odds?.[0];
   const ps = odds?.pointSpread;
-  const total = side => {
-    const n = parseFloat(String(odds?.total?.over?.[side]?.line || '').replace(/^[ou]/i, ''));
-    return Number.isFinite(n) ? n : null;
-  };
   const away = ps?.away?.close?.line, home = ps?.home?.close?.line;
   if (!away || !home) return null;
-  return {
-    away: String(away), home: String(home), total: total('close'),
-    openAway: ps?.away?.open?.line ? String(ps.away.open.line) : null,
-    openHome: ps?.home?.open?.line ? String(ps.home.open.line) : null,
-    openTotal: total('open'),
-  };
+  const total = parseFloat(String(odds?.total?.over?.close?.line || '').replace(/^[ou]/i, ''));
+  return { away: String(away), home: String(home), total: Number.isFinite(total) ? total : null };
 }
 
 function linesKey(season, week) {
   return `lines:${season}:${week}`;
 }
 
+/** "Sun" for a kickoff in ET, the day the group's week turns on. */
+function easternDay(ms) {
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'America/New_York' }).format(new Date(ms));
+}
+
 /**
  * The regular-season week after the board's, by number. ESPN's current
  * scoreboard stays on a finished week until midweek - on the Tuesday after
  * week 6's Monday game it was still week 6, every game over and its odds
- * gone - while next week's lines have been up since Sunday night and move
- * most on Monday and Tuesday. Null after week 18 and in the playoffs.
+ * gone - while next week's lines move most on Monday and Tuesday. Null after
+ * week 18 and in the playoffs.
  */
 async function nextWeekBoard(board) {
   if (board.seasonType !== 2 || !(board.week < 18)) return null;
@@ -1745,45 +1751,69 @@ async function nextWeekBoard(board) {
 }
 
 /**
- * Each run: add a point for every game still to kick off whose spread or
- * total differs from its last one, on the current scoreboard and the next
- * week's (see nextWeekBoard). Not on a run ESPN refused - the saved schedule
- * it falls back on carries no odds, and a guess is not a move. Its own
+ * When a week opens, given the week before it: the first run once every
+ * Sunday game of that week is final. Null until then. `late` when that run
+ * is too long after the last Sunday kickoff to be Sunday night's.
+ */
+function weekOpening(previous, now) {
+  const sundays = (previous?.games || []).filter(g => g.kickoff && easternDay(g.kickoff) === 'Sun');
+  if (sundays.length === 0 || !sundays.every(g => g.state === 'post')) return null;
+  const lastKickoff = Math.max(...sundays.map(g => g.kickoff));
+  return { at: now, late: now - lastKickoff > OPEN_LATE_AFTER_MS };
+}
+
+/**
+ * Each run: open the next week when its time has come, and add a point for
+ * every game still to kick off whose spread or total differs from its last
+ * one, on the current scoreboard and the next week's. Not on a run ESPN
+ * refused - the saved schedule it falls back on carries no odds. Its own
  * try/catch in the caller, as the splits have.
+ *
+ * A KV entry is { open: { at, late }, games: { key: [points] } }; a point is
+ * { at, away, home, total } with `kind: 'open' | 'first'` on a game's first.
  */
 async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeekBoard) {
   if (!env.NOTIFY_STATE || board.espnError) return { skipped: board.espnError ? 'no ESPN' : 'not configured' };
-  const boards = [board];
   const next = await loadNext(board);
-  if (next?.games?.length) boards.push(next);
+  // Each board with the week before it, which decides when it opens. The
+  // current board has none to hand: by the time ESPN shows a week, its
+  // Sunday night has passed, so an entry first made from it is "first seen".
+  const weeks = [{ board, previous: null }];
+  if (next?.games?.length) weeks.push({ board: next, previous: board });
 
   const moved = [];
-  for (const b of boards) {
+  for (const { board: b, previous } of weeks) {
     const key = linesKey(b.season, siteWeekFor(b));
-    const history = JSON.parse(await env.NOTIFY_STATE.get(key) || '{}');
+    const stored = JSON.parse(await env.NOTIFY_STATE.get(key) || 'null');
+    const entry = stored?.games ? stored : { open: null, games: {} };
     let changed = false;
+    if (!entry.open) {
+      entry.open = previous ? weekOpening(previous, now) : { at: now, late: true };
+      if (!entry.open) continue;   // not open yet: lookahead lines are not kept
+      changed = true;
+    }
     for (const game of b.games) {
       if (game.state !== 'pre' || !game.odds) continue;
-      const points = history[game.key] ||= [];
+      const points = entry.games[game.key] ||= [];
       const o = game.odds;
-      if (points.length === 0 && o.openAway && o.openHome) {
-        points.push({ at: null, away: o.openAway, home: o.openHome, total: o.openTotal });
-      }
       const last = points[points.length - 1];
       if (!last || last.away !== o.away || last.home !== o.home || last.total !== o.total) {
-        points.push({ at: now, away: o.away, home: o.home, total: o.total });
+        const point = { at: now, away: o.away, home: o.home, total: o.total };
+        // A game's first point is the open only on the run that opened the week.
+        if (!last) point.kind = !entry.open.late && entry.open.at === now ? 'open' : 'first';
+        points.push(point);
         moved.push(game.key);
         changed = true;
       }
     }
     if (changed) {
-      await env.NOTIFY_STATE.put(key, JSON.stringify(history), { expirationTtl: LINES_TTL_SECONDS });
+      await env.NOTIFY_STATE.put(key, JSON.stringify(entry), { expirationTtl: LINES_TTL_SECONDS });
     }
   }
   return { moved };
 }
 
-/** GET /lines?season=2026&week=7 - that week's history, by game key. */
+/** GET /lines?season=2026&week=7 - that week's history: when it opened, and each game's points. */
 async function handleLines(request, url, env) {
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
   const season = url.searchParams.get('season'), week = url.searchParams.get('week');
@@ -1791,8 +1821,10 @@ async function handleLines(request, url, env) {
     return jsonResponse({ error: 'Give season=YYYY and week=N' }, 400);
   }
   if (!env.NOTIFY_STATE) return jsonResponse({ error: 'Not configured' }, 500);
-  const games = JSON.parse(await env.NOTIFY_STATE.get(linesKey(season, Number(week))) || '{}');
-  return new Response(JSON.stringify({ season: Number(season), week: Number(week), games }), {
+  const stored = JSON.parse(await env.NOTIFY_STATE.get(linesKey(season, Number(week))) || 'null');
+  return new Response(JSON.stringify({
+    season: Number(season), week: Number(week), open: stored?.open || null, games: stored?.games || {},
+  }), {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...CORS_HEADERS },
   });
 }

@@ -338,92 +338,95 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(net.posted[0].splits[0].week, '2026_19');
     });
 
-    section('Line movement: a point each time the spread or total moves');
+    section('Line movement: the week opens on Sunday night, then a point each time it moves');
 
-    // DraftKings' numbers as ESPN's scoreboard gives them.
-    const scoreboardOdds = (away, home, total, openAway, openHome, openTotal) => ({
-        odds: [{ pointSpread: {
-            away: { close: { line: away }, open: { line: openAway } },
-            home: { close: { line: home }, open: { line: openHome } }
-        }, total: { over: { close: { line: `o${total}` }, open: { line: `o${openTotal}` } } } }]
-    });
-    const linesBoard = (odds, state = 'pre') => ({
-        season: 2026, seasonType: 2, week: 7,
-        games: [{ key: '49ers_falcons', away: '49ers', home: 'Falcons', kickoff: KICKOFF, state, odds }]
-    });
-    const stored = () => JSON.parse(kv.get('lines:2026:7') || '{}')['49ers_falcons'];
+    // Week 6 as ESPN shows it: Sunday games (13:00 ET and the 20:20 ET night
+    // game), then Monday night. Week 7's first game is the next Thursday.
+    const SUN_1PM = Date.parse('2026-10-18T17:00:00Z');
+    const SUN_NIGHT = Date.parse('2026-10-19T00:20:00Z');   // 8:20 PM ET Sunday
+    const MON_NIGHT = Date.parse('2026-10-20T00:15:00Z');   // 8:15 PM ET Monday
+    const week6 = (sundayState, mondayState = 'pre') => ({
+        season: 2026, seasonType: 2, week: 6, games: [
+            { key: 'giants_eagles', kickoff: SUN_1PM, state: 'post', odds: null },
+            { key: 'chiefs_bills', kickoff: SUN_NIGHT, state: sundayState, odds: null },
+            { key: 'commanders_49ers', kickoff: MON_NIGHT, state: mondayState,
+                odds: { away: '+7.5', home: '-7.5', total: 51.5 } }
+        ] });
+    const espnLine = (away, home, total) => mod.espnOdds({ odds: [{
+        pointSpread: { away: { close: { line: away } }, home: { close: { line: home } } },
+        total: { over: { close: { line: `o${total}` } } } }] });
+    const week7 = odds => ({ season: 2026, seasonType: 2, week: 7,
+        games: [{ key: '49ers_falcons', away: '49ers', home: 'Falcons', kickoff: KICKOFF, state: 'pre', odds }] });
+    const entry7 = () => JSON.parse(kv.get('lines:2026:7') || 'null');
+    const SUN_MIDNIGHT = Date.parse('2026-10-19T04:00:00Z');   // the first run after the night game ends
 
-    await check('ESPN’s odds read: spread as printed, total as a number, now and at the open', () => {
-        assert.deepStrictEqual(mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5)),
-            { away: '-3.5', home: '+3.5', total: 49.5, openAway: '-4.5', openHome: '+4.5', openTotal: 47.5 });
+    await check('ESPN’s odds read: the spread as printed, the total as a number', () => {
+        assert.deepStrictEqual(espnLine('-3.5', '+3.5', 49.5), { away: '-3.5', home: '+3.5', total: 49.5 });
         assert.strictEqual(mod.espnOdds({}), null, 'no odds, no line');
     });
 
-    await check('the first run keeps the opening line, then the line as it is', async () => {
-        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
-        const r = await mod.recordLineMoves(ENV, linesBoard(odds), KICKOFF - 3 * 86400000);
-        assert.deepStrictEqual(r.moved, ['49ers_falcons']);
-        assert.deepStrictEqual(stored(), [
-            { at: null, away: '-4.5', home: '+4.5', total: 47.5 },
-            { at: KICKOFF - 3 * 86400000, away: '-3.5', home: '+3.5', total: 49.5 }
-        ]);
+    await check('before the last Sunday game is final, next week is not tracked at all', async () => {
+        await mod.recordLineMoves(ENV, week6('in'), SUN_NIGHT + 3600000, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
+        assert.strictEqual(entry7(), null, 'a lookahead line is not kept');
     });
 
-    await check('nothing moved: nothing written; a move: one more point', async () => {
-        const at = KICKOFF - 3 * 86400000;
-        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
-        await mod.recordLineMoves(ENV, linesBoard(odds), at);
-        const writes = kv.size;
-        const same = await mod.recordLineMoves(ENV, linesBoard(odds), at + 15 * MIN);
-        assert.deepStrictEqual(same.moved, [], 'the same numbers 15 minutes on');
-        assert.strictEqual(stored().length, 2);
+    await check('the first run after it: the week opens, each game’s first point is the open', async () => {
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
+        const e = entry7();
+        assert.deepStrictEqual(e.open, { at: SUN_MIDNIGHT, late: false });
+        assert.deepStrictEqual(e.games['49ers_falcons'], [{ at: SUN_MIDNIGHT, away: '-4.5', home: '+4.5', total: 47.5, kind: 'open' }]);
+    });
 
-        const totalOnly = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 50.5, '-4.5', '+4.5', 47.5));
-        await mod.recordLineMoves(ENV, linesBoard(totalOnly), at + 30 * MIN);
-        const spread = mod.espnOdds(scoreboardOdds('-3', '+3', 50.5, '-4.5', '+4.5', 47.5));
-        await mod.recordLineMoves(ENV, linesBoard(spread), at + 45 * MIN);
-        assert.deepStrictEqual(stored().slice(-2).map(p => [p.away, p.total]), [['-3.5', 50.5], ['-3', 50.5]], 'a total move counts too');
-        assert.ok(kv.size >= writes);
+    await check('then a point only when the spread or total moves; Monday night does not hold it up', async () => {
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
+        const same = await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 15 * MIN, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
+        assert.deepStrictEqual(same.moved, [], 'unchanged');
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 86400000, async () => week7(espnLine('-3.5', '+3.5', 47.5)));
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 2 * 86400000, async () => week7(espnLine('-3.5', '+3.5', 49.5)));
+        const points = entry7().games['49ers_falcons'];
+        assert.deepStrictEqual(points.map(p => [p.away, p.total, p.kind]), [['-4.5', 47.5, 'open'], ['-3.5', 47.5, undefined], ['-3.5', 49.5, undefined]]);
+    });
+
+    await check('a Sunday night the tracker missed: "first seen", never "open"', async () => {
+        // Tracking began on the Tuesday afternoon after week 6.
+        const tuesday = Date.parse('2026-10-20T21:15:00Z');
+        await mod.recordLineMoves(ENV, week6('post', 'post'), tuesday, async () => week7(espnLine('-3', '+3', 50.5)));
+        const e = entry7();
+        assert.strictEqual(e.open.late, true);
+        assert.strictEqual(e.games['49ers_falcons'][0].kind, 'first');
+    });
+
+    await check('a week first seen on the current scoreboard is "first seen" too', async () => {
+        await mod.recordLineMoves(ENV, week7(espnLine('-3', '+3', 50.5)), KICKOFF - 86400000, async () => null);
+        assert.strictEqual(entry7().games['49ers_falcons'][0].kind, 'first');
+    });
+
+    await check('a game whose line appears after the open is "first seen" when it does', async () => {
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(null));
+        assert.deepStrictEqual(entry7().games, {}, 'opened, but no line for it yet');
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 3600000, async () => week7(espnLine('-4', '+4', 47.5)));
+        assert.strictEqual(entry7().games['49ers_falcons'][0].kind, 'first');
     });
 
     await check('not after kickoff, and not on a run ESPN refused', async () => {
-        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
-        await mod.recordLineMoves(ENV, linesBoard(odds, 'in'), KICKOFF + MIN);
-        assert.strictEqual(stored(), undefined, 'live betting is not the line');
-        const r = await mod.recordLineMoves(ENV, { ...linesBoard(odds), espnError: 'ESPN answered 403' }, KICKOFF - MIN);
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
+        const kicked = { ...week7(espnLine('-3', '+3', 50)), games: [{ ...week7(null).games[0], state: 'in', odds: espnLine('-3', '+3', 50) }] };
+        await mod.recordLineMoves(ENV, week6('post'), KICKOFF + MIN, async () => kicked);
+        assert.strictEqual(entry7().games['49ers_falcons'].length, 1, 'live betting is not the line');
+        const r = await mod.recordLineMoves(ENV, { ...week6('post'), espnError: 'ESPN answered 403' }, KICKOFF - MIN);
         assert.match(r.skipped, /ESPN/);
-        assert.strictEqual(stored(), undefined);
     });
 
-    await check('the week after the scoreboard’s is recorded too: ESPN stays on a finished week until midweek', async () => {
-        // Tuesday after week 6: ESPN's current scoreboard is week 6, all over.
-        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
-        const finished = { season: 2026, seasonType: 2, week: 6,
-            games: [{ key: 'commanders_49ers', away: 'Commanders', home: '49ers', kickoff: KICKOFF - 7 * 86400000, state: 'post', odds: null }] };
-        const asked = [];
-        const r = await mod.recordLineMoves(ENV, finished, KICKOFF - 5 * 86400000, async b => { asked.push(b.week); return linesBoard(odds); });
-        assert.deepStrictEqual(asked, [6], 'asked for the week after week 6');
-        assert.deepStrictEqual(r.moved, ['49ers_falcons']);
-        assert.strictEqual(stored().length, 2, 'week 7’s game recorded under week 7');
-        assert.strictEqual(kv.get('lines:2026:6'), undefined, 'and nothing for the finished week');
-
-        let nextAsked = false;
-        await mod.recordLineMoves(ENV, { ...linesBoard(odds), seasonType: 3, week: 1 }, KICKOFF - 86400000);
-        const playoffs = await mod.recordLineMoves(ENV, { ...finished, seasonType: 3 }, KICKOFF, async () => { nextAsked = true; return null; });
-        assert.ok(nextAsked === true || playoffs.moved.length === 0);
-    });
-
-    await check('/lines answers a week’s history, readable cross-origin; a bad week is refused', async () => {
-        const odds = mod.espnOdds(scoreboardOdds('-3.5', '+3.5', 49.5, '-4.5', '+4.5', 47.5));
-        await mod.recordLineMoves(ENV, linesBoard(odds), KICKOFF - 86400000);
+    await check('/lines: the week’s open and history, readable cross-origin; a bad week is refused', async () => {
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(espnLine('-4.5', '+4.5', 47.5)));
         const r = await worker.fetch(new Request('https://w.test/lines?season=2026&week=7'), ENV, {});
         assert.strictEqual(r.headers.get('Access-Control-Allow-Origin'), '*');
         const body = await r.json();
-        assert.strictEqual(body.games['49ers_falcons'].length, 2);
-        const bad = await worker.fetch(new Request('https://w.test/lines?season=x&week=7'), ENV, {});
-        assert.strictEqual(bad.status, 400);
+        assert.deepStrictEqual(body.open, { at: SUN_MIDNIGHT, late: false });
+        assert.strictEqual(body.games['49ers_falcons'][0].kind, 'open');
+        assert.strictEqual((await worker.fetch(new Request('https://w.test/lines?season=x&week=7'), ENV, {})).status, 400);
         const empty = await (await worker.fetch(new Request('https://w.test/lines?season=2026&week=8'), ENV, {})).json();
-        assert.deepStrictEqual(empty.games, {}, 'a week with nothing yet');
+        assert.deepStrictEqual([empty.open, empty.games], [null, {}], 'a week not open yet');
     });
 
     section('Game Details');
@@ -435,7 +438,7 @@ function section(name) { console.log(`\n${name}`); }
         day: 'Thursday', time: '8:15 PM ET', kickoff: '2099-10-23T00:15:00Z',
         broadcast: 'Prime Video', stadium: 'Soldier Field', location: 'Chicago, IL',
         records: { away: { total: '4-2', home: '3-0', road: '1-2' }, home: { total: '4-2', home: '2-1', road: '2-1' } },
-        openLine: { away: '+1.5', home: '-1.5', total: 42.5 }, indoor: false, weather: { text: 'Mostly clear', temp: 60 },
+        indoor: false, weather: { text: 'Mostly clear', temp: 60 },
         awayMoneyline: 135, homeMoneyline: -160
     };
     const BOTH = {
@@ -495,16 +498,26 @@ function section(name) { console.log(`\n${name}`); }
         site.__setSplits({ patriots_bears: BOTH });
     });
 
-    await check('the line: spread and total under Opened and Now, a moved number in bold', () => {
+    await check('the line: Opened is the Sunday-night open with its time, Now the card’s, a moved number bold', () => {
+        site.__setLineHistory({ patriots_bears: [
+            { at: Date.parse('2026-10-19T04:00:00Z'), away: '+1.5', home: '-1.5', total: 42.5, kind: 'open' },
+            { at: Date.parse('2026-10-20T13:15:00Z'), away: '+3', home: '-3', total: 44.5 }
+        ] });
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /<th>Opened<\/th><th>Now<\/th>/);
+        assert.match(html, /<th>Opened <span class="gd-th-when">Mon 12:00 AM<\/span><\/th><th>Now<\/th>/, '04:00 UTC is midnight ET');
         assert.match(html, /<tr><td>Spread · Bears<\/td><td>-1.5<\/td><td class="moved">-3<\/td><\/tr>/);
         assert.match(html, /<tr><td>Total<\/td><td>42.5<\/td><td class="moved">44.5<\/td><\/tr>/);
-        const flat = site.gameDetailsHtml({ ...game, openLine: { away: '+3', home: '-3', total: 44.5 } });
-        assert.match(flat, /<td>-3<\/td><td class="">-3<\/td>/, 'unchanged: not bold');
-        const noLine = site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null });
-        assert.match(noLine, /<td>Spread · Bears<\/td><td>-1.5<\/td><td class="">&ndash;<\/td>/, 'no line on the card yet: the opener alone');
-        assert.doesNotMatch(site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null, openLine: null }), /gd-table/, 'nothing at all: no section');
+        site.__setLineHistory({});
+    });
+
+    await check('no Sunday-night open (tracking began later): Opened is a dash, never ESPN’s number', () => {
+        site.__setLineHistory({ patriots_bears: [{ at: Date.parse('2026-10-20T21:15:00Z'), away: '+3', home: '-3', total: 44.5, kind: 'first' }] });
+        const html = site.gameDetailsHtml({ ...game, openLine: { away: '+1.5', home: '-1.5', total: 42.5 } });
+        assert.match(html, /<th>Opened<\/th>/);
+        assert.match(html, /<tr><td>Spread · Bears<\/td><td>&ndash;<\/td><td class="">-3<\/td><\/tr>/);
+        assert.doesNotMatch(html, /-1.5|42.5/, 'ESPN’s undated opener is not used');
+        site.__setLineHistory({});
+        assert.match(site.gameDetailsHtml(game), /<td>Spread · Bears<\/td><td>&ndash;<\/td>/, 'nothing loaded: a dash');
     });
 
     await check('TV as the networks’ logos, every network carrying it, from the repo', () => {
@@ -598,37 +611,44 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(html, /gd-record/);
     });
 
-    await check('Movement: oldest first, from the side favoured now, the latest in bold, times in ET', () => {
-        // Bears favoured now at -3 (the card's line); opened at -1.5.
+    await check('Movement: "Open · Sun ..." then each move, oldest first, the latest bold, times in ET', () => {
         site.__setLineHistory({ patriots_bears: [
-            { at: null, away: '+1.5', home: '-1.5', total: 47.5 },
+            { at: Date.parse('2026-10-19T03:45:00Z'), away: '+1.5', home: '-1.5', total: 47.5, kind: 'open' },
             { at: Date.parse('2026-10-20T13:15:00Z'), away: '+2.5', home: '-2.5', total: 48.5 },
             { at: Date.parse('2026-10-22T18:30:00Z'), away: '+3', home: '-3', total: 50.5 }
         ] });
         const html = site.gameDetailsHtml(game);
         assert.match(html, /<th>Movement \(ET\)<\/th><th>Bears<\/th><th>Total<\/th>/);
-        assert.match(html, /<tr class=""><td>Open<\/td><td>-1.5<\/td><td>47.5<\/td><\/tr>/);
+        assert.match(html, /<tr class=""><td>Open · Sun 11:45 PM<\/td><td>-1.5<\/td><td>47.5<\/td><\/tr>/);
         assert.match(html, /<tr class=""><td>Tue 9:15 AM<\/td><td>-2.5<\/td><td>48.5<\/td><\/tr>/, '13:15 UTC is 9:15 AM ET');
         assert.match(html, /<tr class="latest"><td>Thu 2:30 PM<\/td><td>-3<\/td><td>50.5<\/td><\/tr>/);
     });
 
-    await check('a favourite that flipped reads + then -, from the side favoured now', () => {
+    await check('a missed Sunday night reads "First seen", with its time', () => {
         site.__setLineHistory({ patriots_bears: [
-            { at: null, away: '-1', home: '+1', total: 47.5 },
-            { at: Date.parse('2026-10-21T15:00:00Z'), away: '+3', home: '-3', total: 47.5 }
+            { at: Date.parse('2026-10-20T21:15:00Z'), away: '+2.5', home: '-2.5', total: 48.5, kind: 'first' },
+            { at: Date.parse('2026-10-21T15:00:00Z'), away: '+3', home: '-3', total: 50.5 }
         ] });
-        assert.match(site.gameDetailsHtml(game), /<td>Open<\/td><td>\+1<\/td>[\s\S]*<td>-3<\/td>/);
+        assert.match(site.gameDetailsHtml(game), /<td>First seen · Tue 5:15 PM<\/td>/);
     });
 
-    await check('no table until something has moved; a long week shows the opener and the latest seven', () => {
-        site.__setLineHistory({ patriots_bears: [{ at: null, away: '+3', home: '-3', total: 44.5 }] });
+    await check('a favourite that flipped reads + then -, from the side favoured now', () => {
+        site.__setLineHistory({ patriots_bears: [
+            { at: Date.parse('2026-10-19T04:00:00Z'), away: '-1', home: '+1', total: 47.5, kind: 'open' },
+            { at: Date.parse('2026-10-21T15:00:00Z'), away: '+3', home: '-3', total: 47.5 }
+        ] });
+        assert.match(site.gameDetailsHtml(game), /<td>Open · Mon 12:00 AM<\/td><td>\+1<\/td>[\s\S]*<td>-3<\/td>/);
+    });
+
+    await check('no table until something has moved; a long week shows the first point and the latest seven', () => {
+        site.__setLineHistory({ patriots_bears: [{ at: Date.parse('2026-10-19T04:00:00Z'), away: '+3', home: '-3', total: 44.5, kind: 'open' }] });
         assert.doesNotMatch(site.gameDetailsHtml(game), /gd-moves/);
-        const many = [{ at: null, away: '+1', home: '-1', total: 44 }];
+        const many = [{ at: Date.parse('2026-10-19T04:00:00Z'), away: '+1', home: '-1', total: 44, kind: 'open' }];
         for (let i = 1; i <= 10; i++) many.push({ at: Date.parse('2026-10-20T12:00:00Z') + i * 3600000, away: `+${1 + i / 2}`, home: `-${1 + i / 2}`, total: 44 });
         site.__setLineHistory({ patriots_bears: many });
         const html = site.gameDetailsHtml(game);
         assert.strictEqual((html.match(/<tr class="(latest)?"><td>/g) || []).length, 8);
-        assert.match(html, /<td>Open<\/td>/);
+        assert.match(html, /<td>Open · Mon 12:00 AM<\/td>/);
         assert.match(html, /3 earlier moves not shown/);
         site.__setLineHistory({});
     });

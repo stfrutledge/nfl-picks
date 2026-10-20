@@ -3999,6 +3999,16 @@ footer a:hover {
     font-weight: 900;
 }
 
+/* When the week opened, under "Opened": Sunday night's time. */
+.gd-th-when {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-light);
+}
+
 /* The Movement table under the Line one: oldest first, the latest in bold. */
 .gd-table.gd-moves {
     margin-top: 12px;
