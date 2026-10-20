@@ -1015,8 +1015,10 @@ function jsonResponse(data) {
 
 // ---------------------------------------------------------------------------
 // Splits: each game's betting splits on the spread, as they stood at the last
-// cron run before kickoff. DraftKings (the public) and Circa (the sharps),
-// handle % and bets % for each side. Written by the worker, one row a game;
+// cron run before kickoff. DraftKings (the public), Circa (the sharps) and,
+// from October 2026, Action Network's consensus (columns after Recorded At,
+// so the rows written before them stay aligned): handle % and bets % for
+// each side. Written by the worker, one row a game;
 // append-only like Backup, so a game written twice reads as its last row.
 // ---------------------------------------------------------------------------
 
@@ -1024,8 +1026,16 @@ const SPLITS_HEADERS = [
   'Week', 'Game', 'Away Team', 'Home Team', 'Kickoff', 'Taken At',
   'DK Away Line', 'DK Away Handle %', 'DK Away Bets %', 'DK Home Line', 'DK Home Handle %', 'DK Home Bets %',
   'Circa Away Line', 'Circa Away Handle %', 'Circa Away Bets %', 'Circa Home Line', 'Circa Home Handle %', 'Circa Home Bets %',
-  'Recorded At'
+  'Recorded At',
+  'AN Away Line', 'AN Away Handle %', 'AN Away Bets %', 'AN Home Line', 'AN Home Handle %', 'AN Home Bets %'
 ];
+
+/** Six cells for one book: away line/handle/bets, then home. */
+function splitsCells(values) {
+  const cells = (values || []).slice(0, 6);
+  while (cells.length < 6) cells.push('');
+  return cells;
+}
 
 function saveSplits(rows) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1035,14 +1045,15 @@ function saveSplits(rows) {
     sheet.appendRow(SPLITS_HEADERS);
     sheet.getRange(1, 1, 1, SPLITS_HEADERS.length).setFontWeight('bold');
     sheet.setFrozenRows(1);
+  } else if (sheet.getLastColumn() < SPLITS_HEADERS.length) {
+    // A tab made before the Action Network columns: add their headers.
+    sheet.getRange(1, 1, 1, SPLITS_HEADERS.length).setValues([SPLITS_HEADERS]).setFontWeight('bold');
   }
   const recordedAt = new Date().toISOString();
   const values = rows
     .filter(r => r && r.week && r.gameKey)
     .map(r => [r.week, r.gameKey, r.away || '', r.home || '', r.kickoff || '', r.takenAt || '']
-      .concat((r.dk || []).slice(0, 6), Array(6 - Math.min(6, (r.dk || []).length)).fill(''))
-      .concat((r.circa || []).slice(0, 6), Array(6 - Math.min(6, (r.circa || []).length)).fill(''))
-      .concat([recordedAt]));
+      .concat(splitsCells(r.dk), splitsCells(r.circa), [recordedAt], splitsCells(r.an)));
   if (values.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, values.length, SPLITS_HEADERS.length).setValues(values);
   }
@@ -1064,11 +1075,12 @@ function getSplits(season) {
     if (!splits[week]) splits[week] = {};
     const dk = side(row, 6) && { away: side(row, 6), home: side(row, 9) };
     const circa = side(row, 12) && { away: side(row, 12), home: side(row, 15) };
+    const an = row.length > 19 && side(row, 19) && { away: side(row, 19), home: side(row, 22) };
     splits[week][String(row[1])] = {
       away: row[2], home: row[3],
       kickoff: row[4] instanceof Date ? row[4].toISOString() : row[4],
       takenAt: row[5] instanceof Date ? row[5].toISOString() : row[5],
-      dk: dk || null, circa: circa || null
+      an: an || null, dk: dk || null, circa: circa || null
     };
   }
   return { splits };

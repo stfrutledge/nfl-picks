@@ -16,7 +16,7 @@ const { pathToFileURL } = require('url');
 // a temporary .mjs copy, with its internals exported for the test.
 const SOURCE = fs.readFileSync(path.join(__dirname, 'cloudflare-worker', 'nfl-picks-proxy.js'), 'utf8');
 const tmp = path.join(os.tmpdir(), `nfl-picks-splits-${process.pid}.mjs`);
-fs.writeFileSync(tmp, SOURCE + '\nexport { parseDkSplits, parseVsinSplits, recordFinalSplits, splitLine };\n');
+fs.writeFileSync(tmp, SOURCE + '\nexport { parseDkSplits, parseVsinSplits, parseActionNetworkSplits, recordFinalSplits, splitLine };\n');
 
 // --- page fixtures, in the shape the real pages use -----------------------------
 
@@ -58,12 +58,32 @@ function vsinRow(team, line, handle, bets) {
       <td class="sp-col-first"><span class="sp-badge sp-badge-line">+150</span></td>
       <td><span class="sp-badge">40%</span></td><td><span class="sp-badge">30%</span></td></tr>`;
 }
+/** Action Network's scoreboard: games with team ids, and spread outcomes by side. */
+function anGame(id, [awayId, away], [homeId, home], { homeLine, homeBets, homeMoney }) {
+    const outcome = (side, teamId, value, bets, money) => ({
+        type: 'spread', side, team_id: teamId, value, odds: -110,
+        bet_info: { tickets: { value: 0, percent: bets }, money: { value: 0, percent: money } }
+    });
+    return {
+        id, status: 'scheduled', away_team_id: awayId, home_team_id: homeId,
+        teams: [{ id: awayId, display_name: away }, { id: homeId, display_name: home }],
+        markets: { 15: { event: { spread: [
+            outcome('home', homeId, homeLine, homeBets, homeMoney),
+            outcome('away', awayId, -homeLine, 100 - homeBets, 100 - homeMoney)
+        ] } } }
+    };
+}
+const anFeed = () => ({ games: [
+    anGame(1, [10, 'Patriots'], [11, 'Bears'], { homeLine: -3, homeBets: 23, homeMoney: 26 }),
+    anGame(2, [12, 'Eagles'], [13, 'Cowboys'], { homeLine: -4.5, homeBets: 66, homeMoney: 80 })
+] });
+
 const vsinPage = pairs => `<table class="sp-table"><tbody>${pairs.map(([a, h]) =>
     `<!-- Road team -->${vsinRow(...a)}<!-- Home team -->${vsinRow(...h)}`).join('')}</tbody></table>`;
 
 // --- fakes ---------------------------------------------------------------------
 
-const net = { dkPages: [], vsin: '', vsinDown: false, sheetError: null, upstream: [], posted: [] };
+const net = { dkPages: [], vsin: '', vsinDown: false, an: null, anDown: false, sheetError: null, upstream: [], posted: [] };
 const cacheStore = new Map();
 globalThis.caches = {
     default: {
@@ -79,6 +99,9 @@ globalThis.fetch = async (url, init = {}) => {
         const page = Number(new URL(u).searchParams.get('tb_page') || 1);
         const pages = net.dkPages;
         return new Response(pages[Math.min(page, pages.length) - 1] || dkPage([]));
+    }
+    if (u.startsWith('https://api.actionnetwork.com/')) {
+        return net.anDown ? new Response('Forbidden', { status: 403 }) : new Response(JSON.stringify(net.an));
     }
     if (u.startsWith('https://data.vsin.com/')) {
         return net.vsinDown ? new Response('Forbidden', { status: 403 }) : new Response(net.vsin);
@@ -121,7 +144,7 @@ async function check(name, fn) {
     net.upstream.length = 0; net.posted.length = 0;
     net.dkPages = [dkPage([BEARS, TEXANS, ...FILLER]), dkPage([LIONS])];
     net.vsin = vsinPage([[['New England Patriots', '+3', 55, 37], ['Chicago Bears', '-3', 45, 63]]]);
-    net.vsinDown = false; net.sheetError = null;
+    net.vsinDown = false; net.sheetError = null; net.an = anFeed(); net.anDown = false;
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
@@ -167,13 +190,29 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(games[1].sides.home.line, 0);
     });
 
+    await check('Action Network: sides by home/away, line, money and tickets', () => {
+        const games = mod.parseActionNetworkSplits(anFeed());
+        assert.deepStrictEqual(games.map(g => g.key), ['patriots_bears', 'eagles_cowboys']);
+        assert.deepStrictEqual(games[0].sides.home, { line: -3, handle: 26, bets: 23 });
+        assert.deepStrictEqual(games[0].sides.away, { line: 3, handle: 74, bets: 77 });
+    });
+
+    await check('Action Network: a game without both sides\u2019 percentages is left out', () => {
+        const feed = anFeed();
+        delete feed.games[1].markets[15].event.spread[0].bet_info;
+        assert.deepStrictEqual(mod.parseActionNetworkSplits(feed).map(g => g.key), ['patriots_bears']);
+        assert.deepStrictEqual(mod.parseActionNetworkSplits(null), []);
+    });
+
     section('/splits');
 
     await check('both books, merged per game, across DK’s pages', async () => {
         const out = await splitsCall();
-        assert.deepStrictEqual(Object.keys(out.games).sort(), ['giants_texans', 'packers_lions', 'patriots_bears', ...FILLER_KEYS].sort());
+        assert.deepStrictEqual(Object.keys(out.games).sort(), ['eagles_cowboys', 'giants_texans', 'packers_lions', 'patriots_bears', ...FILLER_KEYS].sort());
         assert.deepStrictEqual(out.games.patriots_bears.dk.away, { line: 3, handle: 84, bets: 78 });
         assert.deepStrictEqual(out.games.patriots_bears.circa.away, { line: 3, handle: 55, bets: 37 });
+        assert.deepStrictEqual(out.games.patriots_bears.an.home, { line: -3, handle: 26, bets: 23 });
+        assert.ok(out.games.eagles_cowboys.an && !out.games.eagles_cowboys.dk, 'a game only Action Network has yet');
         assert.ok(!out.games.giants_texans.circa, 'a game Circa does not carry has DK alone');
         assert.deepStrictEqual(out.errors, {});
     });
@@ -188,7 +227,7 @@ function section(name) { console.log(`\n${name}`); }
         net.dkPages = [dkPage([BEARS, TEXANS, ...FILLER])];   // page 2 repeats page 1
         const out = await splitsCall();
         assert.strictEqual(net.upstream.filter(u => u.includes('dknetwork')).length, 2);
-        assert.strictEqual(Object.keys(out.games).length, 10);
+        assert.strictEqual(Object.values(out.games).filter(g => g.dk).length, 10);
     });
 
     await check('one book down still answers with the other, and says which', async () => {
@@ -197,6 +236,14 @@ function section(name) { console.log(`\n${name}`); }
         assert.ok(out.games.patriots_bears.dk);
         assert.ok(!out.games.patriots_bears.circa);
         assert.match(out.errors.circa, /403/);
+    });
+
+    await check('Action Network down: the other two still answer', async () => {
+        net.anDown = true;
+        const out = await splitsCall();
+        assert.ok(out.games.patriots_bears.dk && out.games.patriots_bears.circa);
+        assert.ok(!out.games.patriots_bears.an);
+        assert.match(out.errors.an, /403/);
     });
 
     await check('cached: a second request fetches nothing', async () => {
@@ -241,6 +288,7 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(row.gameKey, 'patriots_bears');
         assert.deepStrictEqual(row.dk, [3, 70, 75, -3, 30, 25], 'away line/handle/bets, then home');
         assert.deepStrictEqual(row.circa, [3, 55, 37, -3, 45, 63]);
+        assert.deepStrictEqual(row.an, [3, 74, 77, -3, 26, 23]);
         assert.strictEqual(row.kickoff, new Date(KICKOFF).toISOString());
         assert.deepStrictEqual(JSON.parse(kv.get('splits:pending')), {}, 'and it is no longer pending');
 
@@ -295,23 +343,39 @@ function section(name) { console.log(`\n${name}`); }
         circa: { away: { line: 3, handle: 55, bets: 37 }, home: { line: -3, handle: 45, bets: 63 } }
     } });
 
-    await check('each side shows money and bets, a line per book', () => {
-        const html = site.pickSplitsHtml(game, 'away', false);
-        assert.match(html, /DK<\/span> 84% \$ · 78% bets/);
-        assert.match(html, /Circa<\/span> 55% \$ · 37% bets/);
-        assert.match(site.pickSplitsHtml(game, 'home', false), /DK<\/span> 16% \$ · 22% bets/);
+    await check('a strip of its own: a row per book, away then home, money then bets', () => {
+        const html = site.gameSplitsHtml(game, false);
+        assert.match(html, /game-splits-team">Patriots \+3<[\s\S]*game-splits-team">Bears -3</, 'away column first, as the buttons');
+        assert.match(html, /book"[^>]*>DK<\/span><span[^>]*>84% · 78%<\/span><span[^>]*>16% · 22%</);
+        assert.match(html, /book"[^>]*>Circa<\/span><span[^>]*>55% · 37%<\/span><span[^>]*>45% · 63%</);
+        assert.ok(html.indexOf('>DK<') < html.indexOf('>Circa<'), 'books in a fixed order');
+    });
+
+    await check('Action Network leads when it is there', () => {
+        site.__setSplits({ patriots_bears: {
+            an: { away: { line: 3, handle: 74, bets: 77 }, home: { line: -3, handle: 26, bets: 23 } },
+            dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } }
+        } });
+        const html = site.gameSplitsHtml(game, false);
+        assert.ok(html.indexOf('>AN<') >= 0 && html.indexOf('>AN<') < html.indexOf('>DK<'));
+        assert.match(html, />AN<\/span><span[^>]*>74% · 77%</);
+        site.__setSplits({ patriots_bears: {
+            dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } },
+            circa: { away: { line: 3, handle: 55, bets: 37 }, home: { line: -3, handle: 45, bets: 63 } }
+        } });
     });
 
     await check('nothing once the game is locked, or for a game with no splits', () => {
-        assert.strictEqual(site.pickSplitsHtml(game, 'away', true), '');
-        assert.strictEqual(site.pickSplitsHtml({ ...game, away: 'Jets', home: 'Dolphins' }, 'away', false), '');
+        assert.strictEqual(site.gameSplitsHtml(game, true), '');
+        assert.strictEqual(site.gameSplitsHtml({ ...game, away: 'Jets', home: 'Dolphins' }, false), '');
     });
 
     await check('one book only shows that book alone', () => {
         site.__setSplits({ patriots_bears: { dk: { away: { line: 3, handle: 84, bets: 78 }, home: { line: -3, handle: 16, bets: 22 } } } });
-        const html = site.pickSplitsHtml(game, 'away', false);
+        const html = site.gameSplitsHtml(game, false);
         assert.match(html, /DK<\/span>/);
         assert.doesNotMatch(html, /Circa/);
+
     });
 
     fs.unlinkSync(tmp);
@@ -341,7 +405,7 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + ';return ({ pickSplitsHtml, __setSplits: s => { bettingSplits = s; } });');
+        + ';return ({ gameSplitsHtml, __setSplits: s => { bettingSplits = s; } });');
     return fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
 }

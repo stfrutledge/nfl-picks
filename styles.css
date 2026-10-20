@@ -3713,25 +3713,53 @@ footer a:hover {
     color: white;
 }
 
-/* Betting splits inside a Line Pick button: a small line per book under the
-   team and its number. Colour is inherited, so a selected (blue) button keeps
-   them legible; opacity alone sets them back from the pick itself. */
-.pick-splits {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    margin-top: 4px;
+/* Betting splits: a strip of their own under the picks, so the Line Pick and
+   Straight Up buttons stay the same size. A row per book, a column per side:
+   away left and home right, under the buttons for them. */
+.game-splits {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 3px;
+    align-items: baseline;
+    margin-top: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 
-.pick-split {
-    font-size: 0.65rem;
+.game-splits-head {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+}
+
+.game-splits-legend {
     font-weight: 500;
-    opacity: 0.75;
-    font-variant-numeric: tabular-nums;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.game-splits-team {
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.pick-split-book {
+.game-splits-cell {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.game-splits-book {
     font-weight: 700;
 }
 

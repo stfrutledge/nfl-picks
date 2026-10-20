@@ -10614,8 +10614,9 @@ function renderLeaderboard(stats) {
 
 /**
  * Public betting splits on the spread, from the worker's /splits: for each
- * side of a game, its share of the money (handle) and of the bets, at
- * DraftKings (the public's book) and Circa (the sharps'). Shown inside each
+ * side of a game, its share of the money (handle) and of the bets - Action
+ * Network's consensus across books, DraftKings (one public book, thin early
+ * in the week) and Circa (the sharps'). Shown inside each
  * Line Pick button while the game is open. The worker writes each game's
  * last numbers before kickoff to the Splits tab, for later; nothing here
  * stores them.
@@ -10624,7 +10625,7 @@ function renderLeaderboard(stats) {
  * A game either book is not carrying simply shows the other, or nothing.
  */
 const SPLITS_REFRESH_MS = 10 * 60 * 1000;
-const SPLITS_BOOKS = [['dk', 'DK', 'DraftKings'], ['circa', 'Circa', 'Circa Sports']];
+const SPLITS_BOOKS = [['an', 'AN', 'Action Network consensus'], ['dk', 'DK', 'DraftKings'], ['circa', 'Circa', 'Circa Sports']];
 let bettingSplits = {};
 let splitsFetchedAt = 0;
 let splitsFetchInFlight = false;
@@ -10662,22 +10663,33 @@ function refreshBettingSplitsIfStale(now = Date.now()) {
 }
 
 /**
- * The caption inside a Line Pick button: "DK 56% $ · 70% bets", a line per
- * book. Empty once the game has started or for a past week - the picks are
- * locked and the numbers have moved on to live betting.
+ * The splits strip under a card's picks: a row per book, a column per side
+ * (away left, home right, as the buttons above), each "money% · bets%".
+ * Its own strip rather than inside the Line Pick buttons, which made them
+ * taller than the Straight Up ones beside them; and books down the side
+ * rather than across, because three across cut the team names off on a
+ * phone (October 2026). Empty once the game has started or for a past week -
+ * the picks are locked and the numbers have moved on to live betting.
  */
-function pickSplitsHtml(game, side, hidden) {
+function gameSplitsHtml(game, hidden) {
     if (hidden) return '';
     const splits = bettingSplits[pickKey(game)];
-    if (!splits) return '';
-    const lines = SPLITS_BOOKS
-        .filter(([book]) => splits[book]?.[side])
-        .map(([book, label, name]) => {
-            const { handle, bets } = splits[book][side];
-            return `<span class="pick-split" title="${name}: ${handle}% of the money, ${bets}% of the bets on this side">`
-                + `<span class="pick-split-book">${label}</span> ${handle}% $ · ${bets}% bets</span>`;
-        });
-    return lines.length ? `<span class="pick-splits">${lines.join('')}</span>` : '';
+    const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]);
+    if (books.length === 0) return '';
+    const cell = (book, name, side) => {
+        const { handle, bets } = splits[book][side] || {};
+        if (handle === undefined) return '<span class="game-splits-cell">&ndash;</span>';
+        return `<span class="game-splits-cell" title="${name}: ${handle}% of the money, ${bets}% of the bets on ${game[side]}">${handle}% · ${bets}%</span>`;
+    };
+    const rows = books.map(([book, label, name]) =>
+        `<span class="game-splits-book" title="${name}">${label}</span>${cell(book, name, 'away')}${cell(book, name, 'home')}`).join('');
+    return `
+                <div class="game-splits">
+                    <span class="game-splits-head">Splits<br><span class="game-splits-legend">$ · bets</span></span>
+                    <span class="game-splits-team">${game.away} ${signedSpreadDisplay(game, 'away')}</span>
+                    <span class="game-splits-team">${game.home} ${signedSpreadDisplay(game, 'home')}</span>
+                    ${rows}
+                </div>`;
 }
 
 function renderGames() {
@@ -10919,13 +10931,11 @@ function renderGames() {
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="away"
                                     ${readOnly ? 'disabled' : ''}>
                                 ${game.away} ${awayPickSpread}
-                                ${pickSplitsHtml(game, 'away', splitsHidden)}
                             </button>
                             <button class="pick-btn ${linePick === 'home' ? 'selected' : ''} ${lineHomeResult}"
                                     data-game-id="${game.id}" data-pick-key="${key}" data-pick-type="line" data-team="home"
                                     ${readOnly ? 'disabled' : ''}>
                                 ${game.home} ${homePickSpread}
-                                ${pickSplitsHtml(game, 'home', splitsHidden)}
                             </button>
                         </div>
                     </div>
@@ -10945,6 +10955,7 @@ function renderGames() {
                         </div>
                     </div>
                 </div>
+${gameSplitsHtml(game, splitsHidden)}
 
                 <div class="game-footer">
                     <div class="game-location">

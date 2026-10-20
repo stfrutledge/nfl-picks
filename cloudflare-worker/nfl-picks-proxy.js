@@ -1359,12 +1359,18 @@ async function handleEspn(request, url, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// /splits - public betting splits on the spread: DraftKings and Circa.
+// /splits - public betting splits on the spread: Action Network, DraftKings
+// and Circa.
 //
-// Neither has an API. DraftKings publishes its own splits as a page on DK
-// Network; Circa's are republished by VSiN. Both are plain HTML, read here
-// and cached for five minutes (VSiN's own update cycle). DraftKings is the
-// public's book, Circa the sharps': where the money and the tickets disagree
+// None has an official API. Action Network's site reads a JSON scoreboard
+// with its consensus splits (an aggregate across books it does not name);
+// DraftKings publishes its own splits as a page on DK Network; Circa's are
+// republished by VSiN. DK and VSiN are plain HTML. All are read here and
+// cached for five minutes (VSiN's own update cycle). Action Network's terms
+// forbid automated access; this is a private group's site, and that was a
+// deliberate choice (October 2026). DraftKings alone is thin early in the
+// week - one big bet can be 90% of its handle - which is why the consensus
+// is there. Circa is the sharps' book: where its money and tickets disagree
 // is the thing worth seeing.
 //
 // The site shows them on the pick cards. The cron keeps each game's last
@@ -1377,6 +1383,8 @@ const DK_NFL_EVENT_GROUP = '88808';
 const DK_MAX_PAGES = 5;
 const DK_PAGE_SIZE = 10;
 const CIRCA_SPLITS_URL = 'https://data.vsin.com/betting-splits/?source=CIRCA&sport=NFL';
+// The consensus is the same whichever book is asked for; one keeps the reply small.
+const AN_SCOREBOARD_URL = 'https://api.actionnetwork.com/web/v2/scoreboard/nfl?bookIds=15&periods=event';
 const SPLITS_CACHE_SECONDS = 300;
 const SPLITS_HEADERS = {
   'User-Agent': ESPN_HEADERS['User-Agent'],
@@ -1478,6 +1486,32 @@ function parseVsinSplits(html) {
   return games;
 }
 
+/**
+ * Action Network's scoreboard JSON: each game's spread outcomes carry a side
+ * ("home"/"away"), the line, and bet_info.tickets / bet_info.money percents.
+ */
+function parseActionNetworkSplits(data) {
+  return (data?.games || []).flatMap(g => {
+    const team = id => g.teams?.find(t => t.id === id)?.display_name;
+    const away = team(g.away_team_id), home = team(g.home_team_id);
+    const spread = Object.values(g.markets || {})[0]?.event?.spread || [];
+    const sides = {};
+    for (const o of spread) {
+      const bets = o.bet_info?.tickets?.percent, handle = o.bet_info?.money?.percent;
+      if ((o.side === 'away' || o.side === 'home') && Number.isFinite(bets) && Number.isFinite(handle)) {
+        sides[o.side] = { line: splitLine(o.value), handle, bets };
+      }
+    }
+    return away && home && sides.away && sides.home ? [{ key: matchupKey(away, home), away, home, sides }] : [];
+  });
+}
+
+async function fetchActionNetworkSplits() {
+  const response = await fetch(AN_SCOREBOARD_URL, { headers: { ...SPLITS_HEADERS, 'Accept': 'application/json' } });
+  if (!response.ok) throw new Error(`api.actionnetwork.com answered ${response.status}`);
+  return parseActionNetworkSplits(await response.json());
+}
+
 async function fetchSplitsPage(url) {
   const response = await fetch(url, { headers: SPLITS_HEADERS });
   if (!response.ok) throw new Error(`${new URL(url).host} answered ${response.status}`);
@@ -1507,12 +1541,12 @@ async function fetchCircaSplits() {
 }
 
 /**
- * Both books, merged per game: { updatedAt, errors, games: { key: { away,
- * home, dk, circa } } }, each book being { away: {line, handle, bets}, home }
- * or absent. One book failing still returns the other.
+ * Every book, merged per game: { updatedAt, errors, games: { key: { away,
+ * home, an, dk, circa } } }, each book being { away: {line, handle, bets},
+ * home } or absent. A book failing still returns the others.
  */
 async function buildSplits(now = Date.now()) {
-  const [dk, circa] = await Promise.allSettled([fetchDkSplits(), fetchCircaSplits()]);
+  const [an, dk, circa] = await Promise.allSettled([fetchActionNetworkSplits(), fetchDkSplits(), fetchCircaSplits()]);
   const games = {};
   const errors = {};
   const add = (book, result) => {
@@ -1522,6 +1556,7 @@ async function buildSplits(now = Date.now()) {
       games[g.key][book] = g.sides;
     }
   };
+  add('an', an);
   add('dk', dk);
   add('circa', circa);
   return { updatedAt: new Date(now).toISOString(), errors, games };
@@ -1584,6 +1619,7 @@ function splitsRow(entry) {
     takenAt: entry.takenAt,
     dk: [...side('dk', 'away'), ...side('dk', 'home')],
     circa: [...side('circa', 'away'), ...side('circa', 'home')],
+    an: [...side('an', 'away'), ...side('an', 'home')],
   };
 }
 
@@ -1616,10 +1652,10 @@ async function recordFinalSplits(env, board, now = Date.now()) {
     const splits = await cachedSplits(SPLITS_ORIGIN, null);
     for (const g of approaching) {
       const s = splits.games[g.key];
-      if (!s || (!s.dk && !s.circa)) continue;
+      if (!s || (!s.an && !s.dk && !s.circa)) continue;
       pending[g.key] = {
         key: g.key, season: board.season, week, away: g.away, home: g.home,
-        kickoff: g.kickoff, takenAt: splits.updatedAt, dk: s.dk || null, circa: s.circa || null,
+        kickoff: g.kickoff, takenAt: splits.updatedAt, an: s.an || null, dk: s.dk || null, circa: s.circa || null,
       };
     }
   }
