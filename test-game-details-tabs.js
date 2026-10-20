@@ -164,11 +164,10 @@ async function check(name, fn) {
         assert.ok(html.indexOf('gd-tabs') > html.indexOf('gd-hero'), 'under the header');
     });
 
-    await check('the header carries ESPN’s stadium photo under the dark, when the venue is known', () => {
-        const html = site.gameDetailsHtml({ ...game, venueId: '5348' });
-        assert.match(html, /class="gd-hero gd-hero-photo" style="--gd-stadium: url\('https:\/\/a.espncdn.com\/combiner\/i\?img=\/i\/venues\/nfl\/day\/interior\/5348.jpg&w=640&h=360'\)"/);
-        assert.match(site.gameDetailsHtml(game), /<div class="gd-hero">/, 'no venue id: plain black');
-        assert.match(site.gameDetailsHtml({ ...game, venueId: "1'); x" }), /<div class="gd-hero">/, 'only a numeric id reaches the style');
+    await check('the header is plain black: no stadium photo (tried, and dropped by the owner)', () => {
+        const html = site.gameDetailsHtml(game);
+        assert.match(html, /<div class="gd-hero">/);
+        assert.doesNotMatch(html, /venues\/nfl|gd-stadium/);
     });
 
     console.log('\nMatchup');

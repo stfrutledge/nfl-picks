@@ -659,7 +659,7 @@ async function fetchEspnScoreboard(query = '') {
     return fetch(`${ESPN_SCHEDULE_URL}${query}`);
 }
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 13; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line; v12 DraftKings' moneylines; v13 ESPN's venue id, for the stadium photo)
+const SCHEDULE_CACHE_VERSION = 13; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country, and no longer ESPN's undated opening line; v12 DraftKings' moneylines; v13 briefly held ESPN's venue id, for a stadium photo since removed)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -977,7 +977,6 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     // Kept for the forecast of a game abroad, which ESPN does not
                     // give: "Saint-Denis" alone finds Réunion first.
                     country: venue?.address?.country || '',
-                    venueId: venue?.id ? String(venue.id) : '',
                     broadcast: competition.broadcasts?.[0]?.names?.[0] || '',
                     // Every network carrying it, for Game Details' logos: a Monday
                     // night game is often ESPN and ABC together.
@@ -1116,7 +1115,6 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             location: espnMatch.location || histGame.location,
                             stadium: espnMatch.stadium || histGame.stadium,
                             country: espnMatch.country,
-                            venueId: espnMatch.venueId,
                             broadcast: espnMatch.broadcast,
                             networks: espnMatch.networks,
                             records: espnMatch.records,
@@ -11047,18 +11045,6 @@ function formatTemperature(fahrenheit) {
 }
 
 /**
- * ESPN's photo of the stadium, for behind the popup's black header: its
- * inside by day, by ESPN venue id, through ESPN's resizer (about 120 KB at
- * 640x360, against 1.5 MB). A venue ESPN has no photo for (Buffalo's new
- * stadium, October 2026) fails to load and leaves the header plain black.
- */
-function stadiumPhoto(game) {
-    const id = String(game?.venueId || '');
-    if (!/^\d{1,6}$/.test(id)) return '';
-    return `https://a.espncdn.com/combiner/i?img=/i/venues/nfl/day/interior/${id}.jpg&w=640&h=360`;
-}
-
-/**
  * The forecast as an icon and the temperature (the owner's choice over
  * ESPN's words: "Intermittent clouds", "Hazy sunshine"). The words stay as
  * the icon's tooltip and label. The same under a roof: ESPN forecasts the
@@ -11345,9 +11331,8 @@ function gameDetailsHtml(game) {
         : gameDetailsTab === 'picks' ? picksPanelHtml(game)
         : betting || (chips ? '' : gdEmpty('No betting numbers for this game yet.'));
 
-    const photo = stadiumPhoto(game);
     return `
-        <div class="gd-hero${photo ? ' gd-hero-photo' : ''}"${photo ? ` style="--gd-stadium: url('${photo}')"` : ''}>
+        <div class="gd-hero">
             <button type="button" class="gd-close" aria-label="Close">&times;</button>
             <div class="gd-kicker">${detailsKickoff(game)}</div>
             <div class="gd-matchup">${team('away')}${middle}${team('home')}</div>
