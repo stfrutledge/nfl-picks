@@ -3950,6 +3950,11 @@ footer a:hover {
     font-weight: 900;
 }
 
+/* A light team colour (Saints gold, Steelers yellow) takes dark text. */
+.gd-seg.on-light {
+    color: #0a0a0a;
+}
+
 /* The standings tables' style. */
 .gd-table {
     width: 100%;
@@ -4004,6 +4009,30 @@ footer a:hover {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-primary);
+}
+
+/* The TV networks' logos sit on white whatever the theme: most are
+   black or dark marks drawn for a light background. */
+.gd-tv {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.gd-tv-logo {
+    height: 18px;
+    width: auto;
+    max-width: 96px;
+    object-fit: contain;
+}
+
+.gd-tv-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0a0a0a;
 }
 
 .gd-chip-label {

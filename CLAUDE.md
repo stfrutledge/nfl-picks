@@ -504,6 +504,12 @@ Each pick card's header reads "8:15 PM ET, Thur." on the left (`cardKickoffLabel
 
 **It is dressed like the rest of the site, and should stay that way.** A black hero like the page header (navy underline, the green kicker for the kickoff, both teams with large logos and heavy uppercase names, their lines - the score once started - records and moneylines, then the stadium; a round × like the dark-mode toggle), then sections under heavy uppercase titles: the betting splits as one bar per measure in the two teams' colours, each side as wide as its share; the line in the standings tables' style with a moved number in bold; TV and weather as green-edged pills. Two teams whose colours are too close to tell apart (Patriots and Bears both navy, 49ers and Falcons both red) put the home side in a neutral slate, `SPLIT_BAR_NEUTRAL`; lightening it instead turned the Falcons pink. The first version was a plain grid in a generic dialog, which the owner called "quite sad visually" next to the rest of the site.
 
+**TV is shown as the networks' logos**, every network ESPN lists (`networks`; Monday nights are often ESPN and ABC), from SVGs kept in `tv-logos/` (the official marks, from Wikipedia) on a white badge so dark marks read in dark mode. `TV_LOGOS` maps ESPN's names to files ("NFL Net" is ESPN's name for NFL Network); a network not in it is written out.
+
+**Weather:** ESPN's forecast; under a roof "Indoors · 63° outside". ESPN gives no weather for a stadium abroad (London, Paris, ...), so for those `loadVenueForecast` asks **Open-Meteo** when the popup opens: free, no key, answers a browser directly, 16 days ahead. The town is matched by name **and country** (`country` from ESPN's venue): a search for "Saint-Denis" returns Réunion's first. Results live in `venueForecasts`, outside the game objects, which a schedule refresh replaces. A game abroad also names its country in the stadium line.
+
+Team colours too light for white text (Steelers yellow, Saints gold) put dark text on their splits bar.
+
 Before the popup there was an inline panel under the picks that a tap on the card opened (October 2026), and before that the splits sat inside the Line Pick buttons.
 
 Records, opening line, roof and forecast come off the ESPN scoreboard the schedule is already read from (`espnRecords`, `espnOpeningLine` in `fetchNFLSchedule`; `SCHEDULE_CACHE_VERSION` 9 added them and 10 the opening total). The merge of ESPN games onto the in-season snapshot copies fields one by one, so a new ESPN field has to be added there too.

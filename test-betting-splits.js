@@ -419,11 +419,59 @@ function section(name) { console.log(`\n${name}`); }
         assert.doesNotMatch(site.gameDetailsHtml({ ...game, spread: null, favorite: null, overUnder: null, openLine: null }), /gd-table/, 'nothing at all: no section');
     });
 
-    await check('TV and weather as chips - "Indoors" under a roof', () => {
+    await check('TV as the networks’ logos, every network carrying it, from the repo', () => {
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /gd-chip-label">TV<\/span>Prime Video/);
-        assert.match(html, /gd-chip-label">Weather<\/span>Mostly clear, 60&deg;/);
-        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors/);
+        assert.match(html, /gd-chip-label">TV<\/span><span class="gd-tv"><img class="gd-tv-logo" src="tv-logos\/prime-video.svg" alt="Prime Video"/);
+        const mnf = site.gameDetailsHtml({ ...game, networks: ['ESPN', 'ABC'] });
+        assert.match(mnf, /src="tv-logos\/espn.svg"[\s\S]*src="tv-logos\/abc.svg"/, 'both, in order');
+        assert.match(site.gameDetailsHtml({ ...game, networks: ['ESPN2'] }), /gd-tv-name">ESPN2</, 'no logo: the name');
+        for (const file of ['cbs', 'fox', 'nbc', 'abc', 'espn', 'prime-video', 'nfl-network', 'disney-plus', 'netflix', 'peacock', 'youtube', 'nfl-plus']) {
+            assert.ok(fs.existsSync(path.join(__dirname, 'tv-logos', `${file}.svg`)), `${file}.svg is in the repo`);
+        }
+    });
+
+    await check('weather: the forecast outdoors; under a roof, "Indoors" and the temperature outside', () => {
+        assert.match(site.gameDetailsHtml(game), /gd-chip-label">Weather<\/span>Mostly clear, 60&deg;/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true }), /gd-chip-label">Weather<\/span>Indoors · 60&deg; outside/);
+        assert.match(site.gameDetailsHtml({ ...game, indoor: true, weather: null }), /gd-chip-label">Weather<\/span>Indoors</);
+    });
+
+    await check('a game abroad: the Open-Meteo forecast for its town and country, at the kickoff hour', async () => {
+        // Kickoff three days out, on the hour: Steelers v Saints at the Stade de France.
+        const kick = new Date(Math.ceil(Date.now() / 3600000) * 3600000 + 3 * 86400000);
+        const paris = { id: 4, away: 'Steelers', home: 'Saints', spread: 3.5, favorite: 'away',
+            kickoff: kick.toISOString(), stadium: 'Stade de France', location: 'Saint-Denis', country: 'France', indoor: false, weather: null };
+        const asked = [];
+        const hour = `${kick.toISOString().slice(0, 10)}T${String(kick.getUTCHours()).padStart(2, '0')}:00`;
+        site.__net.fetch = async url => {
+            asked.push(String(url));
+            if (String(url).includes('geocoding-api')) return { ok: true, json: async () => ({ results: [
+                { name: 'Saint-Denis', country: undefined, admin1: 'Reunion', latitude: -20.88, longitude: 55.45 },
+                { name: 'Saint-Denis', country: 'France', admin1: 'Ile-de-France', latitude: 48.94, longitude: 2.35 }
+            ] }) };
+            return { ok: true, json: async () => ({ hourly: { time: ['x', hour], temperature_2m: [40, 61.4], weather_code: [3, 1] } }) };
+        };
+        await site.loadVenueForecast(paris);
+        assert.match(asked[1], /latitude=48.94&longitude=2.35/, 'the French Saint-Denis, not Réunion’s');
+        assert.match(asked[1], /temperature_unit=fahrenheit/);
+        assert.match(site.gameDetailsHtml(paris), /gd-chip-label">Weather<\/span>Mostly clear, 61&deg;/);
+        assert.match(site.gameDetailsHtml(paris), /gd-venue">Stade de France · Saint-Denis, France</, 'abroad: the country named');
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, country: 'USA' }), /USA/, 'at home: no country');
+
+        // Steelers yellow and Saints gold are light: dark text on their bars.
+        site.__setSplits({ steelers_saints: { an: { away: { line: -3.5, handle: 49, bets: 44 }, home: { line: 3.5, handle: 51, bets: 56 } } } });
+        assert.match(site.gameDetailsHtml(paris), /gd-seg on-light" style="flex-grow: 49;[\s\S]*gd-seg lead on-light" style="flex-grow: 51;/);
+        assert.doesNotMatch(site.gameDetailsHtml(game), /on-light/, 'navy takes white');
+        site.__setSplits({ patriots_bears: BOTH });
+
+        await site.loadVenueForecast(paris);
+        assert.strictEqual(asked.length, 2, 'asked once a visit');
+
+        asked.length = 0;
+        await site.loadVenueForecast({ ...paris, id: 5, away: 'Jets', home: 'Bills', country: 'USA' });
+        await site.loadVenueForecast({ ...paris, id: 6, away: 'Rams', home: 'Raiders', weather: { text: 'Sunny', temp: 70 } });
+        assert.strictEqual(asked.length, 0, 'not for a game at home, nor one ESPN has weather for');
+        site.__net.fetch = async () => ({ ok: false, json: async () => ({}) });
     });
 
     await check('a source with home and away the other way round is still matched, sides swapped back', () => {
@@ -437,7 +485,7 @@ function section(name) { console.log(`\n${name}`); }
 
     await check('a section with no data is left out', () => {
         const html = site.gameDetailsHtml({ id: 3, away: 'Jets', home: 'Dolphins', broadcast: 'CBS', kickoff: '2099-10-25T17:00:00Z' });
-        assert.match(html, /gd-chip-label">TV<\/span>CBS/);
+        assert.match(html, /gd-chip-label">TV<\/span><span class="gd-tv"><img class="gd-tv-logo" src="tv-logos\/cbs.svg"/);
         assert.doesNotMatch(html, /Betting Splits|gd-table|Weather|gd-record|gd-venue/);
     });
 
@@ -472,6 +520,8 @@ function section(name) { console.log(`\n${name}`); }
 
 /** app.js in Node with browser stubs, for the card caption. */
 function loadSite() {
+    // The network, swappable per test: nothing answers unless a test says so.
+    const net = { fetch: async () => ({ ok: false, json: async () => ({}) }) };
     const el = () => ({ style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, setAttribute() {}, appendChild() {} });
     // The popup's elements, with a class list that remembers.
     const elements = {};
@@ -492,7 +542,7 @@ function loadSite() {
             body: { appendChild() {}, classList: { add() {}, remove() {}, toggle() {} } },
             documentElement: { setAttribute() {}, classList: { add() {}, remove() {} } }
         },
-        navigator: {}, fetch: async () => ({ ok: false }),
+        navigator: {}, fetch: (...args) => net.fetch(...args),
         console: { log() {}, warn() {}, error() {}, info() {} },
         performance: { now: () => 0 }, alert() {}, confirm: () => false,
         addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} })
@@ -503,12 +553,13 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails,
+        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast,
             __setSplits: s => { bettingSplits = s; },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
             __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; } });`);
     const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
     api.__el = id => elements[id];
+    api.__net = net;
     return api;
 }

@@ -659,7 +659,7 @@ async function fetchEspnScoreboard(query = '') {
     return fetch(`${ESPN_SCHEDULE_URL}${query}`);
 }
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 10; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total)
+const SCHEDULE_CACHE_VERSION = 11; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for Game Details; v10 the opening total; v11 every network and the venue country)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -980,7 +980,13 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     kickoff: event.date,
                     location: venue?.address ? [venue.address.city, venue.address.state].filter(Boolean).join(', ') : '',
                     stadium: venue?.fullName || '',
+                    // Kept for the forecast of a game abroad, which ESPN does not
+                    // give: "Saint-Denis" alone finds Réunion first.
+                    country: venue?.address?.country || '',
                     broadcast: competition.broadcasts?.[0]?.names?.[0] || '',
+                    // Every network carrying it, for Game Details' logos: a Monday
+                    // night game is often ESPN and ABC together.
+                    networks: [...new Set((competition.broadcasts || []).flatMap(b => b.names || []))],
                     // For the details panel: records, the opening line, and the
                     // forecast. ESPN gives a forecast for indoor games too, so
                     // the roof is kept with it.
@@ -1110,7 +1116,9 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             kickoff: espnMatch.kickoff || histGame.kickoff,
                             location: espnMatch.location || histGame.location,
                             stadium: espnMatch.stadium || histGame.stadium,
+                            country: espnMatch.country,
                             broadcast: espnMatch.broadcast,
+                            networks: espnMatch.networks,
                             records: espnMatch.records,
                             openLine: espnMatch.openLine,
                             indoor: espnMatch.indoor,
@@ -10748,11 +10756,95 @@ function detailsRecord(records, side) {
     return split ? `${records.total} · ${split} ${side === 'away' ? 'road' : 'home'}` : records.total;
 }
 
-/** "Sunny, 64°", or "Indoors" under a roof - ESPN forecasts those too. */
+/**
+ * "Sunny, 64°"; under a roof "Indoors · 64° outside" - ESPN forecasts the
+ * stadium's town either way, and the temperature outside is still worth
+ * knowing (the conditions are not: it is not raining on the field). A game
+ * abroad, which ESPN gives no weather for, uses its Open-Meteo forecast.
+ */
 function detailsWeather(game) {
-    if (game.indoor) return 'Indoors';
-    if (!game.weather?.text) return '';
-    return game.weather.temp != null ? `${game.weather.text}, ${game.weather.temp}&deg;` : game.weather.text;
+    const weather = game.weather || venueForecasts.get(pickKey(game)) || null;
+    const temp = weather?.temp != null ? `${weather.temp}&deg;` : '';
+    if (game.indoor) return temp ? `Indoors · ${temp} outside` : 'Indoors';
+    if (!weather?.text) return '';
+    return temp ? `${weather.text}, ${temp}` : weather.text;
+}
+
+// Forecasts for games abroad, by pickKey, from Open-Meteo: ESPN gives no
+// weather for a stadium outside the US (the Paris and London games). Free,
+// no key, and it answers a browser directly. Looked up when a game's popup
+// opens, once a visit; kept apart from the game objects, which a schedule
+// refresh replaces.
+const venueForecasts = new Map();
+const venueForecastsAsked = new Set();
+const FORECAST_RANGE_MS = 16 * 24 * 60 * 60 * 1000;   // as far ahead as Open-Meteo forecasts
+
+// WMO weather codes, as Open-Meteo reports them, in ESPN's kind of words.
+const WMO_WEATHER = {
+    0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Fog',
+    51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle', 56: 'Freezing drizzle', 57: 'Freezing drizzle',
+    61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 66: 'Freezing rain', 67: 'Freezing rain',
+    71: 'Light snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow', 80: 'Showers', 81: 'Showers',
+    82: 'Heavy showers', 85: 'Snow showers', 86: 'Snow showers', 95: 'Thunderstorms', 96: 'Thunderstorms', 99: 'Thunderstorms'
+};
+
+/** Does this game need Open-Meteo: abroad, no ESPN weather, kickoff within its range? */
+function needsVenueForecast(game, now = Date.now()) {
+    if (game.weather || !game.country || /^(usa|united states)$/i.test(game.country)) return false;
+    const kickoff = Date.parse(game.kickoff);
+    return Number.isFinite(kickoff) && kickoff > now && kickoff - now < FORECAST_RANGE_MS && Boolean(game.location);
+}
+
+/**
+ * The forecast for a game abroad at its kickoff hour, in °F like ESPN's.
+ * The town is matched by name and country: Open-Meteo's search for
+ * "Saint-Denis" puts Réunion's first and the Stade de France's second.
+ */
+async function loadVenueForecast(game) {
+    if (!needsVenueForecast(game)) return;
+    const key = pickKey(game);
+    if (venueForecastsAsked.has(key)) return;
+    venueForecastsAsked.add(key);
+    try {
+        const town = game.location.split(',')[0].trim();
+        const found = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(town)}&count=10&language=en`)).json();
+        const place = (found.results || []).find(r => r.name === town && r.country === game.country)
+            || (found.results || []).find(r => r.country === game.country);
+        if (!place) return;
+        const kickoff = new Date(game.kickoff);
+        const day = kickoff.toISOString().slice(0, 10);
+        const forecast = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}`
+            + `&hourly=temperature_2m,weather_code&temperature_unit=fahrenheit&timezone=UTC&start_date=${day}&end_date=${day}`)).json();
+        const hour = `${day}T${String(kickoff.getUTCHours()).padStart(2, '0')}:00`;
+        const at = forecast.hourly?.time?.indexOf(hour) ?? -1;
+        if (at < 0) return;
+        const temp = forecast.hourly.temperature_2m?.[at];
+        venueForecasts.set(key, {
+            text: WMO_WEATHER[forecast.hourly.weather_code?.[at]] || '',
+            temp: Number.isFinite(temp) ? Math.round(temp) : null
+        });
+        refreshGameDetails();
+    } catch (error) {
+        console.warn('[Forecast] Could not get the forecast:', error.message);
+    }
+}
+
+// Network logos for Game Details, kept in the repo (tv-logos/, the official
+// marks from Wikipedia) rather than hotlinked. Keyed by the name ESPN uses; a
+// network not here is written out instead.
+const TV_LOGOS = {
+    'CBS': 'cbs', 'Fox': 'fox', 'FOX': 'fox', 'NBC': 'nbc', 'ABC': 'abc', 'ESPN': 'espn',
+    'Prime Video': 'prime-video', 'NFL Net': 'nfl-network', 'NFL Network': 'nfl-network',
+    'Disney+': 'disney-plus', 'Netflix': 'netflix', 'Peacock': 'peacock',
+    'YouTube': 'youtube', 'NFL+': 'nfl-plus'
+};
+
+/** The networks carrying a game, as logos where there is one. */
+function detailsTvHtml(game) {
+    const names = game.networks?.length ? game.networks : (game.broadcast ? [game.broadcast] : []);
+    return names.map(name => TV_LOGOS[name]
+        ? `<img class="gd-tv-logo" src="tv-logos/${TV_LOGOS[name]}.svg" alt="${name}" title="${name}">`
+        : `<span class="gd-tv-name">${name}</span>`).join('');
 }
 
 /** "Sunday, Oct 25 · 1:00 PM ET" from the kickoff, or the card's own words without one. */
@@ -10825,13 +10917,21 @@ function gameDetailsHtml(game) {
     const middle = started
         ? `<div class="gd-vs gd-status${final ? '' : ' live'}">${final ? 'Final' : liveClockLabel(live)}</div>`
         : '<div class="gd-vs">@</div>';
-    const where = [game.stadium, game.location].filter(Boolean).join(' · ');
+    // A game abroad names its country: "Saint-Denis" alone could be anywhere.
+    const abroad = game.country && !/^(usa|united states)$/i.test(game.country) ? game.country : '';
+    const where = [game.stadium, [game.location, abroad].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
 
     const colours = splitBarColours(game);
+    // White on a light team colour (Saints gold, Steelers yellow) is hard to
+    // read: those take dark text.
+    const light = colour => {
+        const [r, g, b] = hexRgb(colour);
+        return 0.299 * r + 0.587 * g + 0.114 * b > 160;
+    };
     const bar = (label, field, book) => {
         const away = Number(splits[book].away[field]), home = Number(splits[book].home[field]);
         const seg = (side, pct, colour, other) =>
-            `<span class="gd-seg${pct > other ? ' lead' : ''}"`
+            `<span class="gd-seg${pct > other ? ' lead' : ''}${light(colour) ? ' on-light' : ''}"`
             + ` style="flex-grow: ${Math.max(pct, 1)}; background: ${colour}">${getTeamAbbreviation(game[side])} ${pct}%</span>`;
         return `
             <div class="gd-split">
@@ -10876,7 +10976,8 @@ function gameDetailsHtml(game) {
                 </table>
             </section>` : '';
 
-    const chips = [['TV', game.broadcast], ['Weather', detailsWeather(game)]]
+    const tv = detailsTvHtml(game);
+    const chips = [['TV', tv ? `<span class="gd-tv">${tv}</span>` : ''], ['Weather', detailsWeather(game)]]
         .filter(([, value]) => value)
         .map(([label, value]) => `<span class="gd-chip"><span class="gd-chip-label">${label}</span>${value}</span>`).join('');
 
@@ -10906,6 +11007,7 @@ function openGameDetails(key) {
     gameDetailsKey = key;
     body.innerHTML = gameDetailsHtml(game);
     modal.classList.add('show');
+    loadVenueForecast(game);
 }
 
 function closeGameDetails() {
