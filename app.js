@@ -11636,10 +11636,13 @@ function picksPanelHtml(game) {
         // the pick is graded at (a locked or Cowherd pick its own number).
         const lineText = pick.line ? signedSpreadDisplay({ ...game, ...lineForPick(game, pick) }, pick.line) : '';
         const ats = pick.line
-            ? `${pickTeamBadge(game[pick.line], lineText)}${pick.blazin && p !== COWHERD ? ' <span class="gd-star" title="Blazin’ 5">&#9733;</span>' : ''}${isPickFrozen(pick) && p !== COWHERD ? '<span class="gd-sub gd-locked">locked</span>' : ''}`
+            // One flex row, so the Blazin' star sits level with the badge
+            // rather than on the text baseline. No "locked" tag (the owner's call).
+            ? `<span class="gd-pick-line">${pickTeamBadge(game[pick.line], lineText)}${pick.blazin && p !== COWHERD ? '<span class="gd-star" title="Blazin’ 5">&#9733;</span>' : ''}</span>`
             : `<span class="gd-sub">${p === COWHERD ? 'not in his 5' : 'no pick yet'}</span>`;
         const su = p === COWHERD || !team(pick.winner) ? '<span class="gd-sub">&ndash;</span>' : pickTeamBadge(team(pick.winner));
-        return `<tr class="${you ? 'you' : ''}"><td>${p}${you ? ' <span class="gd-sub">(you)</span>' : ''}</td><td>${ats}</td><td>${su}</td></tr>`;
+        // The viewer's row is shaded; no "(you)" label (the owner's call).
+        return `<tr class="${you ? 'you' : ''}"><td>${p}</td><td>${ats}</td><td>${su}</td></tr>`;
     }).join('');
     // No table at all when nobody has picked; the bar's line says so.
     const group = !rows ? bar : `

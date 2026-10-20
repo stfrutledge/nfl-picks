@@ -312,11 +312,13 @@ async function check(name, fn) {
         const t = text(html);
         assert.match(t, /2 of 5 picked/);
         assert.match(t, /SF 1 ATL 1/);
-        assert.match(t, /Daniel SF -3.5 locked SF/, "the team as its abbreviation, with its logo");
+        assert.match(t, /Daniel SF -3.5 SF/, 'the team as its abbreviation, at his locked number');
+        assert.doesNotMatch(t, /locked|\(you\)/, 'no "locked" tag, no "(you)" label');
         assert.match(html, /<span class="gd-l5-opp"><img class="gd-l5-opp-logo" src="https:\/\/a.espncdn.com\/i\/teamlogos\/nfl\/500\/sf.png"/);
-        assert.match(t, /Stephen \(you\) ATL \+3 ★ SF/);
-        assert.match(t, /Cowherd ATL \+3 –/, 'his line, no locked tag or star: all of his are');
-        assert.match(html, /<tr class="you"><td>Stephen/);
+        assert.match(t, /Stephen ATL \+3 ★ SF/);
+        assert.match(html, /<span class="gd-pick-line"><span class="gd-l5-opp">[\s\S]*?<\/span><\/span><span class="gd-star"/, 'the star in the same row as the badge');
+        assert.match(t, /Cowherd ATL \+3 –/, 'his line, no star: all of his are');
+        assert.match(html, /<tr class="you"><td>Stephen<\/td>/, 'the viewer’s row still shaded');
         for (const p of site.PICKERS.filter(p => !['Stephen', 'Daniel'].includes(p))) {
             assert.doesNotMatch(t, new RegExp(`\\b${p}\\b`), `${p} has not picked: no row`);
         }

@@ -4561,9 +4561,16 @@ footer a:hover {
     white-space: nowrap;
 }
 
-.gd-picks .gd-locked {
-    display: block;
-    margin: 1px 0 0 24px;   /* under the abbreviation, past the logo */
+/* The line pick and its Blazin' star on one centred row. */
+.gd-pick-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.gd-pick-line .gd-star {
+    line-height: 1;
+    font-weight: 400;   /* the same star in the viewer's bold row */
 }
 
 .gd-star {
