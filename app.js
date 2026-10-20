@@ -11429,6 +11429,18 @@ function headToHeadMeetings(game) {
     return meetings;
 }
 
+/** ESPN's abbreviation ("NYJ", "WSH") back to the site's team name, or null. */
+function teamNameForAbbreviation(abbr) {
+    return Object.keys(TEAM_ABBREVIATIONS).find(name => TEAM_ABBREVIATIONS[name] === abbr) || null;
+}
+
+/** "10/18/26": the game's date in ET, so a Sunday night game stays on Sunday. */
+function lastFiveDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', year: '2-digit' });
+}
+
 function matchupPanelHtml(game) {
     // Against the spread this season.
     const ats = side => recordText(teamAtsRecord(game[side]));
@@ -11445,13 +11457,22 @@ function matchupPanelHtml(game) {
     else if (!summary) lastFive = gdEmpty('Loading from ESPN&hellip;');
     else if (summary.failed) lastFive = gdEmpty('Couldn’t load from ESPN. It will try again.');
     else {
-        const column = side => {
-            const games = summaryForSide(summary.data.lastFive, game, side)?.games || [];
-            if (games.length === 0) return `<div class="gd-col">${gdEmpty('No games yet.')}</div>`;
-            return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${games.map(g => `
-                        <div class="gd-result"><span class="gd-wl ${g.result === 'W' ? 'win' : g.result === 'L' ? 'loss' : 'tie'}">${g.result || '&ndash;'}</span>${g.atVs === '@' ? '@' : 'vs'} ${g.opp} <span class="gd-result-score">${g.score}</span></div>`).join('')}</div>`;
+        // A table a team, one under the other: the team's logo and name, then
+        // date, opponent (with its logo) and result, newest first.
+        const block = side => {
+            const games = [...(summaryForSide(summary.data.lastFive, game, side)?.games || [])]
+                .sort((x, y) => String(y.date).localeCompare(String(x.date)));
+            const head = `<div class="gd-l5-head"><img class="gd-l5-logo" src="${getTeamLogo(game[side])}" alt="" onerror="this.remove()">${game[side]}</div>`;
+            if (games.length === 0) return `<div class="gd-l5">${head}${gdEmpty('No games yet.')}</div>`;
+            const rows = games.map(g => {
+                const opp = teamNameForAbbreviation(g.opp);
+                const logo = opp ? `<img class="gd-l5-opp-logo" src="${getTeamLogo(opp)}" alt="" onerror="this.remove()">` : '';
+                const cls = g.result === 'W' ? 'win' : g.result === 'L' ? 'loss' : '';
+                return `<tr><td>${lastFiveDate(g.date)}</td><td><span class="gd-l5-opp"><span class="gd-l5-at">${g.atVs === '@' ? '@' : 'vs'}</span>${logo}${g.opp}</span></td><td><span class="gd-l5-wl ${cls}">${g.result || '&ndash;'}</span> ${g.score}</td></tr>`;
+            }).join('');
+            return `<div class="gd-l5">${head}<table class="gd-table gd-l5-table"><thead><tr><th>Date</th><th>Opp</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>`;
         };
-        lastFive = `<div class="gd-cols">${column('away')}${column('home')}</div>`;
+        lastFive = block('away') + block('home');
     }
 
     // Head to head, from the archives.

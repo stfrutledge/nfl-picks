@@ -166,19 +166,26 @@ async function check(name, fn) {
         assert.match(t, /AGAINST THE SPREAD|Against the spread/i);
     });
 
-    await check('last five: loading, then ESPN’s, W and L as chips', () => {
+    await check('last five: loading, then a table a team, newest first, dates in ET, opponents with logos', () => {
         assert.match(text(site.gameDetailsHtml(game)), /Loading from ESPN/);
         site.__setSummary(game.espnId, {
             injuries: [{ team: 'Falcons', players: [
                 { name: 'C. Henderson', pos: 'CB', status: 'Questionable', detail: 'Groin' },
                 { name: 'Y. Abdullah', pos: 'LB', status: 'Out', detail: 'Hamstring' }
             ] }],
-            lastFive: [{ team: '49ers', games: [{ result: 'W', atVs: '@', opp: 'SEA', score: '32-29' }] }],
+            lastFive: [{ team: '49ers', games: [
+                { result: 'L', atVs: 'vs', opp: 'CAR', score: '34-3', date: '2026-09-20T17:00Z' },
+                { result: 'W', atVs: '@', opp: 'SEA', score: '32-29', date: '2026-10-13T00:15Z' }
+            ] }],
             leaders: [{ team: '49ers', items: [{ label: 'Passing Yards', name: 'B. Purdy', pos: 'QB', value: '1,640 YDS' }] }]
         });
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /gd-wl win">W<\/span>@ SEA <span class="gd-result-score">32-29/);
-        assert.match(text(html), /No games yet/, 'Falcons: nothing from ESPN');
+        const t = text(html);
+        assert.match(t, /49ers Date Opp Result 10\/12\/26 @ SEA W 32-29 9\/20\/26 vs CAR L 34-3/, 'Sunday night stays Sunday; newest first');
+        assert.match(html, /gd-l5-opp-logo" src="https:\/\/a.espncdn.com\/i\/teamlogos\/nfl\/500\/sea.png"/);
+        assert.match(html, /gd-l5-wl win">W<\/span> 32-29/);
+        assert.match(html, /gd-l5-wl loss">L<\/span> 34-3/);
+        assert.match(t, /Falcons No games yet/, 'Falcons: nothing from ESPN');
     });
 
     console.log('\nPlayers');

@@ -4487,6 +4487,74 @@ footer a:hover {
     color: var(--accent-amber);
 }
 
+/* Last five: a table per team under its logo and name. */
+.gd-l5 + .gd-l5 {
+    margin-top: 16px;
+}
+
+.gd-l5-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.gd-l5-logo {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+}
+
+/* Fixed columns, so the two teams' tables line up. */
+.gd-l5-table {
+    table-layout: fixed;
+}
+
+.gd-l5-table th:nth-child(1) { width: 32%; }
+.gd-l5-table th:nth-child(2) { width: 34%; }
+
+.gd-l5-table th,
+.gd-l5-table td {
+    text-align: left;
+    padding: 7px 10px;
+    white-space: nowrap;
+}
+
+.gd-table.gd-l5-table td:first-child {
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+
+.gd-l5-opp {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+}
+
+.gd-l5-at {
+    min-width: 18px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.gd-l5-opp-logo {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.gd-l5-table td:last-child {
+    font-weight: 700;
+}
+
+.gd-l5-wl.win { color: var(--accent-green); }
+.gd-l5-wl.loss { color: var(--accent-red); }
+
 .gd-h2h td {
     white-space: nowrap;
 }
