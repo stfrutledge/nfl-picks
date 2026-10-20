@@ -4018,6 +4018,13 @@ footer a:hover {
     font-weight: 700;
     color: var(--text-primary);
     cursor: pointer;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* No ring after a tap; a keyboard still gets one. */
+.gd-line-toggle:focus:not(:focus-visible) {
+    outline: none;
 }
 
 .gd-line-toggle::after {
