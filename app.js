@@ -11187,7 +11187,6 @@ function gameDetailsHtml(game) {
     const showSplits = !(isGameLocked(game) || started || isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK);
     const splits = showSplits ? splitsForGame(game) : null;
     const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
-    const haveMoneylines = game.awayMoneyline != null && game.homeMoneyline != null;
 
     const team = side => {
         const record = detailsRecord(game.records?.[side], side);
@@ -11199,7 +11198,6 @@ function gameDetailsHtml(game) {
                 <div class="gd-team-name">${game[side]}</div>
                 ${started ? `<div class="gd-score">${live[`${side}Score`]}</div>` : (line ? `<div class="gd-line">${line}</div>` : '')}
                 ${record ? `<div class="gd-record">${record}</div>` : ''}
-                ${haveMoneylines ? `<div class="gd-record">ML ${formatMoneyline(game[`${side}Moneyline`])}</div>` : ''}
             </div>`;
     };
     const middle = started

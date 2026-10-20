@@ -537,17 +537,17 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(src, /<span class="game-time">\$\{cardKickoffLabel\(game\)\}<\/span>\s*\$\{statusBadge\}\s*<button type="button" class="game-details-btn" data-pick-key="\$\{key\}">Game Details<\/button>/);
     });
 
-    await check('the hero: kickoff, both teams with logo, line, record and moneyline, the stadium, a close button', () => {
+    await check('the hero: kickoff, both teams with logo, line and record (no moneyline), the stadium, a close button', () => {
         const html = site.gameDetailsHtml(game);
         assert.match(html, /class="gd-hero"/);
         assert.match(html, /class="gd-close" aria-label="Close"/);
         assert.match(text(block(html, 'gd-kicker')), /^Thursday, Oct 22 · 8:15 PM ET$/);
         const [away, home] = html.split(/class="gd-team(?: gd-won)?"/).slice(1, 3).map(part => text(part.split('gd-vs')[0]));
-        assert.match(away, /Patriots \+3 4-2 · 1-2 road ML \+135/, 'away first, as the buttons');
-        assert.match(home, /Bears -3 4-2 · 2-1 home ML -160/);
+        assert.match(away, /Patriots \+3 4-2 · 1-2 road/, 'away first, as the buttons');
+        assert.match(home, /Bears -3 4-2 · 2-1 home/);
         assert.match(html, /<img class="gd-logo"[^>]*alt="Patriots logo"/);
         assert.match(text(block(html, 'gd-venue')), /Soldier Field · Chicago, IL/);
-        assert.doesNotMatch(site.gameDetailsHtml({ ...game, awayMoneyline: null }), /ML /, 'no moneylines without both');
+        assert.doesNotMatch(html, /ML /, 'moneylines are not shown (the owner took them out)');
     });
 
     await check('splits: one bar per measure in the teams’ colours, each side as wide as its share', () => {
