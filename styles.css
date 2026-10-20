@@ -3731,18 +3731,24 @@ footer a:hover {
     font-variant-numeric: tabular-nums;
 }
 
+/* The title runs the full width, above the team names. */
 .game-splits-head {
+    grid-column: 1 / -1;
+    margin-bottom: 2px;
     font-size: 0.6rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    line-height: 1.2;
 }
 
-.game-splits-legend {
-    font-weight: 500;
-    text-transform: none;
-    letter-spacing: 0;
+.game-splits-label {
+    white-space: nowrap;
+}
+
+/* The bigger share of each row. */
+.game-splits-cell.lead {
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 .game-splits-team {
@@ -3759,9 +3765,6 @@ footer a:hover {
     white-space: nowrap;
 }
 
-.game-splits-book {
-    font-weight: 700;
-}
 
 /* Pick result states for completed games */
 .pick-btn.selected.correct {

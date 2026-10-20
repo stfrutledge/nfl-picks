@@ -345,10 +345,21 @@ function section(name) { console.log(`\n${name}`); }
     };
     site.__setSplits({ patriots_bears: BOTH });
 
-    await check('a strip of its own: away then home, money then bets', () => {
+    await check('a strip of its own: the source named, a labelled row per measure, away then home', () => {
         const html = site.gameSplitsHtml(game, false);
+        assert.match(html, /Betting splits · Action Network/);
         assert.match(html, /game-splits-team">Patriots \+3<[\s\S]*game-splits-team">Bears -3</, 'away column first, as the buttons');
-        assert.match(html, /book"[^>]*>Public<\/span><span[^>]*>74% · 77%<\/span><span[^>]*>26% · 23%</);
+        assert.match(html, /% of money<\/span><span class="game-splits-cell lead">74%<\/span><span class="game-splits-cell">26%</);
+        assert.match(html, /% of bets<\/span><span class="game-splits-cell lead">77%<\/span><span class="game-splits-cell">23%</);
+        assert.ok(html.indexOf('% of money') < html.indexOf('% of bets'), 'money first');
+    });
+
+    await check('the bigger share is the one in bold, whichever side it is on', () => {
+        site.__setSplits({ patriots_bears: { an: { away: { line: 3, handle: 40, bets: 50 }, home: { line: -3, handle: 60, bets: 50 } } } });
+        const html = site.gameSplitsHtml(game, false);
+        assert.match(html, /% of money<\/span><span class="game-splits-cell">40%<\/span><span class="game-splits-cell lead">60%</);
+        assert.match(html, /% of bets<\/span><span class="game-splits-cell">50%<\/span><span class="game-splits-cell">50%</, 'a tie leads neither');
+        site.__setSplits({ patriots_bears: BOTH });
     });
 
     await check('the consensus only: DraftKings and Circa are stored, not shown', () => {

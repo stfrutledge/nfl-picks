@@ -10627,7 +10627,7 @@ function renderLeaderboard(stats) {
  * A game the consensus is not carrying shows no strip.
  */
 const SPLITS_REFRESH_MS = 10 * 60 * 1000;
-const SPLITS_BOOKS = [['an', 'Public', 'Action Network consensus across sportsbooks']];
+const SPLITS_BOOKS = [['an', 'Action Network']];
 let bettingSplits = {};
 let splitsFetchedAt = 0;
 let splitsFetchInFlight = false;
@@ -10665,29 +10665,36 @@ function refreshBettingSplitsIfStale(now = Date.now()) {
 }
 
 /**
- * The splits strip under a card's picks: a row per book, a column per side
- * (away left, home right, as the buttons above), each "money% · bets%".
- * Its own strip rather than inside the Line Pick buttons, which made them
- * taller than the Straight Up ones beside them; and books down the side
- * rather than across, because three across cut the team names off on a
- * phone (October 2026). Empty once the game has started or for a past week -
- * the picks are locked and the numbers have moved on to live betting.
+ * The splits strip under a card's picks: a title naming the source, a column
+ * per side (away left, home right, as the buttons above), and a labelled row
+ * for each measure - "% of money", then "% of bets" - with the bigger share
+ * of each in bold.
+ *
+ * Three earlier layouts were dropped (October 2026): inside the Line Pick
+ * buttons (taller than the Straight Up ones beside them); a column per book
+ * (cut the team names off on a phone); and one row per book reading
+ * "53% · 69%" under a "$ · bets" key, which nobody could follow. One number
+ * a cell, with its meaning spelled out beside it.
+ *
+ * Empty once the game has started or for a past week - the picks are locked
+ * and the numbers have moved on to live betting.
  */
 function gameSplitsHtml(game, hidden) {
     if (hidden) return '';
     const splits = bettingSplits[pickKey(game)];
-    const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]);
+    const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
     if (books.length === 0) return '';
-    const cell = (book, name, side) => {
-        const { handle, bets } = splits[book][side] || {};
-        if (handle === undefined) return '<span class="game-splits-cell">&ndash;</span>';
-        return `<span class="game-splits-cell" title="${name}: ${handle}% of the money, ${bets}% of the bets on ${game[side]}">${handle}% · ${bets}%</span>`;
-    };
-    const rows = books.map(([book, label, name]) =>
-        `<span class="game-splits-book" title="${name}">${label}</span>${cell(book, name, 'away')}${cell(book, name, 'home')}`).join('');
+    const several = books.length > 1;
+    const rows = books.flatMap(([book, name]) => [['handle', 'money'], ['bets', 'bets']].map(([field, word]) => {
+        const away = splits[book].away[field];
+        const home = splits[book].home[field];
+        const cell = (value, other) => `<span class="game-splits-cell${value > other ? ' lead' : ''}">${value}%</span>`;
+        return `<span class="game-splits-label">${several ? `${name} ` : ''}% of ${word}</span>${cell(away, home)}${cell(home, away)}`;
+    })).join('');
     return `
                 <div class="game-splits">
-                    <span class="game-splits-head">Splits<br><span class="game-splits-legend">$ · bets</span></span>
+                    <span class="game-splits-head">Betting splits${several ? '' : ` · ${books[0][1]}`}</span>
+                    <span></span>
                     <span class="game-splits-team">${game.away} ${signedSpreadDisplay(game, 'away')}</span>
                     <span class="game-splits-team">${game.home} ${signedSpreadDisplay(game, 'home')}</span>
                     ${rows}
