@@ -3713,10 +3713,11 @@ footer a:hover {
     color: white;
 }
 
-/* Betting splits: a strip of their own under the picks, so the Line Pick and
-   Straight Up buttons stay the same size. A row per book, a column per side:
-   away left and home right, under the buttons for them. */
-.game-splits {
+/* The details panel under a card's picks: records, betting splits, line
+   movement, TV and weather. Its own panel, so the Line Pick and Straight Up
+   buttons stay the same size. A column per side - away left, home right,
+   under the buttons for them - and full-width lines for the game itself. */
+.game-details {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
     column-gap: 12px;
@@ -3731,37 +3732,31 @@ footer a:hover {
     font-variant-numeric: tabular-nums;
 }
 
-/* Hidden until the card is tapped (handleSplitsToggle). A card that has
-   splits to show says so with its cursor. */
-.game-splits.collapsed {
+/* Hidden until the card is tapped (handleDetailsToggle). A card with details
+   to show says so with its cursor. */
+.game-details.collapsed {
     display: none;
 }
 
-.game-card.has-splits {
+.game-card.has-details {
     cursor: pointer;
 }
 
-/* The title runs the full width, above the team names. */
-.game-splits-head {
+/* A section title runs the full width. */
+.game-details-head {
     grid-column: 1 / -1;
-    margin-bottom: 2px;
+    margin-top: 6px;
     font-size: 0.6rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
 
-.game-splits-label {
+.game-details-label {
     white-space: nowrap;
 }
 
-/* The bigger share of each row. */
-.game-splits-cell.lead {
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.game-splits-team {
+.game-details-team {
     font-weight: 700;
     color: var(--text-primary);
     text-align: center;
@@ -3770,11 +3765,28 @@ footer a:hover {
     white-space: nowrap;
 }
 
-.game-splits-cell {
+.game-details-cell {
     text-align: center;
     white-space: nowrap;
 }
 
+/* The bigger share of each splits row. */
+.game-details-cell.lead {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Line, TV and weather belong to the game, not a side: across both columns. */
+.game-details-wide {
+    grid-column: 2 / -1;
+    color: var(--text-primary);
+}
+
+.game-details-rule {
+    grid-column: 1 / -1;
+    margin: 4px 0 2px;
+    border-top: 1px solid var(--border-color);
+}
 
 /* Pick result states for completed games */
 .pick-btn.selected.correct {

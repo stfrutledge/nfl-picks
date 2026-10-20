@@ -659,7 +659,7 @@ async function fetchEspnScoreboard(query = '') {
     return fetch(`${ESPN_SCHEDULE_URL}${query}`);
 }
 const SCHEDULE_CACHE_KEY = 'nfl_schedule_cache';
-const SCHEDULE_CACHE_VERSION = 8; // Increment to invalidate all caches (v8 stores a missing line as null, not 0)
+const SCHEDULE_CACHE_VERSION = 9; // Increment to invalidate all caches (v8 stores a missing line as null, not 0; v9 adds records, opening line, roof and forecast for the details panel)
 const SCHEDULE_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const PLAYOFF_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes for playoffs (schedules may update)
 
@@ -865,6 +865,26 @@ function getTeamNickname(fullName) {
 /**
  * Fetch NFL schedule from ESPN for a specific week
  */
+/** A competitor's records off the scoreboard: { total, home, road }, e.g. "6-0". */
+function espnRecords(competitor) {
+    const out = {};
+    for (const r of competitor?.records || []) {
+        if (['total', 'home', 'road'].includes(r.type) && r.summary) out[r.type] = r.summary;
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * The spread as it opened, from the scoreboard's odds (DraftKings, the same
+ * book as the card's current line): { away: '+1.5', home: '-1.5' } as ESPN
+ * prints it, or null when the scoreboard carries none.
+ */
+function espnOpeningLine(competition) {
+    const spread = competition?.odds?.[0]?.pointSpread;
+    const away = spread?.away?.open?.line, home = spread?.home?.open?.line;
+    return away && home ? { away: String(away), home: String(home) } : null;
+}
+
 async function fetchNFLSchedule(week, forceRefresh = false) {
     // Check cache first unless force refresh
     // Empty arrays are treated as cache misses - always try fresh fetch
@@ -958,6 +978,15 @@ async function fetchNFLSchedule(week, forceRefresh = false) {
                     location: venue?.address ? [venue.address.city, venue.address.state].filter(Boolean).join(', ') : '',
                     stadium: venue?.fullName || '',
                     broadcast: competition.broadcasts?.[0]?.names?.[0] || '',
+                    // For the details panel: records, the opening line, and the
+                    // forecast. ESPN gives a forecast for indoor games too, so
+                    // the roof is kept with it.
+                    records: { away: espnRecords(awayTeam), home: espnRecords(homeTeam) },
+                    openLine: espnOpeningLine(competition),
+                    indoor: venue?.indoor === true,
+                    weather: event.weather?.displayValue
+                        ? { text: event.weather.displayValue, temp: event.weather.temperature ?? null }
+                        : null,
                     // Game status and scores from ESPN
                     status: status,
                     // The quarter and clock too: a card drawn before the first
@@ -1079,6 +1108,10 @@ async function loadWeekSchedule(week, forceRefresh = false, skipSpreadsLoad = fa
                             location: espnMatch.location || histGame.location,
                             stadium: espnMatch.stadium || histGame.stadium,
                             broadcast: espnMatch.broadcast,
+                            records: espnMatch.records,
+                            openLine: espnMatch.openLine,
+                            indoor: espnMatch.indoor,
+                            weather: espnMatch.weather,
                             status: espnMatch.status,
                             period: espnMatch.period,
                             clock: espnMatch.clock,
@@ -10664,61 +10697,137 @@ function refreshBettingSplitsIfStale(now = Date.now()) {
     if (splitsFetchedAt && now - splitsFetchedAt >= SPLITS_REFRESH_MS) loadBettingSplits();
 }
 
-// Which games have their splits open, by pickKey. Collapsed by default: a
+// Which games have their details open, by pickKey. Collapsed by default: a
 // tap on the card opens them. Kept outside the render, as asIsExpanded is -
 // the cards are rebuilt on every splits refresh and live-score poll, and an
-// open strip must not snap shut.
-const splitsOpen = new Set();
+// open panel must not snap shut.
+const detailsOpen = new Set();
 
 /**
  * A click anywhere on a game card that is not one of its controls toggles
- * that card's splits. The controls keep their own clicks: a pick, the lock,
- * the B5 star or an O/U choice never opens or closes the strip too.
+ * that card's details. The controls keep their own clicks: a pick, the lock,
+ * the B5 star or an O/U choice never opens or closes the panel too.
  */
-function handleSplitsToggle(event) {
+function handleDetailsToggle(event) {
     if (event.target.closest('button, a, input, select, label, .ou-picker')) return;
-    const card = event.target.closest('.game-card.has-splits');
+    const card = event.target.closest('.game-card.has-details');
     if (!card) return;
     const key = card.dataset.pickKey;
-    if (splitsOpen.has(key)) splitsOpen.delete(key);
-    else splitsOpen.add(key);
-    card.querySelector('.game-splits')?.classList.toggle('collapsed', !splitsOpen.has(key));
+    if (detailsOpen.has(key)) detailsOpen.delete(key);
+    else detailsOpen.add(key);
+    card.querySelector('.game-details')?.classList.toggle('collapsed', !detailsOpen.has(key));
 }
 
 /**
- * The splits strip under a card's picks: a title naming the source, a column
- * per side (away left, home right, as the buttons above), and a labelled row
- * for each measure - "% of money", then "% of bets" - with the bigger share
- * of each in bold.
- *
- * Three earlier layouts were dropped (October 2026): inside the Line Pick
- * buttons (taller than the Straight Up ones beside them); a column per book
- * (cut the team names off on a phone); and one row per book reading
- * "53% · 69%" under a "$ · bets" key, which nobody could follow. One number
- * a cell, with its meaning spelled out beside it.
- *
- * Empty once the game has started or for a past week - the picks are locked
- * and the numbers have moved on to live betting.
+ * This game's splits, oriented to it. Sources do not always agree on which
+ * team is at home - Action Network had week 7's Monday game as Eagles @
+ * Cowboys while ESPN, and so the schedule, had Cowboys @ Eagles - so a game
+ * missing under its own key is looked up the other way round, with each
+ * book's sides swapped back.
  */
-function gameSplitsHtml(game, hidden) {
+function splitsForGame(game) {
+    const direct = bettingSplits[pickKey(game)];
+    if (direct) return direct;
+    const flipped = bettingSplits[pickKey({ ...game, away: game.home, home: game.away })];
+    if (!flipped) return null;
+    const out = {};
+    for (const [book, sides] of Object.entries(flipped)) {
+        out[book] = sides && typeof sides === 'object' && sides.away
+            ? { ...sides, away: sides.home, home: sides.away }
+            : sides;
+    }
+    return out;
+}
+
+/** "6-0 · 2-0 road" for the away team, "2-4 · 0-3 home" for the home team. */
+function detailsRecord(records, side) {
+    if (!records?.total) return '';
+    const split = side === 'away' ? records.road : records.home;
+    return split ? `${records.total} · ${split} ${side === 'away' ? 'road' : 'home'}` : records.total;
+}
+
+/**
+ * "opened 49ers -4.5 → now -3.5", read from the side the line favours now
+ * (the opener's, when the card has no line yet). The opening number is
+ * ESPN's (DraftKings); "now" is the card's own line, the one on the buttons.
+ */
+function detailsLineMove(game) {
+    const open = game.openLine;
+    if (!open) return '';
+    const favouredNow = hasUsableSpread(game) ? game.favorite : null;
+    const side = favouredNow || (String(open.away).startsWith('-') ? 'away' : 'home');
+    const now = hasUsableSpread(game) ? signedSpreadDisplay(game, side) : '';
+    const opened = `${game[side]} ${open[side]}`;
+    if (!now) return `opened ${opened}`;
+    return Number(now) === Number(open[side]) || (now === 'PK' && Number(open[side]) === 0)
+        ? `opened ${opened}, no move since`
+        : `opened ${opened} &rarr; now ${now}`;
+}
+
+/** "Sunny, 64°", or "Indoors" under a roof - ESPN forecasts those too. */
+function detailsWeather(game) {
+    if (game.indoor) return 'Indoors';
+    if (!game.weather?.text) return '';
+    return game.weather.temp != null ? `${game.weather.text}, ${game.weather.temp}&deg;` : game.weather.text;
+}
+
+/**
+ * The details panel under a card's picks, opened by a tap on the card: the
+ * teams' records, the betting splits, the line's movement since it opened,
+ * the TV channel and the weather. A column per side (away left, home right,
+ * as the buttons above) for what belongs to each team; a full-width line for
+ * what belongs to the game. Anything a game has no data for is left out, and
+ * a game with none of it has no panel.
+ *
+ * The splits read as a title naming the source and the number of bets, then
+ * a labelled row for "% of money" and "% of bets", the bigger share in bold.
+ * Layouts dropped on the way (October 2026): splits inside the Line Pick
+ * buttons (taller than the Straight Up ones beside them); a column per book
+ * (cut the team names off on a phone); and "53% · 69%" under a "$ · bets"
+ * key, which nobody could follow. One number a cell, its meaning beside it.
+ *
+ * Empty once the game has started or for a past week: the picks are locked,
+ * and the splits have moved on to live betting.
+ */
+function gameDetailsHtml(game, hidden) {
     if (hidden) return '';
-    const splits = bettingSplits[pickKey(game)];
+    const splits = splitsForGame(game);
     const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
-    if (books.length === 0) return '';
     const several = books.length > 1;
-    const rows = books.flatMap(([book, name]) => [['handle', 'money'], ['bets', 'bets']].map(([field, word]) => {
-        const away = splits[book].away[field];
-        const home = splits[book].home[field];
-        const cell = (value, other) => `<span class="game-splits-cell${value > other ? ' lead' : ''}">${value}%</span>`;
-        return `<span class="game-splits-label">${several ? `${name} ` : ''}% of ${word}</span>${cell(away, home)}${cell(home, away)}`;
-    })).join('');
+
+    const sideRow = (label, away, home, cls = '') =>
+        `<span class="game-details-label">${label}</span>`
+        + `<span class="game-details-cell${cls && cls(away, home) ? ' lead' : ''}">${away}</span>`
+        + `<span class="game-details-cell${cls && cls(home, away) ? ' lead' : ''}">${home}</span>`;
+    const gameRow = (label, value) => value
+        ? `<span class="game-details-label">${label}</span><span class="game-details-wide">${value}</span>` : '';
+
+    const recordAway = detailsRecord(game.records?.away, 'away');
+    const recordHome = detailsRecord(game.records?.home, 'home');
+    const records = recordAway || recordHome ? sideRow('Record', recordAway || '&ndash;', recordHome || '&ndash;') : '';
+
+    const bigger = (a, b) => parseFloat(a) > parseFloat(b);
+    const splitRows = books.map(([book, name]) => {
+        const count = Number(splits[book].count);
+        const title = `Betting splits${several ? '' : ` · ${name}`}${count > 0 ? ` · ${count.toLocaleString('en-US')} bets` : ''}`;
+        return `<span class="game-details-head">${several ? `${name}${count > 0 ? ` · ${count.toLocaleString('en-US')} bets` : ''}` : title}</span>`
+            + sideRow('% of money', `${splits[book].away.handle}%`, `${splits[book].home.handle}%`, bigger)
+            + sideRow('% of bets', `${splits[book].away.bets}%`, `${splits[book].home.bets}%`, bigger);
+    }).join('');
+
+    const facts = gameRow('Line', detailsLineMove(game))
+        + gameRow('TV', game.broadcast || '')
+        + gameRow('Weather', detailsWeather(game));
+
+    if (!records && !splitRows && !facts) return '';
     return `
-                <div class="game-splits${splitsOpen.has(pickKey(game)) ? '' : ' collapsed'}">
-                    <span class="game-splits-head">Betting splits${several ? '' : ` · ${books[0][1]}`}</span>
+                <div class="game-details${detailsOpen.has(pickKey(game)) ? '' : ' collapsed'}">
                     <span></span>
-                    <span class="game-splits-team">${game.away} ${signedSpreadDisplay(game, 'away')}</span>
-                    <span class="game-splits-team">${game.home} ${signedSpreadDisplay(game, 'home')}</span>
-                    ${rows}
+                    <span class="game-details-team">${game.away} ${signedSpreadDisplay(game, 'away')}</span>
+                    <span class="game-details-team">${game.home} ${signedSpreadDisplay(game, 'home')}</span>
+                    ${records}
+                    ${splitRows}
+                    ${facts ? `<span class="game-details-rule"></span>${facts}` : ''}
                 </div>`;
 }
 
@@ -10792,7 +10901,7 @@ function renderGames() {
         const frozen = isPickFrozen(gamePicks);
         const readOnly = locked || frozen;
         const splitsHidden = locked || isHistoricalWeek || isHistoricalSeason();
-        const splitsHtml = gameSplitsHtml(game, splitsHidden);
+        const detailsHtml = gameDetailsHtml(game, splitsHidden);
         const frozenLineLabel = frozen
             ? describeLineForSide(
                 { ...game, spread: gamePicks.frozenSpread, favorite: gamePicks.frozenFavorite }, linePick)
@@ -10887,7 +10996,7 @@ function renderGames() {
             frozen ? 'pick-frozen' : '',
             isFinal ? 'game-final' : '',
             isInProgress ? 'game-in-progress' : '',
-            splitsHtml ? 'has-splits' : ''
+            detailsHtml ? 'has-details' : ''
         ].filter(Boolean).join(' ');
 
         // Build status badge
@@ -10987,7 +11096,7 @@ function renderGames() {
                         </div>
                     </div>
                 </div>
-${splitsHtml}
+${detailsHtml}
 
                 <div class="game-footer">
                     <div class="game-location">
@@ -11039,12 +11148,12 @@ ${splitsHtml}
         `;
     }).join('');
 
-    // A tap on the card itself shows or hides its betting splits. One
+    // A tap on the card itself shows or hides its details panel. One
     // delegated listener on the list, attached once: the cards are rebuilt on
     // every render, the list is not.
-    if (!gamesList.dataset.splitsToggle) {
-        gamesList.dataset.splitsToggle = '1';
-        gamesList.addEventListener('click', handleSplitsToggle);
+    if (!gamesList.dataset.detailsToggle) {
+        gamesList.dataset.detailsToggle = '1';
+        gamesList.addEventListener('click', handleDetailsToggle);
     }
 
     // Add click handlers for pick buttons

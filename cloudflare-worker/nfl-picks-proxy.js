@@ -1502,6 +1502,9 @@ function parseActionNetworkSplits(data) {
         sides[o.side] = { line: splitLine(o.value), handle, bets };
       }
     }
+    // How many bets the percentages are drawn from: low early in the week,
+    // which is when they swing. Shown beside them on the card.
+    if (Number.isFinite(Number(g.num_bets)) && Number(g.num_bets) > 0) sides.count = Number(g.num_bets);
     return away && home && sides.away && sides.home ? [{ key: matchupKey(away, home), away, home, sides }] : [];
   });
 }
