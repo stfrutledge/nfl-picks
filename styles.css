@@ -4565,6 +4565,18 @@ footer a:hover {
     font-weight: 800;
 }
 
+/* Logos and abbreviations, as the Last five: left-aligned so they line up. */
+.gd-picks th:not(:first-child),
+.gd-table.gd-picks td:not(:first-child) {
+    text-align: left;
+    white-space: nowrap;
+}
+
+.gd-picks .gd-locked {
+    display: block;
+    margin: 1px 0 0 24px;   /* under the abbreviation, past the logo */
+}
+
 .gd-star {
     color: var(--accent-amber);
 }

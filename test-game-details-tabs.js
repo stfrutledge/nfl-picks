@@ -312,9 +312,10 @@ async function check(name, fn) {
         const t = text(html);
         assert.match(t, /2 of 5 picked/);
         assert.match(t, /SF 1 ATL 1/);
-        assert.match(t, /Daniel 49ers -3.5 locked 49ers/);
-        assert.match(t, /Stephen \(you\) Falcons \+3 ★ 49ers/);
-        assert.match(t, /Cowherd Falcons \+3 –/, 'his line, no locked tag or star: all of his are');
+        assert.match(t, /Daniel SF -3.5 locked SF/, "the team as its abbreviation, with its logo");
+        assert.match(html, /<span class="gd-l5-opp"><img class="gd-l5-opp-logo" src="https:\/\/a.espncdn.com\/i\/teamlogos\/nfl\/500\/sf.png"/);
+        assert.match(t, /Stephen \(you\) ATL \+3 ★ SF/);
+        assert.match(t, /Cowherd ATL \+3 –/, 'his line, no locked tag or star: all of his are');
         assert.match(html, /<tr class="you"><td>Stephen/);
         for (const p of site.PICKERS.filter(p => !['Stephen', 'Daniel'].includes(p))) {
             assert.doesNotMatch(t, new RegExp(`\\b${p}\\b`), `${p} has not picked: no row`);
@@ -330,7 +331,7 @@ async function check(name, fn) {
         // Cowherd alone: his row, no empty tally bar.
         site.__setPicks({ [week]: { Cowherd: { '49ers_falcons': { line: 'away', blazin: true, frozenAt: 'x', frozenSpread: 3, frozenFavorite: 'away' } } } });
         const only = site.gameDetailsHtml(game);
-        assert.match(text(only), /Cowherd 49ers -3/);
+        assert.match(text(only), /Cowherd SF -3/);
         assert.doesNotMatch(only, /gd-bar|Nobody has picked/);
     });
 
@@ -376,7 +377,7 @@ async function check(name, fn) {
         demo.__setPicks({ [demo.__week()]: { Jason: { '49ers_falcons': { line: 'home', winner: 'home' } } } });
         const html = demo.gameDetailsHtml(game);
         assert.match(html, /gd-sample">SAMPLE</);
-        assert.match(text(html), /Jason Falcons \+3 Falcons/, 'Jason’s real pick, not a sample');
+        assert.match(text(html), /Jason ATL \+3 ATL/, 'Jason’s real pick, not a sample');
         const rows = (html.match(/<tr class="(?:you)?"><td>/g) || []).length;
         assert.ok(rows >= 3, `sample rows drawn (${rows})`);
         assert.strictEqual(demo.gameDetailsHtml(game), html, 'the same samples every draw');
