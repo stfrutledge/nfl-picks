@@ -11323,16 +11323,19 @@ function gameDetailsHtml(game) {
     // Once the line has moved, each row's label opens its chart (lineChartHtml).
     const key = pickKey(game);
     const charted = which => lineChartPoints(game, which, favoured).length >= 2;
-    const lineRow = (label, which, opened, now) => {
+    // The spread's numbers carry the team they are read from, as the Last
+    // five draws a team: "(logo) PIT -4" under Opened and Now.
+    const lineRow = (label, which, opened, now, side = null) => {
         const moved = opened != null && now != null && parseFloat(opened) !== parseFloat(now)
             && !(now === 'PK' && parseFloat(opened) === 0);
         const open = lineChartOpen?.key === key && lineChartOpen.which === which;
         const name = charted(which)
             ? `<button type="button" class="gd-line-toggle${open ? ' open' : ''}" data-which="${which}" aria-expanded="${open}">${label}</button>`
             : label;
-        return `<tr><td>${name}</td><td>${opened ?? '&ndash;'}</td><td class="${moved ? 'moved' : ''}">${now ?? '&ndash;'}</td></tr>`;
+        const cell = value => value == null ? '&ndash;' : side ? pickTeamBadge(game[side], value) : value;
+        return `<tr><td>${name}</td><td>${cell(opened)}</td><td class="${moved ? 'moved' : ''}">${cell(now)}</td></tr>`;
     };
-    const lineRows = (favoured ? lineRow(`Spread · ${game[favoured]}`, 'spread', open ? open[favoured] : null, hasNow ? signedSpreadDisplay(game, favoured) : null) : '')
+    const lineRows = (favoured ? lineRow('Spread', 'spread', open ? open[favoured] : null, hasNow ? signedSpreadDisplay(game, favoured) : null, favoured) : '')
         + (totalNow !== null || totalOpen !== null ? lineRow('Total', 'total', totalOpen, totalNow) : '');
     const chartWhich = lineChartOpen?.key === key && charted(lineChartOpen.which) ? lineChartOpen.which : null;
     const lineSection = lineRows ? `

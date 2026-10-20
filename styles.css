@@ -3994,7 +3994,8 @@ footer a:hover {
     font-weight: 700;
 }
 
-.gd-table td.moved {
+.gd-table td.moved,
+.gd-table td.moved .gd-h2h-num {
     font-weight: 900;
 }
 
@@ -4017,15 +4018,11 @@ footer a:hover {
     font-weight: 700;
     color: var(--text-primary);
     cursor: pointer;
-    text-decoration: underline;
-    text-decoration-color: var(--chart-line);
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
 }
 
 .gd-line-toggle::after {
     content: "\25BE";
-    display: inline-block;   /* so the underline stops at the label */
+    display: inline-block;
     margin-left: 4px;
     color: var(--text-light);
     font-size: 0.75em;

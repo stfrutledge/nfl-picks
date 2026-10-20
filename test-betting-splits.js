@@ -582,7 +582,7 @@ function section(name) { console.log(`\n${name}`); }
         const html = site.gameDetailsHtml(game);
         assert.match(html, /<th>Opened <span class="gd-th-when">Mon 12:00 AM<\/span><\/th><th>Now<\/th>/, '04:00 UTC is midnight ET');
         // Moved, so each label is its chart's button.
-        assert.match(html, /<tr><td><button[^>]*>Spread · Bears<\/button><\/td><td>-1.5<\/td><td class="moved">-3<\/td><\/tr>/);
+        assert.match(html, /<tr><td><button[^>]*>Spread<\/button><\/td><td><span class="gd-l5-opp"><img[^>]*>CHI <span class="gd-h2h-num">-1.5<\/span><\/span><\/td><td class="moved"><span class="gd-l5-opp"><img[^>]*>CHI <span class="gd-h2h-num">-3<\/span><\/span><\/td><\/tr>/);
         assert.match(html, /<tr><td><button[^>]*>Total<\/button><\/td><td>42.5<\/td><td class="moved">44.5<\/td><\/tr>/);
         site.__setLineHistory({});
     });
@@ -591,10 +591,10 @@ function section(name) { console.log(`\n${name}`); }
         site.__setLineHistory({ patriots_bears: [{ at: Date.parse('2026-10-20T21:15:00Z'), away: '+3', home: '-3', total: 44.5, kind: 'first' }] });
         const html = site.gameDetailsHtml({ ...game, openLine: { away: '+1.5', home: '-1.5', total: 42.5 } });
         assert.match(html, /<th>Opened<\/th>/);
-        assert.match(html, /<tr><td>Spread · Bears<\/td><td>&ndash;<\/td><td class="">-3<\/td><\/tr>/);
+        assert.match(html, /<tr><td>Spread<\/td><td>&ndash;<\/td><td class=""><span class="gd-l5-opp"><img[^>]*>CHI <span class="gd-h2h-num">-3<\/span><\/span><\/td><\/tr>/);
         assert.doesNotMatch(html, /-1.5|42.5/, 'ESPN’s undated opener is not used');
         site.__setLineHistory({});
-        assert.match(site.gameDetailsHtml(game), /<td>Spread · Bears<\/td><td>&ndash;<\/td>/, 'nothing loaded: a dash');
+        assert.match(site.gameDetailsHtml(game), /<td>Spread<\/td><td>&ndash;<\/td>/, 'nothing loaded: a dash');
     });
 
     await check('TV as the networks’ logos, every network carrying it, from the repo', () => {
@@ -739,7 +739,7 @@ function section(name) { console.log(`\n${name}`); }
         assert.doesNotMatch(site.gameDetailsHtml(game), /gd-line-toggle/, 'nothing has moved: plain labels');
         site.__setLineHistory(MOVED);
         const html = site.gameDetailsHtml(game);
-        assert.match(html, /<button type="button" class="gd-line-toggle" data-which="spread" aria-expanded="false">Spread · Bears<\/button>/);
+        assert.match(html, /<button type="button" class="gd-line-toggle" data-which="spread" aria-expanded="false">Spread<\/button>/);
         assert.match(html, /<button type="button" class="gd-line-toggle" data-which="total" aria-expanded="false">Total<\/button>/);
         assert.doesNotMatch(html, /class="gd-chart"/, 'closed until asked');
     });
