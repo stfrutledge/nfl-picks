@@ -11017,13 +11017,6 @@ function hideLineChartPoint(chart) {
     charts.forEach(ch => ch.classList.remove('hovering'));
 }
 
-/** "6-0 · 2-0 road" for the away team, "2-4 · 0-3 home" for the home team. */
-function detailsRecord(records, side) {
-    if (!records?.total) return '';
-    const split = side === 'away' ? records.road : records.home;
-    return split ? `${records.total} · ${split} ${side === 'away' ? 'road' : 'home'}` : records.total;
-}
-
 /**
  * °F or °C: the Android app's Settings > Weather (1.16+), asked each time so
  * a change shows straight away. °F everywhere else - a browser, or an older
@@ -11227,7 +11220,6 @@ function gameDetailsHtml(game) {
     const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
 
     const team = side => {
-        const record = detailsRecord(game.records?.[side], side);
         const line = signedSpreadDisplay(game, side);
         const won = final && live[`${side}Score`] > live[`${side === 'away' ? 'home' : 'away'}Score`];
         return `
@@ -11235,7 +11227,6 @@ function gameDetailsHtml(game) {
                 <img class="gd-logo" src="${getTeamLogo(game[side])}" alt="${game[side]} logo" onerror="handleLogoError(this, '${game[side]}')">
                 <div class="gd-team-name">${game[side]}</div>
                 ${started ? `<div class="gd-score">${live[`${side}Score`]}</div>` : (line ? `<div class="gd-line">${line}</div>` : '')}
-                ${record ? `<div class="gd-record">${record}</div>` : ''}
             </div>`;
     };
     const middle = started
