@@ -10749,6 +10749,56 @@ const LINE_MOVES_SHOWN = 8;   // the opener and the latest seven
 const lineHistory = new Map();   // week -> { at, games }
 const lineHistoryInFlight = new Set();
 
+/**
+ * A private demo of the line charts: open the site with ?demo=lines and every
+ * game that has not moved yet gets a made-up week of moves, ending at its real
+ * current line, so the charts can be seen before a real move. Built in this
+ * browser alone, never saved or sent; every chart, Movement table and Line
+ * heading says SAMPLE. Without the flag the site is untouched.
+ */
+const LINE_DEMO = (() => {
+    try {
+        return new URLSearchParams(window.location.search).get('demo') === 'lines';
+    } catch (e) {
+        return false;
+    }
+})();
+
+/** Sample moves for each game with only its open: three or four, ending where the line is now. */
+function demoLineMoves(games) {
+    const out = {};
+    const now = Date.now();
+    for (const [key, points] of Object.entries(games)) {
+        const real = points[points.length - 1];
+        if (points.length > 1 || !real) { out[key] = points; continue; }
+        // A steady per-game pattern, so the same game shows the same sample.
+        let seed = [...key].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+        const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+        const moves = 3 + Math.floor(rand() * 2);
+        let spread = spreadNumber(real.away) ?? 0;
+        let total = Number(real.total) || 44.5;
+        const sample = [{ ...real, at: now, kind: undefined }];
+        // Walk backwards from now: each earlier point a half-point or so off.
+        for (let i = 0; i < moves; i++) {
+            const step = () => (rand() < 0.5 ? -1 : 1) * (rand() < 0.25 ? 1 : 0.5);
+            // Every sample point is a move: the spread, the total, or both.
+            const moveSpread = rand() < 0.65, moveTotal = !moveSpread || rand() < 0.5;
+            if (moveSpread) spread += step();
+            if (moveTotal) total += step();
+            sample.unshift({ away: spreadText(spread), home: spreadText(-spread), total });
+        }
+        // Spread from Sunday 11:45 PM-ish, 40 hours ago, to now.
+        const start = now - 40 * 3600000;
+        sample.forEach((p, i) => {
+            if (i < sample.length - 1) p.at = start + Math.round(i / (sample.length - 1) * 40 * 3600000 * (0.7 + rand() * 0.25));
+        });
+        sample[0].kind = 'open';
+        sample[sample.length - 1].at = now - 5 * 60000;
+        out[key] = sample;
+    }
+    return out;
+}
+
 async function loadLineHistory(week, { force = false } = {}) {
     if (isHistoricalSeason() || !week || lineHistoryInFlight.has(week)) return;
     const have = lineHistory.get(week);
@@ -10758,7 +10808,7 @@ async function loadLineHistory(week, { force = false } = {}) {
         const response = await fetch(`${WORKER_PROXY_URL}/lines?season=${CURRENT_SEASON}&week=${week}`);
         if (!response.ok) throw new Error(`worker answered ${response.status}`);
         const data = await response.json();
-        lineHistory.set(week, { at: Date.now(), games: data.games || {} });
+        lineHistory.set(week, { at: Date.now(), games: LINE_DEMO ? demoLineMoves(data.games || {}) : (data.games || {}) });
         refreshGameDetails();
     } catch (error) {
         console.warn('[Lines] Could not load the line history:', error.message);
@@ -10806,7 +10856,7 @@ function movementTableHtml(game, side) {
     const hidden = points.length - shown.length;
     return `
                 <table class="gd-table gd-moves">
-                    <thead><tr><th>Movement (ET)</th><th>${game[side]}</th><th>Total</th></tr></thead>
+                    <thead><tr><th>Movement (ET)${LINE_DEMO ? ' <b class="gd-sample">SAMPLE</b>' : ''}</th><th>${game[side]}</th><th>Total</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
                 ${hidden > 0 ? `<div class="gd-moves-note">${hidden} earlier ${hidden === 1 ? 'move' : 'moves'} not shown</div>` : ''}`;
@@ -10915,7 +10965,7 @@ function lineChartHtml(game, which, side) {
                 <div class="gd-chart" data-which="${which}"
                     data-points='${JSON.stringify(points.map(p => [p.at, p.v]))}'
                     data-t0="${t0}" data-t1="${t1}" data-lo="${lo}" data-hi="${hi}">
-                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>since the open</span></span><span class="gd-chart-tip" role="status"></span></div>
+                    <div class="gd-chart-title"><span class="gd-chart-name">${name} <span>since the open${LINE_DEMO ? ' · <b class="gd-sample">SAMPLE</b>' : ''}</span></span><span class="gd-chart-tip" role="status"></span></div>
                     <svg viewBox="0 0 ${c.w} ${c.h}" role="img"
                         aria-label="${name}: ${label(points[0].v)} at the open, ${label(last.v)} now, ${points.length - 1} ${points.length === 2 ? 'move' : 'moves'}">
                         ${grid.join('')}
@@ -11214,7 +11264,7 @@ function gameDetailsHtml(game) {
     const chartWhich = lineChartOpen?.key === key && charted(lineChartOpen.which) ? lineChartOpen.which : null;
     const lineSection = lineRows ? `
             <section class="gd-section">
-                <div class="gd-section-head"><h4>Line</h4><span>DraftKings</span></div>
+                <div class="gd-section-head"><h4>Line</h4><span>${LINE_DEMO ? '<b class="gd-sample">SAMPLE moves</b> · ' : ''}DraftKings</span></div>
                 <table class="gd-table">
                     <thead><tr><th></th><th>Opened${open ? ` <span class="gd-th-when">${lineMoveTime(open.at)}</span>` : ''}</th><th>Now</th></tr></thead>
                     <tbody>${lineRows}</tbody>

@@ -4172,6 +4172,20 @@ footer a:hover {
     visibility: visible;
 }
 
+/* The ?demo=lines tag: made-up moves, so it is never mistaken for the real ones. */
+.gd-sample {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--accent-amber);
+    color: #0a0a0a;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
 .gd-moves-note {
     margin-top: 6px;
     font-size: 0.72rem;
