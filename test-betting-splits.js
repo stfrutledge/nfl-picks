@@ -808,6 +808,24 @@ function section(name) { console.log(`\n${name}`); }
         site.__setSplits({ patriots_bears: BOTH });
     });
 
+    await check('Back closes the popup, not the page; closing it otherwise takes its history entry off', () => {
+        site.setupGameDetailsModal();
+        const h = site.__window.history;
+        const start = h.entries;
+        site.openGameDetails('patriots_bears');
+        assert.strictEqual(h.entries, start + 1, 'opening adds one entry');
+        site.openGameDetails('patriots_bears');
+        assert.strictEqual(h.entries, start + 1, 'opening again while open adds nothing');
+        site.__back();
+        assert.ok(!site.__el('game-details-modal').classList.contains('show'), 'Back closed it');
+        assert.strictEqual(h.entries, start, 'and the page is where it was');
+
+        site.openGameDetails('patriots_bears');
+        site.closeGameDetails();
+        assert.ok(!site.__el('game-details-modal').classList.contains('show'));
+        assert.strictEqual(h.entries, start, 'closed by the x, a tap outside or Escape: its entry is taken off');
+    });
+
     fs.unlinkSync(tmp);
     console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);
     process.exit(failures ? 1 : 0);
@@ -820,6 +838,7 @@ function loadSite() {
     const el = () => ({ style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, setAttribute() {}, appendChild() {} });
     // The popup's elements, with a class list that remembers.
     const elements = {};
+    const listeners = {};
     for (const id of ['game-details-modal', 'game-details-body', 'game-details-close']) {
         const classes = new Set();
         elements[id] = {
@@ -841,7 +860,10 @@ function loadSite() {
         navigator: {}, fetch: (...args) => net.fetch(...args),
         console: { log() {}, warn() {}, error() {}, info() {} },
         performance: { now: () => 0 }, alert() {}, confirm: () => false,
-        addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} })
+        addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+        matchMedia: () => ({ matches: false, addEventListener() {} }),
+        // A history that counts entries and fires popstate on back(), as a browser does.
+        history: { entries: 1, pushState() { this.entries++; }, back() { if (this.entries > 1) { this.entries--; (listeners.popstate || []).forEach(fn => fn({})); } } }
     };
     env.window = env;
     const snapshot = `const HISTORICAL_DATA_SEASON = 0; const HISTORICAL_GAMES = {}; const HISTORICAL_RESULTS = {}; const HISTORICAL_PICKS = {};`;
@@ -849,7 +871,7 @@ function loadSite() {
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
         fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8') + '\n' + snapshot + '\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, loadVenueForecast, toggleLineChart, lineChartPoints, espnMoneyline, refreshSheetLines, __games: () => NFL_GAMES_BY_WEEK[currentWeek],
+        + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, setupGameDetailsModal, loadVenueForecast, toggleLineChart, lineChartPoints, espnMoneyline, refreshSheetLines, __games: () => NFL_GAMES_BY_WEEK[currentWeek],
             __setSplits: s => { bettingSplits = s; },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
             __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; },
@@ -859,5 +881,7 @@ function loadSite() {
     api.__el = id => elements[id];
     api.__net = net;
     api.__window = env;
+    // The phone's Back: the browser leaves the entry, then fires popstate.
+    api.__back = () => { env.history.entries--; (listeners.popstate || []).forEach(fn => fn({})); };
     return api;
 }

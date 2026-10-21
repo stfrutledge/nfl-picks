@@ -11694,15 +11694,32 @@ function openGameDetails(key) {
     gameDetailsKey = key;
     body.innerHTML = gameDetailsHtml(game);
     modal.classList.add('show');
+    // Back (a phone's button or swipe, the app's Back) closes the popup, not
+    // the page or the app: the popup holds one history entry while it is open.
+    if (!gameDetailsHistory) {
+        try { window.history.pushState({ gameDetails: true }, ''); gameDetailsHistory = true; } catch (e) { /* no history: Back leaves as before */ }
+    }
     loadVenueForecast(game);
     loadLineHistory(currentWeek);
     loadGameSummary(game);
     if (gameDetailsTab === 'matchup' || gameDetailsTab === 'picks') ensureArchivesLoaded().then(() => refreshGameDetails());
 }
 
-function closeGameDetails() {
+// Whether the popup's history entry is on the stack (see openGameDetails).
+let gameDetailsHistory = false;
+
+/**
+ * Close the popup. Closed by the ×, a tap outside or Escape, it takes its own
+ * history entry back off, so the next Back does what it did before the popup
+ * opened; closed by Back (`fromHistory`), that entry is already gone.
+ */
+function closeGameDetails(fromHistory = false) {
     gameDetailsKey = null;
     document.getElementById('game-details-modal')?.classList.remove('show');
+    if (gameDetailsHistory) {
+        gameDetailsHistory = false;
+        if (!fromHistory) { try { window.history.back(); } catch (e) { /* nothing to undo */ } }
+    }
 }
 
 /** New splits or scores while it is open: redraw it from the same game. */
@@ -11750,6 +11767,7 @@ function setupGameDetailsModal() {
     modal.addEventListener('pointermove', follow);
     modal.addEventListener('pointerdown', follow);
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && gameDetailsKey) closeGameDetails(); });
+    window.addEventListener('popstate', () => { if (gameDetailsKey) closeGameDetails(true); });
 }
 
 function renderGames() {
