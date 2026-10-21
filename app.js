@@ -11212,8 +11212,8 @@ function gameDetailsHtml(game) {
                     <h4>Betting Splits</h4>
                     <span>${name}${count > 0 ? ` · ${count.toLocaleString('en-US')} bets` : ''}</span>
                 </div>
-                ${bar('% of money', 'handle', book)}
-                ${bar('% of bets', 'bets', book)}
+                ${bar('% of money on the spread', 'handle', book)}
+                ${bar('% of bets on the spread', 'bets', book)}
             </section>`;
     }).join('');
 

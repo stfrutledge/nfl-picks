@@ -556,8 +556,8 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(text(html), /Betting Splits Action Network · 2,923 bets/);
         const bars = html.split('class="gd-split"').slice(1);
         assert.strictEqual(bars.length, 2);
-        assert.match(text(bars[0]), /% of money NE 74% CHI 26%/);
-        assert.match(text(bars[1]), /% of bets NE 77% CHI 23%/);
+        assert.match(text(bars[0]), /% of money on the spread NE 74% CHI 26%/);
+        assert.match(text(bars[1]), /% of bets on the spread NE 77% CHI 23%/);
         assert.match(bars[0], /gd-seg lead" style="flex-grow: 74; background: #/, 'the bigger share leads');
         assert.match(bars[0], /gd-seg" style="flex-grow: 26;/);
         assert.doesNotMatch(html, /84%|55%|>DK<|Circa/, 'the consensus only: DraftKings and Circa are stored, not shown');
@@ -675,7 +675,7 @@ function section(name) { console.log(`\n${name}`); }
         // Action Network had Eagles @ Cowboys; the schedule has Cowboys @ Eagles.
         site.__setSplits({ eagles_cowboys: { an: { away: { line: 4.5, handle: 20, bets: 34 }, home: { line: -4.5, handle: 80, bets: 66 }, count: 900 } } });
         const html = site.gameDetailsHtml({ id: 2, away: 'Cowboys', home: 'Eagles', spread: 4.5, favorite: 'away', kickoff: '2099-10-27T00:15:00Z' });
-        assert.match(text(html.split('class="gd-split"')[1]), /% of money DAL 80% PHI 20%/);
+        assert.match(text(html.split('class="gd-split"')[1]), /% of money on the spread DAL 80% PHI 20%/);
         assert.match(text(html), /900 bets/);
         site.__setSplits({ patriots_bears: BOTH });
     });
