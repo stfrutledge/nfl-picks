@@ -435,7 +435,7 @@ function renderFavUnderdogChart(favUnderdogData) {
                     ticks: {
                         color: colors.text,
                         font: {
-                            family: "'Libre Franklin', sans-serif",
+                            family: "'Inter', sans-serif",
                             size: 11,
                             weight: '700'
                         }
