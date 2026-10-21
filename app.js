@@ -8758,16 +8758,25 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
     const seasons = isLifetime ? historyLifetimeSeasons() : [parseInt(seasonValue) || 2024];
     const analysisType = analysisTypeDropdown?.value || 'spread';
 
-    // Update table header based on analysis type
+    // The header is redrawn to name the analysis type, so it carries the
+    // current sort rather than resetting it to Record (clicks are delegated on
+    // the table in setupHistoryBlazinRecords, so they survive the redraw).
     if (thead) {
         const headerLabel = analysisType === 'spread' ? 'Spread' :
                            analysisType === 'homeaway' ? 'Location' : 'Type';
+        const sort = teamRecordsSortState['history-spread'];
+        const th = (column, label) => {
+            const on = sort.column === column;
+            const cls = on ? ` active ${sort.direction}` : '';
+            const icon = on ? (sort.direction === 'desc' ? '▼' : '▲') : '';
+            return `<th class="sortable${cls}" data-sort="${column}" data-table="history-spread">${label} <span class="sort-icon">${icon}</span></th>`;
+        };
         thead.innerHTML = `
             <tr>
-                <th class="sortable" data-sort="spread" data-table="history-spread">${headerLabel} <span class="sort-icon"></span></th>
-                <th class="sortable active desc" data-sort="record" data-table="history-spread">Record <span class="sort-icon">▼</span></th>
-                <th class="sortable" data-sort="picks" data-table="history-spread">Picks <span class="sort-icon"></span></th>
-                <th class="sortable" data-sort="pct" data-table="history-spread">Win % <span class="sort-icon"></span></th>
+                ${th('spread', headerLabel)}
+                ${th('record', 'Record')}
+                ${th('picks', 'Picks')}
+                ${th('pct', 'Win %')}
             </tr>
         `;
     }
@@ -8849,15 +8858,17 @@ function setupHistoryBlazinRecords() {
         });
     }
 
-    // Setup sortable headers for spread table
+    // Sortable headers for the spread table: delegated on the table, because
+    // renderHistoryBlazinSpreadRecords redraws the header on every render and a
+    // listener on each <th> was lost with the first redraw - after which no
+    // column, Picks included, could be sorted.
     const spreadTable = document.getElementById('history-blazin-spread-table');
     if (spreadTable) {
-        spreadTable.querySelectorAll('th.sortable').forEach(th => {
-            th.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const column = th.getAttribute('data-sort');
-                handleTeamRecordsSort('history-spread', column);
-            });
+        spreadTable.addEventListener('click', (e) => {
+            const th = e.target.closest('th.sortable');
+            if (!th) return;
+            e.stopPropagation();
+            handleTeamRecordsSort('history-spread', th.getAttribute('data-sort'));
         });
     }
 }
