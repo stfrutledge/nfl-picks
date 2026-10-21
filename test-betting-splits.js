@@ -537,15 +537,16 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(src, /<span class="game-time">\$\{cardKickoffLabel\(game\)\}<\/span>\s*\$\{statusBadge\}\s*<button type="button" class="game-details-btn" data-pick-key="\$\{key\}">Game Details<\/button>/);
     });
 
-    await check('the hero: kickoff, both teams with logo and line (no record, no moneyline), the stadium, a close button', () => {
+    await check('the hero: kickoff, both teams with logo, line and record (no moneyline), the stadium, a close button', () => {
         const html = site.gameDetailsHtml(game);
         assert.match(html, /class="gd-hero"/);
         assert.match(html, /class="gd-close" aria-label="Close"/);
         assert.match(text(block(html, 'gd-kicker')), /^Thursday, Oct 22 · 8:15 PM ET$/);
         const [away, home] = html.split(/class="gd-team(?: gd-won)?"/).slice(1, 3).map(part => text(part.split('gd-vs')[0]));
-        assert.match(away, /Patriots \+3/, 'away first, as the buttons');
-        assert.match(home, /Bears -3/);
-        assert.doesNotMatch(html, /gd-record|4-2|road|2-1 home/, 'records are not shown (the owner took them out)');
+        assert.match(away, /Patriots \+3 4-2 · 1-2 road/, 'away first, as the buttons: the road record for the away team');
+        assert.match(home, /Bears -3 4-2 · 2-1 home/, 'the home record for the home team');
+        assert.match(site.gameDetailsHtml({ ...game, records: undefined }), /gd-team-name">Patriots/, 'no records: the team still shows');
+        assert.doesNotMatch(site.gameDetailsHtml({ ...game, records: undefined }), /gd-record/, 'and no empty record line');
         assert.match(html, /<img class="gd-logo"[^>]*alt="Patriots logo"/);
         assert.match(text(block(html, 'gd-venue')), /Soldier Field · Chicago, IL/);
         assert.doesNotMatch(html, /ML /, 'moneylines are not shown (the owner took them out)');
@@ -691,7 +692,7 @@ function section(name) { console.log(`\n${name}`); }
     await check('after kickoff: no splits (live betting by then), and the rest still shows', () => {
         const html = site.gameDetailsHtml({ ...game, kickoff: '2000-01-01T00:00:00Z' });
         assert.doesNotMatch(html, /Betting Splits/);
-        assert.match(html, /gd-team-name">Patriots[\s\S]*gd-venue/, 'the header still shows');
+        assert.match(html, /gd-record/, 'the records still show once it has started');
     });
 
     await check('no Movement table: the charts show the history', () => {

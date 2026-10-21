@@ -10962,6 +10962,13 @@ function showLineChartPoint(chart, clientX) {
     tip.textContent = `${lineMoveTime(t)} · ${chart.dataset.which === 'total' ? value : spreadText(value)}`;
 }
 
+/** "6-0 · 2-0 road" for the away team, "2-4 · 0-3 home" for the home team. */
+function detailsRecord(records, side) {
+    if (!records?.total) return '';
+    const split = side === 'away' ? records.road : records.home;
+    return split ? `${records.total} · ${split} ${side === 'away' ? 'road' : 'home'}` : records.total;
+}
+
 function hideLineChartPoint(chart) {
     const charts = chart ? [chart] : document.querySelectorAll('.gd-chart.hovering');
     charts.forEach(ch => ch.classList.remove('hovering'));
@@ -11170,6 +11177,7 @@ function gameDetailsHtml(game) {
     const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
 
     const team = side => {
+        const record = detailsRecord(game.records?.[side], side);
         const line = signedSpreadDisplay(game, side);
         const won = final && live[`${side}Score`] > live[`${side === 'away' ? 'home' : 'away'}Score`];
         return `
@@ -11177,6 +11185,7 @@ function gameDetailsHtml(game) {
                 <img class="gd-logo" src="${getTeamLogo(game[side])}" alt="${game[side]} logo" onerror="handleLogoError(this, '${game[side]}')">
                 <div class="gd-team-name">${game[side]}</div>
                 ${started ? `<div class="gd-score">${live[`${side}Score`]}</div>` : (line ? `<div class="gd-line">${line}</div>` : '')}
+                ${record ? `<div class="gd-record">${record}</div>` : ''}
             </div>`;
     };
     const middle = started
