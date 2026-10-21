@@ -5369,6 +5369,12 @@ footer a:hover {
     }
 }
 
+/* A redraw of the same week and picker swaps the cards in place: only a new
+   week slides in (renderGames sets .settled). */
+#games-list.settled .game-card {
+    animation: none;
+}
+
 .game-card {
     animation: slideIn 0.3s ease forwards;
 }

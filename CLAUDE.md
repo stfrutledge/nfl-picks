@@ -566,3 +566,12 @@ The Winnings card (Insights panel, Blazin' 5 and Line Picks sub-tabs) and the pr
 The stake is per device (`nfl_winnings_stake` in localStorage, $20 by default) and edited in the card's header; changing it redraws the dashboard so the cards follow. ROI is profit over money staked, pushes included in the stake.
 
 `node test-winnings.js` covers the arithmetic, the engine's agreement with the standings, Cowherd's column and the stake setting.
+
+## The game list redraws without blinking
+
+**Every piece of data that lands redraws the game list** (`renderActiveTab` → `renderGames`): the sheet's lines, the betting splits, the results backup, the picks backup, then a final pass. That is six full rebuilds in the first five seconds, and every rebuilt `.game-card` replayed its `slideIn` animation, so the list visibly blinked about three times on opening (reported October 2026). Two rules now:
+
+- **An identical list is left alone.** `renderGames` keeps the last markup it drew (`gamesListHtml`) and skips the rebuild when the new one is the same. Anything that changes cards in place invalidates it: a pick click updates its buttons directly and then saves, so `savePicksToStorage` clears `gamesListHtml`, and the next redraw rebuilds.
+- **Only a new view slides in.** `gamesListView` is season, week, picker and filter; a rebuild of the same view puts `.settled` on `#games-list`, which turns the card animation off. A new week or picker animates as before.
+
+On a normal load the list now rebuilds three times, and only the first animates.

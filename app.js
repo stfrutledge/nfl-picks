@@ -11700,6 +11700,11 @@ function picksPanelHtml(game) {
         + gdSection(currentPicker && currentPicker !== COWHERD ? `${currentPicker}’s record` : 'Your record', mine, 'all ATS picks');
 }
 
+// The game list as last drawn, and which week and picker it showed
+// (renderGames): an identical redraw is skipped, a same-view one does not animate.
+let gamesListHtml = null;
+let gamesListView = null;
+
 function gameForDetails(key) {
     return (getGamesForWeekAndSeason(currentWeek, currentSeason) || []).find(g => pickKey(g) === key) || null;
 }
@@ -11819,6 +11824,8 @@ function renderGames() {
         const subtitle = currentGameFilter !== 'all'
             ? 'Try changing the filter above.'
             : (isPlayoff ? 'Playoff games will appear once the schedule is available.' : 'Game data can be added to NFL_GAMES_BY_WEEK in app.js');
+        gamesListHtml = null;
+        gamesListView = null;
         gamesList.innerHTML = `
             <div class="no-games-message">
                 <p>No games${filterMessage} for ${weekName}.</p>
@@ -11832,7 +11839,7 @@ function renderGames() {
     const isPlayoff = isPlayoffWeek(currentWeek);
     const blazinCount = countBlazinPicks(currentWeek, currentPicker);
 
-    gamesList.innerHTML = weekGames.map(game => {
+    const cardsHtml = weekGames.map(game => {
         // The storage key travels with the markup (data-pick-key) so click
         // handlers never have to re-derive it from the positional game id.
         const key = pickKey(game);
@@ -12102,6 +12109,19 @@ function renderGames() {
             </div>
         `;
     }).join('');
+
+    // The page redraws the list each time a piece of data lands - half a
+    // dozen times in its first five seconds - and every rebuilt card replayed
+    // its slide-in, so the whole list blinked three or so times on opening.
+    // A list that would come out the same is left alone, and only a new week
+    // or picker slides in; a redraw of the same one swaps in place.
+    const view = `${currentSeason}|${currentWeek}|${currentPicker}|${currentGameFilter}`;
+    if (cardsHtml !== gamesListHtml) {
+        gamesList.classList.toggle('settled', view === gamesListView);
+        gamesList.innerHTML = cardsHtml;
+        gamesListHtml = cardsHtml;
+    }
+    gamesListView = view;
 
     // Each card's Game Details button. One delegated listener on the list,
     // attached once: the cards are rebuilt on every render, the list is not.
@@ -14048,6 +14068,9 @@ async function sendQueuedSlates({ keepalive = false, displayToast = false } = {}
  */
 function savePicksToStorage(showSyncToast = false, skipSync = false, week = currentWeek, picker = currentPicker, gameKeys = ['*']) {
     localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(allPicks));
+    // A pick click updates its card's buttons in place, so the list on screen
+    // no longer matches the last drawn one: the next renderGames must rebuild.
+    gamesListHtml = null;
 
     // Debounce sync to Google Sheets (skip if we're just loading data)
     if (APPS_SCRIPT_URL && !skipSync) {
