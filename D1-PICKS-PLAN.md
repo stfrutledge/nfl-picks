@@ -33,9 +33,12 @@ a day, and 5 GB stored.
 
 - **Writes:** a whole-week snapshot is about 16 rows. Five pickers syncing 30
   times a day is about 2,400 rows.
-- **Reads:** a page load reads the season's rows, about 4,000 by the end of a
-  season. That is about 1,250 page loads a day before the read limit is
-  reached.
+- **Reads:** a page load reads the season's rows. The first estimate was
+  4,000 by the end of a season; **the real count was already 9,628 by week 7 of
+  2026**, heading for about 20,000. At that size, 2.5M rows (the 50% warning)
+  is about 125 page loads a day. That is likely enough for five people, but it
+  is not the wide margin first claimed, so the folded `current_picks` table
+  (about 80 rows a page load) should come **before the switch**.
 
 ## What stays the same
 

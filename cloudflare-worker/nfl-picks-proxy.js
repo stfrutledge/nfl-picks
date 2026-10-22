@@ -378,6 +378,11 @@ async function handleSync(request, env, ctx) {
 
   if (request.method === 'GET') {
     const url = new URL(request.url);
+    // The raw Backup log (every pick change, with its time) is for the admin
+    // import alone, which reads it server-side: not through the public route.
+    if (url.searchParams.get('action') === 'backuprows') {
+      return jsonResponse({ error: 'Not available here' }, 404);
+    }
     // Picks from D1 once the switch is on; anything else, or D1 refusing,
     // goes to the sheet as before.
     const fromD1 = await syncGetFromD1(env, url.searchParams);

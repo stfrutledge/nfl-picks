@@ -383,6 +383,14 @@ async function check(name, fn) {
         assert.strictEqual(d1.raw.prepare('SELECT COUNT(*) AS n FROM pick_rows').get().n, 3);
     });
 
+    await check('the raw log is not served on the public route, only to the import', async () => {
+        fresh(backup);
+        const res = await get(env(), 'action=backuprows&season=2026');
+        assert.strictEqual(res.status, 404);
+        const imported = await (await admin(env(), 'import?season=2026', 'POST')).json();
+        assert.strictEqual(imported.inserted, 2, 'the import still reads it');
+    });
+
     await check('the admin tools need the secret', async () => {
         fresh();
         const res = await worker.fetch(new Request('https://w.test/admin/picks/status'), env(), ctx);
