@@ -1,6 +1,13 @@
 # Plan: store picks in Cloudflare D1
 
-Status: **proposed** (October 2026). Nothing here is built yet.
+Status: **built, not yet deployed** (October 2026). The worker and the Apps
+Script carry it; `node test-worker-d1.js` covers it. Waiting on steps 1 and 4.
+
+One change from the first draft: **until the switch, the sheet stays the store
+the phone waits on**, with D1 written beside it. Answering from D1 while phones
+still read the sheet would let a failed sheet copy hide a pick from other
+phones, and from the saving phone's own next load. The quick reply from D1 comes
+with the switch.
 
 ## Why
 

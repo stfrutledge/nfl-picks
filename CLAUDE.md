@@ -575,3 +575,13 @@ The stake is per device (`nfl_winnings_stake` in localStorage, $20 by default) a
 - **Only a new view slides in.** `gamesListView` is season, week, picker and filter; a rebuild of the same view puts `.settled` on `#games-list`, which turns the card animation off. A new week or picker animates as before.
 
 On a normal load the list now rebuilds three times, and only the first animates.
+
+## Picks in D1 (being rolled out, October 2026)
+
+Picks are moving from the Backup sheet to Cloudflare D1, bound to the worker as `PICKS_DB`; the plan, the reasons and the steps are in `D1-PICKS-PLAN.md`. The site's code does not change: it calls the same `/sync` endpoints and gets the same shapes back. In the worker:
+
+- **D1 keeps the sheet's append-only log** (`pick_rows`, one row per pick per sync) and folds it on read with a line-for-line copy of the Apps Script's reader (`foldPickRowD1` / `pickPayloadD1`). Change one and you must change the other: `node test-worker-d1.js` runs both over the same rows and requires identical picks.
+- **Until the switch** (`PICKS_READ` = `d1` in the worker's variables) the sheet is still what the phone waits on and what every phone reads; D1 is a shadow written beside it. That is deliberate: answering from D1 while phones read the sheet would let a failed sheet copy hide a pick from other phones, and from the saving phone's own next load. After the switch a save is answered from D1 and copied to the sheet in the background (`mirror:pending` if that fails).
+- **D1 refusing** sends the request to the sheet and queues the save (`d1:pending`); the cron (`runPicksDbMaintenance`, on its own chain beside `runAutomations`) replays both queues, warns at half a free limit, and compares D1 with the sheet daily once a season is imported. All admin alerts are the one-line-for-`ADMIN_PICKER` kind.
+- **The copy in** (`POST /admin/picks/import?season=`) reads the sheet's raw rows (`action=backuprows`, added to the Apps Script for this) and stops at `liveSince`, the first save D1 saw, so no save is in D1 twice.
+- **Manual corrections** made straight in the sheet are not seen by D1. Before the switch the daily comparison flags them; after it, correct picks through the site.

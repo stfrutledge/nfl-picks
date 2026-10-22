@@ -59,6 +59,13 @@ function doGet(e) {
       return jsonResponse(getAllPicks(season));
     }
 
+    // The Backup tab's rows exactly as they are, for the worker's one-off
+    // copy into D1 (D1-PICKS-PLAN.md, option A). Read-only.
+    if (action === 'backuprows') {
+      const season = e.parameter.season ? Number(e.parameter.season) : null;
+      return jsonResponse(getBackupRows(season));
+    }
+
     // Raw-row diagnostics: how big the Backup sheet actually is, and whether
     // any legacy split-key rows are still in it. See diagnoseBackup().
     if (action === 'diagnose') {
@@ -89,6 +96,7 @@ function doGet(e) {
         'GET ?action=allpicks': 'Get all picks for all weeks and pickers',
         'GET ?action=allpicks&season=YYYY': 'Only that season\'s rows',
         'GET ?action=diagnose': 'Backup sheet row counts and split-key rows',
+        'GET ?action=backuprows&season=YYYY': 'The Backup tab\'s raw rows, for the D1 copy',
         'GET ?action=results&week=N': 'Get results for week N',
         'GET ?action=allresults': 'Get all results',
         'POST': 'Save picks, spreads, or results'
@@ -607,6 +615,21 @@ function getPicksForWeek(week, picker) {
     count: Object.keys(picks).length,
     cleared: isClearedForWeek(week, picker)
   };
+}
+
+/**
+ * The Backup tab's rows as they stand, header left out, optionally one
+ * season's only. Dates become ISO strings so they survive JSON. Read-only:
+ * this is the source for the worker's copy of the log into D1, which then
+ * folds the rows with the same rules as getAllPicks below.
+ */
+function getBackupRows(season) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Backup');
+  if (!sheet) return { season: season || 'all', rows: [], count: 0 };
+  const rows = sheet.getDataRange().getValues().slice(1)
+    .filter(row => !season || seasonOfSheetWeek(row[1]) === season)
+    .map(row => row.map(value => (value instanceof Date ? value.toISOString() : value)));
+  return { season: season || 'all', rows: rows, count: rows.length };
 }
 
 /**

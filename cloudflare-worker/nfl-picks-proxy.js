@@ -179,6 +179,8 @@ export default {
         return await handleNotify(request, env);
       } else if (path === '/reminder-check') {
         return await handleReminderCheck(url, env);
+      } else if (path.startsWith('/admin/picks/')) {
+        return await handleAdminPicks(request, url, env);
       } else {
         return jsonResponse({ error: 'Unknown endpoint', path }, 404);
       }
@@ -198,6 +200,11 @@ export default {
         console.error('[automations] failed:', error.message);
         return trackHealth(env, error.message);
       }).catch(error => console.error('[health] failed:', error.message)));
+    // The picks database's queues, checks and warnings. Its own chain: a D1
+    // problem is not a notifications problem.
+    ctx.waitUntil(runPicksDbMaintenance(env).then(
+      result => console.log('[d1]', JSON.stringify(result)),
+      error => console.error('[d1] maintenance failed:', error.message)));
   },
 };
 
@@ -370,8 +377,13 @@ async function handleSync(request, env, ctx) {
   }
 
   if (request.method === 'GET') {
-    // Forward GET request with query params to Apps Script
     const url = new URL(request.url);
+    // Picks from D1 once the switch is on; anything else, or D1 refusing,
+    // goes to the sheet as before.
+    const fromD1 = await syncGetFromD1(env, url.searchParams);
+    if (fromD1) return fromD1;
+
+    // Forward GET request with query params to Apps Script
     const targetUrl = new URL(appsScriptUrl);
 
     // Copy all query parameters
@@ -401,7 +413,13 @@ async function handleSync(request, env, ctx) {
     // 2-8s. Cloudflare cancels a request's work when its client disconnects;
     // waitUntil keeps this running to the end. A page that is still there
     // waits for the real reply as before, so a failure is still retried.
-    const work = forwardSyncPost(request, appsScriptUrl);
+    //
+    // With D1 bound, a save of picks lands there first and is answered in
+    // milliseconds; the sheet gets its copy in the background (syncPostWithD1).
+    // The site sends text/plain to skip the CORS preflight; the body is JSON
+    // either way, and the Apps Script is always told it is.
+    const body = await request.text();
+    const work = syncPostWithD1(env, ctx, body).then(viaD1 => viaD1 || forwardSyncPost(env, body));
     ctx?.waitUntil?.(work.catch(() => {}));
     return await work;
   }
@@ -410,10 +428,9 @@ async function handleSync(request, env, ctx) {
 }
 
 /** Forward a /sync POST body to the Apps Script and pass its reply back. */
-async function forwardSyncPost(request, appsScriptUrl) {
-  // The site sends text/plain to skip the CORS preflight; the body is JSON
-  // either way, and the Apps Script is always told it is.
-  let body = await request.text();
+async function forwardSyncPost(env, rawBody) {
+  const appsScriptUrl = env.APPS_SCRIPT_URL;
+  let body = rawBody;
   const guarded = await withoutKickedOffLines(body);
   if (guarded.skip) return jsonResponse(guarded.skip);
   body = guarded.body;
@@ -795,7 +812,7 @@ async function appsScriptGet(env, params) {
 
 /** Every week's picks this season, per week number then picker, keyed like the site's. */
 async function fetchSeasonPicks(env, season) {
-  const data = await appsScriptGet(env, { action: 'allpicks', season: String(season) });
+  const data = await readSeasonPicks(env, season);
   const byWeek = {};
   for (const [sheetWeek, raw] of Object.entries(data.picks || {})) {
     const match = String(sheetWeek).match(/^(\d{4})_(\d+)$/);
@@ -1150,7 +1167,7 @@ async function handleReminderCheck(url, env) {
   if (!slate || Date.now() >= slate.kickoff) return jsonResponse({ remind: false });
 
   // One picker's week, not the season: this runs on a phone's clock.
-  const data = await appsScriptGet(env, { action: 'picks', week: `${season}_${week}`, picker });
+  const data = await readWeekPicks(env, `${season}_${week}`, picker);
   const mine = {};
   for (const [key, pick] of Object.entries(data.picks || {})) mine[normalizeKey(key)] = pick;
 
@@ -2033,6 +2050,695 @@ async function handleEspnSummary(request, url, ctx) {
   });
   if (ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, out.clone()));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Picks in D1 (D1-PICKS-PLAN.md).
+//
+// The Backup sheet's append-only log, kept in Cloudflare's database beside
+// the worker: one row per pick per sync, folded on read by the same rules as
+// the Apps Script's reader (foldPickRow). A save lands in D1 and the phone is
+// answered at once; the sheet still gets every row, in the background, and a
+// copy that fails is queued (mirror:pending) for the cron. Reads come from D1
+// only once PICKS_READ is 'd1' - the cut-over switch and the rollback.
+//
+// D1 refusing anything (a used-up free-plan limit included: the free plan is
+// never billed, it refuses) sends that request the old way, through the
+// sheet, and queues the write (d1:pending) for D1 once it answers again. The
+// admin hears about a refusal at most once an hour, and about a day passing
+// half of a free limit once a day.
+// ---------------------------------------------------------------------------
+
+// Free-plan limits as understood in October 2026 (Cloudflare's pricing page
+// is the authority), and the share that earns the admin a warning.
+const D1_FREE_ROWS_READ = 5000000;
+const D1_FREE_ROWS_WRITTEN = 100000;
+const D1_WARN_SHARE = 0.5;
+
+const D1_FAILING_KEY = 'd1:failing';
+const D1_PENDING_KEY = 'd1:pending';          // saves that reached only the sheet
+const MIRROR_PENDING_KEY = 'mirror:pending';  // saves that reached only D1
+const PENDING_KEEP_MS = 14 * 24 * 60 * 60 * 1000;
+const PENDING_MAX = 300;
+const D1_ALERT_EVERY_MS = 60 * 60 * 1000;
+const PICKS_COMPARED_KEY = 'd1:compared';
+const D1_INSERT_CHUNK = 50;
+
+// Value columns have no declared type, so a number stays a number and a
+// string a string, as they were in the sheet's cells.
+const PICK_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS pick_rows (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     ts TEXT NOT NULL, season INTEGER NOT NULL, week TEXT NOT NULL, picker TEXT NOT NULL,
+     game_key TEXT NOT NULL, game_id TEXT NOT NULL,
+     away, home, away_spread, home_spread, line_pick, winner_pick,
+     blazin INTEGER NOT NULL DEFAULT 0, over_under, total_line, frozen_at)`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS pick_rows_once ON pick_rows (ts, week, picker, game_id)',
+  'CREATE INDEX IF NOT EXISTS pick_rows_season ON pick_rows (season, week, picker)',
+  `CREATE TABLE IF NOT EXISTS pick_cleared (
+     week TEXT NOT NULL, picker TEXT NOT NULL, cleared INTEGER NOT NULL, ts TEXT NOT NULL,
+     PRIMARY KEY (week, picker))`,
+  'CREATE TABLE IF NOT EXISTS pick_usage (day TEXT PRIMARY KEY, rows_read INTEGER NOT NULL DEFAULT 0, rows_written INTEGER NOT NULL DEFAULT 0)',
+  'CREATE TABLE IF NOT EXISTS pick_meta (k TEXT PRIMARY KEY, v TEXT)',
+];
+
+const PICK_INSERT = `INSERT OR IGNORE INTO pick_rows
+  (ts, season, week, picker, game_key, game_id, away, home, away_spread, home_spread,
+   line_pick, winner_pick, blazin, over_under, total_line, frozen_at)
+  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`;
+
+const tablesReady = new WeakMap();
+
+function picksDb(env) {
+  return env?.PICKS_DB || null;
+}
+
+/** Reads come from D1: the cut-over switch, set in the worker's variables. */
+function readsFromD1(env) {
+  return Boolean(picksDb(env)) && env.PICKS_READ === 'd1';
+}
+
+function utcDay(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** The season a sheet-form week belongs to: '2026_7' -> 2026, a bare number -> 2025. */
+function seasonOfPickWeek(week) {
+  const match = String(week).match(/^(\d{4})_/);
+  return match ? Number(match[1]) : 2025;
+}
+
+/**
+ * One request's use of D1. Every query's rows read and written are added up
+ * and recorded once, in pick_usage, by close(): that is what the 50% warning
+ * reads. D1 rather than KV, whose free tier allows 1,000 writes a day.
+ */
+function d1Session(env, now = Date.now()) {
+  const db = picksDb(env);
+  const usage = { read: 0, written: 0 };
+  const tally = result => {
+    for (const r of [].concat(result || [])) {
+      usage.read += Number(r?.meta?.rows_read) || 0;
+      usage.written += Number(r?.meta?.rows_written) || 0;
+    }
+    return result;
+  };
+  return {
+    usage,
+    async ready() {
+      if (!tablesReady.has(db)) {
+        tablesReady.set(db, db.batch(PICK_SCHEMA.map(sql => db.prepare(sql)))
+          .catch(error => { tablesReady.delete(db); throw error; }));
+      }
+      await tablesReady.get(db);
+    },
+    async all(sql, ...args) {
+      return (tally(await db.prepare(sql).bind(...args).all())?.results) || [];
+    },
+    async first(sql, ...args) {
+      return (await this.all(sql, ...args))[0] || null;
+    },
+    async run(sql, ...args) {
+      return tally(await db.prepare(sql).bind(...args).run());
+    },
+    async batch(statements) {
+      if (statements.length === 0) return [];
+      return tally(await db.batch(statements.map(([sql, args]) => db.prepare(sql).bind(...args))));
+    },
+    async close() {
+      if (!usage.read && !usage.written) return;
+      await db.prepare(`INSERT INTO pick_usage (day, rows_read, rows_written) VALUES (?1, ?2, ?3)
+          ON CONFLICT(day) DO UPDATE SET rows_read = rows_read + excluded.rows_read,
+                                         rows_written = rows_written + excluded.rows_written`)
+        .bind(utcDay(now), usage.read, usage.written).run()
+        .catch(error => console.error('[d1] usage not recorded:', error.message));
+    },
+  };
+}
+
+/** One synced pick as a pick_rows row: the same cells savePicks() appends. */
+function pickRowArgs(ts, week, picker, pick) {
+  const away = pick.away || '';
+  const home = pick.home || '';
+  return [
+    ts, seasonOfPickWeek(week), String(week), String(picker),
+    `${String(away).toLowerCase()}_${String(home).toLowerCase()}`,
+    String(pick.gameId ?? ''), away, home,
+    pick.awaySpread || '', pick.homeSpread || '',
+    pick.linePick || '', pick.winnerPick || '',
+    pick.blazin ? 1 : 0,
+    pick.overUnder || '', pick.totalLine || '',
+    pick.frozenAt || '',
+  ];
+}
+
+/**
+ * Write one /sync payload ({week, picker, picks, cleared}) to D1, stamped
+ * [ts] - one timestamp for the batch, as savePicks() stamps one. Returns what
+ * was written, in the shape the Apps Script's reply carries it.
+ */
+async function d1WriteSync(session, data, ts) {
+  const { week, picker } = data;
+  const picks = Array.isArray(data.picks) ? data.picks : [];
+  const statements = picks.map(pick => [PICK_INSERT, pickRowArgs(ts, week, picker, pick)]);
+  if (typeof data.cleared === 'boolean') {
+    statements.push([`INSERT INTO pick_cleared (week, picker, cleared, ts) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(week, picker) DO UPDATE SET cleared = excluded.cleared, ts = excluded.ts`,
+      [String(week), String(picker), data.cleared ? 1 : 0, ts]]);
+  }
+  // When live writes began: the copy from the sheet stops there, so the same
+  // save is never in D1 twice under the sheet's timestamp and the worker's.
+  statements.push(['INSERT OR IGNORE INTO pick_meta (k, v) VALUES (?1, ?2)', ['liveSince', ts]]);
+  await session.ready();
+  await session.batch(statements);
+  const results = {};
+  if (typeof data.cleared === 'boolean') {
+    results.cleared = { message: `Cleared status for ${picker} Week ${week} set to ${data.cleared}`, cleared: data.cleared };
+  }
+  if (picks.length > 0) {
+    results.picks = { message: `Backed up ${picks.length} picks for ${picker} Week ${week}`, rowsAdded: picks.length };
+  }
+  return results;
+}
+
+// --- The reader: google-apps-script-simple.js's, line for line --------------
+// Keep these in step with foldPickRow / pickPayload there. Until the switch the
+// sheet's copy is what the site reads; the daily comparison checks they agree.
+
+const PICK_UNLOCK_MARKER = 'unlocked ';
+
+function pickBlank(value) {
+  return value === '' || value === null || value === undefined;
+}
+
+function pickUnlockCell(value) {
+  return typeof value === 'string' && value.indexOf(PICK_UNLOCK_MARKER) === 0;
+}
+
+function foldPickRowD1(existing, row) {
+  if (pickUnlockCell(row.frozenAt)) {
+    if (existing && row.timestamp < existing.timestamp) return existing;
+    row.frozenAt = '';
+    return row;
+  }
+  if (!existing) return row;
+  const existingFrozen = !pickBlank(existing.frozenAt);
+  const rowFrozen = !pickBlank(row.frozenAt);
+  if (existingFrozen && !rowFrozen) return existing;
+  if (rowFrozen && !existingFrozen) return row;
+  if (row.timestamp > existing.timestamp) return row;
+  if (row.timestamp < existing.timestamp) return existing;
+  const merged = existing;
+  for (const field of ['linePick', 'winnerPick', 'overUnder', 'totalLine', 'lineOutcome', 'winnerOutcome', 'ouOutcome', 'frozenAt']) {
+    if (pickBlank(merged[field])) merged[field] = row[field];
+  }
+  merged.blazin = merged.blazin || row.blazin;
+  return merged;
+}
+
+/** A pick_rows row as the sheet reader's row object. */
+function pickRowFromD1(r) {
+  return {
+    timestamp: new Date(r.ts).getTime(),
+    week: String(r.week), picker: String(r.picker), gameId: String(r.game_id),
+    away: r.away, home: r.home, awaySpread: r.away_spread, homeSpread: r.home_spread,
+    linePick: r.line_pick, winnerPick: r.winner_pick, blazin: Boolean(r.blazin),
+    overUnder: r.over_under, totalLine: r.total_line,
+    lineOutcome: '', winnerOutcome: '', ouOutcome: '',
+    frozenAt: r.frozen_at || '',
+  };
+}
+
+function pickSide(value, away, home) {
+  if (value === away) return 'away';
+  if (value === home) return 'home';
+  return value || '';
+}
+
+function pickPayloadD1(row) {
+  const payload = {
+    line: pickSide(row.linePick, row.away, row.home),
+    winner: pickSide(row.winnerPick, row.away, row.home),
+    blazin: row.blazin || false,
+    overUnder: row.overUnder || '',
+    totalLine: row.totalLine || '',
+    lineOutcome: row.lineOutcome || '',
+    winnerOutcome: row.winnerOutcome || '',
+    ouOutcome: row.ouOutcome || '',
+  };
+  if (!pickBlank(row.frozenAt)) {
+    payload.frozenAt = row.frozenAt;
+    const away = Number(row.awaySpread);
+    const home = Number(row.homeSpread);
+    if (isFinite(away) && isFinite(home)) {
+      payload.frozenSpread = Math.abs(home <= away ? home : away);
+      payload.frozenFavorite = home <= away ? 'home' : 'away';
+    }
+  }
+  return payload;
+}
+
+/** Rows (ordered by ts) folded to { week: { picker: { key: payload } } }. */
+function foldPickRows(rows) {
+  const collapsed = {};
+  for (const r of rows) {
+    const row = pickRowFromD1(r);
+    const key = `${String(row.away).toLowerCase()}_${String(row.home).toLowerCase()}`;
+    const bucket = ((collapsed[row.week] ||= {})[row.picker] ||= {});
+    bucket[key] = foldPickRowD1(bucket[key], row);
+  }
+  const picks = {};
+  for (const week in collapsed) {
+    picks[week] = {};
+    for (const picker in collapsed[week]) {
+      picks[week][picker] = {};
+      for (const key in collapsed[week][picker]) picks[week][picker][key] = pickPayloadD1(collapsed[week][picker][key]);
+    }
+  }
+  return picks;
+}
+
+/** The Apps Script's getAllPicks(season), from D1. */
+async function d1AllPicks(session, season) {
+  await session.ready();
+  const rows = season
+    ? await session.all('SELECT * FROM pick_rows WHERE season = ?1 ORDER BY ts, id', season)
+    : await session.all('SELECT * FROM pick_rows ORDER BY ts, id');
+  const picks = foldPickRows(rows);
+  const cleared = {};
+  for (const c of await session.all('SELECT week, picker FROM pick_cleared WHERE cleared = 1')) {
+    if (season && seasonOfPickWeek(c.week) !== season) continue;
+    (cleared[c.week] ||= {})[c.picker] = true;
+  }
+  return {
+    picks, cleared, weekCount: Object.keys(picks).length,
+    season: season || 'all', rowsScanned: rows.length, rowsUsed: rows.length, source: 'd1',
+  };
+}
+
+/** The Apps Script's getPicksForWeek(week, picker), from D1. */
+async function d1WeekPicks(session, week, picker) {
+  await session.ready();
+  const rows = await session.all('SELECT * FROM pick_rows WHERE week = ?1 AND picker = ?2 ORDER BY ts, id', String(week), String(picker));
+  const picks = foldPickRows(rows)[String(week)]?.[String(picker)] || {};
+  const cleared = await session.first('SELECT cleared FROM pick_cleared WHERE week = ?1 AND picker = ?2', String(week), String(picker));
+  return { week, picker, picks, count: Object.keys(picks).length, cleared: Boolean(cleared?.cleared), source: 'd1' };
+}
+
+/**
+ * A season's picks for the worker's own use (reminders, Blazin' 5 results):
+ * D1 once the switch is on, the sheet otherwise - and the sheet whenever D1
+ * refuses.
+ */
+async function readSeasonPicks(env, season) {
+  if (readsFromD1(env)) {
+    const session = d1Session(env);
+    try {
+      return await d1AllPicks(session, Number(season));
+    } catch (error) {
+      await noteD1Failure(env, error);
+    } finally {
+      await session.close();
+    }
+  }
+  return appsScriptGet(env, { action: 'allpicks', season: String(season) });
+}
+
+async function readWeekPicks(env, week, picker) {
+  if (readsFromD1(env)) {
+    const session = d1Session(env);
+    try {
+      return await d1WeekPicks(session, week, picker);
+    } catch (error) {
+      await noteD1Failure(env, error);
+    } finally {
+      await session.close();
+    }
+  }
+  return appsScriptGet(env, { action: 'picks', week, picker });
+}
+
+// --- Queues and alerts -----------------------------------------------------
+
+async function enqueue(env, key, item, now = Date.now()) {
+  if (!env.NOTIFY_STATE) return;
+  const list = JSON.parse(await env.NOTIFY_STATE.get(key) || '[]')
+    .filter(entry => now - (entry.at || 0) < PENDING_KEEP_MS);
+  list.push({ ...item, at: now });
+  await env.NOTIFY_STATE.put(key, JSON.stringify(list.slice(-PENDING_MAX)));
+}
+
+/**
+ * D1 refused something. Logged every time; the admin is told at most once an
+ * hour (each alert is one KV write, so a bad hour costs one write, not one per
+ * request).
+ */
+async function noteD1Failure(env, error, now = Date.now()) {
+  console.error('[d1] failed, using the sheet:', error?.message || error);
+  if (!env.NOTIFY_STATE) return;
+  const state = JSON.parse(await env.NOTIFY_STATE.get(D1_FAILING_KEY) || 'null');
+  if (state && now - (state.alertedAt || state.since) < D1_ALERT_EVERY_MS) return;
+  let alertedAt = state?.alertedAt || null;
+  if (env.FCM_SERVICE_ACCOUNT) {
+    const sent = await alertAdmin(env, now, 'Picks database refusing',
+      `D1 refused a request (${String(error?.message || error).slice(0, 160)}). Picks are going through the Google Sheet meanwhile; nothing is lost.`)
+      .catch(() => ({ ok: false }));
+    if (sent.ok) alertedAt = now;
+  }
+  await env.NOTIFY_STATE.put(D1_FAILING_KEY, JSON.stringify({ since: state?.since ?? now, lastError: String(error?.message || error), alertedAt: alertedAt ?? now }));
+}
+
+/** Send a saved /sync body to the Apps Script. Throws unless it really landed. */
+async function postToSheet(env, body) {
+  const response = await fetch(env.APPS_SCRIPT_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  if (!response.ok) throw new Error(`Apps Script answered ${response.status}`);
+  const data = await response.json();
+  if (data?.error || data?.results?.picks?.error) throw new Error(`Apps Script error: ${data.error || data.results.picks.error}`);
+  return data;
+}
+
+/** The background copy of a D1-stored save to the sheet; a failure is queued for the cron. */
+async function mirrorToSheet(env, body, now = Date.now()) {
+  try {
+    await postToSheet(env, body);
+  } catch (error) {
+    console.error('[d1] sheet copy failed, queued:', error.message);
+    await enqueue(env, MIRROR_PENDING_KEY, { body }, now);
+  }
+}
+
+// --- /sync with D1 ----------------------------------------------------------
+
+/** A body that is only a picker's picks and cleared flag (no spreads or results). */
+function syncIsPicksOnly(data) {
+  return Object.keys(data).every(k => ['week', 'picker', 'picks', 'cleared'].includes(k));
+}
+
+/**
+ * POST /sync when the worker has D1. Null when D1 is not involved (no
+ * database, or a body with no picks or cleared flag), and the caller forwards
+ * to the sheet as before.
+ */
+async function syncPostWithD1(env, ctx, body, now = Date.now()) {
+  if (!picksDb(env)) return null;
+  let data;
+  try { data = JSON.parse(body); } catch { return null; }
+  if (!data || !data.week || !data.picker) return null;
+  const hasPicks = Array.isArray(data.picks) && data.picks.length > 0;
+  if (!hasPicks && typeof data.cleared !== 'boolean') return null;
+
+  const ts = new Date(now).toISOString();
+  const writeD1 = async () => {
+    const session = d1Session(env, now);
+    try {
+      return await d1WriteSync(session, data, ts);
+    } catch (error) {
+      await noteD1Failure(env, error, now);
+      return null;
+    } finally {
+      await session.close();
+    }
+  };
+
+  // Before the switch the sheet is what every phone reads, so it stays the
+  // store the phone waits on, exactly as today, and D1 is written beside it.
+  // Answering from D1 here would let a sheet copy that failed leave other
+  // phones - and this one, on its next load - reading the pick's absence.
+  if (!readsFromD1(env)) {
+    const [results, response] = await Promise.all([writeD1(), forwardSyncPost(env, body)]);
+    if (!results) await oweD1(env, response, data, ts, now);
+    return response;
+  }
+
+  // After the switch D1 is what everyone reads: stored there, the phone is
+  // answered now, and the sheet gets its copy after.
+  const results = await writeD1();
+  if (results && syncIsPicksOnly(data)) {
+    ctx?.waitUntil?.(mirrorToSheet(env, body, now));
+    return jsonResponse({ success: true, results, store: 'd1' });
+  }
+
+  // D1 refused (or the body carries more than picks): the sheet, as before.
+  const response = await forwardSyncPost(env, body);
+  if (!results) await oweD1(env, response, data, ts, now);
+  return response;
+}
+
+/** A save the sheet took and D1 did not: queued for the cron to copy into D1. */
+async function oweD1(env, response, data, ts, now) {
+  const reply = await response.clone().json().catch(() => null);
+  // Only a save the sheet took is owed to D1; a failed one the phone retries.
+  if (response.ok && reply?.success && !reply?.results?.picks?.error) {
+    await enqueue(env, D1_PENDING_KEY, { data, ts }, now).catch(() => {});
+  }
+}
+
+/** GET /sync?action=allpicks|picks from D1, or null to ask the sheet. */
+async function syncGetFromD1(env, params) {
+  const action = params.get('action');
+  if (!readsFromD1(env) || (action !== 'allpicks' && action !== 'picks')) return null;
+  const session = d1Session(env);
+  try {
+    if (action === 'allpicks') {
+      return jsonResponse(await d1AllPicks(session, params.get('season') ? Number(params.get('season')) : null));
+    }
+    const week = params.get('week');
+    const picker = params.get('picker');
+    if (!week || !picker) return null;
+    return jsonResponse(await d1WeekPicks(session, week, picker));
+  } catch (error) {
+    await noteD1Failure(env, error);
+    return null;
+  } finally {
+    await session.close();
+  }
+}
+
+// --- The copy in, and the comparison ----------------------------------------
+
+/**
+ * Copy a season's Backup rows into D1 (option A: the raw rows, so the history
+ * and the fold come out the same). Stops at liveSince, where the worker's own
+ * writes begin, and INSERT OR IGNORE makes a second run harmless.
+ */
+async function importPicksFromSheet(env, season, now = Date.now()) {
+  const data = await appsScriptGet(env, { action: 'backuprows', season: String(season) });
+  const session = d1Session(env, now);
+  try {
+    await session.ready();
+    const live = await session.first('SELECT v FROM pick_meta WHERE k = ?1', 'liveSince');
+    const liveSince = live ? Date.parse(live.v) : Infinity;
+    const rows = (data.rows || []).filter(row => {
+      const t = new Date(row[0]).getTime();
+      return isFinite(t) && t < liveSince && seasonOfPickWeek(row[1]) === Number(season);
+    });
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += D1_INSERT_CHUNK) {
+      const chunk = rows.slice(i, i + D1_INSERT_CHUNK).map(row => [PICK_INSERT, pickRowArgs(
+        new Date(row[0]).toISOString(), row[1], row[2], {
+          gameId: row[3], away: row[4], home: row[5], awaySpread: row[6], homeSpread: row[7],
+          linePick: row[8], winnerPick: row[9], blazin: row[10] === 'Yes',
+          overUnder: row[11], totalLine: row[12], frozenAt: row[16] || '',
+        })]);
+      const results = await session.batch(chunk);
+      inserted += results.reduce((n, r) => n + (Number(r?.meta?.changes) || 0), 0);
+    }
+    // The cleared flags come from the folded read, as the sheet holds them.
+    const all = await appsScriptGet(env, { action: 'allpicks', season: String(season) });
+    const cleared = [];
+    for (const [week, pickers] of Object.entries(all.cleared || {})) {
+      for (const picker of Object.keys(pickers)) {
+        cleared.push([`INSERT INTO pick_cleared (week, picker, cleared, ts) VALUES (?1, ?2, 1, ?3)
+            ON CONFLICT(week, picker) DO NOTHING`, [String(week), String(picker), new Date(now).toISOString()]]);
+      }
+    }
+    await session.batch(cleared);
+    await session.run(`INSERT INTO pick_meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v`,
+      `imported:${season}`, new Date(now).toISOString());
+    return { season: Number(season), sheetRows: (data.rows || []).length, copied: rows.length, inserted, cleared: cleared.length, liveSince: live?.v || null };
+  } finally {
+    await session.close();
+  }
+}
+
+/** A pick as the comparison sees it: only what the site uses. */
+function comparablePick(p) {
+  const total = pickBlank(p?.totalLine) ? '' : String(Number(p.totalLine));
+  const out = {
+    line: p?.line || '', winner: p?.winner || '', blazin: Boolean(p?.blazin),
+    overUnder: p?.overUnder || '', totalLine: total, frozen: !pickBlank(p?.frozenAt),
+  };
+  if (out.frozen) { out.frozenSpread = p.frozenSpread ?? null; out.frozenFavorite = p.frozenFavorite ?? null; }
+  return out;
+}
+
+function pickIsEmpty(c) {
+  return !c.line && !c.winner && !c.blazin && !c.overUnder && !c.frozen;
+}
+
+/**
+ * D1's fold against the sheet's, game by game. A pick missing on one side
+ * and empty on the other (a deselection) is the same pick.
+ */
+async function comparePicks(env, season) {
+  const sheet = await appsScriptGet(env, { action: 'allpicks', season: String(season) });
+  const session = d1Session(env);
+  let d1;
+  try {
+    d1 = await d1AllPicks(session, Number(season));
+  } finally {
+    await session.close();
+  }
+  const differences = [];
+  const weeks = new Set([...Object.keys(sheet.picks || {}), ...Object.keys(d1.picks)]);
+  for (const week of weeks) {
+    const a = sheet.picks?.[week] || {};
+    const b = d1.picks[week] || {};
+    for (const picker of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      for (const key of new Set([...Object.keys(a[picker] || {}), ...Object.keys(b[picker] || {})])) {
+        const inSheet = comparablePick(a[picker]?.[key]);
+        const inD1 = comparablePick(b[picker]?.[key]);
+        if (JSON.stringify(inSheet) === JSON.stringify(inD1)) continue;
+        if (pickIsEmpty(inSheet) && pickIsEmpty(inD1)) continue;
+        differences.push({ week, picker, game: key, sheet: inSheet, d1: inD1 });
+      }
+    }
+    const ca = Object.keys(sheet.cleared?.[week] || {}).sort().join(',');
+    const cb = Object.keys(d1.cleared[week] || {}).sort().join(',');
+    if (ca !== cb) differences.push({ week, cleared: { sheet: ca, d1: cb } });
+  }
+  return { season: Number(season), differences: differences.length, sample: differences.slice(0, 40), sheetRows: sheet.rowsUsed, d1Rows: d1.rowsUsed };
+}
+
+/** The season by the calendar, as the site's (rolls over on July 1st). */
+function seasonFor(now) {
+  const d = new Date(now);
+  return d.getUTCMonth() >= 6 ? d.getUTCFullYear() : d.getUTCFullYear() - 1;
+}
+
+/**
+ * The cron's D1 work: replay both queues, check D1 is answering (and say so
+ * after a refusal), warn at half of a free limit, and once a day compare D1
+ * with the sheet for a season that has been copied in.
+ */
+async function runPicksDbMaintenance(env, now = Date.now()) {
+  if (!picksDb(env)) return { skipped: 'no PICKS_DB' };
+  const out = {};
+  const session = d1Session(env, now);
+  try {
+    await session.ready();
+    await session.first('SELECT COUNT(*) AS n FROM pick_meta');
+
+    // Saves that reached only the sheet, into D1 under their original times.
+    if (env.NOTIFY_STATE) {
+      const owed = JSON.parse(await env.NOTIFY_STATE.get(D1_PENDING_KEY) || '[]');
+      for (const item of owed) await d1WriteSync(session, item.data, item.ts);
+      if (owed.length) { await env.NOTIFY_STATE.delete(D1_PENDING_KEY); out.replayedToD1 = owed.length; }
+
+      // Saves that reached only D1, to the sheet.
+      const copies = JSON.parse(await env.NOTIFY_STATE.get(MIRROR_PENDING_KEY) || '[]');
+      if (copies.length && env.APPS_SCRIPT_URL) {
+        const left = [];
+        for (const item of copies) {
+          try { await postToSheet(env, item.body); } catch { left.push(item); }
+        }
+        if (left.length) await env.NOTIFY_STATE.put(MIRROR_PENDING_KEY, JSON.stringify(left));
+        else await env.NOTIFY_STATE.delete(MIRROR_PENDING_KEY);
+        out.copiedToSheet = copies.length - left.length;
+        if (left.length) out.sheetCopiesWaiting = left.length;
+      }
+
+      // D1 answered: a refusal earlier is over.
+      const failing = JSON.parse(await env.NOTIFY_STATE.get(D1_FAILING_KEY) || 'null');
+      if (failing) {
+        await env.NOTIFY_STATE.delete(D1_FAILING_KEY);
+        if (failing.alertedAt && env.FCM_SERVICE_ACCOUNT) {
+          await alertAdmin(env, now, 'Picks database back to normal', 'D1 is answering again; anything saved meanwhile has been copied in.').catch(() => {});
+        }
+        out.recovered = true;
+      }
+    }
+
+    // Half of a free limit, once a day.
+    const today = await session.first('SELECT rows_read, rows_written FROM pick_usage WHERE day = ?1', utcDay(now));
+    if (today) out.usage = { rowsRead: today.rows_read, rowsWritten: today.rows_written };
+    const overRead = (today?.rows_read || 0) >= D1_FREE_ROWS_READ * D1_WARN_SHARE;
+    const overWritten = (today?.rows_written || 0) >= D1_FREE_ROWS_WRITTEN * D1_WARN_SHARE;
+    const warnId = `d1-usage-${utcDay(now)}`;
+    if ((overRead || overWritten) && env.NOTIFY_STATE && env.FCM_SERVICE_ACCOUNT && !(await alreadySent(env, warnId))) {
+      const what = overRead
+        ? `${today.rows_read.toLocaleString('en-US')} of ${D1_FREE_ROWS_READ.toLocaleString('en-US')} rows read`
+        : `${today.rows_written.toLocaleString('en-US')} of ${D1_FREE_ROWS_WRITTEN.toLocaleString('en-US')} rows written`;
+      const sent = await alertAdmin(env, now, 'Picks database past half its free limit',
+        `Today: ${what}. Nothing is billed: past the limit D1 refuses and picks go through the sheet. See D1-PICKS-PLAN.md.`);
+      if (sent.ok) { await markSent(env, warnId); out.warned = true; }
+    }
+
+    // The daily comparison, for a season already copied in.
+    const season = seasonFor(now);
+    const imported = await session.first('SELECT v FROM pick_meta WHERE k = ?1', `imported:${season}`);
+    if (imported && env.NOTIFY_STATE && env.APPS_SCRIPT_URL) {
+      const last = JSON.parse(await env.NOTIFY_STATE.get(PICKS_COMPARED_KEY) || 'null');
+      if (last?.day !== utcDay(now)) {
+        const result = await comparePicks(env, season);
+        await env.NOTIFY_STATE.put(PICKS_COMPARED_KEY, JSON.stringify({ day: utcDay(now), at: now, differences: result.differences }));
+        out.compared = result.differences;
+        if (result.differences > 0 && env.FCM_SERVICE_ACCOUNT) {
+          const first = result.sample[0];
+          await alertAdmin(env, now, 'Picks database and sheet disagree',
+            `${plural(result.differences, 'difference')} today${first?.game ? `, e.g. ${first.picker} ${first.week} ${first.game}` : ''}. GET /admin/picks/compare for the list.`).catch(() => {});
+        }
+      }
+    }
+  } catch (error) {
+    await noteD1Failure(env, error, now);
+    out.error = error.message;
+  } finally {
+    await session.close();
+  }
+  return out;
+}
+
+// --- /admin/picks/* ---------------------------------------------------------
+
+/**
+ * The admin's D1 tools, behind the same secret as /notify:
+ *   POST /admin/picks/import?season=YYYY   copy the sheet's rows in
+ *   GET  /admin/picks/compare?season=YYYY  D1 against the sheet
+ *   GET  /admin/picks/status               switch, queues, today's usage
+ */
+async function handleAdminPicks(request, url, env) {
+  if (!env.NOTIFY_SECRET) return jsonResponse({ error: 'Not configured' }, 500);
+  const auth = request.headers.get('Authorization') || '';
+  if (!(await secretsMatch(auth.startsWith('Bearer ') ? auth.slice(7) : '', env.NOTIFY_SECRET))) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+  if (!picksDb(env)) return jsonResponse({ error: 'PICKS_DB is not bound to this worker' }, 500);
+  const season = Number(url.searchParams.get('season')) || seasonFor(Date.now());
+  const action = url.pathname.slice('/admin/picks/'.length);
+
+  if (action === 'import' && request.method === 'POST') return jsonResponse(await importPicksFromSheet(env, season));
+  if (action === 'compare' && request.method === 'GET') return jsonResponse(await comparePicks(env, season));
+  if (action === 'status' && request.method === 'GET') {
+    const session = d1Session(env);
+    try {
+      await session.ready();
+      const meta = Object.fromEntries((await session.all('SELECT k, v FROM pick_meta')).map(r => [r.k, r.v]));
+      const rows = await session.first('SELECT COUNT(*) AS n FROM pick_rows');
+      const usage = await session.all('SELECT * FROM pick_usage ORDER BY day DESC LIMIT 7');
+      const kv = async key => (env.NOTIFY_STATE ? JSON.parse(await env.NOTIFY_STATE.get(key) || 'null') : null);
+      return jsonResponse({
+        readsFrom: readsFromD1(env) ? 'd1' : 'sheet', rows: rows?.n || 0, meta, usage,
+        failing: await kv(D1_FAILING_KEY),
+        waitingForD1: (await kv(D1_PENDING_KEY) || []).length,
+        waitingForSheet: (await kv(MIRROR_PENDING_KEY) || []).length,
+        lastCompare: await kv(PICKS_COMPARED_KEY),
+      });
+    } finally {
+      await session.close();
+    }
+  }
+  return jsonResponse({ error: 'Unknown admin action' }, 404);
 }
 
 const PREVIEWS = ['blazin_results', 'pick_reminders'];

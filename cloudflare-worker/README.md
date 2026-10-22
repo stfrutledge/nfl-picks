@@ -12,6 +12,19 @@ It exists so that no secret and no cross-origin request lives in the browser:
 - `/lines?season=YYYY&week=N` - that week's line history: `{ open, games }`, a point each time DraftKings' spread or total moved, kept by the cron off ESPN's scoreboard (`recordLineMoves`). A week opens on the first run after the previous week's last Sunday game is final; a week whose Sunday night was missed starts with "first seen" points.
 - `/espn-summary?event=<ESPN event id>` - one game's injuries (ESPN's own five as `players`, and each team's whole list off its roster as `all`, for the popup's "Show all"), each team's last five (with ESPN's week) and its passing/rushing/receiving leaders, trimmed from ESPN's game summary (`trimEspnSummary`, ~2 KB of ~110 KB) for the Game Details popup's Matchup and Players tabs. Tries `site.web.api.espn.com` when `site.api.espn.com` refuses; cached 15 minutes.
 - `/notify` - a message from the admin to every phone with the Android app, through Firebase Cloud Messaging. POST `{ title, body }` with `Authorization: Bearer <NOTIFY_SECRET>`. See `android/README.md`.
+- `/admin/picks/import?season=YYYY` (POST), `/admin/picks/compare?season=YYYY`, `/admin/picks/status` - the picks database's admin tools, behind the same secret as `/notify` (`Authorization: Bearer <NOTIFY_SECRET>`). Import copies a season's Backup rows into D1, compare lists every pick D1 and the sheet disagree on, status shows the read switch, the queues and the last week's usage. See "Picks in D1" below.
+
+## Picks in D1
+
+With a D1 database bound as `PICKS_DB` (Settings > Bindings > D1), every picks save also goes into D1, and the cron keeps the two in step. The plan and its reasoning are in `D1-PICKS-PLAN.md`.
+
+- **Before the switch** (no `PICKS_READ` variable): a save goes to the sheet exactly as before and the phone waits on it; D1 is written beside it at the same time. Reads come from the sheet.
+- **After the switch** (`PICKS_READ` = `d1`): reads come from D1, and a save is answered once D1 has it; the sheet gets its copy in the background, and a copy that fails is queued (`mirror:pending` in KV) for the cron. Deleting the variable is the rollback.
+- **D1 refusing** anything (a used-up free-plan limit included: the free plan refuses, it never bills) sends that request to the sheet, queues the save for D1 (`d1:pending`), and alerts the admin at most once an hour. The first cron run that finds D1 answering copies the queue in and says "Picks database back to normal".
+- **Usage** is counted per day in D1 (`pick_usage`); half of a free limit (2.5M rows read or 50k written) alerts the admin once a day.
+- **The daily comparison** runs once a season has been imported (`imported:<season>` in `pick_meta`) and alerts on any difference.
+
+The tables are created by the worker on first use; there is no SQL to run. `node test-worker-d1.js` runs the whole path against an in-memory SQLite.
 
 ## Deploying
 
