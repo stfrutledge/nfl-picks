@@ -141,12 +141,48 @@ For about a week, phones write to both and still read from the sheet.
   include a Thursday-to-Monday slate, the period with the most writes and
   locks.
 
+### Free-plan limits: fallback and early warning
+
+On the Workers Free plan, nothing is ever billed. Going over a limit refuses
+the request, and nothing moves to a paid plan unless the owner upgrades. So the
+risk is picks failing for the rest of a day, not a bill. As far as we know,
+Cloudflare does not warn free accounts before a limit runs out. Two guards
+cover this:
+
+1. **Automatic fallback to the sheet.** If D1 throws on a write or a read, for
+   any reason including a used-up daily limit, the worker handles that request
+   the old way:
+   - a write goes straight to the Apps Script, as today;
+   - a read is served from `allpicks` on the Apps Script.
+
+   A write that reached only the sheet is queued in KV (`d1:pending`), and the
+   cron replays it into D1 once D1 answers again, so the two stay in step.
+2. **An early warning.** Every D1 query reports `meta.rows_read` /
+   `meta.rows_written`. The worker adds them to a per-day counter row in D1
+   itself (`usage(day, rows_read, rows_written)`), not KV, whose free tier
+   allows only 1,000 writes a day. The 15-minute cron checks it. The owner gets
+   an admin-only push, the same path as the failing-automations alert (one line
+   for `ADMIN_PICKER`, an empty group text), when either of these happens:
+   - a day passes **50%** of a free limit (2.5M rows read or 50k rows written),
+     at most once a day;
+   - D1 refuses a query and the fallback is used, at most once an hour.
+
+   A clean day after an alert sends "Picks database back to normal".
+
+Expected use is a few percent of the tightest limit (rows read), so neither
+should ever fire. If the read warning does, add a folded `current_picks` table,
+which turns a page load from about 4,000 rows read into about 80.
+
+Free limits as understood in October 2026: 5M rows read and 100k rows written
+a day, and 5 GB stored; Workers 100k requests a day; KV 1,000 writes a day.
+Check Cloudflare's pricing page before relying on these.
+
 ## Steps
 
 | # | Who | What |
 |---|---|---|
 | 1 | You | Cloudflare dashboard → Storage & Databases → D1 → **Create** `nfl-picks`. Then Worker → Settings → Bindings → **Add D1**, variable name `PICKS_DB`. About 5 minutes. |
-| 2 | Me | Worker: D1 module (tables, insert, fold, cleared), the dual write with KV-queued mirroring, the `PICKS_READ` switch, the admin import and compare endpoints, and the cron comparison and alert. Tests against an in-memory D1 stand-in, including the existing fold cases from `test-sheet-reader.js` run against the worker's copy. |
+| 2 | Me | Worker: D1 module (tables, insert, fold, cleared), the dual write with KV-queued mirroring, the `PICKS_READ` switch, the fallback to the sheet when D1 refuses, the usage counter with its 50% and refusal alerts, the admin import and compare endpoints, and the cron comparison and alert. Tests against an in-memory D1 stand-in, including the existing fold cases from `test-sheet-reader.js` run against the worker's copy, and a D1 that throws. |
 | 3 | Me | Apps Script: the read-only `backuprows` action (option A). |
 | 4 | You | Paste the worker into **Cloudflare**, and the Apps Script into **Google** (redeploy as a new version). |
 | 5 | Me | Run the import, then the comparison. Report the diffs (expected: none). |
@@ -168,9 +204,9 @@ For about a week, phones write to both and still read from the sheet.
   sheet, which D1 would not see. Until the switch they don't matter. After it,
   a correction should go through the site or the admin tools. Alternatively,
   an admin "re-import week N from sheet" action can be added; I'd add it.
-- **Free-tier limits.** These are far above what the group uses. The read cost
-  grows with the season's row count, and if it ever matters, a folded
-  `current_picks` table can be kept alongside the log.
+- **Free-tier limits.** These are far above what the group uses, and going
+  over one is never billed. See "Free-plan limits: fallback and early warning"
+  above: picks fall back to the sheet, and the owner is warned at 50%.
 
 ## Open question for you
 
