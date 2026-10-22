@@ -2482,7 +2482,8 @@ async function noteD1Failure(env, error, now = Date.now()) {
       .catch(() => ({ ok: false }));
     if (sent.ok) alertedAt = now;
   }
-  await env.NOTIFY_STATE.put(D1_FAILING_KEY, JSON.stringify({ since: state?.since ?? now, lastError: String(error?.message || error), alertedAt: alertedAt ?? now }));
+  // d1: true marks a real D1 failure, the only kind that earns a back-to-normal.
+  await env.NOTIFY_STATE.put(D1_FAILING_KEY, JSON.stringify({ since: state?.since ?? now, lastError: String(error?.message || error), alertedAt: alertedAt ?? now, d1: true }));
 }
 
 /** Send a saved /sync body to the Apps Script. Throws unless it really landed. */
@@ -2747,7 +2748,9 @@ async function runPicksDbMaintenance(env, now = Date.now()) {
       const failing = JSON.parse(await env.NOTIFY_STATE.get(D1_FAILING_KEY) || 'null');
       if (failing) {
         await env.NOTIFY_STATE.delete(D1_FAILING_KEY);
-        if (failing.alertedAt && env.FCM_SERVICE_ACCOUNT) {
+        // Only after a real D1 failure: a state left by the sheet timing out
+        // (before that was told apart) is cleared without a word.
+        if (failing.alertedAt && failing.d1 && env.FCM_SERVICE_ACCOUNT) {
           await alertAdmin(env, now, 'Picks database back to normal', 'D1 is answering again; anything saved meanwhile has been copied in.').catch(() => {});
         }
         out.recovered = true;
@@ -2779,7 +2782,20 @@ async function runPicksDbMaintenance(env, now = Date.now()) {
     if (imported && env.NOTIFY_STATE && env.APPS_SCRIPT_URL) {
       const last = JSON.parse(await env.NOTIFY_STATE.get(PICKS_COMPARED_KEY) || 'null');
       if (last?.day !== utcDay(now)) {
-        const result = await comparePicks(env, season);
+        // The sheet's half of the comparison is the slow Apps Script, which
+        // times out now and then (a 524). That is not D1 refusing: it is
+        // logged, and the next run tries again. 22 October 2026: the first
+        // comparison timed out and the admin was told "Picks database
+        // refusing", which it was not.
+        let result;
+        try {
+          result = await comparePicks(env, season);
+        } catch (error) {
+          if (!/^Apps Script /.test(error.message)) throw error;
+          console.warn('[d1] comparison skipped, the sheet did not answer:', error.message);
+          out.compareError = error.message;
+        }
+        if (result) {
         await env.NOTIFY_STATE.put(PICKS_COMPARED_KEY, JSON.stringify({ day: utcDay(now), at: now, differences: result.differences, currentDrift: result.currentDrift }));
         out.compared = result.differences;
         // The stored table out of step with its log: rebuilt from the log,
@@ -2793,10 +2809,14 @@ async function runPicksDbMaintenance(env, now = Date.now()) {
           await alertAdmin(env, now, 'Picks database and sheet disagree',
             `${plural(result.differences, 'difference')} today${first?.game ? `, e.g. ${first.picker} ${first.week} ${first.game}` : ''}. GET /admin/picks/compare for the list.`).catch(() => {});
         }
+        }
       }
     }
   } catch (error) {
-    await noteD1Failure(env, error, now);
+    // Only D1 itself refusing is a D1 problem; the sheet's errors are the
+    // sheet's (the comparison catches its own above).
+    if (/^Apps Script /.test(error.message)) console.warn('[d1] maintenance: the sheet did not answer:', error.message);
+    else await noteD1Failure(env, error, now);
     out.error = error.message;
   } finally {
     await session.close();

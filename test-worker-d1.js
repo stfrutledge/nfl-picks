@@ -471,6 +471,31 @@ async function check(name, fn) {
         assert.deepStrictEqual([list.sample[0].picker, list.sample[0].game, list.sample[0].sheet.line, list.sample[0].d1.line], ['Stephen', 'packers_lions', 'away', 'home']);
     });
 
+    await check('the sheet timing out in the comparison is not D1 refusing: no alert, tried again next run', async () => {
+        // 22 October 2026: the first daily comparison's Apps Script call
+        // timed out (524) and the admin was told "Picks database refusing".
+        fresh(backup);
+        const day = Date.parse('2026-10-22T14:15:00Z');
+        await admin(env(), 'import?season=2026', 'POST');
+        net.sheetDown = true;
+        const out = await mod.runPicksDbMaintenance(env(), day);
+        assert.match(out.compareError, /Apps Script answered 503/);
+        assert.strictEqual(net.fcm.length, 0, 'no push');
+        assert.ok(!kv.m.has('d1:failing'), 'D1 not marked as failing');
+        net.sheetDown = false;
+        const next = await mod.runPicksDbMaintenance(env(), day + 15 * 60000);
+        assert.strictEqual(next.compared, 0, 'compared on the next run');
+    });
+
+    await check('a failing state the sheet left behind is cleared without a back-to-normal push', async () => {
+        fresh();
+        kv.m.set('d1:failing', JSON.stringify({ since: 1, lastError: 'Apps Script answered 524', alertedAt: 1 }));
+        const out = await mod.runPicksDbMaintenance(env(), Date.parse('2026-10-22T15:00:00Z'));
+        assert.strictEqual(out.recovered, true);
+        assert.ok(!kv.m.has('d1:failing'));
+        assert.strictEqual(net.fcm.length, 0, 'nothing sent for a false alarm');
+    });
+
     await check('no PICKS_DB: the worker behaves exactly as before', async () => {
         fresh();
         const e = env({ PICKS_DB: undefined });
