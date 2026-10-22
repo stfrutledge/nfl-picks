@@ -1,7 +1,9 @@
 # Plan: store picks in Cloudflare D1
 
-Status: **built, not yet deployed** (October 2026). The worker and the Apps
-Script carry it; `node test-worker-d1.js` covers it. Waiting on steps 1 and 4.
+Status: **trial running** (22 October 2026). D1 is bound, both seasons are copied
+in (10,739 rows, 0 differences from the sheet), and every save goes to both.
+Reads still come from the sheet. `current_picks` is built; the switch (step 7)
+waits on a clean trial week.
 
 One change from the first draft: **until the switch, the sheet stays the store
 the phone waits on**, with D1 written beside it. Answering from D1 while phones
@@ -186,6 +188,16 @@ which turns a page load from about 4,000 rows read into about 80.
 Free limits as understood in October 2026: 5M rows read and 100k rows written
 a day, and 5 GB stored; Workers 100k requests a day; KV 1,000 writes a day.
 Check Cloudflare's pricing page before relying on these.
+
+### The stored fold: current_picks
+
+A page load used to mean folding the whole season's log, about 9,600 rows in
+week 7 and about 20,000 by the end. `current_picks` holds each game's folded
+pick, one row per picker per game: about 600 rows now and 1,800 at the end.
+Every save re-folds that picker's week from the log and stores it, so the
+table is always exactly the log's fold. A daily check compares the two and
+rebuilds the table from the log if they ever differ. That keeps D1's reads
+and the worker's CPU time small and flat however long the log gets.
 
 ## Steps
 

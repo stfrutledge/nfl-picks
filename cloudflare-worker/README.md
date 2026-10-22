@@ -22,6 +22,7 @@ With a D1 database bound as `PICKS_DB` (Settings > Bindings > D1), every picks s
 - **After the switch** (`PICKS_READ` = `d1`): reads come from D1, and a save is answered once D1 has it; the sheet gets its copy in the background, and a copy that fails is queued (`mirror:pending` in KV) for the cron. Deleting the variable is the rollback.
 - **D1 refusing** anything (a used-up free-plan limit included: the free plan refuses, it never bills) sends that request to the sheet, queues the save for D1 (`d1:pending`), and alerts the admin at most once an hour. The first cron run that finds D1 answering copies the queue in and says "Picks database back to normal".
 - **Usage** is counted per day in D1 (`pick_usage`); half of a free limit (2.5M rows read or 50k written) alerts the admin once a day.
+- **Reads come from `current_picks`**, each game's folded pick, kept up to date on every save, rather than folding the whole log on every page load. It is built for a season by the import, or by the cron for a season imported before the table existed, and checked against the log daily (`currentDrift` in the comparison; rebuilt if it ever differs).
 - **The daily comparison** runs once a season has been imported (`imported:<season>` in `pick_meta`) and alerts on any difference.
 
 The tables are created by the worker on first use; there is no SQL to run. `node test-worker-d1.js` runs the whole path against an in-memory SQLite.

@@ -268,11 +268,11 @@ async function check(name, fn) {
         const before = await (await get(env(), 'action=allpicks&season=2026')).json();
         assert.strictEqual(before.source, undefined, 'the sheet');
         const after = await (await get(env({ PICKS_READ: 'd1' }), 'action=allpicks&season=2026')).json();
-        assert.strictEqual(after.source, 'd1');
+        assert.strictEqual(after.source, 'd1-current', 'from the stored table the copy in built');
         assert.strictEqual(after.picks['2026_7'].Stephen.packers_lions.line, 'away');
         assert.strictEqual(after.picks['2026_7'].Stephen.packers_lions.blazin, true);
         const one = await (await get(env({ PICKS_READ: 'd1' }), 'action=picks&week=2026_7&picker=Sean')).json();
-        assert.strictEqual(one.source, 'd1');
+        assert.match(one.source, /^d1/);
         assert.strictEqual(one.picks.packers_lions.line, 'home');
     });
 
@@ -288,7 +288,7 @@ async function check(name, fn) {
     await check('the reminder job reads D1 behind the same switch, and the sheet without it', async () => {
         fresh(backup);
         await admin(env(), 'import?season=2026', 'POST');
-        assert.strictEqual((await mod.readSeasonPicks(env({ PICKS_READ: 'd1' }), 2026)).source, 'd1');
+        assert.match((await mod.readSeasonPicks(env({ PICKS_READ: 'd1' }), 2026)).source, /^d1/);
         assert.strictEqual((await mod.readSeasonPicks(env(), 2026)).source, undefined);
     });
 
@@ -365,6 +365,37 @@ async function check(name, fn) {
         assert.strictEqual(fromD1['2026_7'].Stephen.bears_saints.line, '');
     });
 
+    console.log('\nThe stored table (current_picks)');
+
+    await check('every save keeps it equal to the log, and reads come from it', async () => {
+        fresh(tricky, trickyCleared);
+        const e = env({ PICKS_READ: 'd1' });
+        await admin(e, 'import?season=2026', 'POST');
+        await post(e, { week: '2026_2', picker: 'Sean', picks: [pick('Jets', 'Dolphins', 'Jets')] });
+        await post(e, { week: '2026_7', picker: 'Stephen', picks: [pick('Packers', 'Lions', 'Packers', { blazin: true })] });
+        await settle();
+        const read = await (await get(e, 'action=allpicks&season=2026')).json();
+        assert.strictEqual(read.source, 'd1-current');
+        assert.strictEqual(read.rowsScanned, 0, 'not one log row read');
+        const compared = await mod.comparePicks(e, 2026);
+        assert.strictEqual(compared.currentDrift, 0, 'equal to the log, rule for rule');
+        assert.strictEqual(compared.differences, 0, 'and to the sheet');
+        assert.strictEqual(read.picks['2026_2'].Sean.jets_dolphins.line, 'home', 'a freeze is final there too');
+        const week = await (await get(e, 'action=picks&week=2026_7&picker=Stephen')).json();
+        assert.strictEqual(week.picks.packers_lions.blazin, true);
+    });
+
+    await check('a season copied in before the table existed gets it built by the cron', async () => {
+        fresh(backup);
+        await admin(env(), 'import?season=2026', 'POST');
+        d1.raw.prepare("DELETE FROM pick_meta WHERE k = 'current:2026'").run();
+        d1.raw.prepare('DELETE FROM current_picks').run();
+        assert.strictEqual((await (await get(env({ PICKS_READ: 'd1' }), 'action=allpicks&season=2026')).json()).source, 'd1', 'the log, until it is built');
+        const out = await mod.runPicksDbMaintenance(env(), Date.parse('2026-10-22T15:00:00Z'));
+        assert.strictEqual(out.builtCurrent, 2);
+        assert.strictEqual((await (await get(env({ PICKS_READ: 'd1' }), 'action=allpicks&season=2026')).json()).source, 'd1-current');
+    });
+
     console.log('\nThe copy in');
 
     await check('importing twice adds nothing, and it stops where the worker\'s own saves begin', async () => {
@@ -426,8 +457,14 @@ async function check(name, fn) {
         assert.strictEqual(net.fcm.length, 0);
         assert.strictEqual((await mod.runPicksDbMaintenance(env(), day + 60000)).compared, undefined, 'once a day');
 
+        // The log changed under the stored table: the check finds the drift
+        // and rebuilds the table from the log, the record...
         d1.raw.prepare("UPDATE pick_rows SET line_pick = 'Lions' WHERE picker = 'Stephen'").run();
-        const next = await mod.runPicksDbMaintenance(env(), day + 86400000);
+        const drift = await mod.runPicksDbMaintenance(env(), day + 86400000);
+        assert.strictEqual(drift.rebuiltCurrent > 0, true, 'rebuilt');
+        assert.strictEqual(net.fcm.length, 0, 'nothing for the admin');
+        // ...after which D1 really disagrees with the sheet, and the next check says so.
+        const next = await mod.runPicksDbMaintenance(env(), day + 2 * 86400000);
         assert.strictEqual(next.compared, 1);
         assert.match(net.fcm[0].title, /disagree/);
         const list = await (await admin(env(), 'compare?season=2026')).json();

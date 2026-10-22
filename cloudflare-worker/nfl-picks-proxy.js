@@ -2105,7 +2105,66 @@ const PICK_SCHEMA = [
      PRIMARY KEY (week, picker))`,
   'CREATE TABLE IF NOT EXISTS pick_usage (day TEXT PRIMARY KEY, rows_read INTEGER NOT NULL DEFAULT 0, rows_written INTEGER NOT NULL DEFAULT 0)',
   'CREATE TABLE IF NOT EXISTS pick_meta (k TEXT PRIMARY KEY, v TEXT)',
+  // Each game's pick as the log folds to it, kept up to date on every save:
+  // what a page load reads, a row per picker per game rather than the whole
+  // log (about 1,800 rows at the end of a season against about 20,000).
+  `CREATE TABLE IF NOT EXISTS current_picks (
+     season INTEGER NOT NULL, week TEXT NOT NULL, picker TEXT NOT NULL, game_key TEXT NOT NULL,
+     payload TEXT NOT NULL, ts TEXT NOT NULL,
+     PRIMARY KEY (week, picker, game_key))`,
+  'CREATE INDEX IF NOT EXISTS current_picks_season ON current_picks (season)',
 ];
+
+const CURRENT_UPSERT = `INSERT INTO current_picks (season, week, picker, game_key, payload, ts)
+  VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+  ON CONFLICT(week, picker, game_key) DO UPDATE SET payload = excluded.payload, ts = excluded.ts`;
+
+/**
+ * Re-fold one picker's week from the log and store each game's result in
+ * current_picks. Folding the whole week (one read) rather than applying the
+ * new rows on top keeps it exactly the log's fold, whatever order rows
+ * arrive in (a queued save replayed late included).
+ */
+async function refreshCurrentPicks(session, week, picker, ts) {
+  const rows = await session.all('SELECT * FROM pick_rows WHERE week = ?1 AND picker = ?2 ORDER BY ts, id', String(week), String(picker));
+  const folded = foldPickRows(rows)[String(week)]?.[String(picker)] || {};
+  await session.batch(Object.entries(folded).map(([key, payload]) =>
+    [CURRENT_UPSERT, [seasonOfPickWeek(week), String(week), String(picker), key, JSON.stringify(payload), ts]]));
+}
+
+/**
+ * Build a season's current_picks from the whole log: after the copy in, and
+ * whenever a check finds it out of step. Marks the season ready to be read
+ * from (current:<season>); until then reads fold the log.
+ */
+async function rebuildCurrentPicks(session, season, now = Date.now()) {
+  await session.ready();
+  const rows = await session.all('SELECT * FROM pick_rows WHERE season = ?1 ORDER BY ts, id', Number(season));
+  const folded = foldPickRows(rows);
+  const ts = new Date(now).toISOString();
+  const statements = [];
+  for (const [week, pickers] of Object.entries(folded)) {
+    for (const [picker, games] of Object.entries(pickers)) {
+      for (const [key, payload] of Object.entries(games)) {
+        statements.push([CURRENT_UPSERT, [Number(season), week, picker, key, JSON.stringify(payload), ts]]);
+      }
+    }
+  }
+  for (let i = 0; i < statements.length; i += D1_INSERT_CHUNK) await session.batch(statements.slice(i, i + D1_INSERT_CHUNK));
+  await session.run('INSERT INTO pick_meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v', `current:${season}`, ts);
+  return { season: Number(season), logRows: rows.length, currentRows: statements.length };
+}
+
+/** current_picks for a season, as { week: { picker: { key: payload } } }, or null if not built yet. */
+async function readCurrentPicks(session, season) {
+  const ready = await session.first('SELECT v FROM pick_meta WHERE k = ?1', `current:${season}`);
+  if (!ready) return null;
+  const picks = {};
+  for (const r of await session.all('SELECT week, picker, game_key, payload FROM current_picks WHERE season = ?1', Number(season))) {
+    ((picks[r.week] ||= {})[r.picker] ||= {})[r.game_key] = JSON.parse(r.payload);
+  }
+  return picks;
+}
 
 const PICK_INSERT = `INSERT OR IGNORE INTO pick_rows
   (ts, season, week, picker, game_key, game_id, away, home, away_spread, home_spread,
@@ -2216,6 +2275,7 @@ async function d1WriteSync(session, data, ts) {
   statements.push(['INSERT OR IGNORE INTO pick_meta (k, v) VALUES (?1, ?2)', ['liveSince', ts]]);
   await session.ready();
   await session.batch(statements);
+  if (picks.length > 0) await refreshCurrentPicks(session, week, picker, ts);
   const results = {};
   if (typeof data.cleared === 'boolean') {
     results.cleared = { message: `Cleared status for ${picker} Week ${week} set to ${data.cleared}`, cleared: data.cleared };
@@ -2324,12 +2384,14 @@ function foldPickRows(rows) {
 }
 
 /** The Apps Script's getAllPicks(season), from D1. */
-async function d1AllPicks(session, season) {
+async function d1AllPicks(session, season, { fromLog = false } = {}) {
   await session.ready();
-  const rows = season
+  // current_picks once it is built for the season; the log folded otherwise.
+  const current = season && !fromLog ? await readCurrentPicks(session, season) : null;
+  const rows = current ? [] : season
     ? await session.all('SELECT * FROM pick_rows WHERE season = ?1 ORDER BY ts, id', season)
     : await session.all('SELECT * FROM pick_rows ORDER BY ts, id');
-  const picks = foldPickRows(rows);
+  const picks = current || foldPickRows(rows);
   const cleared = {};
   for (const c of await session.all('SELECT week, picker FROM pick_cleared WHERE cleared = 1')) {
     if (season && seasonOfPickWeek(c.week) !== season) continue;
@@ -2337,15 +2399,25 @@ async function d1AllPicks(session, season) {
   }
   return {
     picks, cleared, weekCount: Object.keys(picks).length,
-    season: season || 'all', rowsScanned: rows.length, rowsUsed: rows.length, source: 'd1',
+    season: season || 'all', rowsScanned: rows.length, rowsUsed: rows.length,
+    source: current ? 'd1-current' : 'd1',
   };
 }
 
 /** The Apps Script's getPicksForWeek(week, picker), from D1. */
 async function d1WeekPicks(session, week, picker) {
   await session.ready();
-  const rows = await session.all('SELECT * FROM pick_rows WHERE week = ?1 AND picker = ?2 ORDER BY ts, id', String(week), String(picker));
-  const picks = foldPickRows(rows)[String(week)]?.[String(picker)] || {};
+  const season = seasonOfPickWeek(week);
+  let picks;
+  if (await session.first('SELECT v FROM pick_meta WHERE k = ?1', `current:${season}`)) {
+    picks = {};
+    for (const r of await session.all('SELECT game_key, payload FROM current_picks WHERE week = ?1 AND picker = ?2', String(week), String(picker))) {
+      picks[r.game_key] = JSON.parse(r.payload);
+    }
+  } else {
+    const rows = await session.all('SELECT * FROM pick_rows WHERE week = ?1 AND picker = ?2 ORDER BY ts, id', String(week), String(picker));
+    picks = foldPickRows(rows)[String(week)]?.[String(picker)] || {};
+  }
   const cleared = await session.first('SELECT cleared FROM pick_cleared WHERE week = ?1 AND picker = ?2', String(week), String(picker));
   return { week, picker, picks, count: Object.keys(picks).length, cleared: Boolean(cleared?.cleared), source: 'd1' };
 }
@@ -2560,7 +2632,8 @@ async function importPicksFromSheet(env, season, now = Date.now()) {
     await session.batch(cleared);
     await session.run(`INSERT INTO pick_meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v`,
       `imported:${season}`, new Date(now).toISOString());
-    return { season: Number(season), sheetRows: (data.rows || []).length, copied: rows.length, inserted, cleared: cleared.length, liveSince: live?.v || null };
+    const current = await rebuildCurrentPicks(session, season, now);
+    return { season: Number(season), sheetRows: (data.rows || []).length, copied: rows.length, inserted, cleared: cleared.length, liveSince: live?.v || null, currentRows: current.currentRows };
   } finally {
     await session.close();
   }
@@ -2589,8 +2662,22 @@ async function comparePicks(env, season) {
   const sheet = await appsScriptGet(env, { action: 'allpicks', season: String(season) });
   const session = d1Session(env);
   let d1;
+  let currentDrift = 0;
   try {
     d1 = await d1AllPicks(session, Number(season));
+    // The stored table against the log it is kept from: they must agree.
+    if (d1.source === 'd1-current') {
+      const log = await d1AllPicks(session, Number(season), { fromLog: true });
+      for (const week of new Set([...Object.keys(log.picks), ...Object.keys(d1.picks)])) {
+        for (const picker of new Set([...Object.keys(log.picks[week] || {}), ...Object.keys(d1.picks[week] || {})])) {
+          const a = log.picks[week]?.[picker] || {};
+          const b = d1.picks[week]?.[picker] || {};
+          for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+            if (JSON.stringify(a[key] ?? null) !== JSON.stringify(b[key] ?? null)) currentDrift++;
+          }
+        }
+      }
+    }
   } finally {
     await session.close();
   }
@@ -2612,7 +2699,10 @@ async function comparePicks(env, season) {
     const cb = Object.keys(d1.cleared[week] || {}).sort().join(',');
     if (ca !== cb) differences.push({ week, cleared: { sheet: ca, d1: cb } });
   }
-  return { season: Number(season), differences: differences.length, sample: differences.slice(0, 40), sheetRows: sheet.rowsUsed, d1Rows: d1.rowsUsed };
+  return {
+    season: Number(season), differences: differences.length, sample: differences.slice(0, 40),
+    sheetRows: sheet.rowsUsed, d1Source: d1.source, currentDrift,
+  };
 }
 
 /** The season by the calendar, as the site's (rolls over on July 1st). */
@@ -2682,12 +2772,22 @@ async function runPicksDbMaintenance(env, now = Date.now()) {
     // The daily comparison, for a season already copied in.
     const season = seasonFor(now);
     const imported = await session.first('SELECT v FROM pick_meta WHERE k = ?1', `imported:${season}`);
+    // A season copied in before current_picks existed gets it built here.
+    if (imported && !(await session.first('SELECT v FROM pick_meta WHERE k = ?1', `current:${season}`))) {
+      out.builtCurrent = (await rebuildCurrentPicks(session, season, now)).currentRows;
+    }
     if (imported && env.NOTIFY_STATE && env.APPS_SCRIPT_URL) {
       const last = JSON.parse(await env.NOTIFY_STATE.get(PICKS_COMPARED_KEY) || 'null');
       if (last?.day !== utcDay(now)) {
         const result = await comparePicks(env, season);
-        await env.NOTIFY_STATE.put(PICKS_COMPARED_KEY, JSON.stringify({ day: utcDay(now), at: now, differences: result.differences }));
+        await env.NOTIFY_STATE.put(PICKS_COMPARED_KEY, JSON.stringify({ day: utcDay(now), at: now, differences: result.differences, currentDrift: result.currentDrift }));
         out.compared = result.differences;
+        // The stored table out of step with its log: rebuilt from the log,
+        // which is the record. Logged, and nothing for the admin to do.
+        if (result.currentDrift > 0) {
+          console.error(`[d1] current_picks out of step on ${result.currentDrift} picks: rebuilt`);
+          out.rebuiltCurrent = (await rebuildCurrentPicks(session, season, now)).currentRows;
+        }
         if (result.differences > 0 && env.FCM_SERVICE_ACCOUNT) {
           const first = result.sample[0];
           await alertAdmin(env, now, 'Picks database and sheet disagree',
