@@ -5850,11 +5850,30 @@ body.standings-provisional #records-analysis-section {
     display: none;
 }
 
+/* The Live tab's table, over the same window: its first paint is this
+   device's saved picks, short anything picked since its last visit. */
+#live-section .standings-table-container {
+    position: relative;
+}
+
+body.live-provisional #live-section .standings-table-container {
+    min-height: 180px;
+}
+
+body.live-provisional #as-is-standings-table {
+    opacity: 0.2;
+}
+
+#as-is-standings-table {
+    transition: opacity 0.25s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .provisional-spinner { animation: none; }
     #leaderboard,
     #standings-table,
-    #playoff-standings-table { transition: none; }
+    #playoff-standings-table,
+    #as-is-standings-table { transition: none; }
 }
 
 /* ===== PLAYOFF STANDINGS SECTION ===== */

@@ -6381,6 +6381,7 @@ function renderLiveTab() {
     }
 
     renderAsIsStandings(liveSubcategory);
+    updateProvisionalIndicator();
     // The game boxes follow the record: starred games, every game with a line
     // pick on it, or every game with a winner picked.
     renderBlazinGameBoxes(liveSubcategory);
@@ -7653,13 +7654,17 @@ function calculatePlayoffStats() {
 /**
  * Show or clear the "still loading" marking on the standings.
  *
- * Driven by standingsProvisional, and scoped to the Standings tab - every
- * other tab either reads archived data or shows the current week only, so
- * neither is waiting on the background block.
+ * Driven by standingsProvisional, and scoped to the Standings tab and the
+ * Live tab's table. Both count every pick, and the first paint reads this
+ * device's saved copy, which is short anything picked since its last visit
+ * until the backup read lands. The other tabs read archived data or the
+ * current week only, so neither is waiting on the background block.
  */
 function updateProvisionalIndicator() {
-    const show = standingsProvisional && currentCategory === 'standings';
-    document.body.classList.toggle('standings-provisional', show);
+    const onLive = currentCategory === 'live';
+    const show = standingsProvisional && (currentCategory === 'standings' || onLive);
+    document.body.classList.toggle('standings-provisional', show && !onLive);
+    document.body.classList.toggle('live-provisional', show && onLive);
 
     const overlay = document.getElementById('provisional-overlay');
     if (!overlay) return;
@@ -7669,8 +7674,10 @@ function updateProvisionalIndicator() {
     // Moved into the panel holding whichever standings table is on screen, so
     // the circle sits over that table rather than over the middle of the
     // window. The playoff table lives in its own section.
-    const host = document.querySelector('#playoff-standings-section:not(.hidden) .standings-panel')
-        || document.getElementById('standings-panel');
+    const host = onLive
+        ? document.querySelector('#live-section .standings-table-container')
+        : document.querySelector('#playoff-standings-section:not(.hidden) .standings-panel')
+            || document.getElementById('standings-panel');
     if (host && overlay.parentElement !== host) host.appendChild(overlay);
 }
 
