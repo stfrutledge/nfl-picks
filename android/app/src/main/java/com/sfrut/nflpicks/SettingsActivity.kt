@@ -349,6 +349,8 @@ class SettingsActivity : ComponentActivity() {
 
                 if (NflPicksApp.pushConfigured) NotificationChoices()
 
+                TimeZoneChoice()
+
                 WeatherChoice()
 
                 // Anyone can choose Stephen - there are no logins - so the
@@ -456,6 +458,19 @@ class SettingsActivity : ComponentActivity() {
             Body("Temperatures in Game Details.")
             PickerOption("Fahrenheit (°F)", selected = unit == "F") { unit = "F"; prefs.temperatureUnit = "F" }
             PickerOption("Celsius (°C)", selected = unit == "C") { unit = "C"; prefs.temperatureUnit = "C" }
+        }
+    }
+
+    /** The time zone for every kickoff time on the site, in the picker list's style. */
+    @Composable
+    private fun TimeZoneChoice() {
+        var zone by remember { mutableStateOf(prefs.timeZone) }
+        Card {
+            Label("Time zone")
+            Body("Kickoff times and every other time on the site.")
+            TIME_ZONES.forEach { option ->
+                PickerOption(option.name, selected = zone == option.id) { zone = option.id; prefs.timeZone = option.id }
+            }
         }
     }
 

@@ -82,6 +82,16 @@ class Prefs(context: Context) {
         get() = if (prefs.getString("temperatureUnit", "F") == "C") "C" else "F"
         set(value) = prefs.edit().putString("temperatureUnit", if (value == "C") "C" else "F").apply()
 
+    /**
+     * The time zone the site draws kickoffs in, an id from TIME_ZONES. Eastern
+     * by default, as the site has always shown them; the page asks for it as
+     * it draws (Bridge.timeZone) and is redrawn when Settings changes it.
+     */
+    var timeZone: String
+        get() = prefs.getString("timeZone", null)?.takeIf { id -> TIME_ZONES.any { it.id == id } }
+            ?: TIME_ZONES.first().id
+        set(value) = prefs.edit().putString("timeZone", value).apply()
+
     /** Whether Settings has already shown the system's permission prompt. */
     var askedForNotifications: Boolean
         get() = prefs.getBoolean("askedForNotifications", false)

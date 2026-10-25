@@ -2,6 +2,50 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry when something players will notice ships. Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-10-25",
+      "items": [
+        "The app's Settings has a Time zone choice (app version 1.17). Kickoff times and the times on the line charts show in the zone you pick. Eastern stays the default."
+      ]
+    },
+    {
+      "date": "2026-10-24",
+      "items": [
+        "The spread chart in Game Details marks when you made your pick and the line you took. The \"Picked at\" note on the game card is gone.",
+        "Fixed: a big line move could push the Blazin' 5 star off the edge of a game card."
+      ]
+    },
+    {
+      "date": "2026-10-22",
+      "items": [
+        "The Live tab's standings table fades under a spinner until everyone's latest picks have loaded, so it no longer shows old records for a few seconds."
+      ]
+    },
+    {
+      "date": "2026-10-21",
+      "items": [
+        "Game Details: the Back button closes the popup instead of leaving the page or the app, and team records are back in the header.",
+        "The game list no longer blinks and redraws several times as it loads.",
+        "Fixed: History's Blazin' 5 By Spread table could be sorted only once."
+      ]
+    },
+    {
+      "date": "2026-10-20",
+      "items": [
+        "New Game Details popup: tap the day on a game card's header. It has tabs for Betting (splits, the line since it opened, TV and weather), Matchup (records against the spread, each team's last five, head to head), Players (injuries and season leaders) and Picks (everyone's pick on the game, and your record with each team).",
+        "Line charts: tap Spread or Total in Game Details to see how the line moved through the week.",
+        "Lines now update from DraftKings every 15 minutes.",
+        "Betting splits: tap a game card to see where the public's bets and money are going.",
+        "The app's Settings can show weather in °F or °C."
+      ]
+    },
+    {
+      "date": "2026-10-18",
+      "items": [
+        "Fixed: a pick made right before closing the app could stay on your phone and not reach the group until you opened it again.",
+        "Insights has a 0-5 Blazin' 5 Weeks card next to the 5-0 one."
+      ]
+    },
+    {
       "date": "2026-10-15",
       "items": [
         "Fixed: automatic notifications stopped when ESPN began turning away the server's requests, so the Thursday pick reminder didn't go out. They're back.",

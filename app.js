@@ -832,6 +832,52 @@ function formatGameTime(dateString) {
     }) + ' ET';
 }
 
+// The time zones kickoffs can be drawn in, chosen in the Android app's Settings
+// (1.17+) and read through window.NFLPicksApp.timeZone(), as the °F/°C setting
+// is. A browser, or an older app, shows ET. Only what is drawn changes:
+// game.day and game.time stay in ET, because the primetime check and the
+// week's days are read off them. Keep the ids in step with TimeZones.kt.
+const TIME_ZONES = [
+    { id: 'America/New_York', label: 'ET', name: 'Eastern' },
+    { id: 'America/Chicago', label: 'CT', name: 'Central' },
+    { id: 'America/Denver', label: 'MT', name: 'Mountain' },
+    { id: 'America/Phoenix', label: 'AZ', name: 'Arizona' },
+    { id: 'America/Los_Angeles', label: 'PT', name: 'Pacific' },
+    { id: 'America/Anchorage', label: 'AK', name: 'Alaska' },
+    { id: 'Pacific/Honolulu', label: 'HI', name: 'Hawaii' },
+    { id: 'Europe/London', label: 'UK', name: 'UK' },
+    { id: 'Europe/Paris', label: 'CET', name: 'Central Europe' }
+];
+function displayTimeZone() {
+    let id = null;
+    try {
+        id = window.NFLPicksApp?.timeZone?.();
+    } catch (e) { /* an app older than 1.17 */ }
+    return TIME_ZONES.find(zone => zone.id === id) || TIME_ZONES[0];
+}
+
+function kickoffDate(game) {
+    const at = game.kickoff ? new Date(game.kickoff) : null;
+    return at && !Number.isNaN(at.getTime()) ? at : null;
+}
+
+/** A game's kickoff time as drawn, "1:00 PM ET" or "10:00 AM PT". */
+function displayGameTime(game) {
+    const zone = displayTimeZone();
+    const at = kickoffDate(game);
+    if (!at || (zone === TIME_ZONES[0] && game.time)) return game.time || '';
+    return at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: zone.id })
+        + ' ' + zone.label;
+}
+
+/** A game's kickoff day as drawn, "Sunday": a late game can be Monday in Europe. */
+function displayGameDay(game) {
+    const zone = displayTimeZone();
+    const at = kickoffDate(game);
+    if (!at || (zone === TIME_ZONES[0] && game.day)) return game.day || '';
+    return at.toLocaleDateString('en-US', { weekday: 'long', timeZone: zone.id });
+}
+
 /**
  * Extract team nickname from full team name
  * e.g., "Kansas City Chiefs" -> "Chiefs"
@@ -2841,6 +2887,15 @@ async function openFromApp(target, week) {
 }
 
 /**
+ * The app's Settings changed the time zone (1.17+): redraw what is on screen,
+ * whose kickoff times were drawn in the old one. renderGames redraws an open
+ * Game Details popup too.
+ */
+function appTimeZoneChanged() {
+    renderActiveTab();
+}
+
+/**
  * Run one of the admin actions the app's Settings moved off the picks.
  *
  * An app that can take the answer (adminResult, app 1.5+) stays in Admin
@@ -3613,9 +3668,9 @@ function renderHistoryWeek(week) {
         return `
             <div class="${cardClasses}" data-game-id="${game.id}">
                 <div class="game-header">
-                    <span class="game-time">${game.time || ''}</span>
+                    <span class="game-time">${displayGameTime(game)}</span>
                     ${statusBadge}
-                    <span class="game-day">${game.day || ''}</span>
+                    <span class="game-day">${displayGameDay(game)}</span>
                 </div>
                 ${gameStatusDisplay}
 
@@ -6500,7 +6555,7 @@ function asIsPickDetail(picker, category = liveSubcategory) {
         // half time.
         const status = settled ? 'Final'
             : isGameInProgress(game) ? liveClockLabel(getLiveGameStatus(game))
-            : (game.time || '');
+            : displayGameTime(game);
         const matchup = result
             ? `${game.away} ${result.awayScore} @ ${game.home} ${result.homeScore}`
             : `${game.away} @ ${game.home}`;
@@ -6757,7 +6812,7 @@ function renderBlazinGameBox({ game, sides }, weekResults, category = liveSubcat
     let state = 'upcoming';
     // A scheduled game keeps the app's own kickoff time, which is in the
     // reader's zone; ESPN's short form for one is a US time string.
-    let status = game.time ? `${game.day} ${game.time}` : 'Scheduled';
+    let status = game.time ? `${displayGameDay(game)} ${displayGameTime(game)}` : 'Scheduled';
     if (inProgress) {
         state = 'in-progress';
         status = detail?.statusDetail
@@ -10765,8 +10820,8 @@ const SHORT_DAY_NAMES = {
 
 /** "8:15 PM ET, Thur." - the time and the day, in the header's left corner. */
 function cardKickoffLabel(game) {
-    const day = SHORT_DAY_NAMES[game.day] || game.day || '';
-    return [game.time, day].filter(Boolean).join(', ');
+    const day = SHORT_DAY_NAMES[displayGameDay(game)] || displayGameDay(game);
+    return [displayGameTime(game), day].filter(Boolean).join(', ');
 }
 
 // The game whose details are open, by pickKey, or null. The popup is redrawn
@@ -10864,11 +10919,12 @@ function viewerPickMoment(game) {
     return side && moment?.side === side && Number.isFinite(moment.at) ? moment : null;
 }
 
-/** "Tue 9:15 AM", in ET like the rest of the site. */
+/** "Tue 9:15 AM", in the reader's time zone like the rest of the site. */
 function lineMoveTime(at) {
     const date = new Date(at);
-    const day = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' });
-    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+    const timeZone = displayTimeZone().id;
+    const day = date.toLocaleDateString('en-US', { weekday: 'short', timeZone });
+    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone });
     return `${day} ${time}`;
 }
 
@@ -10923,7 +10979,7 @@ const LINE_CHART = { w: 400, h: 170, left: 40, right: 48, top: 14, bottom: 26 };
 
 /**
  * The chart for one line: hairline grid at clean half-point ticks, day ticks
- * along the bottom in ET, the step line in --chart-line with an 8px dot (and
+ * along the bottom in the reader's zone, the step line in --chart-line with an 8px dot (and
  * a 2px surface ring) at each move, and the current value at the right end.
  * The points ride on data-points for the crosshair (showLineChartPoint).
  */
@@ -10958,7 +11014,7 @@ function lineChartHtml(game, which, side) {
         grid.push(`<line class="gd-chart-grid" x1="${c.left}" x2="${c.w - c.right}" y1="${gy}" y2="${gy}"/>`
             + `<text class="gd-chart-tick" x="${c.left - 6}" y="${gy}" text-anchor="end" dominant-baseline="middle">${label(+v.toFixed(1))}</text>`);
     }
-    // A tick at each ET midnight the line crosses, named for the day it starts.
+    // A tick at each midnight (the reader's zone) the line crosses, named for the day it starts.
     const dayTicks = [];
     let lastDay = lineMoveTime(t0).split(' ')[0];
     for (let t = t0 + 3600000; t < t1; t += 3600000) {
@@ -11207,8 +11263,8 @@ function detailsTvHtml(game) {
 function detailsKickoff(game) {
     const at = game.kickoff ? new Date(game.kickoff) : null;
     if (!at || Number.isNaN(at.getTime())) return [game.day, game.time].filter(Boolean).join(' · ');
-    const date = at.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
-    return `${date} · ${game.time || formatGameTime(game.kickoff)}`;
+    const date = at.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: displayTimeZone().id });
+    return `${date} · ${displayGameTime(game)}`;
 }
 
 /** "#0b162a" -> [11, 22, 42]; anything unreadable is mid grey. */

@@ -90,8 +90,16 @@ class MainActivity : ComponentActivity() {
      * page is asked to run them, so they behave and report exactly as the
      * buttons do in a browser.
      */
+    /** The time zone the page last drew in, to tell when Settings changed it. */
+    private var zoneShown = ""
+
     private val settings =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            // The cards were drawn in the old zone; the page redraws in the new one.
+            if (prefs.timeZone != zoneShown) {
+                zoneShown = prefs.timeZone
+                web.evaluateJavascript("window.appTimeZoneChanged && appTimeZoneChanged()", null)
+            }
             val action = result.data?.getStringExtra(SettingsActivity.EXTRA_ADMIN_ACTION)
                 ?.takeIf { it in SettingsActivity.ADMIN_ACTIONS } ?: return@registerForActivityResult
             web.evaluateJavascript("window.runAppAdminAction && runAppAdminAction('$action')", null)
@@ -280,6 +288,7 @@ class MainActivity : ComponentActivity() {
 
     private fun load() {
         loadedPicker = prefs.picker
+        zoneShown = prefs.timeZone
         pageReady = false
         if (!online()) {
             loadFromCache(OFFLINE)
@@ -319,6 +328,10 @@ class MainActivity : ComponentActivity() {
         /** "F" or "C", for the temperatures in the site's Game Details (Settings > Weather). */
         @JavascriptInterface
         fun temperatureUnit(): String = prefs.temperatureUnit
+
+        /** The IANA id the site draws kickoff times in (Settings > Time zone). */
+        @JavascriptInterface
+        fun timeZone(): String = prefs.timeZone
 
         /** Tells the page that Settings has the admin actions, so it can drop its own buttons. */
         @JavascriptInterface

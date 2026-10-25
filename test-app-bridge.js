@@ -53,6 +53,7 @@ function load(bridge) {
         + '\nconst HISTORICAL_DATA_SEASON=2026,HISTORICAL_GAMES={},HISTORICAL_RESULTS={},HISTORICAL_PICKS={};\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
         + `;return { setupAppSettingsButton, runAppAdminAction, appAdminInfo, NFL_GAMES_BY_WEEK,
+            displayGameTime, displayGameDay, cardKickoffLabel, detailsKickoff,
             __setState: s => { if ('allPicks' in s) allPicks = s.allPicks; if ('currentWeek' in s) currentWeek = s.currentWeek; } };`;
     const api = new Function('window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
         'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date', src)(
@@ -154,6 +155,35 @@ async function acheck(name, fn) {
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
+
+section('Time zone (Settings > Time zone, app 1.17+)');
+
+// Sunday night in ET is already Monday in the UK.
+const sundayNight = { kickoff: '2026-10-26T00:20:00Z', day: 'Sunday', time: '8:20 PM ET' };
+
+check('a browser shows ET, from the stored day and time', () => {
+    const { api } = load(null);
+    assert.strictEqual(api.cardKickoffLabel(sundayNight), '8:20 PM ET, Sun.');
+    assert.strictEqual(api.detailsKickoff(sundayNight), 'Sunday, Oct 25 · 8:20 PM ET');
+});
+
+check('an app older than 1.17 (no timeZone) shows ET', () => {
+    const { api } = load({ temperatureUnit: () => 'F' });
+    assert.strictEqual(api.cardKickoffLabel(sundayNight), '8:20 PM ET, Sun.');
+});
+
+check('the chosen zone moves the time, the label and the day', () => {
+    const pacific = load({ timeZone: () => 'America/Los_Angeles' }).api;
+    assert.strictEqual(pacific.cardKickoffLabel(sundayNight), '5:20 PM PT, Sun.');
+    const uk = load({ timeZone: () => 'Europe/London' }).api;
+    assert.strictEqual(uk.cardKickoffLabel(sundayNight), '12:20 AM UK, Mon.');
+    assert.strictEqual(uk.detailsKickoff(sundayNight), 'Monday, Oct 26 · 12:20 AM UK');
+});
+
+check('an id the site does not know falls back to ET', () => {
+    const { api } = load({ timeZone: () => 'Mars/Olympus_Mons' });
+    assert.strictEqual(api.displayGameTime(sundayNight), '8:20 PM ET');
+});
 
 (async () => {
     await acheck('export copies the picks and reports it, without clicking anything', async () => {

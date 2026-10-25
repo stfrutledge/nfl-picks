@@ -57,7 +57,10 @@ three things a web page cannot do:
 The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
 `openSettings()`, `hasAdminTools()`, and from 1.16 `temperatureUnit()`, "F" or
 "C" from Settings > Weather, which the site's Game Details asks each time it
-draws a temperature; an older app or a browser shows °F). The site's side is
+draws a temperature; an older app or a browser shows °F; and from 1.17
+`timeZone()`, the IANA id from Settings > Time zone that every kickoff time is
+drawn in, ET when it is missing or unknown. Settings returning with a new zone
+calls the page's `appTimeZoneChanged()` to redraw). The site's side is
 `setupAppSettingsButton()`: the header gear shows only when that bridge
 exists, and the page's admin buttons are hidden (`.app-admin-tools`) only when
 `hasAdminTools()` says so. The site and the APK ship separately, so a site
