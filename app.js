@@ -10761,6 +10761,9 @@ async function loadBettingSplits() {
         renderGames();
         // The line history on the same beat, for an open Game Details.
         if (gameDetailsKey) loadLineHistory(currentWeek, { force: true });
+        // And the final splits, for a game that kicked off with its popup open.
+        const open = gameDetailsKey && gameForDetails(gameDetailsKey);
+        if (open && splitsAreFinal(open)) loadSavedSplits(currentSeason);
     } catch (error) {
         console.warn('[Splits] Could not load betting splits:', error.message);
     } finally {
@@ -10831,9 +10834,14 @@ let gameDetailsKey = null;
  * book's sides swapped back.
  */
 function splitsForGame(game) {
-    const direct = bettingSplits[pickKey(game)];
+    return orientSplits(bettingSplits, game);
+}
+
+/** One game's entry in a map of splits by game key, either way round. */
+function orientSplits(byKey, game) {
+    const direct = byKey[pickKey(game)];
     if (direct) return direct;
-    const flipped = bettingSplits[pickKey({ ...game, away: game.home, home: game.away })];
+    const flipped = byKey[pickKey({ ...game, away: game.home, home: game.away })];
     if (!flipped) return null;
     const out = {};
     for (const [book, sides] of Object.entries(flipped)) {
@@ -10842,6 +10850,54 @@ function splitsForGame(game) {
             : sides;
     }
     return out;
+}
+
+/**
+ * Whether a game's splits are past: kicked off, locked, or in a past week or
+ * season. Live numbers then are in-game betting, so the popup shows the
+ * saved final ones instead.
+ */
+function splitsAreFinal(game) {
+    const live = getLiveGameStatus(game);
+    const started = Boolean(live && (live.status === 'STATUS_FINAL' || live.completed
+        || LIVE_IN_PROGRESS_STATUSES.includes(live.status)));
+    return isGameLocked(game) || started || isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK;
+}
+
+// ---------------------------------------------------------------------------
+// Final splits, from the Splits tab: the cron writes each game's numbers
+// there on its last run before kickoff (worker's recordFinalSplits). Read by
+// season through /sync, when a popup opens on a started game and with the
+// live splits while one is open, at most every SAVED_SPLITS_MAX_AGE_MS.
+// Stored from week 6 of 2026 (the Sunday night game), so earlier games have none.
+// ---------------------------------------------------------------------------
+const SAVED_SPLITS_MAX_AGE_MS = 5 * 60 * 1000;
+const SAVED_SPLITS_FIRST_SEASON = 2026;
+const savedSplits = new Map();   // season -> { at, weeks: { 'YYYY_W': { gameKey: splits } } }
+const savedSplitsInFlight = new Set();
+
+async function loadSavedSplits(season, { force = false } = {}) {
+    if (season < SAVED_SPLITS_FIRST_SEASON || savedSplitsInFlight.has(season)) return;
+    const have = savedSplits.get(season);
+    if (have && !force && Date.now() - have.at < SAVED_SPLITS_MAX_AGE_MS) return;
+    savedSplitsInFlight.add(season);
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/sync?action=splits&season=${season}`);
+        if (!response.ok) throw new Error(`worker answered ${response.status}`);
+        const data = await response.json();
+        savedSplits.set(season, { at: Date.now(), weeks: data.splits || {} });
+        refreshGameDetails();
+    } catch (error) {
+        console.warn('[Splits] Could not load the final splits:', error.message);
+    } finally {
+        savedSplitsInFlight.delete(season);
+    }
+}
+
+/** This game's last splits before kickoff, oriented to it, or null. */
+function savedSplitsForGame(game) {
+    const week = savedSplits.get(currentSeason)?.weeks?.[`${currentSeason}_${currentWeek}`];
+    return week ? orientSplits(week, game) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -11294,7 +11350,9 @@ function splitBarColours(game) {
  * the line in the standings tables' style, and TV and weather as chips.
  * Anything a game has no data for is left out.
  *
- * The splits only before kickoff: after it they are live betting. The popup
+ * The live splits only before kickoff: after it they are live betting, so a
+ * started game shows the last ones taken before it, from the Splits tab,
+ * titled "Final splits before kickoff". The popup
  * replaced, in October 2026, a plain grid that "looked sad" beside the rest
  * of the site; before that came an inline panel opened by tapping the card,
  * and before that the splits sat inside the Line Pick buttons.
@@ -11303,8 +11361,8 @@ function gameDetailsHtml(game) {
     const live = getLiveGameStatus(game);
     const final = Boolean(live && (live.status === 'STATUS_FINAL' || live.completed));
     const started = Boolean(live && (final || LIVE_IN_PROGRESS_STATUSES.includes(live.status)));
-    const showSplits = !(isGameLocked(game) || started || isHistoricalSeason() || currentWeek < CURRENT_NFL_WEEK);
-    const splits = showSplits ? splitsForGame(game) : null;
+    const finalSplits = splitsAreFinal(game);
+    const splits = finalSplits ? savedSplitsForGame(game) : splitsForGame(game);
     const books = SPLITS_BOOKS.filter(([book]) => splits?.[book]?.away && splits[book].home);
 
     const team = side => {
@@ -11349,7 +11407,7 @@ function gameDetailsHtml(game) {
         return `
             <section class="gd-section">
                 <div class="gd-section-head">
-                    <h4>Betting Splits</h4>
+                    <h4>${finalSplits ? 'Final splits before kickoff' : 'Betting Splits'}</h4>
                     <span>${name}${count > 0 ? ` · ${count.toLocaleString('en-US')} bets` : ''}</span>
                 </div>
                 ${bar('% of money on the spread', 'handle', book)}
@@ -11846,6 +11904,7 @@ function openGameDetails(key) {
     }
     loadVenueForecast(game);
     loadLineHistory(currentWeek);
+    if (splitsAreFinal(game)) loadSavedSplits(currentSeason);
     // Again when the log does not have the side held now: a pick changed
     // since the last load (it reaches the log a few seconds after the tap).
     const held = getPicksForGame(getPickerPicksForWeek(currentWeek, currentPicker), game)?.line;

@@ -689,10 +689,49 @@ function section(name) { console.log(`\n${name}`); }
         assert.match(bare, /No betting numbers for this game yet/, 'nothing at all: the Betting tab says so');
     });
 
-    await check('after kickoff: no splits (live betting by then), and the rest still shows', () => {
+    await check('after kickoff: no live splits (live betting by then), and the rest still shows', () => {
         const html = site.gameDetailsHtml({ ...game, kickoff: '2000-01-01T00:00:00Z' });
-        assert.doesNotMatch(html, /Betting Splits/);
+        assert.doesNotMatch(html, /Betting Splits|Final splits before kickoff/, 'nothing saved: no splits at all');
         assert.match(html, /gd-record/, 'the records still show once it has started');
+    });
+
+    await check('after kickoff: the saved final splits, titled as final, and never the live ones', () => {
+        site.__setSavedSplits({ patriots_bears: {
+            away: 'Patriots', home: 'Bears', kickoff: '2000-01-01T00:00:00Z', takenAt: '1999-12-31T23:45:00Z',
+            an: { away: { line: 3, handle: 63, bets: 68 }, home: { line: -3, handle: 37, bets: 32 } }, dk: null, circa: null
+        } });
+        const html = site.gameDetailsHtml({ ...game, kickoff: '2000-01-01T00:00:00Z' });
+        assert.match(html, /<h4>Final splits before kickoff<\/h4>/);
+        assert.doesNotMatch(html, /Betting Splits/);
+        assert.match(text(html.split('class="gd-split"')[1]), /% of money on the spread NE 63% CHI 37%/, 'the saved numbers, not the live 74/26');
+        assert.doesNotMatch(text(html), /\d bets/, 'no bet count: the sheet does not keep it');
+        // Before kickoff the live ones still show, whatever is saved.
+        assert.match(site.gameDetailsHtml(game), /<h4>Betting Splits<\/h4>/);
+        site.__clearSavedSplits();
+    });
+
+    await check('final splits saved the other way round are swapped back', () => {
+        site.__setSavedSplits({ bears_patriots: {
+            an: { away: { line: -3, handle: 37, bets: 32 }, home: { line: 3, handle: 63, bets: 68 } }, dk: null, circa: null
+        } });
+        const html = site.gameDetailsHtml({ ...game, kickoff: '2000-01-01T00:00:00Z' });
+        assert.match(text(html.split('class="gd-split"')[1]), /% of money on the spread NE 63% CHI 37%/);
+        site.__clearSavedSplits();
+    });
+
+    await check('opening a started game reads the Splits tab through /sync, then keeps it a few minutes', async () => {
+        const asked = [];
+        site.__net.fetch = async url => { asked.push(String(url)); return { ok: true, json: async () => ({ splits: {} }) }; };
+        site.__setGames([{ ...game, kickoff: '2000-01-01T00:00:00Z' }]);
+        for (let i = 0; i < 2; i++) {
+            site.openGameDetails('patriots_bears');
+            await new Promise(r => setTimeout(r, 0));
+            site.closeGameDetails();
+        }
+        const reads = asked.filter(u => /\/sync\?action=splits&season=\d{4}$/.test(u));
+        assert.strictEqual(reads.length, 1, 'one read, then the cache: ' + asked.join(', '));
+        site.__net.fetch = async () => ({ ok: false, json: async () => ({}) });
+        site.__clearSavedSplits();
     });
 
     await check('no Movement table: the charts show the history', () => {
@@ -900,6 +939,8 @@ function loadSite() {
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
         + `;return ({ gameDetailsHtml, cardKickoffLabel, openGameDetails, closeGameDetails, refreshGameDetails, setupGameDetailsModal, loadVenueForecast, toggleLineChart, lineChartPoints, espnMoneyline, refreshSheetLines, __games: () => NFL_GAMES_BY_WEEK[currentWeek],
             __setSplits: s => { bettingSplits = s; },
+            __setSavedSplits: games => { savedSplits.set(currentSeason, { at: Date.now(), weeks: { [currentSeason + '_' + currentWeek]: games } }); },
+            __clearSavedSplits: () => { savedSplits.clear(); },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
             __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; },
             __setLineHistory: games => { lineHistory.set(currentWeek, { at: Date.now(), games }); },
