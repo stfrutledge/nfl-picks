@@ -3368,6 +3368,8 @@ footer a:hover {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
     padding-top: 12px;
     margin-top: 12px;
     border-top: 1px solid var(--border-color);
@@ -8068,6 +8070,17 @@ body.live-provisional #as-is-standings-table {
     .freeze-state,
     .freeze-btn {
         font-size: 0.63rem;
+    }
+
+    /* "Picked at Browns -1.5 -> now Browns -2.5" is wider than the room
+       beside the location, Lock Pick and the B5 star, and pushed the star
+       off the card. On a phone it takes its own row under them. */
+    .game-footer .freeze-state.drifted {
+        order: 1;
+        flex-basis: 100%;
+        justify-content: center;
+        white-space: normal;
+        text-align: center;
     }
 }
 
