@@ -7497,6 +7497,45 @@ body.live-provisional #as-is-standings-table {
     cursor: pointer;
 }
 
+/* A row that changed place on a score: it slides there (slideAsIsRows) and
+   its cells flash green for a climb, red for a fall, then fade back. The
+   flash is opaque while the rows are passing each other, and a climber
+   passes over a faller, so two crossing rows never show through each other. */
+.as-is-row.as-is-climb,
+.as-is-row.as-is-fall {
+    position: relative;
+    z-index: 1;
+}
+
+.as-is-row.as-is-climb {
+    z-index: 2;
+}
+
+.as-is-row.as-is-climb td {
+    animation: as-is-climb 2.4s ease-out;
+}
+
+.as-is-row.as-is-fall td {
+    animation: as-is-fall 2.4s ease-out;
+}
+
+@keyframes as-is-climb {
+    0%, 30% { background-color: color-mix(in srgb, #22c55e 28%, var(--bg-card)); }
+    100% { background-color: transparent; }
+}
+
+@keyframes as-is-fall {
+    0%, 30% { background-color: color-mix(in srgb, #ef4444 22%, var(--bg-card)); }
+    100% { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .as-is-row.as-is-climb td,
+    .as-is-row.as-is-fall td {
+        animation: none;
+    }
+}
+
 /* Name on the left, the in-play W-L-P in a box on the right of the same cell.
    The box is pushed to the cell's right edge, so every row's box lines up on
    the column's one edge whatever the length of the name. */

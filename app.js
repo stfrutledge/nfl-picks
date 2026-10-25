@@ -9923,6 +9923,66 @@ function renderPickerCard(picker, index, isCompact = false) {
 }
 
 /**
+ * The as-is table's rows as they sit now: the picker order, and each row's
+ * top edge keyed by picker (detail rows by `name:detail`). `view` is the
+ * category and scope; a redraw for a different one is a new table, not a
+ * reordered one, so the positions only carry over within the same view.
+ */
+function asIsRowPositions(tbody, view) {
+    const same = tbody.dataset.view === view;
+    tbody.dataset.view = view;
+    if (!same) return null;
+    const order = [];
+    const tops = new Map();
+    tbody.querySelectorAll('tr[data-picker], tr[data-picker-detail]').forEach(tr => {
+        if (tr.dataset.picker) {
+            order.push(tr.dataset.picker);
+            tops.set(tr.dataset.picker, tr.getBoundingClientRect().top);
+        } else {
+            tops.set(tr.dataset.pickerDetail + ':detail', tr.getBoundingClientRect().top);
+        }
+    });
+    return { order, tops };
+}
+
+/**
+ * Slide the as-is rows from where they were to where they are now (FLIP), and
+ * light the ones that changed place: green for a climb, red for a fall.
+ *
+ * Only when the order changed. A score that moves a record but not a place,
+ * or a row opening its picks, redraws in place as it always has - sliding
+ * every row below an opened one would be motion that means nothing.
+ */
+function slideAsIsRows(tbody, before) {
+    if (!before) return;
+    const rows = [...tbody.querySelectorAll('tr[data-picker]')];
+    const order = rows.map(tr => tr.dataset.picker);
+    if (order.length !== before.order.length
+        || order.every((name, i) => name === before.order[i])) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+    tbody.querySelectorAll('tr[data-picker], tr[data-picker-detail]').forEach(tr => {
+        const name = tr.dataset.picker;
+        const key = name || tr.dataset.pickerDetail + ':detail';
+        const was = before.tops.get(key);
+        if (was === undefined || !tr.animate) return;
+        const shift = was - tr.getBoundingClientRect().top;
+        if (Math.abs(shift) < 1) return;
+        tr.animate(
+            [{ transform: `translateY(${shift}px)` }, { transform: 'none' }],
+            { duration: 550, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' });
+        if (!name) return;
+        const from = before.order.indexOf(name);
+        const to = order.indexOf(name);
+        if (from < 0 || from === to) return;
+        // Restarts the highlight on a row that moves again mid-animation.
+        tr.classList.remove('as-is-climb', 'as-is-fall');
+        void tr.offsetWidth;
+        tr.classList.add(to < from ? 'as-is-climb' : 'as-is-fall');
+    });
+}
+
+/**
  * Render standings table
  */
 /**
@@ -10001,6 +10061,10 @@ function renderStandingsTable(stats, {
             </tr>
         `;
 
+        // Where each row is before the redraw, so a score that reorders the
+        // table can slide the rows to their new places rather than jump.
+        const before = asIsRowPositions(tbody, `${category}|${showMove}`);
+
         tbody.innerHTML = sorted.map((picker, index) => {
             const pct = typeof picker.percentage === 'number'
                 ? picker.percentage.toFixed(2) + '%' : '-';
@@ -10018,6 +10082,7 @@ function renderStandingsTable(stats, {
                             + `${formatWeekRecord(record)}</span>` : '';
             return `
                 <tr class="as-is-row ${open ? 'open' : ''} ${index === 0 ? 'leader' : ''}"
+                    data-picker="${picker.name}"
                     onclick="toggleAsIsDetail('${picker.name}')"
                     title="Show this week&rsquo;s picks">
                     <td class="picker-name"><div class="as-is-name-cell">
@@ -10031,13 +10096,14 @@ function renderStandingsTable(stats, {
                     ${showMove ? `<td class="position-move">${formatPositionMove(move)}</td>` : ''}
                 </tr>
                 ${open ? `
-                <tr class="team-details-row">
+                <tr class="team-details-row" data-picker-detail="${picker.name}">
                     <td colspan="${showMove ? 7 : 6}">
                         <div class="team-details-container">${asIsPickDetail(picker.name)}</div>
                     </td>
                 </tr>` : ''}
             `;
         }).join('');
+        slideAsIsRows(tbody, before);
         return;
     }
 
