@@ -10,12 +10,5 @@ data class TimeZoneOption(val id: String, val name: String)
  */
 val TIME_ZONES = listOf(
     TimeZoneOption("America/New_York", "Eastern (ET)"),
-    TimeZoneOption("America/Chicago", "Central (CT)"),
-    TimeZoneOption("America/Denver", "Mountain (MT)"),
-    TimeZoneOption("America/Phoenix", "Arizona (AZ)"),
-    TimeZoneOption("America/Los_Angeles", "Pacific (PT)"),
-    TimeZoneOption("America/Anchorage", "Alaska (AK)"),
-    TimeZoneOption("Pacific/Honolulu", "Hawaii (HI)"),
-    TimeZoneOption("Europe/London", "UK"),
-    TimeZoneOption("Europe/Paris", "Central Europe (CET)")
+    TimeZoneOption("Europe/Dublin", "Ireland")
 )

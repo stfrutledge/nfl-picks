@@ -839,14 +839,9 @@ function formatGameTime(dateString) {
 // week's days are read off them. Keep the ids in step with TimeZones.kt.
 const TIME_ZONES = [
     { id: 'America/New_York', label: 'ET', name: 'Eastern' },
-    { id: 'America/Chicago', label: 'CT', name: 'Central' },
-    { id: 'America/Denver', label: 'MT', name: 'Mountain' },
-    { id: 'America/Phoenix', label: 'AZ', name: 'Arizona' },
-    { id: 'America/Los_Angeles', label: 'PT', name: 'Pacific' },
-    { id: 'America/Anchorage', label: 'AK', name: 'Alaska' },
-    { id: 'Pacific/Honolulu', label: 'HI', name: 'Hawaii' },
-    { id: 'Europe/London', label: 'UK', name: 'UK' },
-    { id: 'Europe/Paris', label: 'CET', name: 'Central Europe' }
+    // Ireland and the US change their clocks on different weekends; the zone
+    // ids carry each one's rules, so nothing here adds a fixed offset.
+    { id: 'Europe/Dublin', label: 'IRL', name: 'Ireland' }
 ];
 function displayTimeZone() {
     let id = null;

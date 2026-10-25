@@ -172,12 +172,26 @@ check('an app older than 1.17 (no timeZone) shows ET', () => {
     assert.strictEqual(api.cardKickoffLabel(sundayNight), '8:20 PM ET, Sun.');
 });
 
-check('the chosen zone moves the time, the label and the day', () => {
-    const pacific = load({ timeZone: () => 'America/Los_Angeles' }).api;
-    assert.strictEqual(pacific.cardKickoffLabel(sundayNight), '5:20 PM PT, Sun.');
-    const uk = load({ timeZone: () => 'Europe/London' }).api;
-    assert.strictEqual(uk.cardKickoffLabel(sundayNight), '12:20 AM UK, Mon.');
-    assert.strictEqual(uk.detailsKickoff(sundayNight), 'Monday, Oct 26 · 12:20 AM UK');
+check('Ireland moves the time, the label and the day', () => {
+    const { api } = load({ timeZone: () => 'Europe/Dublin' });
+    assert.strictEqual(api.cardKickoffLabel(sundayNight), '12:20 AM IRL, Mon.');
+    assert.strictEqual(api.detailsKickoff(sundayNight), 'Monday, Oct 26 · 12:20 AM IRL');
+});
+
+check('Ireland follows its own clock change, not the US one', () => {
+    const { api } = load({ timeZone: () => 'Europe/Dublin' });
+    // Ireland went back on 25 Oct 2026, the US goes back on 1 Nov: one week 4 hours apart.
+    const between = { kickoff: '2026-10-25T17:00:00Z', day: 'Sunday', time: '1:00 PM ET' };
+    assert.strictEqual(api.displayGameTime(between), '5:00 PM IRL');
+    const before = { kickoff: '2026-10-18T17:00:00Z', day: 'Sunday', time: '1:00 PM ET' };
+    assert.strictEqual(api.displayGameTime(before), '6:00 PM IRL');
+    const after = { kickoff: '2026-11-08T18:00:00Z', day: 'Sunday', time: '1:00 PM ET' };
+    assert.strictEqual(api.displayGameTime(after), '6:00 PM IRL');
+});
+
+check('a zone 1.17 offered before it was cut to two falls back to ET', () => {
+    const { api } = load({ timeZone: () => 'America/Los_Angeles' });
+    assert.strictEqual(api.displayGameTime(sundayNight), '8:20 PM ET');
 });
 
 check('an id the site does not know falls back to ET', () => {
