@@ -496,6 +496,39 @@ async function check(name, fn) {
         assert.strictEqual(net.fcm.length, 0, 'nothing sent for a false alarm');
     });
 
+    console.log('\nPicked at');
+
+    await check('/picked-at gives when the side held now was taken, and the line then', async () => {
+        fresh();
+        await post(env(), { week: '2026_8', picker: 'Stephen', picks: [pick('Bears', 'Rams', '')] });   // creates the tables
+        d1.raw.exec('DELETE FROM pick_rows');
+        const row = (ts, away, home, line, awaySpread, homeSpread, picker = 'Stephen') => d1.raw.prepare(
+            `INSERT INTO pick_rows (ts, season, week, picker, game_key, game_id, away, home, away_spread, home_spread, line_pick, winner_pick, blazin, over_under, total_line, frozen_at)
+             VALUES (?, 2026, '2026_8', ?, ?, ?, ?, ?, ?, ?, ?, '', 0, '', '', '')`)
+            .run(ts, picker, `${away.toLowerCase()}_${home.toLowerCase()}`, `${away.toLowerCase()}_${home.toLowerCase()}`, away, home, awaySpread, homeSpread, line);
+        // Browns: Titans first, switched to the Browns at -1.5, re-synced at -2.5 (riding).
+        row('2026-10-20T14:00:00.000Z', 'Browns', 'Titans', 'Titans', -1, 1);
+        row('2026-10-21T15:00:00.000Z', 'Browns', 'Titans', 'Browns', -1.5, 1.5);
+        row('2026-10-22T16:00:00.000Z', 'Browns', 'Titans', 'Browns', -2.5, 2.5);
+        // Colts: taken, deselected, taken again - the run starts at the second.
+        row('2026-10-20T14:00:00.000Z', 'Colts', 'Vikings', 'Colts', 5.5, -5.5);
+        row('2026-10-21T15:00:00.000Z', 'Colts', 'Vikings', '', 5.5, -5.5);
+        row('2026-10-22T16:00:00.000Z', 'Colts', 'Vikings', 'Colts', 6.5, -6.5);
+        // Bears: deselected last - nothing to mark. Someone else's row is not read.
+        row('2026-10-20T14:00:00.000Z', 'Bears', 'Rams', 'Bears', 3, -3);
+        row('2026-10-21T15:00:00.000Z', 'Bears', 'Rams', '', 3, -3);
+        row('2026-10-20T14:00:00.000Z', 'Jets', 'Bills', 'Jets', 7, -7, 'Sean');
+        const res = await worker.fetch(new Request('https://w.test/picked-at?season=2026&week=8&picker=Stephen'), env(), ctx);
+        assert.strictEqual(res.status, 200);
+        const { games } = await res.json();
+        assert.deepStrictEqual(games.browns_titans, { side: 'away', at: Date.parse('2026-10-21T15:00:00Z'), spread: -1.5 });
+        assert.deepStrictEqual(games.colts_vikings, { side: 'away', at: Date.parse('2026-10-22T16:00:00Z'), spread: 6.5 });
+        assert.strictEqual(games.bears_rams, undefined);
+        assert.strictEqual(games.jets_bills, undefined);
+        const bad = await worker.fetch(new Request('https://w.test/picked-at?season=2026&week=8'), env(), ctx);
+        assert.strictEqual(bad.status, 400, 'a picker is required');
+    });
+
     await check('no PICKS_DB: the worker behaves exactly as before', async () => {
         fresh();
         const e = env({ PICKS_DB: undefined });

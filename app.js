@@ -5526,7 +5526,7 @@ function describeLine(game) {
  * "Bengals -3.5".
  *
  * Anywhere we are describing somebody's PICK - locking it, the tooltip on a
- * locked badge, a line that has drifted under it - it has to be their own team
+ * locked badge - it has to be their own team
  * and their own number. describeLine() names the favourite, which is the same
  * line seen from the other side of the table and reads as the wrong pick.
  * Falls back to the favourite when there is no side to read it from.
@@ -10824,6 +10824,46 @@ async function loadLineHistory(week, { force = false } = {}) {
     }
 }
 
+// When the viewer took the side they hold on each game, and the line then,
+// from the worker's /picked-at (read off the pick log): the spread chart marks
+// it. By week and picker; fetched with the line history when the popup opens,
+// and again when the viewer's pick on that game is not the side it has.
+const PICK_MOMENTS_MAX_AGE_MS = 5 * 60 * 1000;
+const pickMoments = new Map();   // `${week}|${picker}` -> { at, games }
+const pickMomentsInFlight = new Set();
+
+async function loadPickMoments(week, picker, { force = false } = {}) {
+    const id = `${week}|${picker}`;
+    if (isHistoricalSeason() || !week || !picker || picker === COWHERD || pickMomentsInFlight.has(id)) return;
+    const have = pickMoments.get(id);
+    if (have && !force && Date.now() - have.at < PICK_MOMENTS_MAX_AGE_MS) return;
+    pickMomentsInFlight.add(id);
+    try {
+        const response = await fetch(`${WORKER_PROXY_URL}/picked-at?season=${CURRENT_SEASON}&week=${week}&picker=${encodeURIComponent(picker)}`);
+        if (!response.ok) throw new Error(`worker answered ${response.status}`);
+        const data = await response.json();
+        const games = {};
+        for (const [key, moment] of Object.entries(data.games || {})) games[normalizePickKey(key)] = moment;
+        pickMoments.set(id, { at: Date.now(), games });
+        refreshGameDetails();
+    } catch (error) {
+        console.warn('[Picked at] Could not load when the picks were made:', error.message);
+    } finally {
+        pickMomentsInFlight.delete(id);
+    }
+}
+
+/**
+ * The viewer's line pick on this game as { side, at, spread }, when the log's
+ * latest side is the one they hold now; null otherwise (no pick, not loaded,
+ * or a pick made on this device that has not reached the log yet).
+ */
+function viewerPickMoment(game) {
+    const side = getPicksForGame(getPickerPicksForWeek(currentWeek, currentPicker), game)?.line;
+    const moment = pickMoments.get(`${currentWeek}|${currentPicker}`)?.games?.[pickKey(game)];
+    return side && moment?.side === side && Number.isFinite(moment.at) ? moment : null;
+}
+
 /** "Tue 9:15 AM", in ET like the rest of the site. */
 function lineMoveTime(at) {
     const date = new Date(at);
@@ -10897,7 +10937,13 @@ function lineChartHtml(game, which, side) {
     // To now - or kickoff, when that has passed and the line with it.
     const t1 = Math.max(points[points.length - 1].at + 60000,
         Number.isFinite(kickoff) ? Math.min(Date.now(), kickoff) : Date.now());
-    const values = points.map(p => p.v);
+    // The viewer's own pick, on the spread: the number they took, read from
+    // the side this chart is drawn from. Placed at the moment they took it,
+    // or at the chart's left edge when that was before the line was tracked.
+    const picked = which === 'spread' ? viewerPickMoment(game) : null;
+    const pickedValue = picked && Number.isFinite(picked.spread)
+        ? (picked.side === side ? picked.spread : -picked.spread) : null;
+    const values = points.map(p => p.v).concat(pickedValue === null ? [] : [pickedValue]);
     let lo = Math.min(...values), hi = Math.max(...values);
     const step = hi - lo > 4 ? 1 : 0.5;
     lo = Math.floor(lo / step) * step - step;
@@ -10935,6 +10981,20 @@ function lineChartHtml(game, which, side) {
     // when it first saw the line - said here, the one place the history shows.
     const first = lineHistory.get(currentWeek)?.games?.[pickKey(game)]?.[0];
     const since = first?.kind === 'first' ? `since first seen ${lineMoveTime(first.at)}` : 'since the open';
+    let pickedMark = '', pickedNote = '';
+    if (picked) {
+        const px = x(Math.min(Math.max(picked.at, t0), t1));
+        let value = pickedValue;
+        if (value === null) {
+            value = points[0].v;
+            for (const p of points) if (p.at <= picked.at) value = p.v;
+        }
+        const py = y(value);
+        pickedMark = `<line class="gd-chart-picked-rule" x1="${px.toFixed(1)}" x2="${px.toFixed(1)}" y1="${c.top}" y2="${c.h - c.bottom}"/>`
+            + `<circle class="gd-chart-picked" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6"/>`;
+        const took = picked.side === side ? value : -value;
+        pickedNote = `<div class="gd-chart-note"><span class="gd-chart-picked-key"></span>Picked at ${game[picked.side]} ${spreadText(took)} · ${lineMoveTime(picked.at)}</div>`;
+    }
 
     return `
                 <div class="gd-chart" data-which="${which}"
@@ -10947,10 +11007,12 @@ function lineChartHtml(game, which, side) {
                         ${dayTicks.join('')}
                         <path class="gd-chart-line" d="${d}"/>
                         ${dots}
+                        ${pickedMark}
                         <text class="gd-chart-end" x="${(x(t1) + 6).toFixed(1)}" y="${y(last.v).toFixed(1)}" dominant-baseline="middle">${label(last.v)}</text>
                         <line class="gd-chart-cross" x1="0" x2="0" y1="${c.top}" y2="${c.h - c.bottom}"/>
                         <circle class="gd-chart-cross-dot" cx="0" cy="0" r="4"/>
                     </svg>
+                    ${pickedNote}
                 </div>`;
 }
 
@@ -11733,6 +11795,11 @@ function openGameDetails(key) {
     }
     loadVenueForecast(game);
     loadLineHistory(currentWeek);
+    // Again when the log does not have the side held now: a pick changed
+    // since the last load (it reaches the log a few seconds after the tap).
+    const held = getPicksForGame(getPickerPicksForWeek(currentWeek, currentPicker), game)?.line;
+    const logged = pickMoments.get(`${currentWeek}|${currentPicker}`)?.games?.[key];
+    loadPickMoments(currentWeek, currentPicker, { force: Boolean(held) && logged?.side !== held });
     loadGameSummary(game);
     if (gameDetailsTab === 'matchup' || gameDetailsTab === 'picks') ensureArchivesLoaded().then(() => refreshGameDetails());
 }
@@ -11880,15 +11947,6 @@ function renderGames() {
         const freezeState = (locked || frozen || isHistoricalWeek || isHistoricalSeason())
             ? null
             : freezeEligibility(game, currentWeek, currentPicker);
-
-        // Line drift, for a riding pick whose line has moved since it was made.
-        const ridingDrift = (!frozen && !locked && hasLinePick
-                && hasUsableLine(gamePicks.pickedSpread) && hasUsableSpread(game)
-                && (Number(gamePicks.pickedSpread) !== Number(game.spread)
-                    || gamePicks.pickedFavorite !== game.favorite))
-            ? describeLineForSide(
-                { ...game, spread: gamePicks.pickedSpread, favorite: gamePicks.pickedFavorite }, linePick)
-            : '';
 
         // Show loading indicator if spread is missing and still loading
         const spreadMissing = !hasUsableSpread(game);
@@ -12076,11 +12134,7 @@ function renderGames() {
                         <span class="freeze-state frozen" title="Locked at ${frozenLineLabel}">
                             Locked at ${frozenLineLabel}
                         </span>
-                    ` : (ridingDrift ? `
-                        <span class="freeze-state drifted" title="You picked ${ridingDrift}; the line has since moved">
-                            Picked at ${ridingDrift} &rarr; now ${describeLineForSide(game, linePick)}
-                        </span>
-                    ` : '')}
+                    ` : ''}
                     ${freezeState ? `
                         <button class="freeze-btn" data-game-id="${game.id}" data-pick-key="${key}"
                                 ${freezeState.canFreeze ? '' : 'disabled'}

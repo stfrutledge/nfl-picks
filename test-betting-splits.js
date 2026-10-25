@@ -770,6 +770,32 @@ function section(name) { console.log(`\n${name}`); }
         site.__setLineHistory({});
     });
 
+    await check('the spread chart marks when the viewer took their side, and names it under the chart', () => {
+        site.__setLineHistory(MOVED);
+        site.__setGames([game]);
+        site.__setViewerPick('Stephen', 'patriots_bears', { line: 'away' });
+        site.__setPickMoments({ patriots_bears: { side: 'away', at: Date.parse('2026-10-19T16:00:00Z'), spread: 1.5 } });
+        site.openGameDetails('patriots_bears');
+        site.toggleLineChart('spread');
+        let html = site.__el('game-details-body').innerHTML;
+        assert.strictEqual((html.match(/class="gd-chart-picked"/g) || []).length, 1, 'one marker');        assert.match(html, /Picked at Patriots \+1\.5 · Mon 12:00 PM/, 'the number from the side taken, in ET');
+        const y = Number(html.match(/class="gd-chart-picked" cx="[\d.]+" cy="([\d.]+)"/)[1]);
+        const openY = Number(html.match(/class="gd-chart-line" d="M[\d.]+,([\d.]+)/)[1]);
+        assert.strictEqual(y, openY, 'on the chart at -1.5 from the Bears side, where the line stood');
+
+        site.__setPickMoments({ patriots_bears: { side: 'home', at: Date.parse('2026-10-19T16:00:00Z'), spread: -1.5 } });
+        site.refreshGameDetails();
+        html = site.__el('game-details-body').innerHTML;
+        assert.doesNotMatch(html, /gd-chart-picked/, 'the log has another side than the one held: no marker');
+
+        site.toggleLineChart('total');
+        assert.doesNotMatch(site.__el('game-details-body').innerHTML, /gd-chart-picked/, 'the total chart carries no marker');
+        site.closeGameDetails();
+        site.__setViewerPick('Stephen', 'patriots_bears', null);
+        site.__setPickMoments({});
+        site.__setLineHistory({});
+    });
+
     await check('moneylines come off ESPN’s DraftKings odds, so the popup keeps them', () => {
         const comp = { odds: [{ moneyline: { away: { close: { odds: '-170' } }, home: { close: { odds: '+142' } } } }] };
         assert.strictEqual(site.espnMoneyline(comp, 'away'), -170);
@@ -876,7 +902,9 @@ function loadSite() {
             __setSplits: s => { bettingSplits = s; },
             __setGames: games => { NFL_GAMES_BY_WEEK[currentWeek] = games; },
             __viewCurrentWeek: () => { currentWeek = CURRENT_NFL_WEEK; },
-            __setLineHistory: games => { lineHistory.set(currentWeek, { at: Date.now(), games }); } });`);
+            __setLineHistory: games => { lineHistory.set(currentWeek, { at: Date.now(), games }); },
+            __setViewerPick: (picker, key, pick) => { currentPicker = picker; if (!allPicks[currentWeek]) allPicks[currentWeek] = {}; allPicks[currentWeek][picker] = pick ? { [key]: pick } : {}; },
+            __setPickMoments: games => { pickMoments.set(currentWeek + '|' + currentPicker, { at: Date.now(), games }); } });`);
     const api = fn(env.window, env.document, env.localStorage, env.navigator, env.fetch, env.console,
         env.performance, env.alert, env.confirm, env.addEventListener, env.matchMedia);
     api.__el = id => elements[id];

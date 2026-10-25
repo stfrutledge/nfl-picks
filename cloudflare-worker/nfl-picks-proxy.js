@@ -173,6 +173,8 @@ export default {
         return await handleSplits(request, url, ctx);
       } else if (path === '/lines') {
         return await handleLines(request, url, env);
+      } else if (path === '/picked-at') {
+        return await handlePickedAt(request, url, env);
       } else if (path === '/espn-summary') {
         return await handleEspnSummary(request, url, ctx);
       } else if (path === '/notify') {
@@ -1919,6 +1921,69 @@ async function handleLines(request, url, env) {
   }), {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...CORS_HEADERS },
   });
+}
+
+// ---------------------------------------------------------------------------
+// /picked-at?season=YYYY&week=N&picker=NAME - when a picker took the side
+// they hold on each game, and the line then: the popup's spread chart marks
+// it. Read off the pick log, which already has a row per game per save with
+// its time and the line at that moment, so nothing new is stored. D1 only.
+// ---------------------------------------------------------------------------
+
+/**
+ * Rows (ordered by ts, id) to { gameKey: { side, at, spread } }: the first
+ * save of the latest unbroken run on one side. Rows sharing a timestamp are
+ * one save; a save with no side is a deselection and ends the run. `spread`
+ * is signed from the side taken ("+2.5"), or null when the row had no line.
+ */
+function pickMoments(rows) {
+  const byGame = {};
+  for (const r of rows) {
+    const game = (byGame[r.game_key] ||= { ts: null, side: '', row: null, run: null });
+    if (r.ts !== game.ts) {
+      settlePickSave(game);
+      game.ts = r.ts; game.side = ''; game.row = null;
+    }
+    const side = pickSide(r.line_pick, r.away, r.home);
+    if (!game.side && side) { game.side = side; game.row = r; }
+  }
+  const moments = {};
+  for (const [key, game] of Object.entries(byGame)) {
+    settlePickSave(game);
+    if (game.run) moments[key] = game.run;
+  }
+  return moments;
+}
+
+function settlePickSave(game) {
+  if (game.ts === null) return;
+  if (!game.side) { game.run = null; return; }
+  if (game.run?.side === game.side) return;
+  const raw = game.row[game.side === 'away' ? 'away_spread' : 'home_spread'];
+  const spread = pickBlank(raw) || !isFinite(Number(raw)) ? null : Number(raw);
+  game.run = { side: game.side, at: Date.parse(game.ts), spread };
+}
+
+async function handlePickedAt(request, url, env) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+  const season = url.searchParams.get('season'), week = url.searchParams.get('week');
+  const picker = url.searchParams.get('picker') || '';
+  if (!/^\d{4}$/.test(season || '') || !/^\d{1,2}$/.test(week || '') || !picker || picker.length > 40) {
+    return jsonResponse({ error: 'Give season=YYYY, week=N and picker=NAME' }, 400);
+  }
+  if (!picksDb(env)) return jsonResponse({ error: 'Not configured' }, 503);
+  const session = d1Session(env);
+  try {
+    await session.ready();
+    const rows = await session.all(
+      'SELECT ts, game_key, away, home, away_spread, home_spread, line_pick FROM pick_rows WHERE season = ?1 AND week = ?2 AND picker = ?3 ORDER BY ts, id',
+      Number(season), `${season}_${Number(week)}`, picker);
+    return new Response(JSON.stringify({ season: Number(season), week: Number(week), picker, games: pickMoments(rows) }), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS_HEADERS },
+    });
+  } finally {
+    await session.close();
+  }
 }
 
 // ---------------------------------------------------------------------------

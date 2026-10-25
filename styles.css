@@ -4112,6 +4112,38 @@ footer a:hover {
     stroke-width: 2;
 }
 
+/* The viewer's own pick: a ringed amber marker on a hairline at the moment
+   they took the side, named in the note under the chart. */
+.gd-chart-picked-rule {
+    stroke: var(--accent-amber);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+.gd-chart-picked {
+    fill: var(--accent-amber);
+    stroke: var(--bg-secondary);
+    stroke-width: 2;
+}
+
+.gd-chart-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.gd-chart-picked-key {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent-amber);
+}
+
 .gd-chart-end {
     fill: var(--text-primary);
     font-size: 12px;
@@ -8034,14 +8066,6 @@ body.live-provisional #as-is-standings-table {
     color: var(--accent-teal);
 }
 
-/* The line has moved under a riding pick - informational, not a warning. */
-.freeze-state.drifted {
-    background: transparent;
-    border: 1px dashed var(--accent-amber);
-    color: var(--accent-amber);
-    font-weight: 600;
-}
-
 .freeze-btn {
     padding: 5px 11px;
     border: 1px solid var(--accent-teal);
@@ -8070,17 +8094,6 @@ body.live-provisional #as-is-standings-table {
     .freeze-state,
     .freeze-btn {
         font-size: 0.63rem;
-    }
-
-    /* "Picked at Browns -1.5 -> now Browns -2.5" is wider than the room
-       beside the location, Lock Pick and the B5 star, and pushed the star
-       off the card. On a phone it takes its own row under them. */
-    .game-footer .freeze-state.drifted {
-        order: 1;
-        flex-basis: 100%;
-        justify-content: center;
-        white-space: normal;
-        text-align: center;
     }
 }
 
