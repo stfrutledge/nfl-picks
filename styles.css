@@ -8309,6 +8309,20 @@ body.live-provisional #as-is-standings-table {
     text-align: center;
 }
 
+/* Points typed with no favourite tapped: nothing is saved until one is. */
+.spread-control.needs-fav .spread-fav-btn {
+    border-color: var(--accent-amber);
+    box-shadow: 0 0 0 1px var(--accent-amber);
+}
+
+.podcast-result.needs {
+    color: var(--accent-amber);
+}
+
+.guess-prefilled {
+    margin: 8px 0 0;
+}
+
 .spread-text.invalid {
     outline: 2px solid var(--accent-red);
     outline-offset: -2px;

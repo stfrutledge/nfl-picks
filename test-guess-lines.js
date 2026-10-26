@@ -74,7 +74,7 @@ function loadSiteScoring() {
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
     return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText };`)(
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, guessState };`)(
         name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null });
 }
 
@@ -244,6 +244,23 @@ let mod;
         assert.strictEqual(site.favoriteSpreadText(0), 'PK');
         assert.deepStrictEqual(site.draftFromValue(3), { favorite: 'away', text: '-3' });
         assert.deepStrictEqual(site.draftFromValue(-6.5), { favorite: 'home', text: '-6.5' });
+    });
+
+    await check('points with no favourite tapped are flagged, not taken as a guess', () => {
+        assert.strictEqual(site.needsFavorite({ favorite: null, text: '-5' }), true);
+        assert.strictEqual(site.draftValue({ favorite: null, text: '-5' }), undefined, 'so nothing is saved');
+        assert.strictEqual(site.needsFavorite({ favorite: 'home', text: '-5' }), false);
+        assert.strictEqual(site.needsFavorite({ favorite: null, text: 'PK' }), false, 'a pick’em needs no favourite');
+        assert.strictEqual(site.needsFavorite({ favorite: null, text: '' }), false);
+    });
+
+    await check('solo starts from your podcast guess, so a slate is not typed twice', () => {
+        site.guessState.weeks = { 8: { podcast: { ravens_bills: { you: -4.5, sal: -3 } } } };
+        site.guessState.drafts.clear();
+        assert.deepStrictEqual(site.soloDraft(8, 'ravens_bills'), { draft: { favorite: 'home', text: '-4.5' }, fromPodcast: true });
+        assert.strictEqual(site.soloDraft(8, 'jets_patriots').fromPodcast, false, 'nothing guessed there');
+        site.guessState.drafts.set('8|ravens_bills|solo', { favorite: 'away', text: '1' });
+        assert.deepStrictEqual(site.soloDraft(8, 'ravens_bills'), { draft: { favorite: 'away', text: '1' }, fromPodcast: false }, 'what was typed wins');
     });
 
     await check('no two top-level functions in app.js share a name', () => {

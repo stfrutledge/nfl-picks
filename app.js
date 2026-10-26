@@ -6618,6 +6618,27 @@ function draftValue(draft) {
     return draft.favorite === 'home' ? -points : points;
 }
 
+/**
+ * Points typed but no favourite tapped: not a guess yet, so nothing is
+ * saved. The box says so (October 2026: Sal's and Bill's first guesses were
+ * typed without a team, showed "-5" like any other, and never saved).
+ */
+function needsFavorite(draft) {
+    const points = parseSpreadText(draft?.text);
+    return !draft?.favorite && points !== null && points > 0;
+}
+
+/**
+ * A solo box's starting point: what was typed in it, else your guess for
+ * the game in podcast mode, so a slate entered there is one tap a game here.
+ */
+function soloDraft(week, key) {
+    const typed = guessState.drafts.get(`${week}|${key}|solo`);
+    if (typed) return { draft: typed, fromPodcast: false };
+    const podcast = guessState.weeks[week]?.podcast?.[key]?.you;
+    return { draft: draftFromValue(podcast), fromPodcast: podcast !== undefined };
+}
+
 /** A stored home spread as a box: { favorite, text }. */
 function draftFromValue(value) {
     if (value === null || value === undefined) return { favorite: null, text: '' };
@@ -6857,12 +6878,13 @@ function soloControlsHtml(game, week, editable) {
     }
     if (!editable) return '<p class="as-is-note">Not guessed.</p>';
     const id = `${week}|${key}`;
-    const draft = guessState.drafts.get(`${id}|solo`) || draftFromValue(null);
+    const { draft, fromPodcast } = soloDraft(week, key);
     const busy = guessState.submitting.has(id);
     const error = guessState.errors.get(id);
     return `<div class="guess-steps"><span>Pick the favourite, then the spread</span></div>
         ${spreadControlHtml(game, week, 'solo', draft, { disabled: busy })}
         <button type="button" class="guess-submit" data-submit="${key}"${draftValue(draft) === undefined || draftValue(draft) === null || busy ? ' disabled' : ''}>${busy ? 'Revealing&hellip;' : 'Submit &amp; reveal the line'}</button>
+        ${fromPodcast ? '<p class="as-is-note guess-prefilled">Your guess from the podcast tab: submit it as it is, or change it first.</p>' : ''}
         ${error ? `<p class="guess-error">${error}</p>` : ''}`;
 }
 
@@ -6890,6 +6912,10 @@ function updatePodcastCard(card, week, key) {
         const result = entry.querySelector('.podcast-result');
         const won = winners.includes(field);
         entry.classList.toggle('won', won);
+        const pending = needsFavorite(guessState.drafts.get(`${week}|${key}|${field}`));
+        entry.querySelector('.spread-control')?.classList.toggle('needs-fav', pending);
+        result.classList.toggle('needs', pending);
+        if (pending) { result.innerHTML = 'Tap the favourite to save'; return; }
         if (field === 'line') { result.innerHTML = ''; return; }
         const off = guessOff(row[field], row.line);
         result.innerHTML = off === null ? '' : `${won ? '<strong>+1</strong> &middot; ' : ''}${formatOff(off)}`;
@@ -6971,7 +6997,7 @@ function refreshSoloCard(week, key) {
 
 async function submitSoloGuess(week, key) {
     const id = `${week}|${key}`;
-    const guess = draftValue(guessState.drafts.get(`${id}|solo`));
+    const guess = draftValue(soloDraft(week, key).draft);
     if (guess === undefined || guess === null || guessState.submitting.has(id)) return;
     guessState.submitting.add(id);
     guessState.errors.delete(id);
@@ -7121,6 +7147,7 @@ function spreadControlChanged(control) {
     const draft = { favorite, text: input.value };
     guessState.drafts.set(`${week}|${key}|${field}`, draft);
     input.classList.toggle('invalid', Number.isNaN(parseSpreadText(draft.text)));
+    control.classList.toggle('needs-fav', needsFavorite(draft));
     const value = draftValue(draft);
     const card = control.closest('.guess-card');
 
@@ -7129,8 +7156,8 @@ function spreadControlChanged(control) {
         if (submit) submit.disabled = value === undefined || value === null;
         return;
     }
-    // A half-made podcast guess (points, no favourite yet) is left unsaved.
-    if (value === undefined) return;
+    // A half-made podcast guess (points, no favourite yet) is left unsaved, and says so.
+    if (value === undefined) { updatePodcastCard(card, week, key); return; }
     const stored = guessState.weeks[week]?.podcast?.[key]?.[field];
     if ((stored ?? null) === value) return;
     setPodcastField(week, key, field, value);
