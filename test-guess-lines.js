@@ -73,9 +73,10 @@ function loadSiteScoring() {
     const end = app.indexOf("// Which pickers have their week's picks open");
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
-    return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, guessState };`)(
-        name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null });
+    return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage', 'pickKey',
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, guessState, orderGuessGames };`)(
+        name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null },
+        game => `${game.away.toLowerCase()}_${game.home.toLowerCase()}`);
 }
 
 let mod;
@@ -261,6 +262,17 @@ let mod;
         assert.strictEqual(site.soloDraft(8, 'jets_patriots').fromPodcast, false, 'nothing guessed there');
         site.guessState.drafts.set('8|ravens_bills|solo', { favorite: 'away', text: '1' });
         assert.deepStrictEqual(site.soloDraft(8, 'ravens_bills'), { draft: { favorite: 'away', text: '1' }, fromPodcast: false }, 'what was typed wins');
+    });
+
+    await check('the cards: finished games first, then the rest, each by kickoff', () => {
+        const games = ['A', 'B', 'C', 'D'].map(t => ({ away: t, home: 'Z' }));
+        site.guessState.weeks = { 8: {
+            podcast: { c_z: { you: -3, sal: -4, line: -3 }, a_z: { you: -3, line: -3 }, d_z: { you: 1, bill: 2, line: 1.5 } },
+            solo: { b_z: { guess: -3, line: -3, at: 1 } } } };
+        const keys = list => list.map(g => g.away);
+        // a_z has a line but one guess: not scored, so not finished.
+        assert.deepStrictEqual(keys(site.orderGuessGames('podcast', 8, games)), ['C', 'D', 'A', 'B']);
+        assert.deepStrictEqual(keys(site.orderGuessGames('solo', 8, games)), ['B', 'A', 'C', 'D'], 'solo: submitted first');
     });
 
     await check('no two top-level functions in app.js share a name', () => {

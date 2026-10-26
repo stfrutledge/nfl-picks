@@ -6528,6 +6528,9 @@ function updateLiveTabVisibility() {
 // or week, or a load, redraws the tab, and the timed reload skips that while
 // a field in the tab has focus.
 // ---------------------------------------------------------------------------
+// Off: the tab is hidden and nothing is fetched for it, at the owner's
+// request (October 2026). Everything else is kept; true brings it back.
+const GUESS_TAB_ENABLED = false;
 const GUESS_REFRESH_MS = 5 * 60 * 1000;
 const GUESS_SAVE_DEBOUNCE_MS = 1200;
 const GUESS_MAX_POINTS = 40;
@@ -6543,6 +6546,7 @@ const guessState = {
     viewWeek: { solo: null, podcast: null },
     drafts: new Map(),      // `${week}|${key}|${field}` -> { favorite, text } as typed
     submitting: new Set(),  // `${week}|${key}` while its submit is in flight
+    settled: new Set(),     // `${mode}|${week}|${key}` placed with the finished games, at the top
     errors: new Map(),      // `${week}|${key}` -> why a submit failed
     status: '',
 };
@@ -6551,6 +6555,10 @@ let guessSaveChain = Promise.resolve();
 let guessSavesPending = 0;
 let guessTimer = null;
 let guessLoadInFlight = false;
+const guessSettleTimers = new Map();   // `${mode}|${week}|${key}` -> timeout
+// A finished game moves to the top this long after it finished, the
+// owner's ask: long enough to see the result land on the card first.
+const GUESS_SETTLE_MS = 5000;
 
 try { if (localStorage.getItem('guessMode') === 'podcast') guessState.mode = 'podcast'; } catch {}
 
@@ -6732,7 +6740,7 @@ function guessTabHasFocus() {
  * during Monday night's game, while the window is still open.
  */
 async function loadGuessTheLines() {
-    if (guessLoadInFlight) return;
+    if (!GUESS_TAB_ENABLED || guessLoadInFlight) return;
     guessLoadInFlight = true;
     try {
         const candidates = [CURRENT_NFL_WEEK + 1, CURRENT_NFL_WEEK].filter(w => w >= 1 && w <= TOTAL_WEEKS);
@@ -6766,6 +6774,7 @@ async function loadGuessTheLines() {
 
 /** First load, then every GUESS_REFRESH_MS while the page is on screen. */
 function startGuessTheLines() {
+    if (!GUESS_TAB_ENABLED) return;
     loadGuessTheLines();
     if (guessTimer) return;
     guessTimer = setInterval(() => {
@@ -6787,7 +6796,7 @@ function updateGuessTabVisibility(now = Date.now()) {
     if (!tab) return;
     const firstKickoff = Math.min(...getGamesForWeek(CURRENT_NFL_WEEK).map(g => Date.parse(g.kickoff)).filter(Number.isFinite));
     const beforeWeek = CURRENT_NFL_WEEK <= TOTAL_WEEKS && Number.isFinite(firstKickoff) && now < firstKickoff;
-    const show = !isHistoricalSeason() && (guessState.openWeek !== null || beforeWeek || guessHasData());
+    const show = GUESS_TAB_ENABLED && !isHistoricalSeason() && (guessState.openWeek !== null || beforeWeek || guessHasData());
     tab.style.display = show ? '' : 'none';
     if (!show && currentCategory === 'guess') setActiveCategory('make-picks');
 }
@@ -6937,6 +6946,80 @@ function guessWeekSelectHtml(weeks, week) {
         `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}</option>`).join('')}</select>`;
 }
 
+// --- the order of the cards ----------------------------------------------------
+//
+// Finished games at the top, the rest below, each part by kickoff. Finished
+// is submitted (solo) or scored, the line read out and two guesses in
+// (podcast). A game that finishes moves GUESS_SETTLE_MS later, sliding to
+// its place; a full draw puts every card where it belongs at once.
+
+function guessGameDone(mode, week, key) {
+    if (mode === 'solo') return !!guessState.weeks[week]?.solo?.[key];
+    return podcastGameWinners(guessState.weeks[week]?.podcast?.[key]) !== null;
+}
+
+/** The games in card order for a full draw, marking each finished one settled. */
+function orderGuessGames(mode, week, games) {
+    for (const game of games) {
+        const id = `${mode}|${week}|${pickKey(game)}`;
+        if (guessGameDone(mode, week, pickKey(game))) guessState.settled.add(id);
+        else guessState.settled.delete(id);
+    }
+    const settled = game => guessState.settled.has(`${mode}|${week}|${pickKey(game)}`);
+    return [...games.filter(settled), ...games.filter(g => !settled(g))];
+}
+
+/** A game's state may have changed: once it has held for GUESS_SETTLE_MS, move its card. */
+function scheduleGuessSettle(mode, week, key) {
+    const id = `${mode}|${week}|${key}`;
+    clearTimeout(guessSettleTimers.get(id));
+    guessSettleTimers.delete(id);
+    if (guessGameDone(mode, week, key) === guessState.settled.has(id)) return;
+    guessSettleTimers.set(id, setTimeout(() => {
+        guessSettleTimers.delete(id);
+        if (guessGameDone(mode, week, key)) guessState.settled.add(id);
+        else guessState.settled.delete(id);
+        const list = document.querySelector(`#guess-content .guess-cards[data-week="${week}"]`);
+        if (list && guessState.mode === mode) placeGuessCards(list, mode, week);
+    }, GUESS_SETTLE_MS));
+}
+
+/**
+ * Put the cards in order, sliding each one that moves from where it was
+ * (measure, move, then animate from the old place). The card holding the
+ * cursor is never taken out of the page - that would close a phone's
+ * keyboard - so the others are moved around it instead.
+ */
+function placeGuessCards(list, mode, week) {
+    const cards = [...list.querySelectorAll(':scope > .guess-card')];
+    const byKey = new Map(cards.map(c => [c.dataset.key, c]));
+    const order = orderOfKeys(mode, week, [...byKey.keys()]);
+    const before = new Map(cards.map(c => [c, c.getBoundingClientRect()]));
+    const focused = cards.find(c => c.contains(document.activeElement));
+    const at = focused ? order.indexOf(focused.dataset.key) : order.length;
+    order.slice(0, at).forEach(k => list.insertBefore(byKey.get(k), focused || null));
+    order.slice(at + 1).forEach(k => list.appendChild(byKey.get(k)));
+    for (const c of cards) {
+        const was = before.get(c), now = c.getBoundingClientRect();
+        const dx = was.left - now.left, dy = was.top - now.top;
+        if (!dx && !dy) continue;
+        c.style.transition = 'none';
+        c.style.transform = `translate(${dx}px, ${dy}px)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            c.style.transition = 'transform 450ms ease';
+            c.style.transform = '';
+        }));
+    }
+}
+
+/** Keys in card order, from the settled set and kickoff - without touching the set, as orderGuessGames does. */
+function orderOfKeys(mode, week, keys) {
+    const games = [...getGamesForWeek(week)].filter(g => keys.includes(pickKey(g)))
+        .sort((a, b) => Date.parse(a.kickoff || 0) - Date.parse(b.kickoff || 0));
+    const settled = game => guessState.settled.has(`${mode}|${week}|${pickKey(game)}`);
+    return [...games.filter(settled), ...games.filter(g => !settled(g))].map(pickKey);
+}
+
 // --- solo --------------------------------------------------------------------
 
 function soloSummaryHtml(week, editable, gameCount) {
@@ -6958,7 +7041,7 @@ async function soloHtml() {
     }
     const editable = week === open;
     const solo = guessState.weeks[week]?.solo || {};
-    const games = (await guessGamesFor(week)).filter(g => editable || pickKey(g) in solo);
+    const games = orderGuessGames('solo', week, (await guessGamesFor(week)).filter(g => editable || pickKey(g) in solo));
     const cards = games.map(game => guessCardHtml(game, soloControlsHtml(game, week, editable))).join('');
 
     return intro + `<div class="guess-results-head"><h3 class="guess-subhead">Week ${week}${editable ? '' : ' (closed)'}</h3>${guessWeekSelectHtml(weeks, week)}</div>
@@ -7005,6 +7088,7 @@ async function submitSoloGuess(week, key) {
     try {
         const data = await postGuess({ mode: 'solo', week, game: key, guess });
         ((guessState.weeks[week] ||= {}).solo ||= {})[key] = data.entry;
+        scheduleGuessSettle('solo', week, key);
         guessState.drafts.delete(`${id}|solo`);
     } catch (error) {
         // Already submitted on another device: show that one.
@@ -7051,7 +7135,7 @@ async function podcastHtml() {
     const weeks = [...new Set([current, ...played])].sort((a, b) => b - a);
     if (!weeks.includes(guessState.viewWeek.podcast)) guessState.viewWeek.podcast = current;
     const week = guessState.viewWeek.podcast;
-    const games = await guessGamesFor(week);
+    const games = orderGuessGames('podcast', week, await guessGamesFor(week));
     const cards = games.map(game => guessCardHtml(game, podcastControlsHtml(game, week))).join('');
 
     return `<p class="as-is-note">Enter your guess, the hosts&rsquo; guesses and the line they read out. Everyone is scored against that line, stale or not, so it is level.</p>
@@ -7161,6 +7245,7 @@ function spreadControlChanged(control) {
     const stored = guessState.weeks[week]?.podcast?.[key]?.[field];
     if ((stored ?? null) === value) return;
     setPodcastField(week, key, field, value);
+    scheduleGuessSettle('podcast', week, key);
     updatePodcastCard(card, week, key);
     refreshPodcastScores(week);
 }
