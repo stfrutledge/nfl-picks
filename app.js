@@ -6514,25 +6514,37 @@ function updateLiveTabVisibility() {
 //   and submit it; the worker answers with DraftKings' line at that moment,
 //   and that is the reveal. A submitted game is final.
 // - Podcast: your guess, Sal's, Bill's and the line read out on the show,
-//   typed in for any week at any time, all scored against that line.
+//   typed in for any week at any time. The closest to that line takes the
+//   game's point; a tie gives each of them one.
 //
-// A spread is a home spread: -3 is the home team giving three, +3 the away
-// team. Scoring is points off: |guess - line|, lower is better.
+// Each game is a card dressed like the Game Details popup - kickoff, teams,
+// records, venue, ESPN's injuries - with no line anywhere on it. A guess is
+// the favourite (a tap on a team) and the points they give (typed, or moved
+// half a point at a time with the arrows). A spread is stored as a home
+// spread: -3 is the home team giving three, +3 the away team.
+//
+// Typing must not lose the cursor, so after the first draw an edit changes
+// the page in place (the card's controls, the scores); only a change of mode
+// or week, or a load, redraws the tab, and the timed reload skips that while
+// a field in the tab has focus.
 // ---------------------------------------------------------------------------
 const GUESS_REFRESH_MS = 5 * 60 * 1000;
 const GUESS_SAVE_DEBOUNCE_MS = 1200;
-const GUESS_MAX_POINTS = 24;
+const GUESS_MAX_POINTS = 40;
 const GUESS_HOSTS = [{ field: 'sal', name: 'Cousin Sal', short: 'Sal' }, { field: 'bill', name: 'Bill Simmons', short: 'Bill' }];
 const PODCAST_PLAYERS = [{ field: 'you', name: 'You', short: 'You' }, ...GUESS_HOSTS];
+const PODCAST_FIELDS = [...PODCAST_PLAYERS, { field: 'line', name: 'Line read out', short: 'Line' }];
 const guessState = {
     picker: null,           // whose season `weeks` holds
     weeks: {},              // week -> { solo: { key: { guess, line, at } }, podcast: { key: { you, sal, bill, line } } }
-    lines: new Map(),       // week -> the worker's /lines: { open, close, games }
+    lines: new Map(),       // week -> the worker's /lines: { open, close }
     openWeek: null,         // the week open for solo guesses, if any
     mode: 'solo',
     viewWeek: { solo: null, podcast: null },
-    drafts: new Map(),      // `${week}|${key}` -> a solo guess not yet submitted
+    drafts: new Map(),      // `${week}|${key}|${field}` -> { favorite, text } as typed
     submitting: new Set(),  // `${week}|${key}` while its submit is in flight
+    errors: new Map(),      // `${week}|${key}` -> why a submit failed
+    injuriesOpen: new Set(),   // `${key}|${side}` with every injury showing
     status: '',
 };
 const podcastSaveTimers = new Map();   // `${week}|${key}` -> timeout
@@ -6567,6 +6579,46 @@ function guessOff(guess, line) {
 
 function formatOff(off) {
     return off === 0 ? 'exact' : `${off} off`;
+}
+
+/**
+ * The points typed in a spread box: a number of half points from 0 to 40
+ * ("3", "3.5", "-3" read as 3), or "PK" for 0. Null when empty, NaN when it
+ * is not a spread.
+ */
+function parseSpreadText(text) {
+    const t = String(text ?? '').trim();
+    if (t === '') return null;
+    if (/^(pk|pick|pick'?em|even)$/i.test(t)) return 0;
+    if (!/^[+-]?\d+(\.\d+)?$/.test(t)) return NaN;
+    const n = Math.abs(Number(t));
+    return Number.isInteger(n * 2) && n <= GUESS_MAX_POINTS ? n : NaN;
+}
+
+/** The box's text for some points: "PK" for none. */
+function spreadText(points) {
+    return points === 0 ? 'PK' : String(points);
+}
+
+/**
+ * A box's home spread, from the favourite and the points: undefined until it
+ * is a whole guess (points, and a favourite unless it is a pick'em), null
+ * when the box is empty.
+ */
+function draftValue(draft) {
+    const points = parseSpreadText(draft?.text);
+    if (points === null) return null;
+    if (Number.isNaN(points)) return undefined;
+    if (points === 0) return 0;
+    if (!draft.favorite) return undefined;
+    return draft.favorite === 'home' ? -points : points;
+}
+
+/** A stored home spread as a box: { favorite, text }. */
+function draftFromValue(value) {
+    if (value === null || value === undefined) return { favorite: null, text: '' };
+    if (value === 0) return { favorite: null, text: 'PK' };
+    return { favorite: value < 0 ? 'home' : 'away', text: String(Math.abs(value)) };
 }
 
 /** A solo week: points off over the games submitted. */
@@ -6639,6 +6691,16 @@ async function guessGamesFor(week) {
     return [...getGamesForWeek(week)].sort((a, b) => Date.parse(a.kickoff || 0) - Date.parse(b.kickoff || 0));
 }
 
+function guessGameByKey(week, key) {
+    return getGamesForWeek(week).find(g => pickKey(g) === key) || null;
+}
+
+/** True while someone is typing in the tab: a redraw then would take the cursor away. */
+function guessTabHasFocus() {
+    const root = document.getElementById('guess-content');
+    return !!(root && document.activeElement && root.contains(document.activeElement));
+}
+
 /**
  * Which week is open for solo guesses, and the picker's season. Both this
  * week and next are checked: in Ireland the site's week turns at midnight,
@@ -6657,6 +6719,7 @@ async function loadGuessTheLines() {
             guessState.picker = currentPicker;
             guessState.weeks = {};
             guessState.drafts.clear();
+            guessState.errors.clear();
         }
         if (currentPicker) {
             const response = await fetch(`${WORKER_PROXY_URL}/guesses?season=${CURRENT_SEASON}&picker=${encodeURIComponent(currentPicker)}`);
@@ -6673,7 +6736,7 @@ async function loadGuessTheLines() {
         guessLoadInFlight = false;
     }
     updateGuessTabVisibility();
-    if (currentCategory === 'guess') await renderGuessTab();
+    if (currentCategory === 'guess' && !guessTabHasFocus()) await renderGuessTab();
 }
 
 /** First load, then every GUESS_REFRESH_MS while the page is on screen. */
@@ -6726,94 +6789,140 @@ function postGuess(body) {
     return run;
 }
 
-async function submitSoloGuess(week, key) {
-    const id = `${week}|${key}`;
-    const guess = guessState.drafts.get(id);
-    if (guess === undefined || guessState.submitting.has(id)) return;
-    guessState.submitting.add(id);
-    guessState.status = '';
-    renderGuessTab();
-    try {
-        const data = await postGuess({ mode: 'solo', week, game: key, guess });
-        ((guessState.weeks[week] ||= {}).solo ||= {})[key] = data.entry;
-        guessState.drafts.delete(id);
-    } catch (error) {
-        // Already submitted on another device: show that one.
-        if (error.data?.entry) {
-            ((guessState.weeks[week] ||= {}).solo ||= {})[key] = error.data.entry;
-            guessState.drafts.delete(id);
-        } else {
-            guessState.status = `Not submitted: ${error.message}`;
-            if (/not open/.test(error.message)) loadGuessTheLines();
-        }
-    } finally {
-        guessState.submitting.delete(id);
+// --- the cards ---------------------------------------------------------------
+
+/** The card's top: Game Details' header without the line - kickoff, the teams with their records, the venue. */
+function guessHeroHtml(game) {
+    const team = side => {
+        const record = detailsRecord(game.records?.[side], side);
+        return `
+            <div class="gd-team">
+                <img class="gd-logo" src="${getTeamLogo(game[side])}" alt="${game[side]} logo" onerror="handleLogoError(this, '${game[side]}')">
+                <div class="gd-team-name">${game[side]}</div>
+                ${record ? `<div class="gd-record">${record}</div>` : ''}
+            </div>`;
+    };
+    const where = detailsVenue(game);
+    return `
+        <div class="gd-hero">
+            <div class="gd-kicker">${detailsKickoff(game)}</div>
+            <div class="gd-matchup">${team('away')}<div class="gd-vs">@</div>${team('home')}</div>
+            ${where ? `<div class="gd-venue">${where}</div>` : ''}
+        </div>`;
+}
+
+/** ESPN's injuries for both teams, as Game Details' Players tab draws them; asks for them the first time. */
+function guessInjuriesHtml(game) {
+    if (!game.espnId) return gdSection('Injuries', gdEmpty('Not available for this game.'));
+    const summary = gameSummaries.get(game.espnId);
+    if (!summary) {
+        loadGameSummary(game);
+        return gdSection('Injuries', gdEmpty('Loading from ESPN&hellip;'), 'ESPN');
     }
-    renderGuessTab();
+    if (summary.failed) return gdSection('Injuries', gdEmpty('Couldn’t load from ESPN. It will try again.'), 'ESPN');
+    const key = pickKey(game);
+    const column = side => injuryColumnHtml(game, summary, side, guessState.injuriesOpen.has(`${key}|${side}`),
+        `data-guess-injuries="${key}|${side}"`);
+    return gdSection('Injuries', `<div class="gd-cols">${column('away')}${column('home')}</div>`, 'ESPN');
 }
 
-/** Change one podcast field and save the game's row once the typing stops. */
-function setPodcastField(week, key, field, value) {
-    const podcast = ((guessState.weeks[week] ||= {}).podcast ||= {});
-    const row = (podcast[key] ||= {});
-    if (value === null) delete row[field];
-    else row[field] = value;
-    if (Object.keys(row).length === 0) delete podcast[key];
-    const id = `${week}|${key}`;
-    clearTimeout(podcastSaveTimers.get(id));
-    guessState.status = 'Saving&hellip;';
-    podcastSaveTimers.set(id, setTimeout(async () => {
-        podcastSaveTimers.delete(id);
-        const current = guessState.weeks[week]?.podcast?.[key] || {};
-        try {
-            await postGuess({ mode: 'podcast', week, game: key,
-                ...Object.fromEntries(PODCAST_PLAYERS.map(p => [p.field, current[p.field] ?? null])),
-                line: current.line ?? null });
-            guessState.status = podcastSaveTimers.size ? 'Saving&hellip;' : 'Saved';
-        } catch (error) {
-            guessState.status = `Not saved: ${error.message}`;
-        }
-        if (currentCategory === 'guess') renderGuessTab();
-    }, GUESS_SAVE_DEBOUNCE_MS));
-    renderGuessTab();
-}
-
-/** The points a spread gives, and which side gives them. */
-function guessParts(value) {
-    if (value === null || value === undefined) return { favorite: null, points: '' };
-    if (value === 0) return { favorite: null, points: '0' };
-    return { favorite: value < 0 ? 'home' : 'away', points: String(Math.abs(value)) };
-}
-
-function guessPointsOptions(selected) {
-    const options = ['<option value="">&ndash;</option>', `<option value="0"${selected === '0' ? ' selected' : ''}>PK</option>`];
-    for (let p = 1; p <= GUESS_MAX_POINTS; p += 0.5) {
-        options.push(`<option value="${p}"${selected === String(p) ? ' selected' : ''}>${p}</option>`);
-    }
-    return options.join('');
+/** A summary has landed: redraw that game's injuries on the tab, and nothing else. */
+function refreshGuessInjuries(game) {
+    if (currentCategory !== 'guess' || !game) return;
+    const box = document.querySelector(`#guess-content .guess-injuries[data-key="${pickKey(game)}"]`);
+    if (box) box.innerHTML = guessInjuriesHtml(game);
 }
 
 /**
- * One select for a whole spread, for the podcast's four a game: each size
- * with both teams beside each other ("BUF -3", "BAL -3"), so the usual
- * numbers are near the top whichever side is favoured.
+ * A spread box: tap the favourite, then the points, typed or moved half a
+ * point at a time. `field` is 'solo' or a podcast field.
  */
-function spreadSelectHtml(game, value, attrs) {
-    const options = ['<option value="">&ndash;</option>', `<option value="0"${value === 0 ? ' selected' : ''}>PK</option>`];
-    for (let p = 1; p <= GUESS_MAX_POINTS; p += 0.5) {
-        for (const v of [-p, p]) {
-            options.push(`<option value="${v}"${value === v ? ' selected' : ''}>${formatGuess(game, v)}</option>`);
-        }
-    }
-    return `<select class="guess-spread" ${attrs}>${options.join('')}</select>`;
+function spreadControlHtml(game, week, field, draft, { compact = false, disabled = false } = {}) {
+    const key = pickKey(game);
+    const fav = side => {
+        const team = game[side];
+        const on = draft.favorite === side;
+        return `<button type="button" class="spread-fav-btn${on ? ' active' : ''}" data-side="${side}" aria-pressed="${on}"
+            title="${team} favoured"${disabled ? ' disabled' : ''}>${compact
+            // Logo only, to fit four rows; its abbreviation if the logo fails.
+            ? `<img src="${getTeamLogo(team)}" alt="${getTeamAbbreviation(team)}" onerror="this.replaceWith(this.alt)">`
+            : `<img src="${getTeamLogo(team)}" alt="" onerror="this.remove()"><span>${getTeamAbbreviation(team)}</span>`}</button>`;
+    };
+    const points = parseSpreadText(draft.text);
+    const label = PODCAST_FIELDS.find(p => p.field === field)?.short || 'Your';
+    return `<div class="spread-control${compact ? ' compact' : ''}" data-week="${week}" data-key="${key}" data-field="${field}">
+        <div class="spread-favs" role="group" aria-label="Favourite">${fav('away')}${fav('home')}</div>
+        <div class="spread-stepper">
+            <button type="button" class="spread-step" data-step="-0.5" aria-label="Half a point less"${disabled ? ' disabled' : ''}>&#9660;</button>
+            <input type="text" class="spread-text${Number.isNaN(points) ? ' invalid' : ''}" inputmode="decimal" autocomplete="off"
+                placeholder="${compact ? '&ndash;' : 'Spread'}" value="${draft.text}" aria-label="${label} spread: ${game.away} at ${game.home}"${disabled ? ' disabled' : ''}>
+            <button type="button" class="spread-step" data-step="0.5" aria-label="Half a point more"${disabled ? ' disabled' : ''}>&#9650;</button>
+        </div>
+    </div>`;
 }
 
-function guessTeamButton(game, side, favorite, disabled) {
-    const team = game[side];
-    const logo = getTeamLogo(team);
-    return `<button type="button" class="guess-team${favorite === side ? ' active' : ''}" data-side="${side}"
-        aria-pressed="${favorite === side}" title="${team} favoured"${disabled ? ' disabled' : ''}>
-        ${logo ? `<img src="${logo}" alt="" loading="lazy">` : ''}<span>${getTeamAbbreviation(team)}</span></button>`;
+/** A solo card's bottom: the box and Submit, or once submitted, the reveal. */
+function soloControlsHtml(game, week, editable) {
+    const key = pickKey(game);
+    const entry = guessState.weeks[week]?.solo?.[key];
+    if (entry) {
+        const off = guessOff(entry.guess, entry.line);
+        return `<div class="guess-reveal">
+            <div><span>Your guess</span><strong>${formatGuess(game, entry.guess)}</strong></div>
+            <div><span>The line</span><strong>${formatGuess(game, entry.line)}</strong></div>
+            <div class="guess-reveal-off${off === 0 ? ' exact' : ''}"><span>Off by</span><strong>${off === 0 ? 'Exact' : off}</strong></div>
+        </div>`;
+    }
+    if (!editable) return '<p class="as-is-note">Not guessed.</p>';
+    const id = `${week}|${key}`;
+    const draft = guessState.drafts.get(`${id}|solo`) || draftFromValue(null);
+    const busy = guessState.submitting.has(id);
+    const error = guessState.errors.get(id);
+    return `<div class="guess-steps"><span>Pick the favourite, then the spread</span></div>
+        ${spreadControlHtml(game, week, 'solo', draft, { disabled: busy })}
+        <button type="button" class="guess-submit" data-submit="${key}"${draftValue(draft) === undefined || draftValue(draft) === null || busy ? ' disabled' : ''}>${busy ? 'Revealing&hellip;' : 'Submit &amp; reveal the line'}</button>
+        ${error ? `<p class="guess-error">${error}</p>` : ''}`;
+}
+
+/** A podcast card's bottom: a row for you, Sal, Bill and the line read out; the closest to the line marked. */
+function podcastControlsHtml(game, week) {
+    const key = pickKey(game);
+    const row = guessState.weeks[week]?.podcast?.[key] || {};
+    const rows = PODCAST_FIELDS.map(p => {
+        const draft = guessState.drafts.get(`${week}|${key}|${p.field}`) || draftFromValue(row[p.field]);
+        return `<div class="podcast-entry${p.field === 'line' ? ' podcast-line' : ''}" data-field="${p.field}">
+            <span class="podcast-who">${p.short}</span>
+            ${spreadControlHtml(game, week, p.field, draft, { compact: true })}
+            <span class="podcast-result"></span>
+        </div>`;
+    }).join('');
+    return `<div class="podcast-entries">${rows}</div>`;
+}
+
+/** Mark each row of a podcast card: points off, and +1 for whoever took the game. */
+function updatePodcastCard(card, week, key) {
+    const row = guessState.weeks[week]?.podcast?.[key] || {};
+    const winners = podcastGameWinners(row) || [];
+    card.querySelectorAll('.podcast-entry').forEach(entry => {
+        const field = entry.dataset.field;
+        const result = entry.querySelector('.podcast-result');
+        const won = winners.includes(field);
+        entry.classList.toggle('won', won);
+        if (field === 'line') { result.innerHTML = ''; return; }
+        const off = guessOff(row[field], row.line);
+        result.innerHTML = off === null ? '' : `${won ? '<strong>+1</strong> &middot; ' : ''}${formatOff(off)}`;
+    });
+}
+
+function guessCardHtml(game, controls, { injuries = true } = {}) {
+    const key = pickKey(game);
+    return `<article class="guess-card" data-key="${key}">
+        ${guessHeroHtml(game)}
+        <div class="guess-card-body">
+            ${injuries ? `<div class="guess-injuries" data-key="${key}">${guessInjuriesHtml(game)}</div>` : ''}
+            <div class="guess-controls">${controls}</div>
+        </div>
+    </article>`;
 }
 
 function guessWeekSelectHtml(weeks, week) {
@@ -6822,54 +6931,34 @@ function guessWeekSelectHtml(weeks, week) {
         `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}</option>`).join('')}</select>`;
 }
 
-/** Solo: a row per game, guess then submit; a submitted game shows the line it met and how far off. */
+// --- solo --------------------------------------------------------------------
+
+function soloSummaryHtml(week, editable, gameCount) {
+    const { off, games: n } = soloWeekScore(guessState.weeks[week]?.solo);
+    return `<strong>${n} of ${editable ? gameCount : n}</strong> submitted${n ? ` &middot; <strong>${off}</strong> points off &middot; ${(off / n).toFixed(1)} a game` : ''}`;
+}
+
+/** Solo: a card per game; a submitted game shows the line it met and how far off. */
 async function soloHtml() {
     const open = guessState.openWeek;
-    const played = Object.keys(guessState.weeks).map(Number).filter(w => guessState.weeks[w].solo).sort((a, b) => b - a);
+    const played = Object.keys(guessState.weeks).map(Number).filter(w => guessState.weeks[w].solo);
     const weeks = [...new Set([...(open !== null ? [open] : []), ...played])].sort((a, b) => b - a);
     if (!weeks.includes(guessState.viewWeek.solo)) guessState.viewWeek.solo = weeks[0] ?? null;
     const week = guessState.viewWeek.solo;
 
-    let html = `<p class="as-is-note">Guess a game&rsquo;s spread and submit it: the real line is revealed, and you see how close you were. Open from the end of Sunday night&rsquo;s game until Monday night&rsquo;s ends.</p>`;
+    const intro = `<p class="as-is-note">Pick each game&rsquo;s favourite and the spread, then submit: the real line is revealed and you see how close you were. Open from the end of Sunday night&rsquo;s game until Monday night&rsquo;s ends.</p>`;
     if (week === null) {
-        return html + '<p class="as-is-note"><strong>Solo opens when Sunday night&rsquo;s game ends.</strong></p>' + soloSeasonHtml();
+        return intro + '<p class="as-is-note"><strong>Solo opens when Sunday night&rsquo;s game ends.</strong></p>' + `<div id="guess-season">${soloSeasonHtml()}</div>`;
     }
     const editable = week === open;
     const solo = guessState.weeks[week]?.solo || {};
     const games = (await guessGamesFor(week)).filter(g => editable || pickKey(g) in solo);
+    const cards = games.map(game => guessCardHtml(game, soloControlsHtml(game, week, editable), { injuries: editable })).join('');
 
-    const rows = games.map(game => {
-        const key = pickKey(game);
-        const entry = solo[key];
-        if (entry) {
-            const off = guessOff(entry.guess, entry.line);
-            return `<div class="guess-row guess-row-done" data-key="${key}">
-                <span class="guess-matchup">${getTeamAbbreviation(game.away)} @ ${getTeamAbbreviation(game.home)}</span>
-                <span class="guess-reveal">You <strong>${formatGuess(game, entry.guess)}</strong>
-                    &middot; Line <strong>${formatGuess(game, entry.line)}</strong></span>
-                <span class="guess-off${off === 0 ? ' exact' : ''}">${formatOff(off)}</span>
-            </div>`;
-        }
-        const id = `${week}|${key}`;
-        const draft = guessState.drafts.get(id);
-        const { favorite, points } = guessParts(draft);
-        const busy = guessState.submitting.has(id);
-        return `<div class="guess-row" data-key="${key}">
-            <div class="guess-teams">
-                ${guessTeamButton(game, 'away', favorite, busy)}
-                <span class="guess-at">@</span>
-                ${guessTeamButton(game, 'home', favorite, busy)}
-            </div>
-            <select class="guess-points" aria-label="Points for ${game.away} at ${game.home}"${busy ? ' disabled' : ''}>${guessPointsOptions(points)}</select>
-            <button type="button" class="guess-submit" data-submit="${key}"${draft === undefined || busy ? ' disabled' : ''}>${busy ? '&hellip;' : 'Submit'}</button>
-        </div>`;
-    }).join('');
-
-    const { off, games: n } = soloWeekScore(solo);
-    return html + `<div class="guess-results-head"><h3 class="guess-subhead">Week ${week}${editable ? '' : ' (closed)'}</h3>${guessWeekSelectHtml(weeks, week)}</div>
-        <div class="guess-form" data-week="${week}">${rows || '<p class="as-is-note">No games found for this week yet.</p>'}</div>
-        <p class="as-is-note guess-count"><strong>${n} of ${editable ? games.length : n}</strong> submitted${n ? ` &middot; <strong>${off}</strong> points off &middot; ${(off / n).toFixed(1)} a game` : ''}${guessState.status ? ` &middot; ${guessState.status}` : ''}</p>
-        ${soloSeasonHtml()}`;
+    return intro + `<div class="guess-results-head"><h3 class="guess-subhead">Week ${week}${editable ? '' : ' (closed)'}</h3>${guessWeekSelectHtml(weeks, week)}</div>
+        <p class="as-is-note guess-count" id="guess-solo-summary" data-games="${games.length}" data-editable="${editable}">${soloSummaryHtml(week, editable, games.length)}</p>
+        <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>
+        <div id="guess-season">${soloSeasonHtml()}</div>`;
 }
 
 function soloSeasonHtml() {
@@ -6889,6 +6978,45 @@ function soloSeasonHtml() {
     </table></div>`;
 }
 
+/** Redraw one solo card's controls, the week's count and the season, in place. */
+function refreshSoloCard(week, key) {
+    const card = document.querySelector(`#guess-content .guess-card[data-key="${key}"]`);
+    const game = guessGameByKey(week, key);
+    if (card && game) card.querySelector('.guess-controls').innerHTML = soloControlsHtml(game, week, week === guessState.openWeek);
+    const summary = document.getElementById('guess-solo-summary');
+    if (summary) summary.innerHTML = soloSummaryHtml(week, summary.dataset.editable === 'true', Number(summary.dataset.games));
+    const season = document.getElementById('guess-season');
+    if (season) season.innerHTML = soloSeasonHtml();
+}
+
+async function submitSoloGuess(week, key) {
+    const id = `${week}|${key}`;
+    const guess = draftValue(guessState.drafts.get(`${id}|solo`));
+    if (guess === undefined || guess === null || guessState.submitting.has(id)) return;
+    guessState.submitting.add(id);
+    guessState.errors.delete(id);
+    refreshSoloCard(week, key);
+    try {
+        const data = await postGuess({ mode: 'solo', week, game: key, guess });
+        ((guessState.weeks[week] ||= {}).solo ||= {})[key] = data.entry;
+        guessState.drafts.delete(`${id}|solo`);
+    } catch (error) {
+        // Already submitted on another device: show that one.
+        if (error.data?.entry) {
+            ((guessState.weeks[week] ||= {}).solo ||= {})[key] = error.data.entry;
+            guessState.drafts.delete(`${id}|solo`);
+        } else {
+            guessState.errors.set(id, `Not submitted: ${error.message}`);
+            if (/not open/.test(error.message)) loadGuessTheLines();
+        }
+    } finally {
+        guessState.submitting.delete(id);
+    }
+    refreshSoloCard(week, key);
+}
+
+// --- podcast -----------------------------------------------------------------
+
 /**
  * The week's table, live: it sits above the games (sticky under the tabs) and
  * is redrawn on every entry, so it moves as the show goes.
@@ -6903,49 +7031,28 @@ function podcastLiveTableHtml(score) {
         return `<tr class="${lead ? 'podcast-leader' : ''}"><td class="guess-game">${p.name}</td>
             <td><strong>${s.points}</strong></td><td>${s.games}</td><td>${s.games ? s.off : '&ndash;'}</td></tr>`;
     }).join('');
-    return `<div class="podcast-live">
-        <div class="standings-table-container"><table class="standings-table guess-table">
+    return `<div class="standings-table-container"><table class="standings-table guess-table">
             <thead><tr><th></th><th>Points</th><th>Games</th><th>Points off</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>
-        <p class="as-is-note">${score.scored ? `${gamesCount(score.scored)} scored` : 'Nothing scored yet'}: closest to the line read out gets a point, a tie gives each a point.${guessState.status ? ` &middot; ${guessState.status}` : ''}</p>
-    </div>`;
+        <p class="as-is-note">${score.scored ? `${gamesCount(score.scored)} scored` : 'Nothing scored yet'}: closest to the line read out gets a point, a tie gives each a point.${guessState.status ? ` &middot; ${guessState.status}` : ''}</p>`;
 }
 
-/** Podcast: a row per game with your guess, Sal's, Bill's and the announced line; the closest takes the point. */
+/** Podcast: a card per game with your guess, Sal's, Bill's and the line read out. */
 async function podcastHtml() {
     const current = podcastWeek();
     const played = Object.keys(guessState.weeks).map(Number).filter(w => guessState.weeks[w].podcast);
     const weeks = [...new Set([current, ...played])].sort((a, b) => b - a);
     if (!weeks.includes(guessState.viewWeek.podcast)) guessState.viewWeek.podcast = current;
     const week = guessState.viewWeek.podcast;
-    const podcast = guessState.weeks[week]?.podcast || {};
     const games = await guessGamesFor(week);
-
-    const rows = games.map(game => {
-        const key = pickKey(game);
-        const row = podcast[key] || {};
-        const winners = podcastGameWinners(row) || [];
-        const fields = [...PODCAST_PLAYERS, { field: 'line', short: 'Line' }].map(p => {
-            const off = p.field === 'line' ? null : guessOff(row[p.field], row.line);
-            const won = winners.includes(p.field);
-            return `<label class="podcast-field${p.field === 'line' ? ' podcast-line' : ''}${won ? ' podcast-won' : ''}">
-                <span>${p.short}</span>
-                ${spreadSelectHtml(game, row[p.field] ?? null, `data-field="${p.field}" aria-label="${p.short}: ${game.away} at ${game.home}"`)}
-                ${off === null ? '' : `<small class="guess-off">${won ? '+1 &middot; ' : ''}${formatOff(off)}</small>`}
-            </label>`;
-        }).join('');
-        return `<div class="guess-row podcast-row" data-key="${key}">
-            <span class="guess-matchup">${getTeamAbbreviation(game.away)} @ ${getTeamAbbreviation(game.home)}</span>
-            <div class="podcast-fields">${fields}</div>
-        </div>`;
-    }).join('');
+    const cards = games.map(game => guessCardHtml(game, podcastControlsHtml(game, week))).join('');
 
     return `<p class="as-is-note">Enter your guess, the hosts&rsquo; guesses and the line they read out. Everyone is scored against that line, stale or not, so it is level.</p>
         <div class="guess-results-head"><h3 class="guess-subhead">Week ${week}</h3>${guessWeekSelectHtml(weeks, week)}</div>
-        ${podcastLiveTableHtml(podcastWeekScore(podcast))}
-        <div class="guess-form" data-week="${week}">${rows || '<p class="as-is-note">No games found for this week yet.</p>'}</div>
-        ${podcastSeasonHtml()}`;
+        <div class="podcast-live" id="podcast-live">${podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast))}</div>
+        <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>
+        <div id="guess-season">${podcastSeasonHtml()}</div>`;
 }
 
 function podcastSeasonHtml() {
@@ -6967,6 +7074,40 @@ function podcastSeasonHtml() {
     <p class="as-is-note">Weeks won: most points that week; a tie counts for each.</p>`;
 }
 
+/** The live table and the season, in place. */
+function refreshPodcastScores(week) {
+    const live = document.getElementById('podcast-live');
+    if (live) live.innerHTML = podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast));
+    const season = document.getElementById('guess-season');
+    if (season) season.innerHTML = podcastSeasonHtml();
+}
+
+/** Change one podcast field and save the game's row once the typing stops. */
+function setPodcastField(week, key, field, value) {
+    const podcast = ((guessState.weeks[week] ||= {}).podcast ||= {});
+    const row = (podcast[key] ||= {});
+    if (value === null) delete row[field];
+    else row[field] = value;
+    if (Object.keys(row).length === 0) delete podcast[key];
+    const id = `${week}|${key}`;
+    clearTimeout(podcastSaveTimers.get(id));
+    guessState.status = 'Saving&hellip;';
+    podcastSaveTimers.set(id, setTimeout(async () => {
+        podcastSaveTimers.delete(id);
+        const current = guessState.weeks[week]?.podcast?.[key] || {};
+        try {
+            await postGuess({ mode: 'podcast', week, game: key,
+                ...Object.fromEntries(PODCAST_FIELDS.map(p => [p.field, current[p.field] ?? null])) });
+            guessState.status = podcastSaveTimers.size ? 'Saving&hellip;' : 'Saved';
+        } catch (error) {
+            guessState.status = `Not saved: ${error.message}`;
+        }
+        if (currentCategory === 'guess' && guessState.mode === 'podcast') refreshPodcastScores(guessState.viewWeek.podcast);
+    }, GUESS_SAVE_DEBOUNCE_MS));
+}
+
+// --- the tab -----------------------------------------------------------------
+
 async function renderGuessTab() {
     const root = document.getElementById('guess-content');
     if (!root) return;
@@ -6982,9 +7123,42 @@ async function renderGuessTab() {
             <button class="subtab${mode === 'podcast' ? ' active' : ''}" data-guess-mode="podcast">With the podcast</button>
         </div>
         ${body}`;
+    if (mode === 'podcast') {
+        const week = guessState.viewWeek.podcast;
+        root.querySelectorAll('.guess-card').forEach(card => updatePodcastCard(card, week, card.dataset.key));
+    }
 }
 
-/** One listener for the whole tab: the content is redrawn on every change. */
+/**
+ * A spread box changed: keep what was typed, and act on it - a solo box
+ * turns Submit on or off, a podcast box saves and rescores. Nothing here
+ * redraws the box itself, so the cursor stays where it is.
+ */
+function spreadControlChanged(control) {
+    const week = Number(control.dataset.week), key = control.dataset.key, field = control.dataset.field;
+    const input = control.querySelector('.spread-text');
+    const favorite = control.querySelector('.spread-fav-btn.active')?.dataset.side || null;
+    const draft = { favorite, text: input.value };
+    guessState.drafts.set(`${week}|${key}|${field}`, draft);
+    input.classList.toggle('invalid', Number.isNaN(parseSpreadText(draft.text)));
+    const value = draftValue(draft);
+    const card = control.closest('.guess-card');
+
+    if (field === 'solo') {
+        const submit = card.querySelector('.guess-submit');
+        if (submit) submit.disabled = value === undefined || value === null;
+        return;
+    }
+    // A half-made podcast guess (points, no favourite yet) is left unsaved.
+    if (value === undefined) return;
+    const stored = guessState.weeks[week]?.podcast?.[key]?.[field];
+    if ((stored ?? null) === value) return;
+    setPodcastField(week, key, field, value);
+    updatePodcastCard(card, week, key);
+    refreshPodcastScores(week);
+}
+
+/** One set of listeners for the whole tab. */
 function setupGuessTab() {
     const root = document.getElementById('guess-content');
     if (!root) return;
@@ -6999,42 +7173,54 @@ function setupGuessTab() {
         }
         const submit = event.target.closest('[data-submit]');
         if (submit) {
-            submitSoloGuess(Number(submit.closest('.guess-form').dataset.week), submit.dataset.submit);
+            submitSoloGuess(Number(submit.closest('.guess-cards').dataset.week), submit.dataset.submit);
             return;
         }
-        const team = event.target.closest('.guess-team');
-        if (team) {
-            const week = Number(team.closest('.guess-form').dataset.week), key = team.closest('.guess-row').dataset.key;
-            const id = `${week}|${key}`;
-            const { points } = guessParts(guessState.drafts.get(id));
-            const size = points === '' || points === '0' ? 3 : Number(points);
-            guessState.drafts.set(id, team.dataset.side === 'home' ? -size : size);
-            renderGuessTab();
+        const more = event.target.closest('[data-guess-injuries]');
+        if (more) {
+            const id = more.dataset.guessInjuries;
+            if (guessState.injuriesOpen.has(id)) guessState.injuriesOpen.delete(id);
+            else guessState.injuriesOpen.add(id);
+            const [key] = id.split('|');
+            const week = Number(more.closest('.guess-cards').dataset.week);
+            refreshGuessInjuries(guessGameByKey(week, key));
+            return;
         }
+        const control = event.target.closest('.spread-control');
+        if (!control) return;
+        const fav = event.target.closest('.spread-fav-btn');
+        if (fav) {
+            control.querySelectorAll('.spread-fav-btn').forEach(b => {
+                const on = b === fav;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-pressed', String(on));
+            });
+            spreadControlChanged(control);
+            return;
+        }
+        const step = event.target.closest('.spread-step');
+        if (step) {
+            const input = control.querySelector('.spread-text');
+            const now = parseSpreadText(input.value);
+            const base = now === null || Number.isNaN(now) ? 0 : now;
+            input.value = spreadText(Math.min(GUESS_MAX_POINTS, Math.max(0, base + Number(step.dataset.step))));
+            spreadControlChanged(control);
+        }
+    });
+    root.addEventListener('input', event => {
+        const control = event.target.closest('.spread-control');
+        if (control && event.target.matches('.spread-text')) spreadControlChanged(control);
+    });
+    // Enter in a solo box submits it.
+    root.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || !event.target.matches('.spread-text')) return;
+        const submit = event.target.closest('.guess-card')?.querySelector('.guess-submit:not(:disabled)');
+        if (submit) submit.click();
     });
     root.addEventListener('change', event => {
         if (event.target.id === 'guess-week-select') {
             guessState.viewWeek[guessState.mode] = Number(event.target.value);
             guessState.status = '';
-            renderGuessTab();
-            return;
-        }
-        const form = event.target.closest('.guess-form'), row = event.target.closest('.guess-row');
-        if (!form || !row) return;
-        const week = Number(form.dataset.week), key = row.dataset.key;
-        const value = event.target.value === '' ? null : Number(event.target.value);
-        if (event.target.matches('.guess-spread')) {
-            setPodcastField(week, key, event.target.dataset.field, value);
-            return;
-        }
-        if (event.target.matches('.guess-points')) {
-            const id = `${week}|${key}`;
-            if (value === null) guessState.drafts.delete(id);
-            else {
-                // Points before a side: the home team, until a team is tapped.
-                const { favorite } = guessParts(guessState.drafts.get(id));
-                guessState.drafts.set(id, value === 0 ? 0 : favorite === 'away' ? value : -value);
-            }
             renderGuessTab();
         }
     });
@@ -11927,6 +12113,12 @@ function detailsTvHtml(game) {
 }
 
 /** "Sunday, Oct 25 · 1:00 PM ET" from the kickoff, or the card's own words without one. */
+/** "Lambeau Field · Green Bay, WI": a game abroad names its country, as "Saint-Denis" alone could be anywhere. */
+function detailsVenue(game) {
+    const abroad = game.country && !/^(usa|united states)$/i.test(game.country) ? game.country : '';
+    return [game.stadium, [game.location, abroad].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+}
+
 function detailsKickoff(game) {
     const at = game.kickoff ? new Date(game.kickoff) : null;
     if (!at || Number.isNaN(at.getTime())) return [game.day, game.time].filter(Boolean).join(' · ');
@@ -11996,9 +12188,7 @@ function gameDetailsHtml(game) {
     const middle = started
         ? `<div class="gd-vs gd-status${final ? '' : ' live'}">${final ? 'Final' : liveClockLabel(live)}</div>`
         : '<div class="gd-vs">@</div>';
-    // A game abroad names its country: "Saint-Denis" alone could be anywhere.
-    const abroad = game.country && !/^(usa|united states)$/i.test(game.country) ? game.country : '';
-    const where = [game.stadium, [game.location, abroad].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+    const where = detailsVenue(game);
 
     const colours = splitBarColours(game);
     // White on a light team colour (Saints gold, Steelers yellow) is hard to
@@ -12145,6 +12335,7 @@ async function loadGameSummary(game) {
     } finally {
         gameSummariesInFlight.delete(id);
         refreshGameDetails();
+        refreshGuessInjuries(game);
     }
 }
 
@@ -12342,36 +12533,43 @@ function headshotHtml(href) {
     return `<span class="gd-headshot">${img}</span>`;
 }
 
+/** An injury status as a short coloured chip: OUT, DOUBT, Q, IR, PUP, SUSP. */
+function injuryChip(status) {
+    const cls = status === 'Out' || status === 'Injured Reserve' ? 'out' : status === 'Doubtful' ? 'doubtful' : 'questionable';
+    const short = { Out: 'OUT', Doubtful: 'DOUBT', Questionable: 'Q', 'Injured Reserve': 'IR', 'Physically Unable to Perform': 'PUP', Suspension: 'SUSP' }[status] || status;
+    return `<span class="gd-status ${cls}" title="${status}">${short}</span>`;
+}
+
+/**
+ * One team's injuries off ESPN's summary, worst first: ESPN's own list (the
+ * same players ESPN shows, by the owner's choice), and the whole roster list
+ * when `open`, behind a "Show all" button carrying `toggleAttr`. Game
+ * Details' Players tab and Guess the Lines' cards both draw it.
+ */
+function injuryColumnHtml(game, summary, side, open, toggleAttr) {
+    const rank = status => { const i = INJURY_ORDER.indexOf(status); return i < 0 ? INJURY_ORDER.length : i; };
+    const entry = summaryForSide(summary.data.injuries, game, side);
+    const worstFirst = list => [...(list || [])].sort((x, y) => rank(x.status) - rank(y.status));
+    const espn = worstFirst(entry?.players);
+    const all = worstFirst(entry?.all);
+    const showAll = open && all.length > espn.length;
+    const players = showAll ? all : espn;
+    if (players.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None listed.')}</div>`;
+    const rows = players.map(p => `
+                    <div class="gd-injury">${headshotHtml(p.headshot)}<span class="gd-injury-name">${p.name}</span><span class="gd-injury-meta">${injuryChip(p.status)}<span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></span></div>`).join('');
+    const toggle = all.length > espn.length
+        ? `<button type="button" class="gd-more" ${toggleAttr}>${showAll ? 'Show fewer' : `Show all ${all.length}`}</button>`
+        : '';
+    return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${toggle}</div>`;
+}
+
 function playersPanelHtml(game) {
     const summary = gameSummaries.get(game.espnId);
     if (!game.espnId) return gdEmpty('Not available for this game.');
     if (!summary) return gdEmpty('Loading from ESPN&hellip;');
     if (summary.failed) return gdEmpty('Couldn’t load from ESPN. It will try again.');
 
-    const rank = status => { const i = INJURY_ORDER.indexOf(status); return i < 0 ? INJURY_ORDER.length : i; };
-    const chip = status => {
-        const cls = status === 'Out' || status === 'Injured Reserve' ? 'out' : status === 'Doubtful' ? 'doubtful' : 'questionable';
-        const short = { Out: 'OUT', Doubtful: 'DOUBT', Questionable: 'Q', 'Injured Reserve': 'IR', 'Physically Unable to Perform': 'PUP', Suspension: 'SUSP' }[status] || status;
-        return `<span class="gd-status ${cls}" title="${status}">${short}</span>`;
-    };
-    const injuries = side => {
-        // ESPN's own list first (the same players ESPN shows, by the owner's
-        // choice), and the whole roster list behind "Show all" when the
-        // worker sent one with more in it.
-        const entry = summaryForSide(summary.data.injuries, game, side);
-        const worstFirst = list => [...(list || [])].sort((x, y) => rank(x.status) - rank(y.status));
-        const espn = worstFirst(entry?.players);
-        const all = worstFirst(entry?.all);
-        const open = injuriesOpen.has(side) && all.length > espn.length;
-        const players = open ? all : espn;
-        if (players.length === 0) return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${gdEmpty('None listed.')}</div>`;
-        const rows = players.map(p => `
-                        <div class="gd-injury">${headshotHtml(p.headshot)}<span class="gd-injury-name">${p.name}</span><span class="gd-injury-meta">${chip(p.status)}<span class="gd-sub">${[p.pos, p.detail].filter(Boolean).join(' · ')}</span></span></div>`).join('');
-        const toggle = all.length > espn.length
-            ? `<button type="button" class="gd-more" data-injuries="${side}">${open ? 'Show fewer' : `Show all ${all.length}`}</button>`
-            : '';
-        return `<div class="gd-col"><div class="gd-col-head">${game[side]}</div>${rows}${toggle}</div>`;
-    };
+    const injuries = side => injuryColumnHtml(game, summary, side, injuriesOpen.has(side), `data-injuries="${side}"`);
 
     const leaders = side => {
         const items = summaryForSide(summary.data.leaders, game, side)?.items || [];

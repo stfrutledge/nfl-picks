@@ -74,7 +74,7 @@ function loadSiteScoring() {
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
     return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, guessParts };`)(
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue };`)(
         name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null });
 }
 
@@ -225,7 +225,26 @@ let mod;
         assert.strictEqual(site.formatGuess(game, -3.5), 'BUF -3.5');
         assert.strictEqual(site.formatGuess(game, 2), 'BAL -2');
         assert.strictEqual(site.formatGuess(game, 0), 'PK');
-        assert.deepStrictEqual(site.guessParts(2), { favorite: 'away', points: '2' });
+    });
+
+    await check('the spread box: typed points, half points only, PK for none', () => {
+        assert.strictEqual(site.parseSpreadText(''), null);
+        assert.strictEqual(site.parseSpreadText(' 3.5 '), 3.5);
+        assert.strictEqual(site.parseSpreadText('-7'), 7, 'a sign is ignored: the favourite says which way');
+        assert.strictEqual(site.parseSpreadText('pk'), 0);
+        assert.ok(Number.isNaN(site.parseSpreadText('3.25')));
+        assert.ok(Number.isNaN(site.parseSpreadText('41')));
+        assert.ok(Number.isNaN(site.parseSpreadText('three')));
+    });
+
+    await check('the spread box: a whole guess needs a favourite, unless it is a pick’em', () => {
+        assert.strictEqual(site.draftValue({ favorite: 'home', text: '3.5' }), -3.5);
+        assert.strictEqual(site.draftValue({ favorite: 'away', text: '3' }), 3);
+        assert.strictEqual(site.draftValue({ favorite: null, text: '3' }), undefined, 'no favourite yet');
+        assert.strictEqual(site.draftValue({ favorite: null, text: 'PK' }), 0);
+        assert.strictEqual(site.draftValue({ favorite: 'home', text: '' }), null);
+        assert.strictEqual(site.draftValue({ favorite: 'home', text: '3.3' }), undefined);
+        for (const v of [-3.5, 2, 0]) assert.strictEqual(site.draftValue(site.draftFromValue(v)), v, 'round trip ' + v);
     });
 
     await check('the solo window: opened on Sunday night and not closed', () => {
