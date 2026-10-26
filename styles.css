@@ -8175,3 +8175,282 @@ body.live-provisional #as-is-standings-table {
     color: var(--accent-amber);
     font-weight: 600;
 }
+
+/* Guess the Lines. Laid out like the Live tab (.live-section): a title, the
+   mode toggle, a note, then a row per game. */
+.guess-section .live-title {
+    margin-bottom: 12px;
+}
+
+.guess-section .as-is-note {
+    margin-bottom: 12px;
+}
+
+.guess-modes {
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.guess-form {
+    margin-bottom: 12px;
+}
+
+.guess-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.guess-teams {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.guess-at {
+    color: var(--text-light);
+    font-size: 0.8rem;
+}
+
+.guess-team {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 84px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.guess-team img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+/* The side guessed to be favoured. */
+.guess-team.active {
+    border-color: var(--accent-green);
+    background: var(--accent-green);
+    color: white;
+}
+
+.guess-points,
+.guess-spread,
+.guess-results-head select {
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.guess-points {
+    min-width: 72px;
+}
+
+.guess-submit {
+    margin-left: auto;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--nfl-blue);
+    color: white;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.guess-submit:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* A submitted solo game: the guess, the line it met, and how far off. */
+.guess-matchup {
+    min-width: 92px;
+    font-size: 0.85rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.guess-reveal {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.guess-reveal strong {
+    color: var(--text-primary);
+}
+
+.guess-off {
+    margin-left: auto;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.guess-off.exact {
+    color: var(--accent-green);
+}
+
+/* Podcast: four fields a game, two by two on a phone. */
+.podcast-row {
+    align-items: flex-start;
+}
+
+.podcast-row .guess-matchup {
+    padding-top: 22px;
+}
+
+.podcast-fields {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.podcast-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.podcast-field > span {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-light);
+}
+
+.podcast-field .guess-spread {
+    width: 100%;
+    min-width: 0;
+}
+
+.podcast-field .guess-off {
+    margin-left: 0;
+    font-size: 0.7rem;
+}
+
+/* The week's table, live while the show is entered: it stays in view under
+   the sticky tabs as the games scroll past. */
+.podcast-live {
+    position: sticky;
+    top: var(--tabs-height, 56px);
+    z-index: 5;
+    padding: 8px 0 2px;
+    background: var(--bg-secondary);
+}
+
+.podcast-live .as-is-note {
+    margin: 6px 0 4px;
+}
+
+.podcast-live .guess-table td {
+    padding: 6px 10px;
+}
+
+.podcast-leader td {
+    color: var(--accent-green);
+}
+
+/* A guess that took the game's point. */
+.podcast-won .guess-spread {
+    border-color: var(--accent-green);
+    box-shadow: 0 0 0 1px var(--accent-green);
+}
+
+.podcast-won .guess-off {
+    color: var(--accent-green);
+}
+
+/* The announced line is the answer: set apart from the guesses. */
+.podcast-line .guess-spread {
+    border-color: var(--nfl-blue);
+}
+
+.guess-count {
+    margin-top: 10px;
+}
+
+.guess-results-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 8px 0 4px;
+}
+
+.guess-results-head .guess-subhead {
+    margin: 0;
+}
+
+.guess-table td {
+    padding: 8px 10px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 0.85rem;
+}
+
+.guess-table .guess-game {
+    text-align: left;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.guess-table tfoot td {
+    border-bottom: none;
+    border-top: 2px solid var(--border-color);
+}
+
+.guess-subhead {
+    margin: 22px 0 10px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+    .guess-row {
+        gap: 8px;
+    }
+
+    .guess-team {
+        min-width: 0;
+        padding: 6px 8px;
+    }
+
+    .podcast-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .podcast-row .guess-matchup {
+        padding-top: 0;
+    }
+
+    .podcast-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .guess-table td {
+        padding: 6px;
+    }
+}

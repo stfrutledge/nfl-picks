@@ -173,6 +173,8 @@ export default {
         return await handleSplits(request, url, ctx);
       } else if (path === '/lines') {
         return await handleLines(request, url, env);
+      } else if (path === '/guesses') {
+        return await handleGuesses(request, url, env);
       } else if (path === '/picked-at') {
         return await handlePickedAt(request, url, env);
       } else if (path === '/espn-summary') {
@@ -1793,6 +1795,12 @@ function weekOpening(previous, now) {
   return { at: now, late: now - lastKickoff > OPEN_LATE_AFTER_MS };
 }
 
+/** Every game of a week final: its Monday night is over, and Guess the Lines for the next one closes. */
+function weekPlayed(board) {
+  const games = board?.games || [];
+  return games.length > 0 && games.every(g => g.state === 'post');
+}
+
 /**
  * Each run: open the next week when its time has come, and add a point for
  * every game still to kick off whose spread or total differs from its last
@@ -1800,8 +1808,11 @@ function weekOpening(previous, now) {
  * refused - the saved schedule it falls back on carries no odds. Its own
  * try/catch in the caller, as the splits have.
  *
- * A KV entry is { open: { at, late }, games: { key: [points] } }; a point is
- * { at, away, home, total } with `kind: 'open' | 'first'` on a game's first.
+ * A KV entry is { open: { at, late }, close: { at }, games: { key: [points] } };
+ * a point is { at, away, home, total } with `kind: 'open' | 'first'` on a
+ * game's first. `close` is when Guess the Lines shut for the week: the first
+ * run once every game of the week before is final (Monday night), or `late`
+ * when the week was already ESPN's current board.
  */
 async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeekBoard) {
   if (!env.NOTIFY_STATE || board.espnError) return { skipped: board.espnError ? 'no ESPN' : 'not configured' };
@@ -1824,6 +1835,10 @@ async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeek
       if (entry.open.late && OPENS_TAKEN_LATE.has(`${b.season}:${siteWeekFor(b)}`)) {
         entry.open = { at: now, late: false, agreed: true };
       }
+      changed = true;
+    }
+    if (!entry.close && (!previous || weekPlayed(previous))) {
+      entry.close = previous ? { at: now } : { at: now, late: true };
       changed = true;
     }
     for (const game of b.games) {
@@ -1917,7 +1932,8 @@ async function handleLines(request, url, env) {
   if (!env.NOTIFY_STATE) return jsonResponse({ error: 'Not configured' }, 500);
   const stored = JSON.parse(await env.NOTIFY_STATE.get(linesKey(season, Number(week))) || 'null');
   return new Response(JSON.stringify({
-    season: Number(season), week: Number(week), open: stored?.open || null, games: stored?.games || {},
+    season: Number(season), week: Number(week), open: stored?.open || null, close: stored?.close || null,
+    games: stored?.games || {},
   }), {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...CORS_HEADERS },
   });
@@ -1984,6 +2000,115 @@ async function handlePickedAt(request, url, env) {
   } finally {
     await session.close();
   }
+}
+
+// ---------------------------------------------------------------------------
+// /guesses - Guess the Lines, after the Bill Simmons podcast's segment with
+// Cousin Sal. Two ways to play, both per picker:
+//
+// - **Solo**, against the real line. Between the end of Sunday night's game
+//   (when next week's lines open, see recordLineMoves) and the end of Monday
+//   night's (`close`), a picker submits a guess at one game's spread, and the
+//   worker answers with DraftKings' line at that moment - the reveal. The
+//   line is read here, not sent by the phone, and a game once submitted is
+//   final, so a guess cannot be made again after seeing the answer.
+// - **Podcast**, alongside the hosts: the picker's guess, Sal's, Bill's and
+//   the line read out on the show, all typed in. Scored against the line they
+//   announced, stale or not, which keeps it level. Any week, any time: the
+//   episode comes out when it comes out.
+//
+// One KV entry per picker per season, guesses:<season>:<picker>:
+// { week: { solo: { gameKey: { guess, line, at } },
+//           podcast: { gameKey: { you, sal, bill, line } } } }
+// Every spread is a home spread: -3 is the home team giving three.
+// ---------------------------------------------------------------------------
+
+const PODCAST_FIELDS = ['you', 'sal', 'bill', 'line'];
+
+function guessesKey(season, picker) {
+  return `guesses:${season}:${picker}`;
+}
+
+/** A spread as the game stores it: a half point from -40 to +40. */
+function validSpread(value) {
+  return typeof value === 'number' && Number.isInteger(value * 2) && Math.abs(value) <= 40;
+}
+
+/** The home spread of a game's latest point in the line history; null with none. */
+function latestHomeSpread(points) {
+  const last = points?.[points.length - 1];
+  if (!last) return null;
+  if (last.home === 'PK' || last.home === 'EVEN') return 0;
+  const n = parseFloat(last.home);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * GET /guesses?season=YYYY&picker=NAME - the picker's whole season.
+ * POST /guesses { mode: 'solo', season, week, picker, game, guess } - submit
+ *   one solo guess; answers with the line it is scored against.
+ * POST /guesses { mode: 'podcast', season, week, picker, game, you, sal, bill, line }
+ *   - one game's podcast row, replaced; every field null removes it.
+ */
+async function handleGuesses(request, url, env, now = Date.now()) {
+  if (!env.NOTIFY_STATE) return jsonResponse({ error: 'Not configured' }, 500);
+  const noStore = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS_HEADERS };
+
+  if (request.method === 'GET') {
+    const season = url.searchParams.get('season'), picker = url.searchParams.get('picker') || '';
+    if (!/^\d{4}$/.test(season || '') || !NFL_PICKERS.includes(picker)) {
+      return jsonResponse({ error: 'Give season=YYYY and picker=NAME' }, 400);
+    }
+    const weeks = JSON.parse(await env.NOTIFY_STATE.get(guessesKey(season, picker)) || '{}');
+    return new Response(JSON.stringify({ season: Number(season), picker, weeks }), { headers: noStore });
+  }
+  if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+
+  let body;
+  try { body = await request.json(); } catch { return jsonResponse({ error: 'Bad JSON' }, 400); }
+  const { mode, season, week, picker, game } = body || {};
+  if (!['solo', 'podcast'].includes(mode) || !Number.isInteger(season) || season < 2000
+      || !Number.isInteger(week) || week < 1 || week > 18 || !NFL_PICKERS.includes(picker)
+      || typeof game !== 'string' || !/^[a-z0-9]+_[a-z0-9]+$/.test(game)) {
+    return jsonResponse({ error: 'Give mode, season, week, picker and game' }, 400);
+  }
+
+  const key = guessesKey(season, picker);
+  const weeks = JSON.parse(await env.NOTIFY_STATE.get(key) || '{}');
+  const byWeek = (weeks[week] ||= {});
+
+  if (mode === 'solo') {
+    if (!validSpread(body.guess)) return jsonResponse({ error: 'A guess is a half-point spread' }, 400);
+    const lines = JSON.parse(await env.NOTIFY_STATE.get(linesKey(season, week)) || 'null');
+    // Open from Sunday night to Monday night; a week first seen late never was.
+    if (!lines?.open || lines.open.late || lines.close) {
+      return jsonResponse({ error: `Guessing is not open for week ${week}` }, 409);
+    }
+    const already = byWeek.solo?.[game];
+    if (already) return jsonResponse({ error: 'Already submitted', entry: already }, 409);
+    const line = latestHomeSpread(lines.games?.[game]);
+    if (line === null) return jsonResponse({ error: 'No line for this game yet' }, 409);
+    const entry = { guess: body.guess, line, at: now };
+    (byWeek.solo ||= {})[game] = entry;
+    await env.NOTIFY_STATE.put(key, JSON.stringify(weeks));
+    return new Response(JSON.stringify({ ok: true, week, game, entry }), { headers: noStore });
+  }
+
+  const row = {};
+  for (const field of PODCAST_FIELDS) {
+    const value = body[field] ?? null;
+    if (value !== null && !validSpread(value)) {
+      return jsonResponse({ error: `${field} is a half-point spread or null` }, 400);
+    }
+    if (value !== null) row[field] = value;
+  }
+  const podcast = (byWeek.podcast ||= {});
+  if (Object.keys(row).length > 0) podcast[game] = row;
+  else delete podcast[game];
+  if (Object.keys(podcast).length === 0) delete byWeek.podcast;
+  if (Object.keys(byWeek).length === 0) delete weeks[week];
+  await env.NOTIFY_STATE.put(key, JSON.stringify(weeks));
+  return new Response(JSON.stringify({ ok: true, week, game, row }), { headers: noStore });
 }
 
 // ---------------------------------------------------------------------------

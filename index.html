@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=22aa3229">
+    <link rel="stylesheet" href="styles.css?v=a10cca56">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -69,6 +69,10 @@
             <section class="category-tabs">
                 <button class="tab tab-picks active" data-category="make-picks">Make Picks</button>
                 <button class="tab" data-category="live">Live</button>
+                <!-- Up from the end of Sunday night's game to the end of Monday
+                     night's, and after that for anyone who played this season.
+                     See updateGuessTabVisibility(). -->
+                <button class="tab" data-category="guess" id="guess-tab" style="display: none;">Guess Lines</button>
                 <button class="tab" data-category="standings">Standings</button>
                 <button class="tab" data-category="history" id="history-tab" style="display: none;">History</button>
             </section>
@@ -632,6 +636,12 @@
             </section>
 
             <!-- Live: this week's Blazin' 5 games and the as-is table -->
+            <!-- Guess the Lines: next week's spreads, guessed before the site
+                 shows them. Drawn whole by renderGuessTab(). -->
+            <section id="guess-section" class="live-section guess-section hidden">
+                <div id="guess-content"></div>
+            </section>
+
             <section id="live-section" class="live-section hidden">
                 <div class="live-header">
                     <!-- "Blazin' 5 - Week 5" or "Blazin' 5 - Season to Date": the sub-tab, then
@@ -956,10 +966,10 @@
         </div>
     </div>
 
-    <script src="parser.js?v=f800f09e"></script>
+    <script src="parser.js?v=eb0dd073"></script>
     <script src="charts.js?v=f352573c"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=097fe4e7"></script>
+    <script src="app.js?v=7991be72"></script>
 </body>
 </html>
