@@ -74,7 +74,7 @@ function loadSiteScoring() {
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
     return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue };`)(
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText };`)(
         name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null });
 }
 
@@ -227,14 +227,33 @@ let mod;
         assert.strictEqual(site.formatGuess(game, 0), 'PK');
     });
 
-    await check('the spread box: typed points, half points only, PK for none', () => {
+    await check('the spread box: the favourite’s points, minus or not, half points only, PK for none', () => {
         assert.strictEqual(site.parseSpreadText(''), null);
-        assert.strictEqual(site.parseSpreadText(' 3.5 '), 3.5);
-        assert.strictEqual(site.parseSpreadText('-7'), 7, 'a sign is ignored: the favourite says which way');
+        assert.strictEqual(site.parseSpreadText(' 3.5 '), 3.5, 'a number pad with no minus');
+        assert.strictEqual(site.parseSpreadText('-7'), 7);
+        assert.strictEqual(site.parseSpreadText('−3'), 3, 'a typographic minus');
         assert.strictEqual(site.parseSpreadText('pk'), 0);
+        assert.ok(Number.isNaN(site.parseSpreadText('+3')), 'the favourite gives points, never gets them');
         assert.ok(Number.isNaN(site.parseSpreadText('3.25')));
         assert.ok(Number.isNaN(site.parseSpreadText('41')));
         assert.ok(Number.isNaN(site.parseSpreadText('three')));
+    });
+
+    await check('the spread box shows the favourite giving points: -3.5, or PK', () => {
+        assert.strictEqual(site.favoriteSpreadText(3.5), '-3.5');
+        assert.strictEqual(site.favoriteSpreadText(0), 'PK');
+        assert.deepStrictEqual(site.draftFromValue(3), { favorite: 'away', text: '-3' });
+        assert.deepStrictEqual(site.draftFromValue(-6.5), { favorite: 'home', text: '-6.5' });
+    });
+
+    await check('no two top-level functions in app.js share a name', () => {
+        // A second declaration silently replaces the first. The spread box's
+        // spreadText() was overridden by an older one that signs "+3", so the
+        // arrows wrote a plus into a favourite's spread.
+        const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+        const names = [...app.matchAll(/^(?:async )?function (\w+)/gm)].map(m => m[1]);
+        const twice = names.filter((n, i) => names.indexOf(n) !== i);
+        assert.deepStrictEqual(twice, []);
     });
 
     await check('the spread box: a whole guess needs a favourite, unless it is a pick’em', () => {

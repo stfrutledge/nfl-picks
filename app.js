@@ -6517,8 +6517,8 @@ function updateLiveTabVisibility() {
 //   typed in for any week at any time. The closest to that line takes the
 //   game's point; a tie gives each of them one.
 //
-// Each game is a card dressed like the Game Details popup - kickoff, teams,
-// records, venue, ESPN's injuries - with no line anywhere on it. A guess is
+// Each game is a card dressed like the Game Details popup's header - kickoff,
+// teams, records, venue - with no line anywhere on it. A guess is
 // the favourite (a tap on a team) and the points they give (typed, or moved
 // half a point at a time with the arrows). A spread is stored as a home
 // spread: -3 is the home team giving three, +3 the away team.
@@ -6544,7 +6544,6 @@ const guessState = {
     drafts: new Map(),      // `${week}|${key}|${field}` -> { favorite, text } as typed
     submitting: new Set(),  // `${week}|${key}` while its submit is in flight
     errors: new Map(),      // `${week}|${key}` -> why a submit failed
-    injuriesOpen: new Set(),   // `${key}|${side}` with every injury showing
     status: '',
 };
 const podcastSaveTimers = new Map();   // `${week}|${key}` -> timeout
@@ -6582,22 +6581,27 @@ function formatOff(off) {
 }
 
 /**
- * The points typed in a spread box: a number of half points from 0 to 40
- * ("3", "3.5", "-3" read as 3), or "PK" for 0. Null when empty, NaN when it
- * is not a spread.
+ * The points typed in a spread box, the favourite's: "-3.5" or "3.5" (a
+ * phone's number pad often has no minus) read as 3.5, half points from 0 to
+ * 40, or "PK" for 0. A plus is refused - the favourite gives points, it does
+ * not get them. Null when empty, NaN when it is not a spread.
  */
 function parseSpreadText(text) {
-    const t = String(text ?? '').trim();
+    const t = String(text ?? '').trim().replace(/^−/, '-');
     if (t === '') return null;
     if (/^(pk|pick|pick'?em|even)$/i.test(t)) return 0;
-    if (!/^[+-]?\d+(\.\d+)?$/.test(t)) return NaN;
+    if (!/^-?\d+(\.\d+)?$/.test(t)) return NaN;
     const n = Math.abs(Number(t));
     return Number.isInteger(n * 2) && n <= GUESS_MAX_POINTS ? n : NaN;
 }
 
-/** The box's text for some points: "PK" for none. */
-function spreadText(points) {
-    return points === 0 ? 'PK' : String(points);
+/**
+ * The box's text for the favourite's points: "-3.5", or "PK" for none.
+ * Not spreadText(), which signs a line from either side ("+3") and is a
+ * different function elsewhere in this file.
+ */
+function favoriteSpreadText(points) {
+    return points === 0 ? 'PK' : '-' + points;
 }
 
 /**
@@ -6618,7 +6622,7 @@ function draftValue(draft) {
 function draftFromValue(value) {
     if (value === null || value === undefined) return { favorite: null, text: '' };
     if (value === 0) return { favorite: null, text: 'PK' };
-    return { favorite: value < 0 ? 'home' : 'away', text: String(Math.abs(value)) };
+    return { favorite: value < 0 ? 'home' : 'away', text: favoriteSpreadText(Math.abs(value)) };
 }
 
 /** A solo week: points off over the games submitted. */
@@ -6811,28 +6815,6 @@ function guessHeroHtml(game) {
         </div>`;
 }
 
-/** ESPN's injuries for both teams, as Game Details' Players tab draws them; asks for them the first time. */
-function guessInjuriesHtml(game) {
-    if (!game.espnId) return gdSection('Injuries', gdEmpty('Not available for this game.'));
-    const summary = gameSummaries.get(game.espnId);
-    if (!summary) {
-        loadGameSummary(game);
-        return gdSection('Injuries', gdEmpty('Loading from ESPN&hellip;'), 'ESPN');
-    }
-    if (summary.failed) return gdSection('Injuries', gdEmpty('Couldn’t load from ESPN. It will try again.'), 'ESPN');
-    const key = pickKey(game);
-    const column = side => injuryColumnHtml(game, summary, side, guessState.injuriesOpen.has(`${key}|${side}`),
-        `data-guess-injuries="${key}|${side}"`);
-    return gdSection('Injuries', `<div class="gd-cols">${column('away')}${column('home')}</div>`, 'ESPN');
-}
-
-/** A summary has landed: redraw that game's injuries on the tab, and nothing else. */
-function refreshGuessInjuries(game) {
-    if (currentCategory !== 'guess' || !game) return;
-    const box = document.querySelector(`#guess-content .guess-injuries[data-key="${pickKey(game)}"]`);
-    if (box) box.innerHTML = guessInjuriesHtml(game);
-}
-
 /**
  * A spread box: tap the favourite, then the points, typed or moved half a
  * point at a time. `field` is 'solo' or a podcast field.
@@ -6855,7 +6837,7 @@ function spreadControlHtml(game, week, field, draft, { compact = false, disabled
         <div class="spread-stepper">
             <button type="button" class="spread-step" data-step="-0.5" aria-label="Half a point less"${disabled ? ' disabled' : ''}>&#9660;</button>
             <input type="text" class="spread-text${Number.isNaN(points) ? ' invalid' : ''}" inputmode="decimal" autocomplete="off"
-                placeholder="${compact ? '&ndash;' : 'Spread'}" value="${draft.text}" aria-label="${label} spread: ${game.away} at ${game.home}"${disabled ? ' disabled' : ''}>
+                placeholder="${compact ? '&ndash;' : '-3.5'}" value="${draft.text}" aria-label="${label} spread: ${game.away} at ${game.home}"${disabled ? ' disabled' : ''}>
             <button type="button" class="spread-step" data-step="0.5" aria-label="Half a point more"${disabled ? ' disabled' : ''}>&#9650;</button>
         </div>
     </div>`;
@@ -6914,12 +6896,10 @@ function updatePodcastCard(card, week, key) {
     });
 }
 
-function guessCardHtml(game, controls, { injuries = true } = {}) {
-    const key = pickKey(game);
-    return `<article class="guess-card" data-key="${key}">
+function guessCardHtml(game, controls) {
+    return `<article class="guess-card" data-key="${pickKey(game)}">
         ${guessHeroHtml(game)}
         <div class="guess-card-body">
-            ${injuries ? `<div class="guess-injuries" data-key="${key}">${guessInjuriesHtml(game)}</div>` : ''}
             <div class="guess-controls">${controls}</div>
         </div>
     </article>`;
@@ -6953,7 +6933,7 @@ async function soloHtml() {
     const editable = week === open;
     const solo = guessState.weeks[week]?.solo || {};
     const games = (await guessGamesFor(week)).filter(g => editable || pickKey(g) in solo);
-    const cards = games.map(game => guessCardHtml(game, soloControlsHtml(game, week, editable), { injuries: editable })).join('');
+    const cards = games.map(game => guessCardHtml(game, soloControlsHtml(game, week, editable))).join('');
 
     return intro + `<div class="guess-results-head"><h3 class="guess-subhead">Week ${week}${editable ? '' : ' (closed)'}</h3>${guessWeekSelectHtml(weeks, week)}</div>
         <p class="as-is-note guess-count" id="guess-solo-summary" data-games="${games.length}" data-editable="${editable}">${soloSummaryHtml(week, editable, games.length)}</p>
@@ -7176,16 +7156,6 @@ function setupGuessTab() {
             submitSoloGuess(Number(submit.closest('.guess-cards').dataset.week), submit.dataset.submit);
             return;
         }
-        const more = event.target.closest('[data-guess-injuries]');
-        if (more) {
-            const id = more.dataset.guessInjuries;
-            if (guessState.injuriesOpen.has(id)) guessState.injuriesOpen.delete(id);
-            else guessState.injuriesOpen.add(id);
-            const [key] = id.split('|');
-            const week = Number(more.closest('.guess-cards').dataset.week);
-            refreshGuessInjuries(guessGameByKey(week, key));
-            return;
-        }
         const control = event.target.closest('.spread-control');
         if (!control) return;
         const fav = event.target.closest('.spread-fav-btn');
@@ -7203,13 +7173,24 @@ function setupGuessTab() {
             const input = control.querySelector('.spread-text');
             const now = parseSpreadText(input.value);
             const base = now === null || Number.isNaN(now) ? 0 : now;
-            input.value = spreadText(Math.min(GUESS_MAX_POINTS, Math.max(0, base + Number(step.dataset.step))));
+            input.value = favoriteSpreadText(Math.min(GUESS_MAX_POINTS, Math.max(0, base + Number(step.dataset.step))));
             spreadControlChanged(control);
         }
     });
     root.addEventListener('input', event => {
         const control = event.target.closest('.spread-control');
         if (control && event.target.matches('.spread-text')) spreadControlChanged(control);
+    });
+    // Leaving a box puts what was typed in the favourite's form: "3.5" reads "-3.5".
+    root.addEventListener('focusout', event => {
+        if (!event.target.matches('.spread-text')) return;
+        const points = parseSpreadText(event.target.value);
+        if (points === null || Number.isNaN(points)) return;
+        const text = favoriteSpreadText(points);
+        if (event.target.value !== text) {
+            event.target.value = text;
+            spreadControlChanged(event.target.closest('.spread-control'));
+        }
     });
     // Enter in a solo box submits it.
     root.addEventListener('keydown', event => {
@@ -12335,7 +12316,6 @@ async function loadGameSummary(game) {
     } finally {
         gameSummariesInFlight.delete(id);
         refreshGameDetails();
-        refreshGuessInjuries(game);
     }
 }
 
@@ -12543,8 +12523,7 @@ function injuryChip(status) {
 /**
  * One team's injuries off ESPN's summary, worst first: ESPN's own list (the
  * same players ESPN shows, by the owner's choice), and the whole roster list
- * when `open`, behind a "Show all" button carrying `toggleAttr`. Game
- * Details' Players tab and Guess the Lines' cards both draw it.
+ * when `open`, behind a "Show all" button carrying `toggleAttr`.
  */
 function injuryColumnHtml(game, summary, side, open, toggleAttr) {
     const rank = status => { const i = INJURY_ORDER.indexOf(status); return i < 0 ? INJURY_ORDER.length : i; };

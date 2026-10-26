@@ -8177,8 +8177,8 @@ body.live-provisional #as-is-standings-table {
 }
 
 /* Guess the Lines. Laid out like the Live tab (.live-section): a title, the
-   mode toggle, a note, then a card per game dressed like the Game Details
-   popup (its .gd-hero and injuries, reused), with the guess underneath. */
+   mode toggle, a note, then a card per game under the Game Details popup's
+   header (its .gd-hero, reused), with the guess underneath. */
 .guess-section .live-title {
     margin-bottom: 12px;
 }
@@ -8215,14 +8215,8 @@ body.live-provisional #as-is-standings-table {
     padding: 0 16px 16px;
 }
 
-.guess-card .gd-section {
-    margin-top: 14px;
-}
-
 .guess-controls {
-    margin-top: 14px;
     padding-top: 14px;
-    border-top: 1px solid var(--border-light);
 }
 
 .guess-steps {
