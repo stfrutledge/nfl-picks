@@ -6602,7 +6602,10 @@ function rankStandings(rows) {
     const places = {};
     let place = 0;
     order.forEach((row, i) => {
-        const same = i > 0 && (row.percentage ?? 0) === (order[i - 1].percentage ?? 0);
+        // Tied only on the same percentage and the same wins, the order
+        // getSortedPickers breaks ties by.
+        const same = i > 0 && (row.percentage ?? 0) === (order[i - 1].percentage ?? 0)
+            && (row.wins || 0) === (order[i - 1].wins || 0);
         if (!same) place = i + 1;
         places[row.name] = place;
     });

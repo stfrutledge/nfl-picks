@@ -816,11 +816,13 @@ function parsePercentage(value) {
 }
 
 /**
- * Get pickers sorted by percentage (descending)
+ * Get pickers sorted by percentage (descending), more wins first on a tie: a
+ * 5-0 ranks above a 3-0-1, though both are 100%.
  */
 function getSortedPickers(stats) {
     return Object.values(stats)
-        .sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+        .sort((a, b) => (b.percentage || 0) - (a.percentage || 0)
+            || (b.wins || 0) - (a.wins || 0));
 }
 
 /**
