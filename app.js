@@ -90,11 +90,15 @@ function fromSheetWeek(sheetWeek) {
 }
 
 // Get pickers available for a given season (Jason and Daniel started in 2023, Dylan stopped after 2019)
+// The season Jason and Daniel joined. From here on every picker has played
+// every season, which is what makes a net-wins total a fair comparison.
+const EXPANSION_SEASON = 2023;
+
 function getPickersForSeason(season) {
     if (season <= 2019) {
         return ['Stephen', 'Sean', 'Dylan'];
     }
-    if (season <= 2022) {
+    if (season < EXPANSION_SEASON) {
         return PICKERS.filter(p => p !== 'Jason' && p !== 'Daniel');
     }
     return PICKERS;
@@ -3056,6 +3060,10 @@ function setupSeasonDropdown() {
 
     document.getElementById('history-lifetime-filter')
         ?.addEventListener('click', toggleHistoryLifetimeFilter);
+    document.querySelectorAll('[data-lifetime-span]').forEach(btn => {
+        btn.addEventListener('click', () => setHistoryLifetimeSpan(btn.dataset.lifetimeSpan));
+    });
+    setupHistoryNetChart();
 
     // Lifetime's season range. The end that was moved wins: taking "from" past
     // "to" drags "to" along with it, rather than refusing the change.
@@ -3404,168 +3412,261 @@ function renderLifetimeStandingsTable() {
         scopeLabel.textContent = '';
     }
 
-    // Aggregate stats across the seasons in range
-    const pickerStats = {};
+    const stats = historyStatsAcrossSeasons(historyLifetimeSeasons());
+    tbody.innerHTML = historyStandingsRowsHtml(sortHistoryStandings(Object.values(stats)));
+    markHistoryDefaultSort();
+    updateHistoryLifetimeSpan();
+    renderHistoryNetChart();
+}
 
-    historyLifetimeSeasons().forEach(season => {
-        if (!getSeasonData(season)) return;
-
-        const data = getSeasonData(season);
-        const games = data.games || {};
-        const results = data.results || {};
-        const picks = data.picks || {};
-        const seasonPickers = getPickersForSeason(season);
-
-        // Initialize pickers if not already
-        seasonPickers.forEach(picker => {
-            if (!pickerStats[picker]) {
-                pickerStats[picker] = {
-                    name: picker,
-                    lineWins: 0, lineLosses: 0, linePushes: 0,
-                    suWins: 0, suLosses: 0,
-                    blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
-                    totalWins: 0, totalLosses: 0, totalPushes: 0
-                };
-            }
-        });
-
-        // Iterate through all weeks
-        Object.keys(games).forEach(weekKey => {
-            const weekNum = parseInt(weekKey);
-            if (isNaN(weekNum)) return;
-
-            const weekGames = games[weekKey] || [];
-            const weekResults = results[weekKey] || results[String(weekKey)] || {};
-            const weekPicks = picks[weekKey] || picks[String(weekKey)] || {};
-
-            weekGames.forEach(game => {
-                const gameResult = weekResults[game.id] || weekResults[String(game.id)];
-                if (!gameResult) return;
-
-                seasonPickers.forEach(picker => {
-                    const pickerWeekPicks = weekPicks[picker] || {};
-                    const gamePick = getPicksForGame(pickerWeekPicks, game);
-                    const stats = pickerStats[picker];
-                    // Per picker, not per game: each is graded at their own
-                    // line, which a locked pick carries its own copy of.
-                    const atsWinner = atsWinnerForPick(game, gamePick, gameResult);
-
-                    if (gamePick.line && atsWinner) {
-                        if (atsWinner === 'push') {
-                            stats.linePushes++;
-                            stats.totalPushes++;
-                        } else if (atsWinner === gamePick.line) {
-                            stats.lineWins++;
-                            stats.totalWins++;
-                        } else {
-                            stats.lineLosses++;
-                            stats.totalLosses++;
-                        }
-
-                        if (gamePick.blazin) {
-                            if (atsWinner === 'push') {
-                                stats.blazinPushes++;
-                            } else if (atsWinner === gamePick.line) {
-                                stats.blazinWins++;
-                            } else {
-                                stats.blazinLosses++;
-                            }
-                        }
-                    }
-
-                    const straightUp = straightUpOutcome(gamePick.winner, gameResult);
-                    if (straightUp === 'wins') {
-                        stats.suWins++;
-                        stats.totalWins++;
-                    } else if (straightUp === 'losses') {
-                        stats.suLosses++;
-                        stats.totalLosses++;
-                    } else if (straightUp === 'pushes') {
-                        stats.totalPushes++;
-                    }
-                });
+/**
+ * Every picker's History record summed over the given seasons: Lifetime's
+ * table is the season tables added up, so the two cannot disagree.
+ */
+function historyStatsAcrossSeasons(seasons) {
+    const total = {};
+    seasons.forEach(season => {
+        const seasonStats = historyStandingsStats(season);
+        if (!seasonStats) return;
+        Object.values(seasonStats).forEach(stats => {
+            const sum = total[stats.name] || (total[stats.name] = { name: stats.name });
+            Object.keys(stats).forEach(key => {
+                if (key !== 'name') sum[key] = (sum[key] || 0) + stats[key];
             });
         });
-
-        // Cowherd's Blazin' 5 for this season - archived for a finished one,
-        // scored from the entered picks for the season in progress.
-        const cowherdTotal = totalCowherdRecord(cowherdWeeklyResults(season));
-        if (cowherdTotal.wins + cowherdTotal.losses + cowherdTotal.pushes > 0) {
-            if (!pickerStats[COWHERD]) {
-                pickerStats[COWHERD] = {
-                    name: COWHERD,
-                    lineWins: 0, lineLosses: 0, linePushes: 0,
-                    suWins: 0, suLosses: 0,
-                    blazinWins: 0, blazinLosses: 0, blazinPushes: 0,
-                    totalWins: 0, totalLosses: 0, totalPushes: 0
-                };
-            }
-            pickerStats[COWHERD].blazinWins += cowherdTotal.wins;
-            pickerStats[COWHERD].blazinLosses += cowherdTotal.losses;
-            pickerStats[COWHERD].blazinPushes += cowherdTotal.pushes;
-        }
     });
+    return total;
+}
 
-    // Sort by Blazin' 5 percentage descending
-    const sorted = Object.values(pickerStats).sort((a, b) => {
-        const aBlazinTotal = a.blazinWins + a.blazinLosses;
-        const bBlazinTotal = b.blazinWins + b.blazinLosses;
-        const aBlazinPct = aBlazinTotal > 0 ? a.blazinWins / aBlazinTotal : 0;
-        const bBlazinPct = bBlazinTotal > 0 ? b.blazinWins / bBlazinTotal : 0;
-        if (bBlazinPct !== aBlazinPct) return bBlazinPct - aBlazinPct;
-        return b.blazinWins - a.blazinWins;
-    });
+/** Blazin' 5 percentage first, then Blazin' wins: the History table's order. */
+function sortHistoryStandings(statsList) {
+    const blazinPct = s => {
+        const decided = s.blazinWins + s.blazinLosses;
+        return decided > 0 ? s.blazinWins / decided : 0;
+    };
+    return [...statsList].sort((a, b) =>
+        (blazinPct(b) - blazinPct(a)) || (b.blazinWins - a.blazinWins));
+}
 
-    tbody.innerHTML = sorted.map((stats, index) => {
-        const hasLineData = stats.lineWins + stats.lineLosses + stats.linePushes > 0;
-        const hasSuData = stats.suWins + stats.suLosses > 0;
-        const lineRecord = hasLineData ? `${stats.lineWins}-${stats.lineLosses}${stats.linePushes > 0 ? `-${stats.linePushes}` : ''}` : '-';
-        const suRecord = hasSuData ? `${stats.suWins}-${stats.suLosses}` : '-';
-        const blazinRecord = `${stats.blazinWins}-${stats.blazinLosses}${stats.blazinPushes > 0 ? `-${stats.blazinPushes}` : ''}`;
+/** "+82", "−1", "0": a net count with its sign, minus as a real minus. */
+function signedCount(n) {
+    if (n > 0) return `+${n}`;
+    if (n < 0) return `−${Math.abs(n)}`;
+    return '0';
+}
 
-        const lineTotal = stats.lineWins + stats.lineLosses;
-        // null, not 0, when there is nothing to average: an empty record
-        // is not a total loss, and pctCellClass reads it that way.
-        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : null;
-        const linePct = lineTotal > 0 ? linePctValue.toFixed(1) + '%' : '-';
-        const linePctClass = pctCellClass(linePctValue);
+/**
+ * One category's cell on the History table: the win percentage, the record
+ * under it and the net wins under that, stacked so three categories fit a
+ * phone in four columns; a wide screen lays the three side by side under the
+ * header's labels. A category with no picks is a lone dash.
+ */
+function historyRecordCell(wins, losses, pushes) {
+    if (wins + losses + pushes === 0) {
+        return `<td class="history-cell divider-left" data-sort-pct="" data-sort-wins="" data-sort-net=""><span class="pct pct-neutral">-</span></td>`;
+    }
+    const decided = wins + losses;
+    // null, not 0, when there is nothing to average: an all-push record
+    // is not a total loss, and pctCellClass reads it that way.
+    const pct = decided > 0 ? (wins / decided) * 100 : null;
+    const net = wins - losses;
+    const netClass = net > 0 ? 'positive' : net < 0 ? 'negative' : '';
+    return `
+                <td class="history-cell divider-left" data-sort-pct="${pct ?? ''}" data-sort-wins="${wins}" data-sort-net="${net}">
+                    <div class="history-cell-body">
+                        <span class="${pctCellClass(pct)}">${pct === null ? '-' : pct.toFixed(1) + '%'}</span>
+                        <span class="history-record">${wins}-${losses}${pushes > 0 ? `-${pushes}` : ''}</span>
+                        <span class="history-net ${netClass}">${signedCount(net)}<span class="history-net-word"> net</span></span>
+                    </div>
+                </td>`;
+}
 
-        const suTotal = stats.suWins + stats.suLosses;
-        // null, not 0, when there is nothing to average: an empty record
-        // is not a total loss, and pctCellClass reads it that way.
-        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : null;
-        const suPct = suTotal > 0 ? suPctValue.toFixed(1) + '%' : '-';
-        const suPctClass = pctCellClass(suPctValue);
-
-        const blazinTotal = stats.blazinWins + stats.blazinLosses;
-        // null, not 0, when there is nothing to average: an empty record
-        // is not a total loss, and pctCellClass reads it that way.
-        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : null;
-        const blazinPct = blazinTotal > 0 ? blazinPctValue.toFixed(1) + '%' : '-';
-        const blazinPctClass = pctCellClass(blazinPctValue);
-
-        return `
+/** The History table's rows, for a season, a week or Lifetime alike. */
+function historyStandingsRowsHtml(sorted) {
+    return sorted.map((stats, index) => `
             <tr class="${index === 0 ? 'leader' : ''}" data-picker="${stats.name}">
                 <td class="picker-name">${stats.name}</td>
-                <td data-sort="${stats.lineWins}">${lineRecord}</td>
-                <td class="${linePctClass}" data-sort="${linePctValue}">${linePct}</td>
-                <td class="divider-left" data-sort="${stats.blazinWins}">${blazinRecord}</td>
-                <td class="${blazinPctClass}" data-sort="${blazinPctValue}">${blazinPct}</td>
-                <td class="divider-left" data-sort="${stats.suWins}">${suRecord}</td>
-                <td class="${suPctClass}" data-sort="${suPctValue}">${suPct}</td>
+                ${historyRecordCell(stats.lineWins, stats.lineLosses, stats.linePushes)}
+                ${historyRecordCell(stats.blazinWins, stats.blazinLosses, stats.blazinPushes)}
+                ${historyRecordCell(stats.suWins, stats.suLosses, 0)}
             </tr>
-        `;
-    }).join('');
+        `).join('');
+}
 
-    // Reset sort indicators
+/**
+ * Mark the Blazin' 5 column (index 2) as the table's sorted one, wiring the
+ * header clicks the first time either table is drawn.
+ */
+function markHistoryDefaultSort() {
     const table = document.getElementById('history-standings-table');
-    if (table) {
-        const headers = table.querySelectorAll('thead th');
-        headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-        if (headers[4]) {
-            headers[4].classList.add('sort-desc');
-        }
+    if (!table) return;
+    if (!table._sortInitialized) {
+        setupHistoryTableSorting(table);
+        table._sortInitialized = true;
     }
+    table.querySelectorAll('.sort-asc, .sort-desc').forEach(el => el.classList.remove('sort-asc', 'sort-desc'));
+    const blazin = table.querySelectorAll('thead th')[2];
+    if (!blazin) return;
+    blazin.classList.add('sort-desc');
+    blazin.querySelector('[data-sort-key="pct"]')?.classList.add('sort-desc');
+}
+
+// ===== LIFETIME: ALL SEASONS OR SINCE EXPANSION =====
+
+/** Which of the two Lifetime spans is on, or null for any other range. */
+function historyLifetimeSpan() {
+    const { from, to, min, max } = historyLifetimeRange();
+    if (to !== max) return null;
+    if (from === min) return 'all';
+    if (from === EXPANSION_SEASON) return 'expansion';
+    return null;
+}
+
+/** Lifetime over every season, or from the season everyone played. */
+function setHistoryLifetimeSpan(span) {
+    const { min, max } = historyLifetimeRange();
+    setHistoryLifetimeRange(span === 'expansion' ? EXPANSION_SEASON : min, max, 'from');
+    loadLifetimeHistory();
+}
+
+function updateHistoryLifetimeSpan() {
+    const span = historyLifetimeSpan();
+    document.querySelectorAll('[data-lifetime-span]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lifetimeSpan === span);
+    });
+}
+
+// ===== NET WINS OVER TIME =====
+//
+// Lifetime's chart: each picker's net wins (wins minus losses) added up season
+// by season, from the same season tables as the standings above. Within a
+// season everyone makes about the same number of picks, so each step of a line
+// is a fair comparison even when the totals are over different spans.
+
+const HISTORY_NET_CATEGORIES = [
+    { key: 'line', label: 'ATS', wins: 'lineWins', losses: 'lineLosses' },
+    { key: 'blazin', label: "Blazin' 5", wins: 'blazinWins', losses: 'blazinLosses' },
+    { key: 'su', label: 'Straight Up', wins: 'suWins', losses: 'suLosses' }
+];
+
+// Outside the render, so the live History refresh keeps the reader's tab
+// and the season they last hovered.
+let historyNetCategory = 'blazin';
+let historyNetSeason = null;   // null: the latest season in range
+
+/**
+ * Each picker's season-by-season net in one category over the given seasons:
+ * { picker: [{ season, net, total }] }, oldest first. A season with no
+ * decided picks is left out, so a picker's line starts where they did.
+ */
+function historyNetSeries(seasons, categoryKey) {
+    const category = HISTORY_NET_CATEGORIES.find(c => c.key === categoryKey) || HISTORY_NET_CATEGORIES[1];
+    const series = {};
+    [...seasons].sort((a, b) => a - b).forEach(season => {
+        const seasonStats = historyStandingsStats(season);
+        if (!seasonStats) return;
+        Object.values(seasonStats).forEach(stats => {
+            const wins = stats[category.wins] || 0;
+            const losses = stats[category.losses] || 0;
+            if (wins + losses === 0) return;
+            const points = series[stats.name] || (series[stats.name] = []);
+            const before = points.length ? points[points.length - 1].total : 0;
+            points.push({ season, net: wins - losses, total: before + wins - losses });
+        });
+    });
+    return series;
+}
+
+/**
+ * The chart's labels and each picker's running total per season, null where
+ * they had not started. A picker who joined inside the range starts from 0 at
+ * the season before, so their line begins where everyone else's 0 is.
+ */
+function historyNetChartData(seasons, categoryKey) {
+    const series = historyNetSeries(seasons, categoryKey);
+    // Only seasons somebody has a result in. The season in progress has none
+    // until the picks backup lands, and drawing it then repeated last
+    // season's totals as if it had been played level.
+    const played = new Set(Object.values(series).flatMap(points => points.map(p => p.season)));
+    const ordered = [...seasons].sort((a, b) => a - b).filter(season => played.has(season));
+    const lines = {};
+    Object.keys(series).sort().forEach(picker => {
+        const points = series[picker];
+        const firstSeason = points[0].season;
+        lines[picker] = ordered.map(season => {
+            const pt = points.find(p => p.season === season);
+            if (pt) return { total: pt.total, net: pt.net };
+            if (season === firstSeason - 1) return { total: 0, net: null };
+            const before = points.filter(p => p.season < season);
+            return before.length ? { total: before[before.length - 1].total, net: 0 } : null;
+        });
+    });
+    return { labels: ordered.map(String), lines };
+}
+
+/**
+ * The season table beside the chart: each picker's net that season and their
+ * running total to the end of it, best total first. Whoever had not started
+ * yet reads "Not yet"; the season a newcomer starts from 0 has no net of its own.
+ */
+function historyNetReadoutHtml({ labels, lines }, index) {
+    const colors = typeof CHART_COLORS !== 'undefined' ? CHART_COLORS : {};
+    const season = labels[index];
+    const rows = Object.keys(lines).map(picker => ({ picker, pt: lines[picker][index] }))
+        .sort((a, b) => (b.pt ? b.pt.total : -Infinity) - (a.pt ? a.pt.total : -Infinity))
+        .map(({ picker, pt }) => {
+            const net = pt ? pt.net : null;
+            const netClass = net > 0 ? 'positive' : net < 0 ? 'negative' : '';
+            return `<tr>
+                <td class="picker-name"><span class="net-key" style="background:${colors[picker] || '#6b7280'}"></span>${picker}</td>
+                <td class="history-net ${netClass}">${net === null ? '–' : signedCount(net)}</td>
+                <td class="net-total">${pt ? signedCount(pt.total) : 'Not yet'}</td>
+            </tr>`;
+        }).join('');
+    const title = Number(season) === CURRENT_SEASON ? `${season} (so far)` : season;
+    return `
+        <div class="net-readout-head">${title}</div>
+        <table class="standings-table net-readout-table">
+            <thead><tr><th>Picker</th><th>Season</th><th>Total</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+}
+
+/** Draw the chart for Lifetime's seasons, or hide it on a single season. */
+function renderHistoryNetChart() {
+    const section = document.getElementById('history-net-section');
+    if (!section) return;
+    const lifetime = document.getElementById('history-season-dropdown')?.value === 'lifetime';
+    const seasons = historyLifetimeSeasons();
+    section.classList.toggle('hidden', !lifetime || seasons.length < 2);
+    document.querySelectorAll('[data-net-category]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.netCategory === historyNetCategory);
+    });
+    if (!lifetime || seasons.length < 2) return;
+
+    const data = historyNetChartData(seasons, historyNetCategory);
+    // The season last hovered, or the latest once it is out of range.
+    const at = data.labels.indexOf(String(historyNetSeason));
+    const selected = at >= 0 ? at : data.labels.length - 1;
+    const readout = document.getElementById('history-net-readout');
+    if (readout) readout.innerHTML = historyNetReadoutHtml(data, selected);
+    if (typeof renderNetWinsChart !== 'function') return;
+    renderNetWinsChart(data, {
+        selected,
+        onSeason: index => {
+            historyNetSeason = Number(data.labels[index]);
+            if (readout) readout.innerHTML = historyNetReadoutHtml(data, index);
+        }
+    });
+}
+
+function setupHistoryNetChart() {
+    document.querySelectorAll('[data-net-category]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            historyNetCategory = btn.dataset.netCategory;
+            renderHistoryNetChart();
+        });
+    });
 }
 
 /**
@@ -3796,6 +3897,7 @@ function updateHistoryScopeControls(season) {
     }
     document.getElementById('history-lifetime-range')
         ?.classList.toggle('hidden', !!season || !historyLifetimeFilterOpen);
+    document.getElementById('history-lifetime-span')?.classList.toggle('hidden', !!season);
     if (!scope) return;
     scope.classList.toggle('hidden', !season);
     const seasonBtn = document.getElementById('history-scope-season');
@@ -3942,6 +4044,7 @@ function renderHistoryStandingsTable(season) {
     const titleSpan = document.getElementById('history-standings-title');
     const scopeLabel = document.getElementById('history-standings-scope-label');
     if (!tbody) return;
+    renderHistoryNetChart();
 
     const week = historyStandingsScope === 'week' ? historyStandingsWeek : null;
 
@@ -3954,127 +4057,69 @@ function renderHistoryStandingsTable(season) {
 
     const pickerStats = historyStandingsStats(season, week);
     if (!pickerStats) {
-        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No data available</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="no-data">No data available</td></tr>';
         return;
     }
     if (historyStandingsScope === 'week' && week === null) {
-        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No weeks played yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="no-data">No weeks played yet</td></tr>';
         return;
     }
 
-    // Sort by Blazin' 5 percentage descending, then by Blazin' wins
-    const sorted = Object.values(pickerStats).sort((a, b) => {
-        const aBlazinTotal = a.blazinWins + a.blazinLosses;
-        const bBlazinTotal = b.blazinWins + b.blazinLosses;
-        const aBlazinPct = aBlazinTotal > 0 ? a.blazinWins / aBlazinTotal : 0;
-        const bBlazinPct = bBlazinTotal > 0 ? b.blazinWins / bBlazinTotal : 0;
-        if (bBlazinPct !== aBlazinPct) return bBlazinPct - aBlazinPct;
-        return b.blazinWins - a.blazinWins;
-    });
-
-    tbody.innerHTML = sorted.map((stats, index) => {
-        const hasLineData = stats.lineWins + stats.lineLosses + stats.linePushes > 0;
-        const hasSuData = stats.suWins + stats.suLosses > 0;
-        const lineRecord = hasLineData ? `${stats.lineWins}-${stats.lineLosses}${stats.linePushes > 0 ? `-${stats.linePushes}` : ''}` : '-';
-        const suRecord = hasSuData ? `${stats.suWins}-${stats.suLosses}` : '-';
-        const blazinRecord = `${stats.blazinWins}-${stats.blazinLosses}${stats.blazinPushes > 0 ? `-${stats.blazinPushes}` : ''}`;
-
-        // ATS percentage
-        const lineTotal = stats.lineWins + stats.lineLosses;
-        // null, not 0, when there is nothing to average: an empty record
-        // is not a total loss, and pctCellClass reads it that way.
-        const linePctValue = lineTotal > 0 ? (stats.lineWins / lineTotal) * 100 : null;
-        const linePct = lineTotal > 0 ? linePctValue.toFixed(1) + '%' : '-';
-        const linePctClass = pctCellClass(linePctValue);
-
-        // Straight Up percentage
-        const suTotal = stats.suWins + stats.suLosses;
-        // null, not 0, when there is nothing to average: an empty record
-        // is not a total loss, and pctCellClass reads it that way.
-        const suPctValue = suTotal > 0 ? (stats.suWins / suTotal) * 100 : null;
-        const suPct = suTotal > 0 ? suPctValue.toFixed(1) + '%' : '-';
-        const suPctClass = pctCellClass(suPctValue);
-
-        // Blazin' 5 percentage
-        const blazinTotal = stats.blazinWins + stats.blazinLosses;
-        // null, not 0, when there is nothing to average: an empty record
-        // is not a total loss, and pctCellClass reads it that way.
-        const blazinPctValue = blazinTotal > 0 ? (stats.blazinWins / blazinTotal) * 100 : null;
-        const blazinPct = blazinTotal > 0 ? blazinPctValue.toFixed(1) + '%' : '-';
-        const blazinPctClass = pctCellClass(blazinPctValue);
-
-        return `
-            <tr class="${index === 0 ? 'leader' : ''}" data-picker="${stats.name}">
-                <td class="picker-name">${stats.name}</td>
-                <td data-sort="${stats.lineWins}">${lineRecord}</td>
-                <td class="${linePctClass}" data-sort="${linePctValue}">${linePct}</td>
-                <td class="divider-left" data-sort="${stats.blazinWins}">${blazinRecord}</td>
-                <td class="${blazinPctClass}" data-sort="${blazinPctValue}">${blazinPct}</td>
-                <td class="divider-left" data-sort="${stats.suWins}">${suRecord}</td>
-                <td class="${suPctClass}" data-sort="${suPctValue}">${suPct}</td>
-            </tr>
-        `;
-    }).join('');
-
-    // Setup sortable headers
-    const table = document.getElementById('history-standings-table');
-    if (table && !table._sortInitialized) {
-        setupHistoryTableSorting(table);
-        table._sortInitialized = true;
-    }
-
-    // Mark Blazin' 5 % column (index 4) as default sorted
-    if (table) {
-        const headers = table.querySelectorAll('thead th');
-        headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-        if (headers[4]) {
-            headers[4].classList.add('sort-desc');
-        }
-    }
+    tbody.innerHTML = historyStandingsRowsHtml(sortHistoryStandings(Object.values(pickerStats)));
+    markHistoryDefaultSort();
 }
 
 /**
- * Setup sorting for history standings table
+ * Sorting for the History standings table. A category header sorts by its
+ * win %; on a wide screen its Win % / Record / Net labels each sort by their
+ * own number (`data-sort-key`), Record by wins. The first click puts the best
+ * first, the next turns it round; Picker sorts A to Z first.
  */
 function setupHistoryTableSorting(table) {
     const headers = table.querySelectorAll('thead th');
-
-    headers.forEach((th, index) => {
+    headers.forEach(th => {
         th.style.cursor = 'pointer';
         th.title = 'Click to sort';
+    });
+    table.querySelector('thead')?.addEventListener('click', (e) => {
+        const th = e.target.closest('th');
+        if (!th) return;
+        // The header itself is its Win % (the only sort a phone shows).
+        const keyBtn = e.target.closest('[data-sort-key]') || th.querySelector('[data-sort-key="pct"]');
+        sortHistoryTable(table, th.cellIndex, keyBtn ? keyBtn.dataset.sortKey : 'pct', keyBtn || th);
+    });
+}
 
-        th.addEventListener('click', () => {
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const isAscending = th.classList.contains('sort-asc');
+/** Sort the rows by one column and key, and mark what is sorted. */
+function sortHistoryTable(table, index, key, marker) {
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    // Clicking what is already sorted turns it round.
+    const flip = marker.classList.contains(index === 0 ? 'sort-asc' : 'sort-desc');
+    const descending = index === 0 ? flip : !flip;
 
-            headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+    table.querySelectorAll('.sort-asc, .sort-desc').forEach(el => el.classList.remove('sort-asc', 'sort-desc'));
+    const dir = descending ? 'sort-desc' : 'sort-asc';
+    marker.classList.add(dir);
+    const th = table.querySelectorAll('thead th')[index];
+    if (th && th !== marker) th.classList.add(dir);
 
-            rows.sort((a, b) => {
-                const aCell = a.cells[index];
-                const bCell = b.cells[index];
+    const attr = 'sort' + key.charAt(0).toUpperCase() + key.slice(1);
+    rows.sort((a, b) => {
+        if (index === 0) {
+            const order = a.cells[0].textContent.trim().localeCompare(b.cells[0].textContent.trim());
+            return descending ? -order : order;
+        }
+        // A category with no picks sorts last whichever way round.
+        const aVal = parseFloat(a.cells[index].dataset[attr]);
+        const bVal = parseFloat(b.cells[index].dataset[attr]);
+        if (isNaN(aVal) || isNaN(bVal)) return (isNaN(aVal) ? 1 : 0) - (isNaN(bVal) ? 1 : 0);
+        return descending ? bVal - aVal : aVal - bVal;
+    });
 
-                let aVal = aCell.dataset.sort !== undefined ? parseFloat(aCell.dataset.sort) : aCell.textContent.trim();
-                let bVal = bCell.dataset.sort !== undefined ? parseFloat(bCell.dataset.sort) : bCell.textContent.trim();
-
-                if (index === 0) {
-                    return isAscending ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
-                }
-
-                if (isNaN(aVal)) aVal = 0;
-                if (isNaN(bVal)) bVal = 0;
-
-                return isAscending ? aVal - bVal : bVal - aVal;
-            });
-
-            th.classList.add(isAscending ? 'sort-desc' : 'sort-asc');
-
-            rows.forEach((row, i) => {
-                row.classList.remove('leader');
-                if (i === 0) row.classList.add('leader');
-                tbody.appendChild(row);
-            });
-        });
+    rows.forEach((row, i) => {
+        row.classList.toggle('leader', i === 0);
+        tbody.appendChild(row);
     });
 }
 
@@ -5967,13 +6012,25 @@ let historyRefreshInFlight = false;
  * until the tab was switched away and back. renderActiveTab() already fires on
  * every arrival; this hooks History onto it.
  *
- * Only the live season: an archived one is a static file and cannot change
- * under us, and Lifetime spans them all.
+ * The live season and Lifetime, which includes it: an archived season is a
+ * static file and cannot change under us. Lifetime was skipped until October
+ * 2026, so History opened before the picks backup landed kept a Lifetime
+ * table and chart with none of this season in them.
  */
 async function refreshLiveHistoryView() {
     if (currentCategory !== 'history' || historyRefreshInFlight) return;
 
     const seasonDropdown = document.getElementById('history-season-dropdown');
+    // Lifetime's archives are already in; the season in progress is read live,
+    // so redrawing is enough - no reload, no loading overlay.
+    if (seasonDropdown?.value === 'lifetime') {
+        if (historyLifetimeSeasons().includes(CURRENT_SEASON)) {
+            renderLifetimeStandingsTable();
+            renderHistoryBlazinTeamRecords();
+            renderHistoryBlazinSpreadRecords();
+        }
+        return;
+    }
     if (Number(seasonDropdown?.value) !== CURRENT_SEASON) return;
 
     const weekDropdown = document.getElementById('history-week-dropdown');

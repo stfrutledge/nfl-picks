@@ -95,13 +95,19 @@ function makeAppEnv() {
         AVAILABLE_SEASONS, historyLifetimeRange, setHistoryLifetimeRange,
         historyLifetimeSeasons, historyLifetimeTitle, renderLifetimeStandingsTable,
         toggleHistoryLifetimeFilter,
+        EXPANSION_SEASON, historyStatsAcrossSeasons, historyRecordCell, historyNetSeries,
+        historyNetChartData, historyNetReadoutHtml, renderHistoryNetChart, refreshLiveHistoryView, historyLifetimeSpan, setHistoryLifetimeSpan,
+        __setSeasonData: (season, data) => { seasonData[season] = data; },
+        __setNetCategory: c => { historyNetCategory = c; },
         __scope: () => historyStandingsScope,
         __week: () => historyStandingsWeek,
         __setWeek: w => { historyStandingsWeek = w; },
         NFL_GAMES_BY_WEEK, NFL_RESULTS_BY_WEEK,
+        __getPicks: () => allPicks,
         __setState: s => {
             if ('allPicks' in s) allPicks = s.allPicks;
             if ('currentWeek' in s) currentWeek = s.currentWeek;
+            if ('currentCategory' in s) currentCategory = s.currentCategory;
         }
     });`;
     const fn = new Function(
@@ -379,6 +385,164 @@ check('the table is titled by its span, without "Season"', () => {
     api.renderLifetimeStandingsTable();
     assert.strictEqual(api.__written['history-standings-title:text'], '2019–2022');
     assert.strictEqual(api.__written['history-standings-scope-label:text'], '');
+});
+
+section('Each category is one cell: win %, record, net wins');
+
+check('a cell stacks the percentage, the record and the net', () => {
+    const api = setup();
+    const cell = api.historyRecordCell(12, 9, 2);
+    assert.match(cell, /57\.1%/);
+    assert.match(cell, />12-9-2</);
+    assert.match(cell, /history-net positive">\+3<span class="history-net-word"> net<\/span></);
+    assert.match(api.historyRecordCell(4, 6, 0), /history-net negative">−2<span class="history-net-word"> net<\/span></);
+    assert.match(api.historyRecordCell(5, 5, 0), /history-net ">0<span class="history-net-word"> net<\/span></, 'level is neither colour');
+});
+
+check('a category with no picks is a lone dash, not 0 net', () => {
+    const api = setup();
+    const cell = api.historyRecordCell(0, 0, 0);
+    assert.match(cell, />-</);
+    assert.ok(!/class="history-net/.test(cell), 'no net line');
+    assert.match(cell, /data-sort-net=""/, 'and sorts as nothing');
+});
+
+check('the table is four columns: picker and three categories', () => {
+    const api = setup();
+    api.renderHistoryStandingsTable(api.CURRENT_SEASON);
+    const row = api.__written['history-standings-table-body'].split('data-picker="Stephen"')[1].split('</tr>')[0];
+    assert.strictEqual((row.match(/<td/g) || []).length, 4);
+});
+
+// An archived 2022 with one game, which Daniel and Jason did not play.
+// Bears @ Packers, Packers -3, 10-27: home covers.
+function withArchive(api) {
+    api.__setSeasonData(2022, {
+        games: { 1: [finalGame(1, 'Bears', 'Packers', 10, 27)] },
+        results: { 1: { 1: { awayScore: 10, homeScore: 27, winner: 'home' } } },
+        picks: { 1: {
+            Stephen: { bears_packers: { line: 'home', winner: 'home' } },
+            Sean: { bears_packers: { line: 'away', winner: 'away' } },
+            Dylan: { bears_packers: { line: 'home', winner: 'home', blazin: true } }
+        } }
+    });
+    return api;
+}
+
+section('Lifetime is the season tables added up');
+
+check('every record is the sum of its seasons', () => {
+    const api = withArchive(setup());
+    const life = api.historyStatsAcrossSeasons(api.AVAILABLE_SEASONS);
+    assert.strictEqual(rec(life.Stephen), '2-1-0', '1-0 in 2022, 1-1 now');
+    assert.strictEqual(rec(life.Sean), '0-2-0');
+    assert.strictEqual(rec(life.Dylan), '1-0-0');
+    assert.strictEqual(life.Dylan.blazinWins, 1);
+    assert.strictEqual(life.Stephen.blazinWins, 1);
+});
+
+check('the Lifetime table shows the summed record and its net', () => {
+    const api = withArchive(setup());
+    api.renderLifetimeStandingsTable();
+    const row = api.__written['history-standings-table-body'].split('data-picker="Stephen"')[1].split('</tr>')[0];
+    assert.match(row, />2-1</);
+    assert.match(row, /\+1<span class="history-net-word"> net<\/span>/);
+});
+
+check('Lifetime catches up when this season’s picks land after it was drawn', () => {
+    const api = withArchive(setup());
+    const picks = api.__getPicks();
+    api.__setState({ allPicks: {}, currentCategory: 'history' });
+    api.__node('history-season-dropdown').value = 'lifetime';
+    api.renderLifetimeStandingsTable();
+    let row = api.__written['history-standings-table-body'].split('data-picker="Stephen"')[1].split('</tr>')[0];
+    assert.match(row, />1-0</, 'drawn with 2022 alone');
+    api.__setState({ allPicks: picks });
+    api.refreshLiveHistoryView();   // the Lifetime branch redraws without awaiting
+    row = api.__written['history-standings-table-body'].split('data-picker="Stephen"')[1].split('</tr>')[0];
+    assert.match(row, />2-1</, 'and redrawn with this season in it');
+});
+
+section('All Seasons or Since Expansion (2023)');
+
+check('Since Expansion starts the range at the expansion season', () => {
+    const api = withArchive(setup());
+    assert.strictEqual(api.historyLifetimeSpan(), 'all');
+    api.setHistoryLifetimeSpan('expansion');
+    assert.strictEqual(api.historyLifetimeSpan(), 'expansion');
+    assert.strictEqual(Math.min(...api.historyLifetimeSeasons()), api.EXPANSION_SEASON);
+    api.setHistoryLifetimeSpan('all');
+    assert.strictEqual(api.historyLifetimeTitle(), 'Lifetime');
+});
+
+check('any other range lights neither button', () => {
+    const api = setup();
+    api.setHistoryLifetimeRange(2019, 2022);
+    assert.strictEqual(api.historyLifetimeSpan(), null);
+});
+
+section('Net wins over time');
+
+check('each season adds its net to the running total', () => {
+    const api = withArchive(setup());
+    const series = api.historyNetSeries(api.AVAILABLE_SEASONS, 'line');
+    assert.deepStrictEqual(series.Stephen.map(p => [p.season, p.net, p.total]),
+        [[2022, 1, 1], [api.CURRENT_SEASON, 0, 1]]);
+    assert.deepStrictEqual(series.Sean.map(p => [p.season, p.net, p.total]),
+        [[2022, -1, -1], [api.CURRENT_SEASON, -1, -2]]);
+});
+
+check('a season with no decided picks is left out of a picker’s line', () => {
+    const api = withArchive(setup());
+    const series = api.historyNetSeries(api.AVAILABLE_SEASONS, 'line');
+    assert.deepStrictEqual(series.Dylan.map(p => p.season), [2022], 'Dylan has no picks this season');
+    assert.ok(!series.Daniel, 'nobody without a pick gets a line');
+});
+
+check('the chart has a label per played season and a running total per picker', () => {
+    const api = withArchive(setup());
+    const { labels, lines } = api.historyNetChartData(api.AVAILABLE_SEASONS, 'line');
+    assert.deepStrictEqual(labels, ['2022', String(api.CURRENT_SEASON)], 'only seasons with a result');
+    assert.deepStrictEqual(lines.Stephen, [{ total: 1, net: 1 }, { total: 1, net: 0 }]);
+    assert.deepStrictEqual(lines.Sean, [{ total: -1, net: -1 }, { total: -2, net: -1 }]);
+    assert.deepStrictEqual(lines.Dylan, [{ total: 1, net: 1 }, { total: 1, net: 0 }], 'carried through a season off');
+});
+
+check('the season in progress is left off until it has a result', () => {
+    const api = withArchive(setup());
+    api.__setState({ allPicks: {} });
+    const { labels } = api.historyNetChartData(api.AVAILABLE_SEASONS, 'line');
+    assert.deepStrictEqual(labels, ['2022'], 'not drawn as a level copy of last season');
+});
+
+check('the season table gives that season’s net and the total, best first', () => {
+    const api = withArchive(setup());
+    const data = api.historyNetChartData(api.AVAILABLE_SEASONS, 'line');
+    const html = api.historyNetReadoutHtml(data, 0);
+    assert.match(html, /net-readout-head">2022</);
+    const order = [...html.matchAll(/<\/span>(\w+)<\/td>/g)].map(m => m[1]);
+    assert.deepStrictEqual(order, ['Dylan', 'Stephen', 'Sean'], 'level totals keep their order, -1 last');
+    assert.match(html, /Sean<\/td>\s*<td class="history-net negative">−1<\/td>\s*<td class="net-total">−1</);
+    assert.match(api.historyNetReadoutHtml(data, 1), /\(so far\)/, 'the season in progress says so');
+});
+
+check('the chart shows on Lifetime and hides on a single season', () => {
+    const api = withArchive(setup());
+    const section = api.__node('history-net-section');
+    api.__node('history-season-dropdown').value = 'lifetime';
+    api.renderHistoryNetChart();
+    assert.ok(!section.classList.contains('hidden'));
+    api.__node('history-season-dropdown').value = String(api.CURRENT_SEASON);
+    api.renderHistoryNetChart();
+    assert.ok(section.classList.contains('hidden'));
+});
+
+check('a one-season range has no line to draw, so the chart hides', () => {
+    const api = withArchive(setup());
+    api.__node('history-season-dropdown').value = 'lifetime';
+    api.setHistoryLifetimeRange(api.CURRENT_SEASON, api.CURRENT_SEASON);
+    api.renderHistoryNetChart();
+    assert.ok(api.__node('history-net-section').classList.contains('hidden'));
 });
 
 console.log(failures ? `\n${failures} of ${total} CHECKS FAILED` : `\nALL ${total} CHECKS PASSED`);

@@ -6124,13 +6124,182 @@ body.live-provisional #as-is-standings-table {
     table-layout: fixed;
 }
 
-.standings-table.history-standings th:nth-child(1) { width: 16%; } /* Picker */
-.standings-table.history-standings th:nth-child(2) { width: 14%; } /* ATS */
-.standings-table.history-standings th:nth-child(3) { width: 10%; } /* ATS % */
-.standings-table.history-standings th:nth-child(4) { width: 14%; } /* Straight Up */
-.standings-table.history-standings th:nth-child(5) { width: 10%; } /* SU % */
-.standings-table.history-standings th:nth-child(6) { width: 14%; } /* Blazin' 5 */
-.standings-table.history-standings th:nth-child(7) { width: 10%; } /* B5 % */
+.standings-table.history-standings th:nth-child(1) { width: 22%; } /* Picker */
+.standings-table.history-standings th:nth-child(n+2) { width: 26%; } /* ATS, Blazin' 5, Straight Up */
+
+/* Each category is one cell - win %, record, net wins - stacked on a phone
+   so the three fit in four columns with no sideways scroll, and side by side
+   on a wide screen under the header's own labels, one line a row. */
+.history-cell-body > span {
+    display: block;
+    white-space: nowrap;
+}
+
+.history-th-sub {
+    display: none;
+}
+
+@media (min-width: 769px) {
+    .history-cell-body,
+    .history-th-sub {
+        display: grid;
+        grid-template-columns: 1fr 1.5fr 1fr;
+        align-items: baseline;
+        gap: 8px;
+    }
+
+    .history-th-sub {
+        margin-top: 6px;
+        font-size: 0.65rem;
+        font-weight: 600;
+        color: var(--text-light);
+    }
+
+    /* The labels are the sort buttons: plain text, the arrow beside the
+       sorted one, and the header's own arrow hidden so only one shows. */
+    .history-sort {
+        background: none;
+        border: none;
+        padding: 2px 0;
+        font: inherit;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: inherit;
+        cursor: pointer;
+        position: relative;
+    }
+
+    .history-sort:hover,
+    .history-sort.sort-asc,
+    .history-sort.sort-desc {
+        color: var(--text-primary);
+    }
+
+    .history-sort.sort-asc::after,
+    .history-sort.sort-desc::after {
+        content: '';
+        position: absolute;
+        right: -12px;
+        top: 50%;
+        border: 4px solid transparent;
+    }
+
+    .history-sort.sort-asc::after {
+        border-bottom-color: var(--text-secondary);
+        margin-top: -6px;
+    }
+
+    .history-sort.sort-desc::after {
+        border-top-color: var(--text-secondary);
+        margin-top: -2px;
+    }
+
+    .standings-table.history-standings th:not(:first-child)::after {
+        display: none;
+    }
+
+    .standings-table.history-standings .history-record {
+        font-size: 0.85rem;
+    }
+
+    .history-net-word,
+    .history-standings-key {
+        display: none;
+    }
+}
+
+.standings-table.history-standings .history-record {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.history-net {
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.history-net.positive { color: var(--accent-green); }
+.history-net.negative { color: var(--accent-red); }
+
+/* .picker-name is a flex box everywhere else; in this table it has to stay
+   a table cell, or its border stops halfway down a three-line row. */
+.standings-table.history-standings td.picker-name {
+    display: table-cell;
+    vertical-align: middle;
+    font-size: 0.85rem;
+}
+
+.history-standings-key {
+    margin: 10px 0 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Net Wins by Season (Lifetime only): a .chart-container like the Standings
+   tab's charts, sized by its wrapper because Chart.js fills its parent. */
+.history-net-section {
+    margin: 0 0 24px;
+}
+
+.history-net-layout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px 28px;
+}
+
+.history-net-canvas-wrap {
+    position: relative;
+    height: 340px;
+    flex: 999 1 420px;
+    min-width: 0;
+}
+
+.net-readout {
+    flex: 1 1 260px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.net-readout-head {
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.net-readout-table { border-radius: 0; }
+.net-readout-table td, .net-readout-table th { padding: 8px 10px; }
+.net-readout-table td.picker-name { display: table-cell; font-size: 0.85rem; }
+.net-readout-table .net-total { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.net-key {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+@media (max-width: 768px) {
+    .history-net-section {
+        padding: 16px 12px;
+    }
+
+    .history-net-canvas-wrap {
+        height: 300px;
+    }
+}
 
 /* Vertical divider between breakdown and total sections */
 .standings-table.history-standings th.divider-left,
@@ -6194,17 +6363,34 @@ body.live-provisional #as-is-standings-table {
         padding: 0 12px;
     }
 
-    .standings-table.history-standings {
-        table-layout: auto;
-        min-width: 600px;
-    }
-
     .standings-table.history-standings th,
     .standings-table.history-standings td {
-        padding: 10px 12px;
+        padding: 8px 4px;
         font-size: 0.8rem;
-        white-space: nowrap;
     }
+
+    .standings-table.history-standings th:first-child,
+    .standings-table.history-standings td:first-child {
+        padding-left: 8px;
+    }
+
+    .standings-table.history-standings th {
+        font-size: 0.65rem;
+        white-space: normal;
+    }
+
+    .standings-table.history-standings .history-record {
+        font-size: 0.62rem;
+        letter-spacing: -0.02em;
+    }
+
+    .standings-table.history-standings td.picker-name {
+        font-size: 0.68rem;
+        letter-spacing: 0;
+    }
+
+    .standings-table.history-standings th:nth-child(1) { width: 24%; }
+    .standings-table.history-standings th:nth-child(n+2) { width: 25.33%; }
 }
 
 /* ===== HISTORY BLAZIN' 5 RECORDS SECTION ===== */

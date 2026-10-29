@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=4949e4ba">
+    <link rel="stylesheet" href="styles.css?v=ff71e438">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -744,6 +744,16 @@
                         </select>
                     </div>
 
+                    <!-- Lifetime only: every season, or from the season Jason
+                         and Daniel joined, when everyone has played the same
+                         seasons and net wins compare fairly. -->
+                    <div class="scope-row hidden" id="history-lifetime-span">
+                        <div class="scope-toggle" role="group" aria-label="Lifetime span">
+                            <button class="subtab active" data-lifetime-span="all">All Seasons</button>
+                            <button class="subtab" data-lifetime-span="expansion">Since Expansion (2023)</button>
+                        </div>
+                    </div>
+
                     <!-- What the standings table below covers: the season so
                          far (the whole of it, once it is over) or one week of
                          it. Hidden on Lifetime, which has no weeks. -->
@@ -771,18 +781,38 @@
                             <thead>
                                 <tr>
                                     <th>Picker</th>
-                                    <th>ATS</th>
-                                    <th>%</th>
-                                    <th class="divider-left">Blazin' 5</th>
-                                    <th>%</th>
-                                    <th class="divider-left">Straight Up</th>
-                                    <th>%</th>
+                                    <th class="divider-left">ATS<span class="history-th-sub"><button type="button" class="history-sort" data-sort-key="pct">Win %</button><button type="button" class="history-sort" data-sort-key="wins">Record</button><button type="button" class="history-sort" data-sort-key="net">Net</button></span></th>
+                                    <th class="divider-left">Blazin' 5<span class="history-th-sub"><button type="button" class="history-sort" data-sort-key="pct">Win %</button><button type="button" class="history-sort" data-sort-key="wins">Record</button><button type="button" class="history-sort" data-sort-key="net">Net</button></span></th>
+                                    <th class="divider-left">Straight Up<span class="history-th-sub"><button type="button" class="history-sort" data-sort-key="pct">Win %</button><button type="button" class="history-sort" data-sort-key="wins">Record</button><button type="button" class="history-sort" data-sort-key="net">Net</button></span></th>
                                 </tr>
                             </thead>
                             <tbody id="history-standings-table-body">
                                 <!-- Rows will be injected here -->
                             </tbody>
                         </table>
+                    </div>
+                    <p class="history-standings-key">Win %, record, then net wins (wins minus losses).</p>
+                </section>
+
+                <!-- Lifetime only: running net wins, season by season. -->
+                <!-- Drawn like the Standings tab's Season Win % by Week
+                     (charts.js, pickerLineChartOptions). -->
+                <section class="chart-container history-net-section hidden" id="history-net-section">
+                    <div class="chart-header">
+                        <h3>Net Wins by Season</h3>
+                        <div class="scope-toggle" role="group" aria-label="Category">
+                            <button class="subtab" data-net-category="line">ATS</button>
+                            <button class="subtab active" data-net-category="blazin">Blazin' 5</button>
+                            <button class="subtab" data-net-category="su">Straight Up</button>
+                        </div>
+                    </div>
+                    <!-- The season table follows the season hovered (or
+                         tapped) on the chart; it drops under it on a phone. -->
+                    <div class="history-net-layout">
+                        <div class="history-net-canvas-wrap">
+                            <canvas id="history-net-canvas"></canvas>
+                        </div>
+                        <div class="net-readout" id="history-net-readout"></div>
                     </div>
                 </section>
 
@@ -967,9 +997,9 @@
     </div>
 
     <script src="parser.js?v=eb0dd073"></script>
-    <script src="charts.js?v=f352573c"></script>
+    <script src="charts.js?v=13548cc8"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=61d7c927"></script>
+    <script src="app.js?v=90499e35"></script>
 </body>
 </html>

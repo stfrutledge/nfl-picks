@@ -45,6 +45,149 @@ function getChartColors() {
 }
 
 /**
+ * The options every picker line chart shares - the Standings tab's Season
+ * Win % by Week and History's Net Wins by Season - so the two look and behave
+ * as one design. Only the value formatting and the y range differ.
+ */
+function pickerLineChartOptions(colors, { yTick, tooltipLabel, yMin, yMax, yGridColor }) {
+    const font = { family: "'Inter', sans-serif", size: 11 };
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            intersect: false,
+            mode: 'index'
+        },
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    color: colors.text,
+                    usePointStyle: true,
+                    padding: 20,
+                    font: { ...font, weight: '600' }
+                }
+            },
+            tooltip: {
+                backgroundColor: colors.tooltipBg,
+                titleColor: '#ffffff',
+                bodyColor: '#999999',
+                borderColor: colors.tooltipBorder,
+                borderWidth: 1,
+                padding: 12,
+                titleFont: { family: font.family, weight: '600' },
+                bodyFont: { family: font.family },
+                // Highest first, whatever the order of the legend.
+                itemSort: (a, b) => (b.parsed.y || 0) - (a.parsed.y || 0),
+                callbacks: { label: tooltipLabel }
+            }
+        },
+        scales: {
+            x: {
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font }
+            },
+            y: {
+                grid: { color: yGridColor || colors.grid },
+                ticks: { color: colors.text, font, callback: yTick },
+                min: yMin,
+                max: yMax
+            }
+        }
+    };
+}
+
+let netWinsChart = null;
+
+/**
+ * History's Net Wins by Season: each picker's running wins minus losses at
+ * the end of each season, from historyNetChartData() in app.js. There is no
+ * tooltip: hovering (or tapping) a season calls onSeason(index), which fills
+ * the season table beside the chart, and a dashed line marks that season.
+ */
+function renderNetWinsChart({ labels, lines }, { selected, onSeason }) {
+    const canvas = document.getElementById('history-net-canvas');
+    if (!canvas) return;
+    const colors = getChartColors();
+    const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
+
+    const datasets = Object.keys(lines).map(picker => ({
+        label: picker,
+        data: lines[picker].map(pt => (pt ? pt.total : null)),
+        borderColor: CHART_COLORS[picker],
+        backgroundColor: CHART_COLORS[picker] + '20',
+        borderWidth: 2.5,
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: false
+    }));
+
+    // The History tab redraws whenever data lands and on the live refresh. A
+    // new chart replays its entry animation every time, so the same data
+    // leaves it alone and new data (another category) moves the lines in place.
+    const signature = JSON.stringify({ labels, lines, theme: colors.text });
+    if (netWinsChart && netWinsChart.canvas === canvas) {
+        netWinsChart.$selected = selected;
+        netWinsChart.$onSeason = onSeason;
+        if (netWinsChart.$signature === signature) {
+            netWinsChart.draw();
+            return;
+        }
+        netWinsChart.data.labels = labels;
+        netWinsChart.data.datasets = datasets;
+        netWinsChart.$signature = signature;
+        netWinsChart.update();
+        return;
+    }
+
+    // The chosen season's dashed line, drawn over the grid and under nothing.
+    const seasonMarker = {
+        id: 'netSeasonMarker',
+        afterDatasetsDraw(chart) {
+            const i = chart.$selected;
+            if (i === null || i === undefined) return;
+            const x = chart.scales.x.getPixelForValue(i);
+            const { top, bottom } = chart.chartArea;
+            const c = chart.ctx;
+            c.save();
+            c.strokeStyle = colors.text;
+            c.lineWidth = 1;
+            c.setLineDash([4, 4]);
+            c.beginPath();
+            c.moveTo(x, top);
+            c.lineTo(x, bottom);
+            c.stroke();
+            c.restore();
+        }
+    };
+
+    if (netWinsChart) netWinsChart.destroy();
+    const options = pickerLineChartOptions(colors, {
+        yTick: value => signed(value),
+        // Level, the line that matters on a wins-minus-losses chart.
+        yGridColor: ctx => (ctx.tick.value === 0 ? colors.text : colors.grid)
+    });
+    options.plugins.tooltip = { enabled: false };
+    options.onHover = (event, elements, chart) => {
+        const i = elements.length ? elements[0].index : null;
+        if (i === null || i === chart.$selected) return;
+        chart.$selected = i;
+        chart.draw();
+        chart.$onSeason?.(i);
+    };
+    netWinsChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets },
+        options,
+        plugins: [seasonMarker]
+    });
+    netWinsChart.$signature = signature;
+    netWinsChart.$selected = selected;
+    netWinsChart.$onSeason = onSeason;
+}
+
+/**
  * Create or update the weekly trend line chart
  */
 function renderTrendChart(weeklyData, category) {
@@ -109,84 +252,12 @@ function renderTrendChart(weeklyData, category) {
             labels: weeks.map(w => `Wk ${w}`),
             datasets: datasets
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: colors.text,
-                        usePointStyle: true,
-                        padding: 20,
-                        font: {
-                            family: "'Inter', sans-serif",
-                            size: 11,
-                            weight: '600'
-                        }
-                    }
-                },
-                tooltip: {
-                    backgroundColor: colors.tooltipBg,
-                    titleColor: '#ffffff',
-                    bodyColor: '#999999',
-                    borderColor: colors.tooltipBorder,
-                    borderWidth: 1,
-                    padding: 12,
-                    titleFont: {
-                        family: "'Inter', sans-serif",
-                        weight: '600'
-                    },
-                    bodyFont: {
-                        family: "'Inter', sans-serif"
-                    },
-                    itemSort: function(a, b) {
-                        // Sort by value descending (highest percentage first)
-                        return (b.parsed.y || 0) - (a.parsed.y || 0);
-                    },
-                    callbacks: {
-                        label: function(context) {
-                            return `${context.dataset.label}: ${context.parsed.y?.toFixed(2)}%`;
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    grid: {
-                        color: colors.grid
-                    },
-                    ticks: {
-                        color: colors.text,
-                        font: {
-                            family: "'Inter', sans-serif",
-                            size: 11
-                        }
-                    }
-                },
-                y: {
-                    grid: {
-                        color: colors.grid
-                    },
-                    ticks: {
-                        color: colors.text,
-                        font: {
-                            family: "'Inter', sans-serif",
-                            size: 11
-                        },
-                        callback: function(value) {
-                            return value + '%';
-                        }
-                    },
-                    min: trendChartZoomed ? zoomMin : 0,
-                    max: trendChartZoomed ? zoomMax : 100
-                }
-            }
-        }
+        options: pickerLineChartOptions(colors, {
+            yTick: value => value + '%',
+            tooltipLabel: context => `${context.dataset.label}: ${context.parsed.y?.toFixed(2)}%`,
+            yMin: trendChartZoomed ? zoomMin : 0,
+            yMax: trendChartZoomed ? zoomMax : 100
+        })
     });
 
     // Setup zoom toggle button

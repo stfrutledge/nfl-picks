@@ -2,6 +2,13 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry when something players will notice ships. Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-10-29",
+      "items": [
+        "History: each column now shows win %, record and net wins (wins minus losses) stacked in one cell, so the table fits a phone without scrolling sideways.",
+        "History > Lifetime has an All Seasons / Since Expansion (2023) switch, and a Net Wins by Season chart: everyone's running net, season by season, for ATS, Blazin' 5 and Straight Up. On a computer, Win %, Record and Net each sort the table."
+      ]
+    },
+    {
       "date": "2026-10-25",
       "items": [
         "The app's Settings has a Time zone choice (app version 1.17). Kickoff times and the times on the line charts show in the zone you pick. Eastern stays the default."
