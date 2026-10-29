@@ -169,6 +169,9 @@ function renderNetWinsChart({ labels, lines }, { selected, onSeason }) {
         yGridColor: ctx => (ctx.tick.value === 0 ? colors.text : colors.grid)
     });
     options.plugins.tooltip = { enabled: false };
+    // The picker buttons above the chart are its legend and its filter, so
+    // Chart.js's own legend (click-to-hide, with nothing to say so) is off.
+    options.plugins.legend = { display: false };
     options.onHover = (event, elements, chart) => {
         const i = elements.length ? elements[0].index : null;
         if (i === null || i === chart.$selected) return;

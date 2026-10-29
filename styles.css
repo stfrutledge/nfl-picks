@@ -6289,6 +6289,43 @@ body.live-provisional #as-is-standings-table {
     border-radius: 50%;
     margin-right: 8px;
     vertical-align: middle;
+    background: var(--key, transparent);
+    border: 2px solid var(--key, transparent);
+    box-sizing: border-box;
+}
+
+/* Picker buttons: the chart's legend and filter. Pressed in (shown) is a
+   filled dot on a tinted pill; let out is a hollow dot and faded name. */
+.net-picker-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+
+.net-picker-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--bg-primary);
+    color: var(--text-light);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.net-picker-chip:not(.active) .net-key {
+    background: transparent;
+}
+
+.net-picker-chip.active {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border-color: var(--text-light);
 }
 
 @media (max-width: 768px) {

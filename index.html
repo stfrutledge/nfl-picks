@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=ff71e438">
+    <link rel="stylesheet" href="styles.css?v=a3900c3f">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -806,6 +806,9 @@
                             <button class="subtab" data-net-category="su">Straight Up</button>
                         </div>
                     </div>
+                    <!-- Who is on the chart: a button a picker, pressed in
+                         while shown. Also the chart's legend. -->
+                    <div class="net-picker-filter" id="history-net-pickers" role="group" aria-label="Pickers on the chart"></div>
                     <!-- The season table follows the season hovered (or
                          tapped) on the chart; it drops under it on a phone. -->
                     <div class="history-net-layout">
@@ -997,9 +1000,9 @@
     </div>
 
     <script src="parser.js?v=eb0dd073"></script>
-    <script src="charts.js?v=13548cc8"></script>
+    <script src="charts.js?v=bb13d172"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=90499e35"></script>
+    <script src="app.js?v=5887f9e0"></script>
 </body>
 </html>

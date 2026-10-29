@@ -3553,6 +3553,7 @@ const HISTORY_NET_CATEGORIES = [
 // and the season they last hovered.
 let historyNetCategory = 'blazin';
 let historyNetSeason = null;   // null: the latest season in range
+let historyNetHidden = new Set();   // pickers switched off the chart
 
 /**
  * Each picker's season-by-season net in one category over the given seasons:
@@ -3632,6 +3633,30 @@ function historyNetReadoutHtml({ labels, lines }, index) {
         </table>`;
 }
 
+/**
+ * The picker buttons above the chart, one a picker with their line colour.
+ * They are the chart's legend and its filter in one: a button pressed in is
+ * on the chart and in the season table, one let out is off both.
+ */
+function historyNetPickerButtonsHtml(pickers) {
+    const colors = typeof CHART_COLORS !== 'undefined' ? CHART_COLORS : {};
+    return pickers.map(picker => {
+        const shown = !historyNetHidden.has(picker);
+        return `<button type="button" class="net-picker-chip${shown ? ' active' : ''}" data-net-picker="${picker}" aria-pressed="${shown}">
+            <span class="net-key" style="--key:${colors[picker] || '#6b7280'}"></span>${picker}
+        </button>`;
+    }).join('');
+}
+
+/** The chart's data with the pickers switched off taken out. */
+function historyNetVisibleData(data) {
+    const lines = {};
+    Object.keys(data.lines).forEach(picker => {
+        if (!historyNetHidden.has(picker)) lines[picker] = data.lines[picker];
+    });
+    return { labels: data.labels, lines };
+}
+
 /** Draw the chart for Lifetime's seasons, or hide it on a single season. */
 function renderHistoryNetChart() {
     const section = document.getElementById('history-net-section');
@@ -3644,7 +3669,10 @@ function renderHistoryNetChart() {
     });
     if (!lifetime || seasons.length < 2) return;
 
-    const data = historyNetChartData(seasons, historyNetCategory);
+    const all = historyNetChartData(seasons, historyNetCategory);
+    const buttons = document.getElementById('history-net-pickers');
+    if (buttons) buttons.innerHTML = historyNetPickerButtonsHtml(Object.keys(all.lines));
+    const data = historyNetVisibleData(all);
     // The season last hovered, or the latest once it is out of range.
     const at = data.labels.indexOf(String(historyNetSeason));
     const selected = at >= 0 ? at : data.labels.length - 1;
@@ -3666,6 +3694,22 @@ function setupHistoryNetChart() {
             historyNetCategory = btn.dataset.netCategory;
             renderHistoryNetChart();
         });
+    });
+    // One listener for the picker buttons, which are redrawn with the chart.
+    document.getElementById('history-net-pickers')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-net-picker]');
+        if (!btn) return;
+        const picker = btn.dataset.netPicker;
+        if (historyNetHidden.has(picker)) {
+            historyNetHidden.delete(picker);
+        } else {
+            // Never an empty chart: the last one on stays on.
+            const shown = [...document.querySelectorAll('[data-net-picker]')]
+                .filter(b => !historyNetHidden.has(b.dataset.netPicker));
+            if (shown.length <= 1) return;
+            historyNetHidden.add(picker);
+        }
+        renderHistoryNetChart();
     });
 }
 

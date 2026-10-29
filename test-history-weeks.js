@@ -97,6 +97,8 @@ function makeAppEnv() {
         toggleHistoryLifetimeFilter,
         EXPANSION_SEASON, historyStatsAcrossSeasons, historyRecordCell, historyNetSeries,
         historyNetChartData, historyNetReadoutHtml, renderHistoryNetChart, refreshLiveHistoryView, historyLifetimeSpan, setHistoryLifetimeSpan,
+        historyNetPickerButtonsHtml, historyNetVisibleData,
+        __hideNetPicker: p => { historyNetHidden.add(p); },
         __setSeasonData: (season, data) => { seasonData[season] = data; },
         __setNetCategory: c => { historyNetCategory = c; },
         __scope: () => historyStandingsScope,
@@ -524,6 +526,23 @@ check('the season table gives that season’s net and the total, best first', ()
     assert.deepStrictEqual(order, ['Dylan', 'Stephen', 'Sean'], 'level totals keep their order, -1 last');
     assert.match(html, /Sean<\/td>\s*<td class="history-net negative">−1<\/td>\s*<td class="net-total">−1</);
     assert.match(api.historyNetReadoutHtml(data, 1), /\(so far\)/, 'the season in progress says so');
+});
+
+check('every picker has a button, pressed in while they are on the chart', () => {
+    const api = withArchive(setup());
+    api.__hideNetPicker('Sean');
+    const html = api.historyNetPickerButtonsHtml(['Dylan', 'Sean', 'Stephen']);
+    assert.match(html, /active" data-net-picker="Dylan" aria-pressed="true"/);
+    assert.match(html, /chip" data-net-picker="Sean" aria-pressed="false"/);
+    assert.match(html, /active" data-net-picker="Stephen" aria-pressed="true"/);
+});
+
+check('a picker switched off leaves the chart and the season table', () => {
+    const api = withArchive(setup());
+    api.__hideNetPicker('Sean');
+    const data = api.historyNetVisibleData(api.historyNetChartData(api.AVAILABLE_SEASONS, 'line'));
+    assert.deepStrictEqual(Object.keys(data.lines).sort(), ['Dylan', 'Stephen']);
+    assert.ok(!/Sean/.test(api.historyNetReadoutHtml(data, 0)));
 });
 
 check('the chart shows on Lifetime and hides on a single season', () => {

@@ -5,7 +5,8 @@
       "date": "2026-10-29",
       "items": [
         "History: each column now shows win %, record and net wins (wins minus losses) stacked in one cell, so the table fits a phone without scrolling sideways.",
-        "History > Lifetime has an All Seasons / Since Expansion (2023) switch, and a Net Wins by Season chart: everyone's running net, season by season, for ATS, Blazin' 5 and Straight Up. On a computer, Win %, Record and Net each sort the table."
+        "History > Lifetime has an All Seasons / Since Expansion (2023) switch, and a Net Wins by Season chart: everyone's running net, season by season, for ATS, Blazin' 5 and Straight Up. On a computer, Win %, Record and Net each sort the table.",
+        "The Net Wins by Season chart has a button for each picker above it: tap to take someone off the chart and the season table, tap again to put them back."
       ]
     },
     {
