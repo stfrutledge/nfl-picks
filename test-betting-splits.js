@@ -415,10 +415,27 @@ function section(name) { console.log(`\n${name}`); }
         assert.strictEqual(entry7().games['49ers_falcons'][0].kind, 'first');
     });
 
-    await check('a game whose line appears after the open is "first seen" when it does', async () => {
+    await check('a line posted soon after the open (the Sunday night teams’) is still the open', async () => {
         await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(null));
         assert.deepStrictEqual(entry7().games, {}, 'opened, but no line for it yet');
-        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 3600000, async () => week7(espnLine('-4', '+4', 47.5)));
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 30 * MIN, async () => week7(espnLine('-4', '+4', 47.5)));
+        assert.deepStrictEqual(entry7().games['49ers_falcons'][0], { at: SUN_MIDNIGHT + 30 * MIN, away: '-4', home: '+4', total: 47.5, kind: 'open' });
+    });
+
+    await check('a point stored as "first" inside the grace window is made the open on the next run', async () => {
+        kv.set('lines:2025:7', JSON.stringify({ open: { at: SUN_MIDNIGHT, late: false }, games: {
+            '49ers_falcons': [{ at: SUN_MIDNIGHT + 30 * MIN, away: '-4', home: '+4', total: 47.5, kind: 'first' }],
+            rams_raiders: [{ at: SUN_MIDNIGHT + 7 * 3600000, away: '-1', home: '+1', total: 44, kind: 'first' }] } }));
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 8 * 3600000, async () => week7(espnLine('-4', '+4', 47.5)));
+        const g = entry7().games;
+        assert.strictEqual(g['49ers_falcons'][0].kind, 'open');
+        assert.strictEqual(g['49ers_falcons'].length, 1, 'no new point: the line has not moved');
+        assert.strictEqual(g.rams_raiders[0].kind, 'first', 'hours later stays first seen');
+    });
+
+    await check('a game whose line appears hours after the open is "first seen" when it does', async () => {
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT, async () => week7(null));
+        await mod.recordLineMoves(ENV, week6('post'), SUN_MIDNIGHT + 7 * 3600000, async () => week7(espnLine('-4', '+4', 47.5)));
         assert.strictEqual(entry7().games['49ers_falcons'][0].kind, 'first');
     });
 

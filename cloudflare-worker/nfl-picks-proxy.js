@@ -1744,6 +1744,13 @@ const OPEN_LATE_AFTER_MS = 6 * 60 * 60 * 1000;
 // tracking began - on its Tuesday, which the owner judged close enough.
 // Every other week opens on Sunday night or reads "first seen".
 const OPENS_TAKEN_LATE = new Set(['2026:7']);
+// A game whose first line arrives this soon after the week opened still takes
+// it as its open. The Sunday night teams' next lines are posted only once that
+// game ends, so they miss the opening run by a quarter or half an hour: 2026
+// week 8's Chiefs-Broncos came at 12:00 AM after an 11:30 PM open, and read
+// "first seen" with a dash under Opened. Later than this it is a line that
+// was genuinely missing (an injury, a game off the board) and stays "first".
+const OPEN_GRACE_MS = OPEN_LATE_AFTER_MS;
 
 /**
  * DraftKings' current spread and total off a scoreboard competition, the
@@ -1841,6 +1848,15 @@ async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeek
       entry.close = previous ? { at: now } : { at: now, late: true };
       changed = true;
     }
+    // A first point stored as "first" before OPEN_GRACE_MS existed, but inside
+    // it, is the open by today's rule (2026 week 8's Sunday night teams).
+    for (const points of Object.values(entry.games)) {
+      const first = points[0];
+      if (first?.kind === 'first' && !entry.open.late && first.at - entry.open.at <= OPEN_GRACE_MS) {
+        first.kind = 'open';
+        changed = true;
+      }
+    }
     for (const game of b.games) {
       if (game.state !== 'pre' || !game.odds) continue;
       const points = entry.games[game.key] ||= [];
@@ -1848,8 +1864,9 @@ async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeek
       const last = points[points.length - 1];
       if (!last || last.away !== o.away || last.home !== o.home || last.total !== o.total) {
         const point = { at: now, away: o.away, home: o.home, total: o.total };
-        // A game's first point is the open only on the run that opened the week.
-        if (!last) point.kind = !entry.open.late && entry.open.at === now ? 'open' : 'first';
+        // A game's first point is the open when it comes with the week's open
+        // or within OPEN_GRACE_MS of it (the Sunday night teams' lines).
+        if (!last) point.kind = !entry.open.late && now - entry.open.at <= OPEN_GRACE_MS ? 'open' : 'first';
         points.push(point);
         moved.push(game.key);
         changed = true;
