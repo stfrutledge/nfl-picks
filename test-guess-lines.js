@@ -74,7 +74,7 @@ function loadSiteScoring() {
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
     return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage', 'pickKey',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, guessState, orderGuessGames };`)(
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, guessState, orderGuessGames, parseGuessEpisode, parseGuessEpisodes, podcastEpisodeWeek, podcastPlayerName, PODCAST_PLAYERS, guessOffBand };`)(
         name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null },
         game => `${game.away.toLowerCase()}_${game.home.toLowerCase()}`);
 }
@@ -300,6 +300,69 @@ let mod;
         assert.strictEqual(site.guessWindowOpen({ open: { at: 1, late: false }, close: { at: 2 } }), false);
         assert.strictEqual(site.guessWindowOpen({ open: { at: 1, late: true }, close: null }), false, 'first seen late');
         assert.strictEqual(site.guessWindowOpen({ open: null }), false);
+    });
+
+    await check('the episode: the newest Guess the Lines show, and where the segment starts', () => {
+        // The feed's shape, cut down from the real one (2 November 2026).
+        const item = (title, description, date, url) => `<item><title><![CDATA[${title}]]></title>
+            <description><![CDATA[<p>${description}</p>]]></description><pubDate>${date}</pubDate>
+            <enclosure url="${url}" length="0" type="audio/mpeg"/></item>`;
+        const feed = `<rss><channel><title>The Bill Simmons Podcast</title>
+            ${item('NBA Power Poll 1.0', '(0:00) Intro', 'Tue, 03 Nov 2026 23:24:00 -0000', 'https://example.com/nba.mp3')}
+            ${item('The Chiefs Choke, Lamar’s Out, and Guess the Lines With Cousin Sal',
+                '(0:00) Intro (1:52) Eagles-Commanders (01:17:43) Colts-Jaguars (01:23:42) Guess the Lines Week 9 (01:39:42) Parent Corner',
+                'Mon, 02 Nov 2026 08:07:00 -0000', 'https://pdst.fm/e/traffic.megaphone.fm/GLT4997860343.mp3')}
+            ${item('A Giants Revival, and Guess the Lines With Cousin Sal', '(58:10) Guess the Lines Week 8',
+                'Mon, 26 Oct 2026 06:24:00 -0000', 'https://example.com/old.mp3')}
+        </channel></rss>`;
+        const episode = site.parseGuessEpisode(feed);
+        assert.strictEqual(episode.title, 'The Chiefs Choke, Lamar’s Out, and Guess the Lines With Cousin Sal');
+        assert.strictEqual(episode.audio, 'https://pdst.fm/e/traffic.megaphone.fm/GLT4997860343.mp3');
+        assert.strictEqual(episode.start, 1 * 3600 + 23 * 60 + 42);
+        assert.strictEqual(episode.startLabel, '1:23:42');
+        assert.strictEqual(episode.week, 9);
+        assert.strictEqual(episode.artwork, null, 'no channel artwork in this feed');
+        const art = site.parseGuessEpisode(feed.replace('<title>The Bill Simmons Podcast</title>', '<title>The Bill Simmons Podcast</title><itunes:image href="https://megaphone.imgix.net/podcasts/x/image/y.jpg?ixlib=rails-4.3.1&amp;max-w=3000&amp;max-h=3000&amp;fit=crop&amp;auto=format,compress"/>')).artwork;
+        assert.strictEqual(art, 'https://megaphone.imgix.net/podcasts/x/image/y.jpg?ixlib=rails-4.3.1&fit=crop&auto=format%2Ccompress&w=192&h=192', 'the show artwork, asked for small');
+        assert.strictEqual(episode.published, Date.UTC(2026, 10, 2, 8, 7));
+        assert.strictEqual(site.parseGuessEpisode(feed.replace('(01:23:42) Guess the Lines Week 9', '')).start, null, 'no timestamp listed');
+        assert.strictEqual(site.parseGuessEpisode('<rss><channel></channel></rss>'), null);
+        assert.strictEqual(site.parseGuessEpisode(item('Guess the Lines', '', '', 'http://insecure.example/x.mp3')).audio, null, 'https only');
+    });
+
+    await check('the episodes: one a week this season, each matched to its week', () => {
+        const item = (title, description, date) => `<item><title>${title}</title><description>${description}</description>
+            <pubDate>${date}</pubDate><enclosure url="https://example.com/${encodeURIComponent(date)}.mp3"/></item>`;
+        const feed = `<rss><channel>
+            ${item('Week 9 recap and Guess the Lines With Cousin Sal', '(01:23:42) Guess the Lines Week 9', 'Mon, 02 Nov 2026 08:07:00 -0000')}
+            ${item('Week 8 picks', '(0:00) Intro', 'Fri, 30 Oct 2026 02:50:00 -0000')}
+            ${item('Week 2 and Guess the Lines With Cousin Sal', '(0:00) Intro (1:02:00) Bills-Ravens', 'Mon, 14 Sep 2026 07:00:00 -0000')}
+            ${item('Last season and Guess the Lines With Cousin Sal', '(50:00) Guess the Lines Week 18', 'Mon, 29 Dec 2025 07:00:00 -0000')}
+        </channel></rss>`;
+        const episodes = site.parseGuessEpisodes(feed, Date.UTC(2026, 6, 1));
+        assert.deepStrictEqual(episodes.map(e => e.week), [9, null], 'this season only, the recap-only show left out');
+        // 2026: week 1 kicks off 10 Sep, week 2 on 17 Sep, week 3 on 24 Sep.
+        const firstKickoffs = [, Date.UTC(2026, 8, 11, 0, 20), Date.UTC(2026, 8, 18, 0, 15), Date.UTC(2026, 8, 25, 0, 15)];
+        assert.strictEqual(site.podcastEpisodeWeek(episodes[0], firstKickoffs), 9, 'the week its description names');
+        assert.strictEqual(site.podcastEpisodeWeek(episodes[1], firstKickoffs), 2, 'no segment listed: the first week after it came out');
+        assert.strictEqual(site.podcastEpisodeWeek({ week: null, published: null }, firstKickoffs), null);
+    });
+
+    await check('off by: a colour band, harsher the further', () => {
+        const bands = [0, 0.5, 1, 1.5, 2.5, 3, 4.5, 5, 6.5, 7, 13.5].map(site.guessOffBand);
+        assert.deepStrictEqual(bands, ['exact', 'off-near', 'off-near', 'off-close', 'off-close', 'off-fg', 'off-fg', 'off-far', 'off-far', 'off-td', 'off-td']);
+        assert.strictEqual(site.guessOffBand(null), '');
+    });
+
+    await check('podcast rows name the guesser, not "You"', () => {
+        const you = site.PODCAST_PLAYERS.find(p => p.field === 'you');
+        site.guessState.picker = null;
+        assert.strictEqual(site.podcastPlayerName(you), 'You');
+        site.guessState.picker = 'Sean';
+        assert.strictEqual(site.podcastPlayerName(you), 'Sean');
+        assert.strictEqual(site.podcastPlayerName(you, true), 'Sean');
+        assert.strictEqual(site.podcastPlayerName(site.PODCAST_PLAYERS[1], true), 'Sal');
+        site.guessState.picker = null;
     });
 
     fs.unlinkSync(tmp);

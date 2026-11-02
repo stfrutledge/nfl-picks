@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=a3900c3f">
+    <link rel="stylesheet" href="styles.css?v=fe5eeb24">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -69,12 +69,12 @@
             <section class="category-tabs">
                 <button class="tab tab-picks active" data-category="make-picks">Make Picks</button>
                 <button class="tab" data-category="live">Live</button>
+                <button class="tab" data-category="standings">Standings</button>
+                <button class="tab" data-category="history" id="history-tab" style="display: none;">History</button>
                 <!-- Up from the end of Sunday night's game to the end of Monday
                      night's, and after that for anyone who played this season.
                      See updateGuessTabVisibility(). -->
                 <button class="tab" data-category="guess" id="guess-tab" style="display: none;">Guess Lines</button>
-                <button class="tab" data-category="standings">Standings</button>
-                <button class="tab" data-category="history" id="history-tab" style="display: none;">History</button>
             </section>
 
             <!-- Standings Sub-tabs (only visible when Standings is active) -->
@@ -1003,6 +1003,6 @@
     <script src="charts.js?v=bb13d172"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=5887f9e0"></script>
+    <script src="app.js?v=9114d7c1"></script>
 </body>
 </html>

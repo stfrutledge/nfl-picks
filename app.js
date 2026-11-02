@@ -5,6 +5,22 @@
 // Cloudflare Worker Proxy URL - handles all external API calls (Odds API, Google Sheets, sync)
 // Deploy nfl-picks-proxy.js to Cloudflare Workers and set this URL
 const WORKER_PROXY_URL = 'https://nfl-picks-proxy.stfrutledge.workers.dev';
+// Localhost never writes picks, cleared flags, spreads or results to the
+// live store: a pick made while testing, or a save left queued in this
+// browser, would replace the real one. Guesses still save. To test a real
+// save locally, run localStorage.setItem('nfl_local_writes', '1') and reload.
+// This PC, or this PC seen from a phone on the home network (a private
+// address): the local server, never the live site.
+const LOCAL_HOST_PATTERN = /^(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/;
+const IS_LOCALHOST = typeof location !== 'undefined' && LOCAL_HOST_PATTERN.test(location.hostname);
+const LOCAL_READ_ONLY = IS_LOCALHOST
+    && (() => { try { return localStorage.getItem('nfl_local_writes') !== '1'; } catch { return true; } })();
+let localReadOnlyNoted = false;
+function localReadOnlyNote() {
+    if (localReadOnlyNoted) return;
+    localReadOnlyNoted = true;
+    console.info('[local] read-only: picks are not saved from localhost');
+}
 
 // Google Apps Script URL (legacy - now proxied through worker)
 // Not fetched directly - every call goes through WORKER_PROXY_URL/sync, and the
@@ -320,6 +336,30 @@ const TEAM_COLORS = {
 function getTeamLogo(teamName) {
     const normalized = TEAM_NAME_MAP[teamName] || teamName;
     return TEAM_LOGOS[normalized] || '';
+}
+
+/**
+ * The logo for a black background (the Game Details and Guess the Lines
+ * headers): ESPN's "500-dark" set, where a dark mark such as the Giants'
+ * navy "ny" is redrawn to show. Through ESPN's resizer at 128px, since the
+ * originals run to 500 KB (the Raiders'); about 2-7 KB each.
+ */
+function getTeamLogoOnDark(teamName) {
+    const logo = getTeamLogo(teamName);
+    const path = logo.match(/^https:\/\/a\.espncdn\.com(\/i\/teamlogos\/nfl\/)500(\/[a-z]+\.png)$/);
+    if (!path) return logo;
+    return `https://a.espncdn.com/combiner/i?img=${path[1]}500-dark${path[2]}&h=128&w=128`;
+}
+
+/** A dark-background logo that fails: the normal logo, then the usual fallback. */
+function handleDarkLogoError(img, teamName) {
+    const plain = getTeamLogo(teamName);
+    if (plain && img.getAttribute('src') !== plain) {
+        img.onerror = () => handleLogoError(img, teamName);
+        img.src = plain;
+        return;
+    }
+    handleLogoError(img, teamName);
 }
 
 // Helper to get team abbreviation for fallback
@@ -5286,6 +5326,7 @@ function unstoredResultsForWeek(week) {
  * @returns {number} how many results were persisted
  */
 async function postResultsToSheet(week, results, source) {
+    if (LOCAL_READ_ONLY) return 0;
     const count = Object.keys(results).length;
     if (count === 0) return 0;
 
@@ -6629,13 +6670,16 @@ function updateLiveTabVisibility() {
 // or week, or a load, redraws the tab, and the timed reload skips that while
 // a field in the tab has focus.
 // ---------------------------------------------------------------------------
-// Off: the tab is hidden and nothing is fetched for it, at the owner's
-// request (October 2026). Everything else is kept; true brings it back.
-const GUESS_TAB_ENABLED = false;
+// On for everyone again since 2 November 2026 (hidden 26 October to 2
+// November, at the owner's request, while it was reworked). False hides the
+// tab and fetches nothing for it; the code and the saved guesses are kept.
+const GUESS_TAB_ENABLED = true;
 const GUESS_REFRESH_MS = 5 * 60 * 1000;
 const GUESS_SAVE_DEBOUNCE_MS = 1200;
 const GUESS_MAX_POINTS = 40;
 const GUESS_HOSTS = [{ field: 'sal', name: 'Cousin Sal', short: 'Sal' }, { field: 'bill', name: 'Bill Simmons', short: 'Bill' }];
+// The 'you' field is whoever is guessing (guessState.picker): its rows and
+// tables print that person's name, never "You" (`podcastPlayerName`).
 const PODCAST_PLAYERS = [{ field: 'you', name: 'You', short: 'You' }, ...GUESS_HOSTS];
 const PODCAST_FIELDS = [...PODCAST_PLAYERS, { field: 'line', name: 'Line read out', short: 'Line' }];
 const guessState = {
@@ -6651,17 +6695,58 @@ const guessState = {
     errors: new Map(),      // `${week}|${key}` -> why a submit failed
     status: '',
 };
-const podcastSaveTimers = new Map();   // `${week}|${key}` -> timeout
+const podcastSaveTimers = new Map();   // `${week}|${key}` -> { timeout, save }
 let guessSaveChain = Promise.resolve();
 let guessSavesPending = 0;
 let guessTimer = null;
 let guessLoadInFlight = false;
+let guessLoadPromise = null;
 const guessSettleTimers = new Map();   // `${mode}|${week}|${key}` -> timeout
 // A finished game moves to the top this long after it finished, the
 // owner's ask: long enough to see the result land on the card first.
 const GUESS_SETTLE_MS = 5000;
 
 try { if (localStorage.getItem('guessMode') === 'podcast') guessState.mode = 'podcast'; } catch {}
+
+/** The pickers who can guess: this season's, never Cowherd. */
+function guessPeople() {
+    return getPickersForSeason(CURRENT_SEASON).filter(p => p !== COWHERD);
+}
+
+/**
+ * Who is guessing: the "Guessing as" choice on this device, else the site's
+ * picker. Choosing someone here changes nothing else on the site.
+ */
+function guessPerson() {
+    let chosen = null;
+    try { chosen = localStorage.getItem('guessAs'); } catch {}
+    if (chosen && guessPeople().includes(chosen)) return chosen;
+    return currentPicker || null;
+}
+
+/** A podcast player's label: the guesser's own name in place of "You". */
+function podcastPlayerName(player, short = false) {
+    if (player.field === 'you' && guessState.picker) return guessState.picker;
+    return short ? player.short : player.name;
+}
+
+/**
+ * Switch who is guessing. Anything typed and not yet saved is sent first,
+ * for the person it was typed for, and the switch waits for it to land, so
+ * nobody's guess is saved under somebody else's name.
+ */
+async function setGuessPerson(name) {
+    if (!guessPeople().includes(name) || name === guessState.picker) return;
+    for (const pending of [...podcastSaveTimers.values()]) {
+        clearTimeout(pending.timeout);
+        pending.save();
+    }
+    try { localStorage.setItem('guessAs', name); } catch {}
+    guessState.status = '';
+    await guessSaveChain;
+    await loadGuessTheLines();
+    await renderGuessTab();
+}
 
 /** Open: the week has opened on Sunday night (not first seen late) and not yet closed. */
 function guessWindowOpen(lines) {
@@ -6683,6 +6768,20 @@ function gamesCount(n) {
 
 function guessOff(guess, line) {
     return guess === null || guess === undefined || line === null || line === undefined ? null : Math.abs(guess - line);
+}
+
+/**
+ * How far off, as a colour band for the reveal (the owner's scale, keyed to
+ * football's margins: a field goal is 3, a touchdown 7). Harsher the further.
+ */
+function guessOffBand(off) {
+    if (off === null) return '';
+    if (off === 0) return 'exact';
+    if (off <= 1) return 'off-near';
+    if (off <= 2.5) return 'off-close';
+    if (off <= 4.5) return 'off-fg';
+    if (off <= 6.5) return 'off-far';
+    return 'off-td';
 }
 
 function formatOff(off) {
@@ -6841,26 +6940,35 @@ function guessTabHasFocus() {
  * during Monday night's game, while the window is still open.
  */
 async function loadGuessTheLines() {
-    if (!GUESS_TAB_ENABLED || guessLoadInFlight) return;
+    if (!GUESS_TAB_ENABLED) return;
+    // A load already running may be for the person before a switch: let it
+    // finish, then load again for whoever is guessing now.
+    while (guessLoadInFlight) await guessLoadPromise;
     guessLoadInFlight = true;
+    guessLoadPromise = loadGuessTheLinesNow();
+    return guessLoadPromise;
+}
+
+async function loadGuessTheLinesNow() {
+    const person = guessPerson();
     try {
         const candidates = [CURRENT_NFL_WEEK + 1, CURRENT_NFL_WEEK].filter(w => w >= 1 && w <= TOTAL_WEEKS);
         await Promise.all(candidates.map(w => fetchGuessLines(w).catch(error =>
             console.warn(`[Guess] Could not load week ${w}'s lines:`, error.message))));
         guessState.openWeek = candidates.find(w => guessWindowOpen(guessState.lines.get(w))) ?? null;
 
-        if (guessState.picker !== currentPicker) {
-            guessState.picker = currentPicker;
+        if (guessState.picker !== person) {
+            guessState.picker = person;
             guessState.weeks = {};
             guessState.drafts.clear();
             guessState.errors.clear();
         }
-        if (currentPicker) {
-            const response = await fetch(`${WORKER_PROXY_URL}/guesses?season=${CURRENT_SEASON}&picker=${encodeURIComponent(currentPicker)}`);
+        if (person) {
+            const response = await fetch(`${WORKER_PROXY_URL}/guesses?season=${CURRENT_SEASON}&picker=${encodeURIComponent(person)}`);
             if (!response.ok) throw new Error(`worker answered ${response.status}`);
             const data = await response.json();
             // A podcast change still to be saved is newer than the server's copy.
-            if (guessState.picker === currentPicker && guessSavesPending === 0 && podcastSaveTimers.size === 0) {
+            if (guessState.picker === person && guessSavesPending === 0 && podcastSaveTimers.size === 0) {
                 guessState.weeks = data.weeks || {};
             }
         }
@@ -6902,7 +7010,11 @@ function updateGuessTabVisibility(now = Date.now()) {
     if (!show && currentCategory === 'guess') setActiveCategory('make-picks');
 }
 
-/** One write at a time: each reads and rewrites the picker's whole season in KV. */
+/**
+ * One write at a time: each reads and rewrites the picker's whole season in
+ * KV. Callers pass `picker`, taken when the guess was made: the chain can
+ * run after a switch of who is guessing.
+ */
 function postGuess(body) {
     guessSavesPending++;
     const run = guessSaveChain.then(async () => {
@@ -6932,7 +7044,7 @@ function guessHeroHtml(game) {
         const record = detailsRecord(game.records?.[side], side);
         return `
             <div class="gd-team">
-                <img class="gd-logo" src="${getTeamLogo(game[side])}" alt="${game[side]} logo" onerror="handleLogoError(this, '${game[side]}')">
+                <img class="gd-logo" src="${getTeamLogoOnDark(game[side])}" alt="${game[side]} logo" onerror="handleDarkLogoError(this, '${game[side]}')">
                 <div class="gd-team-name">${game[side]}</div>
                 ${record ? `<div class="gd-record">${record}</div>` : ''}
             </div>`;
@@ -6951,6 +7063,7 @@ function guessHeroHtml(game) {
  * point at a time. `field` is 'solo' or a podcast field.
  */
 function spreadControlHtml(game, week, field, draft, { compact = false, disabled = false } = {}) {
+    disabled ||= !guessState.picker;   // nobody chosen to guess as
     const key = pickKey(game);
     const fav = side => {
         const team = game[side];
@@ -6974,27 +7087,31 @@ function spreadControlHtml(game, week, field, draft, { compact = false, disabled
     </div>`;
 }
 
-/** A solo card's bottom: the box and Submit, or once submitted, the reveal. */
+/**
+ * A solo card's bottom: the box and Submit. Once submitted the box stays,
+ * locked on the guess, and the line is revealed where Submit was (the
+ * owner's ask), so the guess and the line sit one above the other.
+ */
 function soloControlsHtml(game, week, editable) {
     const key = pickKey(game);
     const entry = guessState.weeks[week]?.solo?.[key];
     if (entry) {
         const off = guessOff(entry.guess, entry.line);
-        return `<div class="guess-reveal">
-            <div><span>Your guess</span><strong>${formatGuess(game, entry.guess)}</strong></div>
+        return `<div class="guess-steps"><span>Pick the favourite, then the spread</span></div>
+        ${spreadControlHtml(game, week, 'solo', draftFromValue(entry.guess), { disabled: true })}
+        <div class="guess-reveal guess-reveal-inline">
             <div><span>The line</span><strong>${formatGuess(game, entry.line)}</strong></div>
-            <div class="guess-reveal-off${off === 0 ? ' exact' : ''}"><span>Off by</span><strong>${off === 0 ? 'Exact' : off}</strong></div>
+            <div class="guess-reveal-off ${guessOffBand(off)}"><span>Off by</span><strong>${off === 0 ? 'Exact' : off}</strong></div>
         </div>`;
     }
     if (!editable) return '<p class="as-is-note">Not guessed.</p>';
     const id = `${week}|${key}`;
-    const { draft, fromPodcast } = soloDraft(week, key);
+    const { draft } = soloDraft(week, key);
     const busy = guessState.submitting.has(id);
     const error = guessState.errors.get(id);
     return `<div class="guess-steps"><span>Pick the favourite, then the spread</span></div>
         ${spreadControlHtml(game, week, 'solo', draft, { disabled: busy })}
-        <button type="button" class="guess-submit" data-submit="${key}"${draftValue(draft) === undefined || draftValue(draft) === null || busy ? ' disabled' : ''}>${busy ? 'Revealing&hellip;' : 'Submit &amp; reveal the line'}</button>
-        ${fromPodcast ? '<p class="as-is-note guess-prefilled">Your guess from the podcast tab: submit it as it is, or change it first.</p>' : ''}
+        <button type="button" class="guess-submit" data-submit="${key}"${draftValue(draft) === undefined || draftValue(draft) === null || busy || !guessState.picker ? ' disabled' : ''}>${busy ? 'Revealing&hellip;' : 'Submit &amp; reveal the line'}</button>
         ${error ? `<p class="guess-error">${error}</p>` : ''}`;
 }
 
@@ -7005,7 +7122,7 @@ function podcastControlsHtml(game, week) {
     const rows = PODCAST_FIELDS.map(p => {
         const draft = guessState.drafts.get(`${week}|${key}|${p.field}`) || draftFromValue(row[p.field]);
         return `<div class="podcast-entry${p.field === 'line' ? ' podcast-line' : ''}" data-field="${p.field}">
-            <span class="podcast-who">${p.short}</span>
+            <span class="podcast-who">${podcastPlayerName(p, true)}</span>
             ${spreadControlHtml(game, week, p.field, draft, { compact: true })}
             <span class="podcast-result"></span>
         </div>`;
@@ -7041,8 +7158,8 @@ function guessCardHtml(game, controls) {
     </article>`;
 }
 
+/** The week chooser. It is also the week's only label (no heading beside it, the owner's ask), so it shows with one week too. */
 function guessWeekSelectHtml(weeks, week) {
-    if (weeks.length < 2) return '';
     return `<select id="guess-week-select" aria-label="Week">${weeks.map(w =>
         `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}</option>`).join('')}</select>`;
 }
@@ -7138,45 +7255,25 @@ async function soloHtml() {
 
     const intro = `<p class="as-is-note">Pick each game&rsquo;s favourite and the spread, then submit: the real line is revealed and you see how close you were. Open from the end of Sunday night&rsquo;s game until Monday night&rsquo;s ends.</p>`;
     if (week === null) {
-        return intro + '<p class="as-is-note"><strong>Solo opens when Sunday night&rsquo;s game ends.</strong></p>' + `<div id="guess-season">${soloSeasonHtml()}</div>`;
+        return intro + '<p class="as-is-note"><strong>Solo opens when Sunday night&rsquo;s game ends.</strong></p>';
     }
     const editable = week === open;
     const solo = guessState.weeks[week]?.solo || {};
     const games = orderGuessGames('solo', week, (await guessGamesFor(week)).filter(g => editable || pickKey(g) in solo));
     const cards = games.map(game => guessCardHtml(game, soloControlsHtml(game, week, editable))).join('');
 
-    return intro + `<div class="guess-results-head"><h3 class="guess-subhead">Week ${week}${editable ? '' : ' (closed)'}</h3>${guessWeekSelectHtml(weeks, week)}</div>
+    return intro + `<div class="guess-results-head">${guessWeekSelectHtml(weeks, week)}${editable ? '' : '<span class="guess-week-closed">Closed</span>'}</div>
         <p class="as-is-note guess-count" id="guess-solo-summary" data-games="${games.length}" data-editable="${editable}">${soloSummaryHtml(week, editable, games.length)}</p>
-        <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>
-        <div id="guess-season">${soloSeasonHtml()}</div>`;
+        <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>`;
 }
 
-function soloSeasonHtml() {
-    const weeks = Object.keys(guessState.weeks).map(Number).filter(w => guessState.weeks[w].solo).sort((a, b) => a - b);
-    if (weeks.length === 0) return '';
-    let off = 0, games = 0;
-    const rows = weeks.map(w => {
-        const s = soloWeekScore(guessState.weeks[w].solo);
-        off += s.off; games += s.games;
-        return `<tr><td class="guess-game">Week ${w}</td><td>${s.games}</td><td><strong>${s.off}</strong></td><td>${(s.off / s.games).toFixed(2)}</td></tr>`;
-    }).join('');
-    return `<h3 class="guess-subhead">Season</h3>
-    <div class="standings-table-container"><table class="standings-table guess-table">
-        <thead><tr><th></th><th>Games</th><th>Points off</th><th>Per game</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td class="guess-game">Total</td><td>${games}</td><td><strong>${off}</strong></td><td>${(off / games).toFixed(2)}</td></tr></tfoot>
-    </table></div>`;
-}
-
-/** Redraw one solo card's controls, the week's count and the season, in place. */
+/** Redraw one solo card's controls and the week's count, in place. */
 function refreshSoloCard(week, key) {
     const card = document.querySelector(`#guess-content .guess-card[data-key="${key}"]`);
     const game = guessGameByKey(week, key);
     if (card && game) card.querySelector('.guess-controls').innerHTML = soloControlsHtml(game, week, week === guessState.openWeek);
     const summary = document.getElementById('guess-solo-summary');
     if (summary) summary.innerHTML = soloSummaryHtml(week, summary.dataset.editable === 'true', Number(summary.dataset.games));
-    const season = document.getElementById('guess-season');
-    if (season) season.innerHTML = soloSeasonHtml();
 }
 
 async function submitSoloGuess(week, key) {
@@ -7187,7 +7284,7 @@ async function submitSoloGuess(week, key) {
     guessState.errors.delete(id);
     refreshSoloCard(week, key);
     try {
-        const data = await postGuess({ mode: 'solo', week, game: key, guess });
+        const data = await postGuess({ picker: guessState.picker, mode: 'solo', week, game: key, guess });
         ((guessState.weeks[week] ||= {}).solo ||= {})[key] = data.entry;
         scheduleGuessSettle('solo', week, key);
         guessState.drafts.delete(`${id}|solo`);
@@ -7219,7 +7316,7 @@ function podcastLiveTableHtml(score) {
     const rows = order.map(p => {
         const s = score[p.field];
         const lead = leaders.includes(p.field) && s.points > 0;
-        return `<tr class="${lead ? 'podcast-leader' : ''}"><td class="guess-game">${p.name}</td>
+        return `<tr class="${lead ? 'podcast-leader' : ''}"><td class="guess-game">${podcastPlayerName(p)}</td>
             <td><strong>${s.points}</strong></td><td>${s.games}</td><td>${s.games ? s.off : '&ndash;'}</td></tr>`;
     }).join('');
     return `<div class="standings-table-container"><table class="standings-table guess-table">
@@ -7233,44 +7330,28 @@ function podcastLiveTableHtml(score) {
 async function podcastHtml() {
     const current = podcastWeek();
     const played = Object.keys(guessState.weeks).map(Number).filter(w => guessState.weeks[w].podcast);
-    const weeks = [...new Set([current, ...played])].sort((a, b) => b - a);
+    // Every week of the season so far, so any week's episode can be chosen.
+    const weeks = [...new Set([...Array.from({ length: current }, (_, i) => i + 1), ...played])].sort((a, b) => b - a);
     if (!weeks.includes(guessState.viewWeek.podcast)) guessState.viewWeek.podcast = current;
     const week = guessState.viewWeek.podcast;
     const games = orderGuessGames('podcast', week, await guessGamesFor(week));
     const cards = games.map(game => guessCardHtml(game, podcastControlsHtml(game, week))).join('');
 
     return `<p class="as-is-note">Enter your guess, the hosts&rsquo; guesses and the line they read out. Everyone is scored against that line, stale or not, so it is level.</p>
-        <div class="guess-results-head"><h3 class="guess-subhead">Week ${week}</h3>${guessWeekSelectHtml(weeks, week)}</div>
-        <div class="podcast-live" id="podcast-live">${podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast))}</div>
-        <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>
-        <div id="guess-season">${podcastSeasonHtml()}</div>`;
+        <div class="podcast-top">
+            <div id="podcast-episode-slot"></div>
+            <div class="podcast-week">
+                <div class="guess-results-head">${guessWeekSelectHtml(weeks, week)}</div>
+                <div class="podcast-live" id="podcast-live">${podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast))}</div>
+            </div>
+        </div>
+        <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>`;
 }
 
-function podcastSeasonHtml() {
-    const weeks = Object.keys(guessState.weeks).map(Number).filter(w => guessState.weeks[w].podcast);
-    const scores = weeks.map(w => podcastWeekScore(guessState.weeks[w].podcast)).filter(s => s.scored);
-    if (scores.length === 0) return '';
-    const rows = PODCAST_PLAYERS.map(p => {
-        const points = scores.reduce((sum, s) => sum + s[p.field].points, 0);
-        const games = scores.reduce((sum, s) => sum + s[p.field].games, 0);
-        const weeksWon = scores.filter(s => podcastWeekWinners(s).includes(p.field)).length;
-        return { p, points, games, weeksWon };
-    }).sort((a, b) => b.points - a.points).map(({ p, points, games, weeksWon }) =>
-        `<tr><td class="guess-game">${p.name}</td><td><strong>${points}</strong></td><td>${games}</td><td>${weeksWon}</td></tr>`).join('');
-    return `<h3 class="guess-subhead">Season</h3>
-    <div class="standings-table-container"><table class="standings-table guess-table">
-        <thead><tr><th></th><th>Points</th><th>Games</th><th>Weeks won</th></tr></thead>
-        <tbody>${rows}</tbody>
-    </table></div>
-    <p class="as-is-note">Weeks won: most points that week; a tie counts for each.</p>`;
-}
-
-/** The live table and the season, in place. */
+/** The week's table, in place. */
 function refreshPodcastScores(week) {
     const live = document.getElementById('podcast-live');
     if (live) live.innerHTML = podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast));
-    const season = document.getElementById('guess-season');
-    if (season) season.innerHTML = podcastSeasonHtml();
 }
 
 /** Change one podcast field and save the game's row once the typing stops. */
@@ -7281,42 +7362,381 @@ function setPodcastField(week, key, field, value) {
     else row[field] = value;
     if (Object.keys(row).length === 0) delete podcast[key];
     const id = `${week}|${key}`;
-    clearTimeout(podcastSaveTimers.get(id));
+    const picker = guessState.picker;
+    clearTimeout(podcastSaveTimers.get(id)?.timeout);
     guessState.status = 'Saving&hellip;';
-    podcastSaveTimers.set(id, setTimeout(async () => {
+    // The row is read when the save runs, so it must still be this picker's
+    // season: setGuessPerson runs every waiting save before it switches.
+    const save = async () => {
         podcastSaveTimers.delete(id);
+        if (guessState.picker !== picker) return;
         const current = guessState.weeks[week]?.podcast?.[key] || {};
         try {
-            await postGuess({ mode: 'podcast', week, game: key,
+            await postGuess({ picker, mode: 'podcast', week, game: key,
                 ...Object.fromEntries(PODCAST_FIELDS.map(p => [p.field, current[p.field] ?? null])) });
             guessState.status = podcastSaveTimers.size ? 'Saving&hellip;' : 'Saved';
         } catch (error) {
             guessState.status = `Not saved: ${error.message}`;
         }
         if (currentCategory === 'guess' && guessState.mode === 'podcast') refreshPodcastScores(guessState.viewWeek.podcast);
-    }, GUESS_SAVE_DEBOUNCE_MS));
+    };
+    podcastSaveTimers.set(id, { timeout: setTimeout(save, GUESS_SAVE_DEBOUNCE_MS), save });
 }
 
 // --- the tab -----------------------------------------------------------------
 
+/** "Guessing as": whose guesses the tab shows and saves, on this device. */
+function guessPersonSelectHtml() {
+    const person = guessState.picker;
+    const options = guessPeople().map(p =>
+        `<option value="${p}"${p === person ? ' selected' : ''}>${p}</option>`).join('');
+    return `<label class="guess-as">Guessing as
+        <select id="guess-as-select"${person ? '' : ' class="needs-choice"'}>${person ? '' : '<option value="" selected>Choose&hellip;</option>'}${options}</select>
+    </label>`;
+}
+
 async function renderGuessTab() {
     const root = document.getElementById('guess-content');
     if (!root) return;
-    if (!currentPicker) {
-        root.innerHTML = '<p class="as-is-note">Choose your name on the Make Picks tab to play.</p>';
-        return;
-    }
+    const head = `<h2 class="live-title">Guess the Lines</h2>
+        <div class="guess-top">
+            <div class="scope-toggle guess-modes" role="group" aria-label="How to play">
+                <button class="subtab${guessState.mode === 'solo' ? ' active' : ''}" data-guess-mode="solo">Solo</button>
+                <button class="subtab${guessState.mode === 'podcast' ? ' active' : ''}" data-guess-mode="podcast">With Bill Simmons podcast</button>
+            </div>
+            ${guessPersonSelectHtml()}
+        </div>`;
+    // Nobody chosen yet: the page is there to look at, every box locked, until
+    // someone is chosen (the owner's ask; it used to show nothing but this note).
+    const locked = !guessState.picker
+        ? '<p class="guess-choose-note">&#128274; Choose who is guessing to play.</p>'
+        : '';
     const mode = guessState.mode;
     const body = mode === 'podcast' ? await podcastHtml() : await soloHtml();
-    root.innerHTML = `<h2 class="live-title">Guess the Lines</h2>
-        <div class="scope-toggle guess-modes" role="group" aria-label="How to play">
-            <button class="subtab${mode === 'solo' ? ' active' : ''}" data-guess-mode="solo">Solo vs the line</button>
-            <button class="subtab${mode === 'podcast' ? ' active' : ''}" data-guess-mode="podcast">With the podcast</button>
-        </div>
-        ${body}`;
+    root.innerHTML = `${head}${locked}${body}`;
     if (mode === 'podcast') {
         const week = guessState.viewWeek.podcast;
         root.querySelectorAll('.guess-card').forEach(card => updatePodcastCard(card, week, card.dataset.key));
+        placePodcastEpisode();
+        loadPodcastEpisodes().then(placePodcastEpisode);
+    }
+}
+
+// --- the week's episode ------------------------------------------------------
+//
+// The Bill Simmons Podcast's public feed answers a browser directly (it
+// allows any origin), so no worker is involved. Every Guess the Lines episode
+// of the season is in it (the title says so), and the podcast tab shows the
+// one for the week on screen, so choosing a week changes the episode too.
+// Its description lists the segment's start, "(01:23:42) Guess the Lines
+// Week 9", which names the week and is where the play button starts. An
+// episode that lists no segment (2026 week 2's) takes its week from its date:
+// the first week to kick off after it came out. The hosts' guesses are not
+// in the feed: those are still typed in.
+
+const PODCAST_FEED_URL = 'https://feeds.megaphone.fm/the-bill-simmons-podcast';
+const PODCAST_EPISODE_TTL_MS = 60 * 60 * 1000;
+let podcastEpisodes = null;           // this season's, newest first: { title, published, audio, start, startLabel, week, artwork }
+let podcastEpisodesAt = 0;
+let podcastEpisodesLoading = null;
+const podcastEpisodeEls = new Map();  // audio URL -> card, kept across redraws so playback carries on
+
+function podcastTextOf(item, tag) {
+    const match = item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'));
+    if (!match) return '';
+    return match[1].replace(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/, '$1')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ').trim();
+}
+
+/** The feed's itunes:duration, "6824" or "1:53:44", in seconds; null if absent. */
+function podcastDurationSeconds(text) {
+    if (!/^\d+(:\d{1,2}){0,2}$/.test(text || '')) return null;
+    return podcastTimestampSeconds(text);
+}
+
+/** "01:23:42" or "23:42" in seconds. */
+function podcastTimestampSeconds(text) {
+    return text.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
+}
+
+/**
+ * The show's artwork: the feed has one for the podcast, not one an episode.
+ * Its host (imgix) resizes on request, so the 3000px original is asked for
+ * at 192px (about 8 KB). Null unless it is https.
+ */
+function podcastArtwork(xml) {
+    const channel = String(xml).split(/<item[\s>]/i)[0];
+    const href = channel.match(/<itunes:image[^>]*\bhref="([^"]+)"/i)?.[1]?.replace(/&amp;/g, '&');
+    if (!href || !/^https:\/\//.test(href)) return null;
+    try {
+        const url = new URL(href);
+        if (/imgix\.net$/.test(url.hostname)) {
+            ['max-w', 'max-h'].forEach(p => url.searchParams.delete(p));
+            url.searchParams.set('w', '192');
+            url.searchParams.set('h', '192');
+            url.searchParams.set('fit', 'crop');
+        }
+        return url.toString();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Every Guess the Lines episode in the feed's XML published from `since`
+ * (ms) on, newest first. The feed is newest first too, so reading stops at
+ * the first older item: it holds every episode back to 2013.
+ */
+function parseGuessEpisodes(xml, since = -Infinity) {
+    const artwork = podcastArtwork(xml);
+    const episodes = [];
+    for (const item of String(xml).split(/<item[\s>]/i).slice(1)) {
+        const published = Date.parse(podcastTextOf(item, 'pubDate'));
+        if (Number.isFinite(published) && published < since) break;
+        const title = podcastTextOf(item, 'title');
+        if (!/guess the lines/i.test(title)) continue;
+        const description = podcastTextOf(item, 'description');
+        const segment = description.match(/\((\d{1,2}:\d{2}(?::\d{2})?)\)\s*Guess the Lines(?:\s+(?:for\s+)?Week\s+(\d+))?/i);
+        const audio = item.match(/<enclosure[^>]*\burl="([^"]+)"/i)?.[1]?.replace(/&amp;/g, '&') || null;
+        episodes.push({
+            title,
+            published: Number.isFinite(published) ? published : null,
+            audio: audio && /^https:\/\//.test(audio) ? audio : null,
+            start: segment ? podcastTimestampSeconds(segment[1]) : null,
+            startLabel: segment ? segment[1].replace(/^0(?=\d:)/, '') : null,
+            week: segment?.[2] ? Number(segment[2]) : null,
+            duration: podcastDurationSeconds(podcastTextOf(item, 'itunes:duration')),
+            artwork,
+        });
+    }
+    return episodes;
+}
+
+/** The newest Guess the Lines episode in the feed's XML, or null. */
+function parseGuessEpisode(xml) {
+    return parseGuessEpisodes(xml)[0] ?? null;
+}
+
+/**
+ * The week an episode guesses: the one its description names, else the
+ * first week to kick off after it came out. `firstKickoffs[w]` is week w's
+ * first kickoff in ms (missing for a week not loaded).
+ */
+function podcastEpisodeWeek(episode, firstKickoffs) {
+    if (episode.week) return episode.week;
+    if (!episode.published) return null;
+    for (let week = 1; week < firstKickoffs.length; week++) {
+        if (firstKickoffs[week] > episode.published) return week;
+    }
+    return null;
+}
+
+/** This season's episode for a week, or null. */
+function podcastEpisodeFor(week) {
+    if (!podcastEpisodes) return null;
+    const firstKickoffs = [];
+    for (let w = 1; w <= TOTAL_WEEKS; w++) {
+        const kickoffs = getGamesForWeek(w).map(g => Date.parse(g.kickoff)).filter(Number.isFinite);
+        if (kickoffs.length) firstKickoffs[w] = Math.min(...kickoffs);
+    }
+    // Newest first, so a week with two (a repost) shows the latest.
+    return podcastEpisodes.find(e => podcastEpisodeWeek(e, firstKickoffs) === week) || null;
+}
+
+/** This season's episodes: from this device's copy for an hour, else the feed. */
+async function loadPodcastEpisodes() {
+    if (podcastEpisodes && Date.now() - podcastEpisodesAt < PODCAST_EPISODE_TTL_MS) return podcastEpisodes;
+    if (!podcastEpisodes) {
+        try {
+            const saved = JSON.parse(localStorage.getItem('guessEpisodes') || 'null');
+            if (saved?.season === CURRENT_SEASON && Array.isArray(saved.episodes)) {
+                podcastEpisodes = saved.episodes;
+                podcastEpisodesAt = saved.at;
+                if (Date.now() - saved.at < PODCAST_EPISODE_TTL_MS) return podcastEpisodes;
+            }
+            localStorage.removeItem('guessEpisode');   // the one-episode copy this replaced
+        } catch {}
+    }
+    podcastEpisodesLoading ||= (async () => {
+        try {
+            const response = await fetch(PODCAST_FEED_URL);
+            if (!response.ok) throw new Error(`feed answered ${response.status}`);
+            // The season starts on July 1st, as CURRENT_SEASON does.
+            const episodes = parseGuessEpisodes(await response.text(), Date.UTC(CURRENT_SEASON, 6, 1));
+            podcastEpisodes = episodes;
+            podcastEpisodesAt = Date.now();
+            try {
+                localStorage.setItem('guessEpisodes', JSON.stringify({ at: podcastEpisodesAt, season: CURRENT_SEASON, episodes }));
+            } catch {}
+        } catch (error) {
+            console.warn('[Guess] Could not load the podcast feed:', error.message);
+        } finally {
+            podcastEpisodesLoading = null;
+        }
+        return podcastEpisodes;
+    })();
+    return podcastEpisodesLoading;
+}
+
+function podcastEscape(text) {
+    return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+/** Seconds as "1:23:42" or "52:19". */
+function podcastClock(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
+    const pad = n => String(n).padStart(2, '0');
+    return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+const PODCAST_ICONS = {
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>',
+    // A thin ring open at the top, an arrowhead into the gap, the seconds
+    // inside; forward is the ring mirrored.
+    back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5.57A8 8 0 1 1 6.86 6.37" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M12.4 5.57 16.2 3.55v4.04z" fill="currentColor"/><text x="12" y="15.3" text-anchor="middle" font-size="7.4" font-weight="800" font-family="inherit" fill="currentColor">15</text></svg>',
+    forward: '<svg viewBox="0 0 24 24" aria-hidden="true"><g transform="matrix(-1 0 0 1 24 0)"><path d="M16 5.57A8 8 0 1 1 6.86 6.37" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M12.4 5.57 16.2 3.55v4.04z" fill="currentColor"/></g><text x="12" y="15.3" text-anchor="middle" font-size="7.4" font-weight="800" font-family="inherit" fill="currentColor">15</text></svg>',
+};
+
+/**
+ * An episode's card, built once and moved into each redraw. Drawn like a
+ * podcast app's embedded player (the owner's reference was Spotify's): the
+ * artwork on the left; the title, the show and a pill button beside it; and
+ * a row of back 15, the progress bar, forward 15, the time left and a round
+ * play button. The browser's own audio controls are hidden: these drive it.
+ */
+function podcastEpisodeCard(episode) {
+    if (!episode?.audio) return null;
+    if (podcastEpisodeEls.has(episode.audio)) return podcastEpisodeEls.get(episode.audio);
+    const el = document.createElement('div');
+    el.className = 'podcast-episode';
+    el.dataset.audio = episode.audio;
+    const day = episode.published
+        ? new Date(episode.published).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+        : '';
+    const segment = episode.start !== null
+        ? `Guess the Lines${episode.week ? ` Week ${episode.week}` : ''} starts at ${episode.startLabel}`
+        : 'The episode does not list where Guess the Lines starts';
+    el.innerHTML = `
+        ${episode.artwork ? `<img class="podcast-episode-art" src="${podcastEscape(episode.artwork)}" alt="The Bill Simmons Podcast" width="136" height="136" onerror="this.remove()">` : ''}
+        <div class="podcast-episode-info">
+            <div class="podcast-episode-title" title="${podcastEscape(episode.title)}">${podcastEscape(episode.title)}</div>
+            <div class="podcast-episode-show">The Bill Simmons Podcast${day ? ` &middot; ${day}` : ''}</div>
+            <div class="podcast-episode-segment">${segment}</div>
+            ${episode.start !== null ? '<button type="button" class="podcast-episode-jump">Play from Guess the Lines</button>' : ''}
+        </div>
+        <div class="podcast-episode-controls">
+            <button type="button" class="podcast-episode-skip" data-skip="-15" aria-label="Back 15 seconds">${PODCAST_ICONS.back}</button>
+            <input type="range" class="podcast-episode-seek" min="0" max="${episode.duration || 0}" step="1" value="0" aria-label="Position in the episode">
+            <button type="button" class="podcast-episode-skip" data-skip="15" aria-label="Forward 15 seconds">${PODCAST_ICONS.forward}</button>
+            <span class="podcast-episode-time">${episode.duration ? podcastClock(episode.duration) : ''}</span>
+            <button type="button" class="podcast-episode-play" aria-label="Play">${PODCAST_ICONS.play}</button>
+        </div>
+        <audio preload="none" src="${podcastEscape(episode.audio)}"></audio>`;
+    const audio = el.querySelector('audio');
+    const seek = el.querySelector('.podcast-episode-seek');
+    const time = el.querySelector('.podcast-episode-time');
+    const play = el.querySelector('.podcast-episode-play');
+    const length = () => (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : episode.duration || 0);
+
+    // The bar and the time left follow the audio; the bar's filled part is
+    // drawn from --progress.
+    let dragging = false;
+    const draw = () => {
+        const total = length();
+        if (total && Number(seek.max) !== Math.round(total)) seek.max = Math.round(total);
+        if (!dragging) seek.value = audio.currentTime;
+        seek.style.setProperty('--progress', total ? `${(Number(seek.value) / total) * 100}%` : '0%');
+        time.textContent = total ? podcastClock(total - Number(seek.value)) : '';
+    };
+    const drawPlaying = () => {
+        const playing = !audio.paused;
+        play.innerHTML = playing ? PODCAST_ICONS.pause : PODCAST_ICONS.play;
+        play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+        el.classList.toggle('playing', playing);
+    };
+    ['timeupdate', 'loadedmetadata', 'durationchange', 'seeked'].forEach(e => audio.addEventListener(e, draw));
+    ['play', 'pause', 'ended'].forEach(e => audio.addEventListener(e, drawPlaying));
+    audio.addEventListener('waiting', () => el.classList.add('buffering'));
+    ['playing', 'pause', 'canplay'].forEach(e => audio.addEventListener(e, () => el.classList.remove('buffering')));
+
+    // A position chosen before the audio has loaded waits for it.
+    const goTo = seconds => {
+        const set = () => { audio.currentTime = Math.min(length() || Infinity, Math.max(0, seconds)); draw(); };
+        if (audio.readyState >= 1) set();
+        else audio.addEventListener('loadedmetadata', set, { once: true });
+    };
+    const start = () => audio.play().catch(error => console.warn('[Guess] Could not play the episode:', error.message));
+    const skip = seconds => {
+        if (audio.readyState < 1) return;
+        goTo(audio.currentTime + seconds);
+    };
+
+    play.addEventListener('click', () => (audio.paused ? start() : audio.pause()));
+    el.querySelectorAll('.podcast-episode-skip').forEach(button =>
+        button.addEventListener('click', () => skip(Number(button.dataset.skip))));
+    seek.addEventListener('input', () => {
+        dragging = true;
+        seek.style.setProperty('--progress', `${(Number(seek.value) / (length() || 1)) * 100}%`);
+        time.textContent = length() ? podcastClock(length() - Number(seek.value)) : '';
+    });
+    seek.addEventListener('change', () => {
+        dragging = false;
+        goTo(Number(seek.value));
+        if (audio.readyState < 1) start();
+    });
+    el.querySelector('.podcast-episode-jump')?.addEventListener('click', () => {
+        goTo(episode.start);
+        start();
+    });
+
+    // The phone's lock screen and notification: the episode playing, with the
+    // show's artwork, and the same 15 seconds either way.
+    audio.addEventListener('play', () => {
+        // One episode at a time: starting this one stops any other.
+        podcastEpisodeEls.forEach(other => {
+            const otherAudio = other.querySelector('audio');
+            if (otherAudio !== audio && !otherAudio.paused) otherAudio.pause();
+        });
+        if (!('mediaSession' in navigator)) return;
+        try {
+            if (typeof MediaMetadata !== 'undefined') {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: episode.title,
+                    artist: 'The Bill Simmons Podcast',
+                    artwork: episode.artwork ? [{ src: episode.artwork, sizes: '192x192', type: 'image/jpeg' }] : [],
+                });
+            }
+            navigator.mediaSession.setActionHandler('seekbackward', () => skip(-15));
+            navigator.mediaSession.setActionHandler('seekforward', () => skip(15));
+        } catch {}
+    });
+    draw();
+    podcastEpisodeEls.set(episode.audio, el);
+    return el;
+}
+
+/**
+ * Put the week on screen's episode in the podcast tab's slot, or say there
+ * is none yet. The same element is moved in on every redraw (in the same
+ * task as the redraw), so an episode that is playing keeps playing while
+ * guesses are typed and the tab reloads. Choosing another week takes it out
+ * of the page, which stops it; coming back to that week finds it where it
+ * was left.
+ */
+function placePodcastEpisode() {
+    const slot = document.getElementById('podcast-episode-slot');
+    if (!slot) return;
+    const week = guessState.viewWeek.podcast;
+    const card = podcastEpisodeCard(podcastEpisodeFor(week));
+    if (card) {
+        if (card.parentNode !== slot) slot.replaceChildren(card);
+    } else if (podcastEpisodes && !slot.querySelector('.podcast-episode-none')) {
+        slot.innerHTML = `<p class="as-is-note podcast-episode-none">No Guess the Lines episode for Week ${week} yet.</p>`;
     }
 }
 
@@ -7326,6 +7746,7 @@ async function renderGuessTab() {
  * redraws the box itself, so the cursor stays where it is.
  */
 function spreadControlChanged(control) {
+    if (!guessState.picker) return;
     const week = Number(control.dataset.week), key = control.dataset.key, field = control.dataset.field;
     const input = control.querySelector('.spread-text');
     const favorite = control.querySelector('.spread-fav-btn.active')?.dataset.side || null;
@@ -7412,6 +7833,10 @@ function setupGuessTab() {
         if (submit) submit.click();
     });
     root.addEventListener('change', event => {
+        if (event.target.id === 'guess-as-select') {
+            setGuessPerson(event.target.value);
+            return;
+        }
         if (event.target.id === 'guess-week-select') {
             guessState.viewWeek[guessState.mode] = Number(event.target.value);
             guessState.status = '';
@@ -12373,7 +12798,7 @@ function gameDetailsHtml(game) {
         const won = final && live[`${side}Score`] > live[`${side === 'away' ? 'home' : 'away'}Score`];
         return `
             <div class="gd-team${won ? ' gd-won' : ''}">
-                <img class="gd-logo" src="${getTeamLogo(game[side])}" alt="${game[side]} logo" onerror="handleLogoError(this, '${game[side]}')">
+                <img class="gd-logo" src="${getTeamLogoOnDark(game[side])}" alt="${game[side]} logo" onerror="handleDarkLogoError(this, '${game[side]}')">
                 <div class="gd-team-name">${game[side]}</div>
                 ${started ? `<div class="gd-score">${live[`${side}Score`]}</div>` : (line ? `<div class="gd-line">${line}</div>` : '')}
                 ${record ? `<div class="gd-record">${record}</div>` : ''}
@@ -15126,6 +15551,7 @@ function scheduleSync(delay) {
  * cancelled before it lands.
  */
 async function flushPendingSync({ keepalive = false } = {}) {
+    if (LOCAL_READ_ONLY) return;
     if (pendingSyncTimeout) {
         clearTimeout(pendingSyncTimeout);
         pendingSyncTimeout = null;
@@ -15281,6 +15707,7 @@ function savePicksToStorage(showSyncToast = false, skipSync = false, week = curr
  * has no games to name and is deferred.
  */
 async function syncPicksToGoogleSheets(displayToast = true, picker = currentPicker, week = currentWeek, { keepalive = false, onlyGames = null } = {}) {
+    if (LOCAL_READ_ONLY) { localReadOnlyNote(); return 'unchanged'; }
     if (!APPS_SCRIPT_URL) {
         return 'unchanged';
     }
@@ -15483,6 +15910,7 @@ async function syncPicksToGoogleSheets(displayToast = true, picker = currentPick
  * This tells the backup whether picks were intentionally cleared
  */
 async function syncClearedStatusToGoogleSheets(week, picker, cleared) {
+    if (LOCAL_READ_ONLY) return;
     if (!APPS_SCRIPT_URL) {
         return;
     }
@@ -15536,6 +15964,7 @@ function spreadsStillOpen(week, weekSpreads) {
  * This ensures spreads are preserved even if localStorage is cleared
  */
 async function syncSpreadsToGoogleSheets() {
+    if (LOCAL_READ_ONLY) return;
     const savedSpreads = getSavedSpreads();
 
     // Sync spreads for current week and next week

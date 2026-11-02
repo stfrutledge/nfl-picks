@@ -2705,6 +2705,16 @@ footer a:hover {
         white-space: nowrap;
     }
 
+    /* Five tabs (Guess Lines up as well) do not fit in equal shares: each
+       takes a share that suits its label instead, so "Guess Lines" is not
+       cut off at the edge. */
+    .category-tabs:has(#guess-tab:not([style*="none"])) .tab {
+        flex: 1 1 auto;
+        padding-left: 2px;
+        padding-right: 2px;
+        letter-spacing: 0.02em;
+    }
+
     .leaderboard {
         grid-template-columns: 1fr;
     }
@@ -8415,6 +8425,335 @@ body.live-provisional #as-is-standings-table {
     margin-bottom: 14px;
 }
 
+/* The modes on the left, "Guessing as" on the right; stacked on a phone. */
+.guess-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-bottom: 14px;
+}
+
+.guess-top .guess-modes {
+    margin-bottom: 0;
+}
+
+.guess-as {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+
+.guess-as select {
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.9rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+/* Nobody chosen to guess as: the chooser is flagged and the page is locked. */
+.guess-as select.needs-choice {
+    border-color: var(--accent-amber);
+    box-shadow: 0 0 0 2px var(--accent-amber);
+}
+
+.guess-choose-note {
+    margin: -4px 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--accent-amber);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.spread-control .spread-fav-btn:disabled:not(.active) {
+    opacity: 0.6;
+}
+
+/* The week's episode, drawn like a podcast app's embedded player (the
+   owner's reference was Spotify's): a coloured card, the artwork on the
+   left, the title and show beside it with a pill button, and the controls
+   along the bottom. The deep teal is from the show's artwork; white on it
+   is over 9:1. */
+.podcast-episode {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+    column-gap: 16px;
+    row-gap: 10px;
+    margin: 4px 0 14px;
+    padding: 14px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #1f524d 0%, #163c38 100%);
+    color: #fff;
+}
+
+/* The full height of the player, top to bottom, as in the reference: the
+   text beside it is clamped, so the card's height is known. */
+.podcast-episode-art {
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    width: 172px;
+    height: 172px;
+    border-radius: 8px;
+    object-fit: cover;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.podcast-episode-info {
+    min-width: 0;
+}
+
+.podcast-episode-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.podcast-episode-show {
+    margin-top: 4px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.podcast-episode-segment {
+    margin-top: 2px;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+/* The pill, where Spotify's "Follow" sits. */
+.podcast-episode-jump {
+    margin-top: 8px;
+    padding: 4px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 6px;
+    background: transparent;
+    color: #fff;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.podcast-episode-jump:hover {
+    border-color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.podcast-episode-controls {
+    grid-column: 2;
+    align-self: end;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.podcast-episode-skip {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+}
+
+.podcast-episode-skip svg {
+    width: 100%;
+    height: 100%;
+}
+
+.podcast-episode-skip:hover {
+    color: #fff;
+}
+
+/* The progress bar: a thin track, filled to --progress, and a small knob. */
+.podcast-episode-seek {
+    flex: 1 1 auto;
+    min-width: 40px;
+    height: 16px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.podcast-episode-seek::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #fff var(--progress, 0%), rgba(255, 255, 255, 0.3) var(--progress, 0%));
+}
+
+.podcast-episode-seek::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #fff var(--progress, 0%), rgba(255, 255, 255, 0.3) var(--progress, 0%));
+}
+
+.podcast-episode-seek::-webkit-slider-thumb {
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.podcast-episode-seek::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.podcast-episode-time {
+    flex: 0 0 auto;
+    min-width: 3.6em;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.podcast-episode-play {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    color: #163c38;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.podcast-episode-play svg {
+    width: 22px;
+    height: 22px;
+}
+
+.podcast-episode-play:active {
+    transform: scale(0.95);
+}
+
+/* Waiting on the audio: the play button pulses. */
+.podcast-episode.buffering .podcast-episode-play {
+    animation: podcast-buffering 1s ease-in-out infinite;
+}
+
+@keyframes podcast-buffering {
+    50% { opacity: 0.55; }
+}
+
+.podcast-episode audio {
+    display: none;
+}
+
+/* No artwork (it failed to load): one column. */
+.podcast-episode:not(:has(.podcast-episode-art)) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.podcast-episode:not(:has(.podcast-episode-art)) .podcast-episode-controls {
+    grid-column: 1;
+}
+
+/* A phone: a smaller square beside the text, the controls across the
+   whole card under both. */
+@media (max-width: 599px) {
+    .podcast-episode {
+        column-gap: 12px;
+    }
+
+    .podcast-episode-art {
+        grid-row: 1;
+        align-self: start;
+        width: 96px;
+        height: 96px;
+    }
+
+    .podcast-episode-title {
+        font-size: 1rem;
+        -webkit-line-clamp: 3;
+    }
+
+    .podcast-episode-controls {
+        grid-column: 1 / -1;
+    }
+}
+
+/* The week's table and the episode. On a phone the wrappers step aside
+   (display: contents): the episode, then the week, then its table, which
+   stays sticky under the tabs as before. On a desktop they share one row,
+   the table on the left and the player on the right (the owner's layout),
+   and the whole row is what stays in view as the cards scroll. */
+.podcast-top,
+.podcast-week {
+    display: contents;
+}
+
+@media (min-width: 900px) {
+    .podcast-top {
+        position: sticky;
+        top: var(--tabs-height, 56px);
+        z-index: 5;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: end;
+        gap: 20px;
+        padding-bottom: 4px;
+        background: var(--bg-secondary);
+    }
+
+    .podcast-week {
+        display: block;
+        grid-column: 1;
+        grid-row: 1;
+        min-width: 0;
+    }
+
+    .podcast-top #podcast-episode-slot {
+        grid-column: 2;
+        grid-row: 1;
+        min-width: 0;
+    }
+
+    .podcast-top .podcast-live {
+        position: static;
+    }
+
+    .podcast-top .podcast-episode {
+        margin: 0 0 8px;
+    }
+}
+
 .guess-cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -8542,10 +8881,6 @@ body.live-provisional #as-is-standings-table {
     color: var(--accent-amber);
 }
 
-.guess-prefilled {
-    margin: 8px 0 0;
-}
-
 .spread-text.invalid {
     outline: 2px solid var(--accent-red);
     outline-offset: -2px;
@@ -8617,6 +8952,81 @@ body.live-provisional #as-is-standings-table {
     color: white;
 }
 
+/* Off by, harsher the further: light green to 1, yellow to 2.5, orange to a
+   field goal and a half (4.5), red to 6.5, solid dark red from a touchdown. */
+.guess-reveal-off.off-near { background: #dcfce7; }
+.guess-reveal-off.off-near span, .guess-reveal-off.off-near strong { color: #166534; }
+.guess-reveal-off.off-close { background: #fef3c7; }
+.guess-reveal-off.off-close span, .guess-reveal-off.off-close strong { color: #854d0e; }
+.guess-reveal-off.off-fg { background: #ffedd5; }
+.guess-reveal-off.off-fg span, .guess-reveal-off.off-fg strong { color: #9a3412; }
+.guess-reveal-off.off-far { background: #fee2e2; }
+.guess-reveal-off.off-far span, .guess-reveal-off.off-far strong { color: #991b1b; }
+.guess-reveal-off.off-td { background: #991b1b; }
+.guess-reveal-off.off-td span, .guess-reveal-off.off-td strong { color: #fff; }
+
+[data-theme="dark"] .guess-reveal-off.off-near { background: rgba(34, 197, 94, 0.18); }
+[data-theme="dark"] .guess-reveal-off.off-near span, [data-theme="dark"] .guess-reveal-off.off-near strong { color: #86efac; }
+[data-theme="dark"] .guess-reveal-off.off-close { background: rgba(234, 179, 8, 0.18); }
+[data-theme="dark"] .guess-reveal-off.off-close span, [data-theme="dark"] .guess-reveal-off.off-close strong { color: #fde047; }
+[data-theme="dark"] .guess-reveal-off.off-fg { background: rgba(249, 115, 22, 0.2); }
+[data-theme="dark"] .guess-reveal-off.off-fg span, [data-theme="dark"] .guess-reveal-off.off-fg strong { color: #fdba74; }
+[data-theme="dark"] .guess-reveal-off.off-far { background: rgba(239, 68, 68, 0.22); }
+[data-theme="dark"] .guess-reveal-off.off-far span, [data-theme="dark"] .guess-reveal-off.off-far strong { color: #fca5a5; }
+[data-theme="dark"] .guess-reveal-off.off-td { background: #b91c1c; }
+
+/* A submitted solo game: the box stays on the guess, locked, and the line
+   takes Submit's place under it, at the button's height. */
+.guess-steps {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.spread-control .spread-fav-btn:disabled,
+.spread-control .spread-step:disabled,
+.spread-control .spread-text:disabled {
+    cursor: default;
+}
+
+.spread-control .spread-step:disabled {
+    opacity: 0.35;
+}
+
+.spread-control .spread-text:disabled {
+    opacity: 1;
+    -webkit-text-fill-color: var(--text-primary);
+}
+
+.guess-reveal-inline {
+    grid-template-columns: repeat(2, 1fr);
+    margin-top: 12px;
+}
+
+.guess-reveal-inline > div {
+    flex-direction: row;
+    justify-content: center;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 10px;
+}
+
+/* One line each, however narrow the card: the font gives way, not the line. */
+.guess-reveal-inline > div {
+    min-width: 0;
+    gap: 6px;
+    padding: 8px 6px;
+    white-space: nowrap;
+}
+
+.guess-reveal-inline span {
+    font-size: 0.62rem;
+}
+
+.guess-reveal-inline strong {
+    font-size: 1rem;
+}
+
 /* Podcast: a row each for you, Sal, Bill and the line read out. */
 .podcast-entries {
     display: flex;
@@ -8626,7 +9036,7 @@ body.live-provisional #as-is-standings-table {
 
 .podcast-entry {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 72px;
+    grid-template-columns: 66px minmax(0, 1fr) 72px;
     align-items: center;
     gap: 8px;
     padding: 4px 6px;
@@ -8637,7 +9047,10 @@ body.live-provisional #as-is-standings-table {
     font-size: 0.72rem;
     font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-secondary);
 }
 
@@ -8746,6 +9159,14 @@ body.live-provisional #as-is-standings-table {
     font-weight: 700;
 }
 
+.guess-week-closed {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
 .guess-table td {
     padding: 8px 10px;
     text-align: center;
@@ -8782,7 +9203,7 @@ body.live-provisional #as-is-standings-table {
 
     /* Points off drops under the row, so the box keeps its arrows. */
     .podcast-entry {
-        grid-template-columns: 36px minmax(0, 1fr);
+        grid-template-columns: 66px minmax(0, 1fr);
         row-gap: 2px;
     }
 
