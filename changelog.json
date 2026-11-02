@@ -2,6 +2,19 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry when something players will notice ships. Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-02",
+      "items": [
+        "New tab: Guess the Lines, after History. Guess each game's spread before you see it. Solo scores you against the real line. With Bill Simmons podcast plays the week's episode on the page so you can guess along with the show.",
+        "Choose who you are under Guessing as before you start. Every week starts fresh, and the week dropdown takes you back to earlier weeks."
+      ]
+    },
+    {
+      "date": "2026-11-01",
+      "items": [
+        "Fixed: Game Details showed a dash under Opened for the Sunday and Monday night games, because their lines are posted a few minutes after the rest of the week's."
+      ]
+    },
+    {
       "date": "2026-10-29",
       "items": [
         "History: each column now shows win %, record and net wins (wins minus losses) stacked in one cell, so the table fits a phone without scrolling sideways.",
