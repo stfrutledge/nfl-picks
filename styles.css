@@ -9159,6 +9159,73 @@ body.live-provisional #as-is-standings-table {
     font-weight: 700;
 }
 
+/* Solo's bar: the week on the left, the week's one-row table in the middle
+   (only as wide as it needs), who is guessing on the right. On a phone the
+   week and the chooser share a row and the table goes full width under. */
+.guess-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-areas: "week summary as";
+    align-items: center;
+    gap: 12px 16px;
+    margin: 4px 0 12px;
+}
+
+.guess-bar-week {
+    grid-area: week;
+    justify-self: start;
+    margin: 0;
+}
+
+.guess-bar-summary {
+    grid-area: summary;
+    justify-self: center;
+}
+
+.guess-bar-as {
+    grid-area: as;
+    justify-self: end;
+}
+
+.guess-summary-table {
+    margin: 0;
+}
+
+.guess-summary-table table {
+    width: auto;
+}
+
+.guess-summary-table .standings-table th,
+.guess-summary-table .standings-table td {
+    padding: 8px 22px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.guess-bar-as .guess-as {
+    white-space: nowrap;
+}
+
+@media (max-width: 599px) {
+    .guess-bar {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas: "week as" "summary summary";
+    }
+
+    .guess-bar-summary {
+        justify-self: stretch;
+    }
+
+    .guess-summary-table table {
+        width: 100%;
+    }
+
+    .guess-summary-table .standings-table th,
+    .guess-summary-table .standings-table td {
+        padding: 8px 6px;
+    }
+}
+
 .guess-week-closed {
     font-size: 0.72rem;
     font-weight: 800;

@@ -7240,9 +7240,13 @@ function orderOfKeys(mode, week, keys) {
 
 // --- solo --------------------------------------------------------------------
 
+/** The week so far, as a one-row table in the standings tables' style (the owner's layout). */
 function soloSummaryHtml(week, editable, gameCount) {
     const { off, games: n } = soloWeekScore(guessState.weeks[week]?.solo);
-    return `<strong>${n} of ${editable ? gameCount : n}</strong> submitted${n ? ` &middot; <strong>${off}</strong> points off &middot; ${(off / n).toFixed(1)} a game` : ''}`;
+    return `<div class="standings-table-container guess-summary-table"><table class="standings-table guess-table">
+            <thead><tr><th>Submitted</th><th>Points off</th><th>Per game</th></tr></thead>
+            <tbody><tr><td><strong>${n} of ${editable ? gameCount : n}</strong></td><td><strong>${n ? off : '&ndash;'}</strong></td><td>${n ? (off / n).toFixed(1) : '&ndash;'}</td></tr></tbody>
+        </table></div>`;
 }
 
 /** Solo: a card per game; a submitted game shows the line it met and how far off. */
@@ -7255,15 +7259,19 @@ async function soloHtml() {
 
     const intro = `<p class="as-is-note">Pick each game&rsquo;s favourite and the spread, then submit: the real line is revealed and you see how close you were. Open from the end of Sunday night&rsquo;s game until Monday night&rsquo;s ends.</p>`;
     if (week === null) {
-        return intro + '<p class="as-is-note"><strong>Solo opens when Sunday night&rsquo;s game ends.</strong></p>';
+        return intro + `<div class="guess-bar"><div class="guess-bar-as">${guessPersonSelectHtml()}</div></div>
+            <p class="as-is-note"><strong>Solo opens when Sunday night&rsquo;s game ends.</strong></p>`;
     }
     const editable = week === open;
     const solo = guessState.weeks[week]?.solo || {};
     const games = orderGuessGames('solo', week, (await guessGamesFor(week)).filter(g => editable || pickKey(g) in solo));
     const cards = games.map(game => guessCardHtml(game, soloControlsHtml(game, week, editable))).join('');
 
-    return intro + `<div class="guess-results-head">${guessWeekSelectHtml(weeks, week)}${editable ? '' : '<span class="guess-week-closed">Closed</span>'}</div>
-        <p class="as-is-note guess-count" id="guess-solo-summary" data-games="${games.length}" data-editable="${editable}">${soloSummaryHtml(week, editable, games.length)}</p>
+    return intro + `<div class="guess-bar">
+            <div class="guess-bar-week guess-results-head">${guessWeekSelectHtml(weeks, week)}${editable ? '' : '<span class="guess-week-closed">Closed</span>'}</div>
+            <div class="guess-bar-summary" id="guess-solo-summary" data-games="${games.length}" data-editable="${editable}">${soloSummaryHtml(week, editable, games.length)}</div>
+            <div class="guess-bar-as">${guessPersonSelectHtml()}</div>
+        </div>
         <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>`;
 }
 
@@ -7404,7 +7412,7 @@ async function renderGuessTab() {
                 <button class="subtab${guessState.mode === 'solo' ? ' active' : ''}" data-guess-mode="solo">Solo</button>
                 <button class="subtab${guessState.mode === 'podcast' ? ' active' : ''}" data-guess-mode="podcast">With Bill Simmons podcast</button>
             </div>
-            ${guessPersonSelectHtml()}
+            ${guessState.mode === 'solo' ? '' : guessPersonSelectHtml()}
         </div>`;
     // Nobody chosen yet: the page is there to look at, every box locked, until
     // someone is chosen (the owner's ask; it used to show nothing but this note).
