@@ -1,9 +1,11 @@
 # Plan: store picks in Cloudflare D1
 
-Status: **trial running** (22 October 2026). D1 is bound, both seasons are copied
-in (10,739 rows, 0 differences from the sheet), and every save goes to both.
-Reads still come from the sheet. `current_picks` is built; the switch (step 7)
-waits on a clean trial week.
+Status: **live** (2 November 2026). Reads switched to D1 (`PICKS_READ` = `d1`)
+after an 11-day trial: 0 differences, 0 drift, no queued saves, and a full
+Thursday-to-Monday slate (29 Oct - 1 Nov). The season load now comes from
+`current_picks` in about 0.8s, against about 5s from the sheet. Busiest trial
+day: 781k rows read (about 16% of the free limit), worth a recheck now that page
+loads read D1 too. The sheet stays as the mirror.
 
 One change from the first draft: **until the switch, the sheet stays the store
 the phone waits on**, with D1 written beside it. Answering from D1 while phones

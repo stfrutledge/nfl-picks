@@ -590,9 +590,11 @@ The stake is per device (`nfl_winnings_stake` in localStorage, $20 by default) a
 
 On a normal load the list now rebuilds three times, and only the first animates.
 
-## Picks in D1 (being rolled out, October 2026)
+## Picks in D1 (live since 2 November 2026)
 
-Picks are moving from the Backup sheet to Cloudflare D1, bound to the worker as `PICKS_DB`; the plan, the reasons and the steps are in `D1-PICKS-PLAN.md`. The site's code does not change: it calls the same `/sync` endpoints and gets the same shapes back. In the worker:
+**Reads switched to D1 on 2 November 2026** (`PICKS_READ` = `d1`, set in the Cloudflare dashboard), after an 11-day trial with 0 differences and a full Thursday-to-Monday slate. Rollback: delete the variable, after checking `/admin/picks/status` shows `waitingForSheet: 0`. A response's `source` says where it came from (`d1-current`, `d1`, or none for the sheet).
+
+Picks moved from the Backup sheet to Cloudflare D1, bound to the worker as `PICKS_DB`; the plan, the reasons and the steps are in `D1-PICKS-PLAN.md`. The site's code does not change: it calls the same `/sync` endpoints and gets the same shapes back. In the worker:
 
 - **D1 keeps the sheet's append-only log** (`pick_rows`, one row per pick per sync) and folds it on read with a line-for-line copy of the Apps Script's reader (`foldPickRowD1` / `pickPayloadD1`). Change one and you must change the other: `node test-worker-d1.js` runs both over the same rows and requires identical picks.
 - **Until the switch** (`PICKS_READ` = `d1` in the worker's variables) the sheet is still what the phone waits on and what every phone reads; D1 is a shadow written beside it. That is deliberate: answering from D1 while phones read the sheet would let a failed sheet copy hide a pick from other phones, and from the saving phone's own next load. After the switch a save is answered from D1 and copied to the sheet in the background (`mirror:pending` if that fails).
