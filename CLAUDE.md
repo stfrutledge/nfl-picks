@@ -4,6 +4,10 @@
 
 - **Google Sheet (Picks Backup)**: https://docs.google.com/spreadsheets/d/1fq_L7OJJOk3EE7gHFq_MJgjDTwxgyQy_Ac_jRoJr21A/edit?gid=1468882431#gid=1468882431
 
+## Change log (every push to master)
+
+`changelog.json` is what the Android app's Settings > Change log shows, and it is written by hand: **every push that sends something live adds its entry in the same push**, in plain words, one line each, under that day's date. That covers anything players will notice and any significant behind-the-scenes change (a new database, a new data source, a reliability fix), started "Behind the scenes:" (the owner's rule, November 2026). Small internal tidying needs no entry; say so when pushing. It went stale twice (after 15 October and after 29 October 2026) because entries were left for later.
+
 ## Tests
 
 `node run-tests.js` runs every `test-*.js` file, each in its own process, and exits non-zero if any failed. `node run-tests.js live dates` runs only the files whose names contain those words.
