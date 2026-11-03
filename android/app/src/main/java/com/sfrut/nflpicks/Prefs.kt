@@ -92,6 +92,23 @@ class Prefs(context: Context) {
             ?: TIME_ZONES.first().id
         set(value) = prefs.edit().putString("timeZone", value).apply()
 
+    /**
+     * Keep the site's Live tab up all the time (Settings > Tabs), instead of
+     * only while the week's games are on. Off by default; the page asks for
+     * it (Bridge.alwaysShowLive) and is told when Settings changes it.
+     */
+    var alwaysShowLive: Boolean
+        get() = prefs.getBoolean("alwaysShowLive", false)
+        set(value) = prefs.edit().putBoolean("alwaysShowLive", value).apply()
+
+    /**
+     * Keep the Guess Lines tab up all the time, instead of only from the end
+     * of Sunday night's game to the end of Monday night's. Off by default.
+     */
+    var alwaysShowGuess: Boolean
+        get() = prefs.getBoolean("alwaysShowGuess", false)
+        set(value) = prefs.edit().putBoolean("alwaysShowGuess", value).apply()
+
     /** Whether Settings has already shown the system's permission prompt. */
     var askedForNotifications: Boolean
         get() = prefs.getBoolean("askedForNotifications", false)

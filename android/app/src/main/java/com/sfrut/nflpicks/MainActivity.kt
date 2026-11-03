@@ -100,6 +100,8 @@ class MainActivity : ComponentActivity() {
                 zoneShown = prefs.timeZone
                 web.evaluateJavascript("window.appTimeZoneChanged && appTimeZoneChanged()", null)
             }
+            // Cheap and harmless when nothing changed: the tabs follow Settings > Tabs.
+            web.evaluateJavascript("window.appTabSettingsChanged && appTabSettingsChanged()", null)
             val action = result.data?.getStringExtra(SettingsActivity.EXTRA_ADMIN_ACTION)
                 ?.takeIf { it in SettingsActivity.ADMIN_ACTIONS } ?: return@registerForActivityResult
             web.evaluateJavascript("window.runAppAdminAction && runAppAdminAction('$action')", null)
@@ -332,6 +334,14 @@ class MainActivity : ComponentActivity() {
         /** The IANA id the site draws kickoff times in (Settings > Time zone). */
         @JavascriptInterface
         fun timeZone(): String = prefs.timeZone
+
+        /** Keep the Live tab up whatever the schedule (Settings > Tabs). */
+        @JavascriptInterface
+        fun alwaysShowLive(): Boolean = prefs.alwaysShowLive
+
+        /** Keep the Guess Lines tab up whatever the schedule (Settings > Tabs). */
+        @JavascriptInterface
+        fun alwaysShowGuess(): Boolean = prefs.alwaysShowGuess
 
         /** Tells the page that Settings has the admin actions, so it can drop its own buttons. */
         @JavascriptInterface

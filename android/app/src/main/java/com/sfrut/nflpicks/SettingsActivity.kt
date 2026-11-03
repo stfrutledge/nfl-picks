@@ -353,6 +353,8 @@ class SettingsActivity : ComponentActivity() {
 
                 WeatherChoice()
 
+                TabChoices()
+
                 // Anyone can choose Stephen - there are no logins - so the
                 // admin page asks for the admin key before it shows anything.
                 if (picker == ADMIN_PICKER) {
@@ -458,6 +460,31 @@ class SettingsActivity : ComponentActivity() {
             Body("Temperatures in Game Details.")
             PickerOption("Fahrenheit (°F)", selected = unit == "F") { unit = "F"; prefs.temperatureUnit = "F" }
             PickerOption("Celsius (°C)", selected = unit == "C") { unit = "C"; prefs.temperatureUnit = "C" }
+        }
+    }
+
+    /**
+     * Tabs the site shows only on a schedule, kept up all the time instead.
+     * Applied when Settings closes (MainActivity calls appTabSettingsChanged).
+     */
+    @Composable
+    private fun TabChoices() {
+        var live by remember { mutableStateOf(prefs.alwaysShowLive) }
+        var guess by remember { mutableStateOf(prefs.alwaysShowGuess) }
+        Card {
+            Label("Tabs")
+            ToggleRow(
+                "Always show Live",
+                if (live) "The Live tab is always there."
+                else "Shown from an hour before the week's first game until the last one ends.",
+                live
+            ) { live = it; prefs.alwaysShowLive = it }
+            ToggleRow(
+                "Always show Guess Lines",
+                if (guess) "The Guess Lines tab is always there."
+                else "Shown from the end of Sunday night's game until the end of Monday night's.",
+                guess
+            ) { guess = it; prefs.alwaysShowGuess = it }
         }
     }
 

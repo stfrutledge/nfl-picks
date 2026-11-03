@@ -2939,6 +2939,25 @@ function appTimeZoneChanged() {
 }
 
 /**
+ * Whether the app's Settings keeps a tab up all the time, whatever its
+ * schedule (1.18+): 'alwaysShowLive' or 'alwaysShowGuess'. False in a
+ * browser and in an older app, which have no such setting.
+ */
+function appAlwaysShows(setting) {
+    try {
+        return window.NFLPicksApp?.[setting]?.() === true;
+    } catch {
+        return false;
+    }
+}
+
+/** The app's Settings changed which tabs are always up (1.18+): put them up or take them down now. */
+function appTabSettingsChanged() {
+    updateLiveTabVisibility();
+    updateGuessTabVisibility();
+}
+
+/**
  * Run one of the admin actions the app's Settings moved off the picks.
  *
  * An app that can take the answer (adminResult, app 1.5+) stays in Admin
@@ -6640,7 +6659,7 @@ function updateLiveTabVisibility() {
     const tab = document.querySelector('.tab[data-category="live"]');
     if (!tab) return;
 
-    const open = isLiveWindowOpen();
+    const open = appAlwaysShows('alwaysShowLive') || isLiveWindowOpen();
     tab.style.display = open ? '' : 'none';
     if (!open && currentCategory === 'live') {
         setActiveCategory('make-picks');
@@ -6991,21 +7010,19 @@ function startGuessTheLines() {
     }, GUESS_REFRESH_MS);
 }
 
-function guessHasData() {
-    return Object.keys(guessState.weeks).length > 0;
-}
-
 /**
- * The tab is up while solo is open (Sunday night to Monday night), from then
- * until the week's first kickoff so the podcast can be entered when the
- * episode lands, and all season for anyone who has played.
+ * The tab is up only while solo is open: from the end of Sunday night's game,
+ * when the worker opens next week's lines, to the end of Monday night's. It
+ * used to stay up until the next kickoff, and all season for anyone who had
+ * played; the owner wanted it gone outside the window (November 2026). The
+ * app's Settings can keep it up all the time (appAlwaysShows), which is how
+ * the podcast is entered on another day.
  */
-function updateGuessTabVisibility(now = Date.now()) {
+function updateGuessTabVisibility() {
     const tab = document.querySelector('.tab[data-category="guess"]');
     if (!tab) return;
-    const firstKickoff = Math.min(...getGamesForWeek(CURRENT_NFL_WEEK).map(g => Date.parse(g.kickoff)).filter(Number.isFinite));
-    const beforeWeek = CURRENT_NFL_WEEK <= TOTAL_WEEKS && Number.isFinite(firstKickoff) && now < firstKickoff;
-    const show = GUESS_TAB_ENABLED && !isHistoricalSeason() && (guessState.openWeek !== null || beforeWeek || guessHasData());
+    const show = GUESS_TAB_ENABLED && !isHistoricalSeason()
+        && (guessState.openWeek !== null || appAlwaysShows('alwaysShowGuess'));
     tab.style.display = show ? '' : 'none';
     if (!show && currentCategory === 'guess') setActiveCategory('make-picks');
 }

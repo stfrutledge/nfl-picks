@@ -52,7 +52,7 @@ function load(bridge) {
     const src = fs.readFileSync(path.join(__dirname, 'parser.js'), 'utf8')
         + '\nconst HISTORICAL_DATA_SEASON=2026,HISTORICAL_GAMES={},HISTORICAL_RESULTS={},HISTORICAL_PICKS={};\n'
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
-        + `;return { setupAppSettingsButton, runAppAdminAction, appAdminInfo, NFL_GAMES_BY_WEEK,
+        + `;return { setupAppSettingsButton, runAppAdminAction, appAdminInfo, appAlwaysShows, NFL_GAMES_BY_WEEK,
             displayGameTime, displayGameDay, cardKickoffLabel, detailsKickoff,
             __setState: s => { if ('allPicks' in s) allPicks = s.allPicks; if ('currentWeek' in s) currentWeek = s.currentWeek; } };`;
     const api = new Function('window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
@@ -197,6 +197,30 @@ check('a zone 1.17 offered before it was cut to two falls back to ET', () => {
 check('an id the site does not know falls back to ET', () => {
     const { api } = load({ timeZone: () => 'Mars/Olympus_Mons' });
     assert.strictEqual(api.displayGameTime(sundayNight), '8:20 PM ET');
+});
+
+section('Always show Live / Guess Lines (Settings > Tabs, app 1.18+)');
+
+check('a browser keeps the schedule', () => {
+    const { api } = load(null);
+    assert.strictEqual(api.appAlwaysShows('alwaysShowLive'), false);
+    assert.strictEqual(api.appAlwaysShows('alwaysShowGuess'), false);
+});
+
+check('an app older than 1.18 keeps the schedule', () => {
+    const { api } = load({ timeZone: () => 'America/New_York' });
+    assert.strictEqual(api.appAlwaysShows('alwaysShowGuess'), false);
+});
+
+check('each setting is read on its own', () => {
+    const { api } = load({ alwaysShowLive: () => true, alwaysShowGuess: () => false });
+    assert.strictEqual(api.appAlwaysShows('alwaysShowLive'), true);
+    assert.strictEqual(api.appAlwaysShows('alwaysShowGuess'), false);
+});
+
+check('a bridge that throws keeps the schedule', () => {
+    const { api } = load({ alwaysShowLive: () => { throw new Error('gone'); } });
+    assert.strictEqual(api.appAlwaysShows('alwaysShowLive'), false);
 });
 
 (async () => {
