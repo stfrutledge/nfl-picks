@@ -6976,19 +6976,22 @@ async function loadGuessTheLines() {
 
 async function loadGuessTheLinesNow() {
     const person = guessPerson();
+    // Who is guessing is known before anything is fetched (the app's picker,
+    // or this device's choice), so set it first: set after the lines fetch, a
+    // tab drawn in the meantime said "Choose who is guessing" to a phone that
+    // had a picker all along.
+    if (guessState.picker !== person) {
+        guessState.picker = person;
+        guessState.weeks = {};
+        guessState.drafts.clear();
+        guessState.errors.clear();
+    }
     try {
         const candidates = [CURRENT_NFL_WEEK + 1, CURRENT_NFL_WEEK].filter(w => w >= 1 && w <= LAST_PLAYOFF_WEEK);
-        await Promise.all(candidates.map(w => fetchGuessLines(w).catch(error =>
+        const linesLoaded = Promise.all(candidates.map(w => fetchGuessLines(w).catch(error =>
             console.warn(`[Guess] Could not load week ${w}'s lines:`, error.message))));
-        guessState.openWeek = candidates.find(w => guessWindowOpen(guessState.lines.get(w))) ?? null;
-
-        if (guessState.picker !== person) {
-            guessState.picker = person;
-            guessState.weeks = {};
-            guessState.drafts.clear();
-            guessState.errors.clear();
-        }
-        if (person) {
+        const guessesLoaded = (async () => {
+            if (!person) return;
             const response = await fetch(`${WORKER_PROXY_URL}/guesses?season=${CURRENT_SEASON}&picker=${encodeURIComponent(person)}`);
             if (!response.ok) throw new Error(`worker answered ${response.status}`);
             const data = await response.json();
@@ -6996,6 +6999,11 @@ async function loadGuessTheLinesNow() {
             if (guessState.picker === person && guessSavesPending === 0 && podcastSaveTimers.size === 0) {
                 guessState.weeks = data.weeks || {};
             }
+        })();
+        try {
+            await Promise.all([linesLoaded, guessesLoaded]);
+        } finally {
+            guessState.openWeek = candidates.find(w => guessWindowOpen(guessState.lines.get(w))) ?? null;
         }
     } catch (error) {
         console.warn('[Guess] Could not load Guess the Lines:', error.message);
