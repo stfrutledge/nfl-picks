@@ -96,6 +96,13 @@ class DeliveryTest {
         assertTrue(Delivery.decide(results, settings, at(dublin, 2026, 10, 12, 12)) is Decision.Drop)
     }
 
+    @Test fun `notifications switched off drops everything, every category on or not`() {
+        val noon = at(dublin, 2026, 10, 12, 12)
+        val off = defaults.copy(allOn = false, quietOn = false)
+        assertTrue(Delivery.decide(results, off, noon) is Decision.Drop)
+        assertTrue(Delivery.decide(results, defaults.copy(quietOn = false), noon) is Decision.Show)
+    }
+
     @Test fun `results are spoiler-free unless the person has turned that off`() {
         val noon = at(dublin, 2026, 10, 12, 12)
         assertEquals("Results are in.", (Delivery.decide(results, defaults, noon) as Decision.Show).body)

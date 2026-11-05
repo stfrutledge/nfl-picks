@@ -145,8 +145,19 @@ class Prefs(context: Context) {
         spoilerFree = spoilerFree,
         quietOn = quietOn,
         quietStart = quietStart,
-        quietEnd = quietEnd
+        quietEnd = quietEnd,
+        allOn = notificationsAllOn
     )
+
+    /**
+     * Settings > Notifications' switch: off and this phone shows nothing, held
+     * ones included (they are decided again when they run). The phone stays
+     * subscribed and the categories keep their choices, so on brings back
+     * exactly what was there.
+     */
+    var notificationsAllOn: Boolean
+        get() = prefs.getBoolean("notificationsAllOn", true)
+        set(value) = prefs.edit().putBoolean("notificationsAllOn", value).apply()
 
     var subscribed: Boolean
         get() = prefs.getBoolean("subscribed", false)

@@ -44,6 +44,8 @@ data class DeliverySettings(
     val quietOn: Boolean,
     val quietStart: Int,
     val quietEnd: Int,
+    /** Settings > Notifications' own switch: off drops everything, whatever the categories say. */
+    val allOn: Boolean = true,
 )
 
 sealed interface Decision {
@@ -60,6 +62,7 @@ object Delivery {
      * staleness - are tested without a phone.
      */
     fun decide(msg: Incoming, settings: DeliverySettings, now: ZonedDateTime): Decision {
+        if (!settings.allOn) return Decision.Drop("notifications are switched off")
         if (msg.category !in settings.enabled) return Decision.Drop("${msg.category.id} is switched off")
 
         // A phone with no picker chosen cannot be given anyone's own line, so it

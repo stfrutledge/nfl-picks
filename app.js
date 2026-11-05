@@ -32,11 +32,17 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1xNy3GxkpU3PI
 
 // Track pending syncs to avoid duplicate requests
 let pendingSyncTimeout = null;
-// Wait this long after the last change before syncing. Long enough that
-// clicking through a slate is one write rather than one per pick; short enough
+// Wait this long after the last change before syncing. Long enough that a
+// quick run of clicks is one write rather than one per pick; short enough
 // that little is outstanding at any moment. flushPendingSync() covers the tab
 // being closed or backgrounded inside the window.
-const SYNC_DEBOUNCE_MS = 5000;
+//
+// 5s from September 2026, when every save waited on the sheet and each sync
+// added rows to it. Since the D1 switch (Nov 2026) the phone is answered by
+// D1 and the sheet upserts, so 1.5s. The cost is more rows in D1's append-only
+// log (about 16 per sync), which the picked-at read scans in full - watch
+// daily rows_read.
+const SYNC_DEBOUNCE_MS = 1500;
 
 let dashboardData = null;
 let currentCategory = 'make-picks';
@@ -6927,7 +6933,7 @@ function podcastWeekWinners(score) {
 
 /** The week the podcast form defaults to: the one being guessed, else this week. */
 function podcastWeek() {
-    return guessState.openWeek ?? Math.min(CURRENT_NFL_WEEK, TOTAL_WEEKS);
+    return guessState.openWeek ?? Math.min(CURRENT_NFL_WEEK, LAST_PLAYOFF_WEEK);
 }
 
 async function fetchGuessLines(week) {
@@ -6971,7 +6977,7 @@ async function loadGuessTheLines() {
 async function loadGuessTheLinesNow() {
     const person = guessPerson();
     try {
-        const candidates = [CURRENT_NFL_WEEK + 1, CURRENT_NFL_WEEK].filter(w => w >= 1 && w <= TOTAL_WEEKS);
+        const candidates = [CURRENT_NFL_WEEK + 1, CURRENT_NFL_WEEK].filter(w => w >= 1 && w <= LAST_PLAYOFF_WEEK);
         await Promise.all(candidates.map(w => fetchGuessLines(w).catch(error =>
             console.warn(`[Guess] Could not load week ${w}'s lines:`, error.message))));
         guessState.openWeek = candidates.find(w => guessWindowOpen(guessState.lines.get(w))) ?? null;
@@ -7178,7 +7184,7 @@ function guessCardHtml(game, controls) {
 /** The week chooser. It is also the week's only label (no heading beside it, the owner's ask), so it shows with one week too. */
 function guessWeekSelectHtml(weeks, week) {
     return `<select id="guess-week-select" aria-label="Week">${weeks.map(w =>
-        `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}</option>`).join('')}</select>`;
+        `<option value="${w}"${w === week ? ' selected' : ''}>${historyWeekName(w)}</option>`).join('')}</select>`;
 }
 
 // --- the order of the cards ----------------------------------------------------
@@ -7563,7 +7569,7 @@ function podcastEpisodeWeek(episode, firstKickoffs) {
 function podcastEpisodeFor(week) {
     if (!podcastEpisodes) return null;
     const firstKickoffs = [];
-    for (let w = 1; w <= TOTAL_WEEKS; w++) {
+    for (let w = 1; w <= LAST_PLAYOFF_WEEK; w++) {
         const kickoffs = getGamesForWeek(w).map(g => Date.parse(g.kickoff)).filter(Number.isFinite);
         if (kickoffs.length) firstKickoffs[w] = Math.min(...kickoffs);
     }

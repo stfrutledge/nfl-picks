@@ -2,10 +2,19 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry in the same push as every change players will notice, and every significant behind-the-scenes change (start those with 'Behind the scenes:'). Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-05",
+      "items": [
+        "Picks now save 1.5 seconds after your last tap instead of 5, so the line across a game card turns to Pick saved sooner."
+      ]
+    },
+    {
       "date": "2026-11-03",
       "items": [
         "Guess Lines now only shows from the end of Sunday night's game to the end of Monday night's, the time when next week's lines are out but not on the site.",
-        "The app's Settings has a Tabs section (app version 1.18): Always show Live and Always show Guess Lines keep those tabs up all week."
+        "The app's Settings has a Tabs section (app version 1.18): Always show Live and Always show Guess Lines keep those tabs up all week.",
+        "The app's Settings has a switch to turn all notifications off (app version 1.18). Your choices of which ones to get are kept for when you turn them back on.",
+        "Guess Lines now works in the playoffs, from the wild card round to the Super Bowl.",
+        "When a week has no Monday night game (week 18, the divisional round and the conference championships), Guess Lines stays up all Monday."
       ]
     },
     {

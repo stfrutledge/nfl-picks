@@ -765,12 +765,12 @@ function normalizeKey(rawKey) {
 }
 
 /** The current week's games from ESPN's scoreboard. */
-/** The current week, or with `week` a past regular-season week of `season`. */
-async function fetchScoreboard({ season, week } = {}) {
+/** The current week, or with `week` a week of `season`: regular season (2) unless `seasonType` is 3, the playoffs. */
+async function fetchScoreboard({ season, week, seasonType = 2 } = {}) {
   const url = new URL(ESPN_SCOREBOARD);
   if (week) {
     url.searchParams.set('dates', season);
-    url.searchParams.set('seasontype', '2');
+    url.searchParams.set('seasontype', String(seasonType));
     url.searchParams.set('week', week);
   }
   const response = await fetchEspn(url.search);
@@ -1775,16 +1775,30 @@ function easternDay(ms) {
 }
 
 /**
- * The regular-season week after the board's, by number. ESPN's current
- * scoreboard stays on a finished week until midweek - on the Tuesday after
- * week 6's Monday game it was still week 6, every game over and its odds
- * gone - while next week's lines move most on Monday and Tuesday. Null after
- * week 18 and in the playoffs.
+ * The week after a board's, as ESPN numbers it: { seasonType, week }, or
+ * null after the Super Bowl. Week 18 is followed by the wild card round
+ * (playoffs, ESPN week 1), and the conference championships (3) by the Super
+ * Bowl (5): ESPN's week 4 is the Pro Bowl, which nobody guesses.
+ */
+function followingWeek({ seasonType, week } = {}) {
+  if (seasonType === 2) return week < 18 ? { seasonType: 2, week: week + 1 } : week === 18 ? { seasonType: 3, week: 1 } : null;
+  if (seasonType === 3) return week < 3 ? { seasonType: 3, week: week + 1 } : week < 5 ? { seasonType: 3, week: 5 } : null;
+  return null;
+}
+
+/**
+ * The scoreboard of the week after the board's. ESPN's current scoreboard
+ * stays on a finished week until midweek - on the Tuesday after week 6's
+ * Monday game it was still week 6, every game over and its odds gone - while
+ * next week's lines move most on Monday and Tuesday. Through the playoffs
+ * too (from November 2026): before then it stopped at week 18, so no
+ * playoff round ever opened for Guess the Lines.
  */
 async function nextWeekBoard(board) {
-  if (board.seasonType !== 2 || !(board.week < 18)) return null;
+  const next = followingWeek(board);
+  if (!next) return null;
   try {
-    return await fetchScoreboard({ season: board.season, week: board.week + 1 });
+    return await fetchScoreboard({ season: board.season, ...next });
   } catch {
     return null;
   }
@@ -1806,6 +1820,37 @@ function weekOpening(previous, now) {
 function weekPlayed(board) {
   const games = board?.games || [];
   return games.length > 0 && games.every(g => g.state === 'post');
+}
+
+/** The instant a day starts in ET, for a "YYYY-MM-DD" date: EDT (-4) or EST (-5), whichever puts it at midnight. */
+function easternMidnight(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  for (const offset of [4, 5]) {
+    const at = Date.UTC(y, m - 1, d, offset);
+    if (new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/New_York' }).format(new Date(at)) % 24 === 0) return at;
+  }
+  return Date.UTC(y, m - 1, d, 5);
+}
+
+/**
+ * When Guess the Lines for the next week may close, given the week before
+ * it: once every game of that week is final, and, when it has no Monday
+ * night game, not before Monday is over in ET (the owner's rule, November
+ * 2026). Without that a week with nothing on Monday - week 18, the
+ * divisional round, the conference championships - opened and closed on
+ * the same run, the moment its last Sunday game went final.
+ */
+function weekClosing(previous, now) {
+  if (!weekPlayed(previous)) return false;
+  const games = previous.games.filter(g => g.kickoff);
+  if (games.some(g => easternDay(g.kickoff) === 'Mon')) return true;
+  const sundays = games.filter(g => easternDay(g.kickoff) === 'Sun');
+  if (sundays.length === 0) return true;
+  const sunday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' })
+    .format(new Date(Math.max(...sundays.map(g => g.kickoff))));
+  const [y, m, d] = sunday.split('-').map(Number);
+  const tuesday = new Date(Date.UTC(y, m - 1, d + 2)).toISOString().slice(0, 10);
+  return now >= easternMidnight(tuesday);
 }
 
 /**
@@ -1844,7 +1889,7 @@ async function recordLineMoves(env, board, now = Date.now(), loadNext = nextWeek
       }
       changed = true;
     }
-    if (!entry.close && (!previous || weekPlayed(previous))) {
+    if (!entry.close && (!previous || weekClosing(previous, now))) {
       entry.close = previous ? { at: now } : { at: now, late: true };
       changed = true;
     }
@@ -2085,7 +2130,7 @@ async function handleGuesses(request, url, env, now = Date.now()) {
   try { body = await request.json(); } catch { return jsonResponse({ error: 'Bad JSON' }, 400); }
   const { mode, season, week, picker, game } = body || {};
   if (!['solo', 'podcast'].includes(mode) || !Number.isInteger(season) || season < 2000
-      || !Number.isInteger(week) || week < 1 || week > 18 || !NFL_PICKERS.includes(picker)
+      || !Number.isInteger(week) || week < 1 || week > 22 || !NFL_PICKERS.includes(picker)
       || typeof game !== 'string' || !/^[a-z0-9]+_[a-z0-9]+$/.test(game)) {
     return jsonResponse({ error: 'Give mode, season, week, picker and game' }, 400);
   }

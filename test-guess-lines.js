@@ -17,7 +17,7 @@ const { pathToFileURL } = require('url');
 
 const SOURCE = fs.readFileSync(path.join(__dirname, 'cloudflare-worker', 'nfl-picks-proxy.js'), 'utf8');
 const tmp = path.join(os.tmpdir(), `nfl-picks-guess-${process.pid}.mjs`);
-fs.writeFileSync(tmp, SOURCE + '\nexport { recordLineMoves, handleGuesses };\n');
+fs.writeFileSync(tmp, SOURCE + '\nexport { recordLineMoves, handleGuesses, followingWeek };\n');
 
 globalThis.fetch = async () => { throw new Error('no network in this test'); };
 
@@ -99,6 +99,47 @@ let mod;
         assert.deepStrictEqual(entry8().close, { at: MON_DONE });
         await run(week7('post', 'post'), MON_DONE + 900000, week8('-2'));
         assert.deepStrictEqual(entry8().close, { at: MON_DONE }, 'closed once, not moved');
+    });
+
+    section('The worker: a week with no Monday night game, and the playoffs');
+
+    // Week 18 of the 2026 season: Saturday and Sunday only. The wild card
+    // round (the site's week 19, ESPN's playoff week 1) is guessed after it.
+    const W18_SAT = Date.parse('2027-01-09T21:30:00Z');    // Sat 4:30 PM ET
+    const W18_SUN = Date.parse('2027-01-11T01:20:00Z');    // Sun 8:20 PM ET
+    const W18_DONE = Date.parse('2027-01-11T04:30:00Z');   // Sun 11:30 PM ET
+    const TUE_MIDNIGHT_ET = Date.parse('2027-01-12T05:00:00Z');
+    const week18 = state => ({ season: 2026, seasonType: 2, week: 18, games: [
+        { key: 'jets_bills', kickoff: W18_SAT, state: 'post', odds: null },
+        { key: 'lions_packers', kickoff: W18_SUN, state, odds: null }] });
+    const wildCard = home => ({ season: 2026, seasonType: 3, week: 1, games: [
+        { key: 'steelers_ravens', kickoff: Date.parse('2027-01-16T21:30:00Z'), state: 'pre',
+            odds: { away: home.replace('-', '+'), home, total: 44.5 } }] });
+    const entry19 = () => JSON.parse(kv.get('lines:2026:19') || 'null');
+
+    await check('week 18 to the wild card, the conference round to the Super Bowl, then nothing', async () => {
+        assert.deepStrictEqual(mod.followingWeek({ seasonType: 2, week: 17 }), { seasonType: 2, week: 18 });
+        assert.deepStrictEqual(mod.followingWeek({ seasonType: 2, week: 18 }), { seasonType: 3, week: 1 });
+        assert.deepStrictEqual(mod.followingWeek({ seasonType: 3, week: 2 }), { seasonType: 3, week: 3 });
+        assert.deepStrictEqual(mod.followingWeek({ seasonType: 3, week: 3 }), { seasonType: 3, week: 5 }, 'past the Pro Bowl');
+        assert.strictEqual(mod.followingWeek({ seasonType: 3, week: 5 }), null);
+    });
+
+    await check('no Monday game: the wild card opens on Sunday night and stays open all Monday', async () => {
+        await run(week18('post'), W18_DONE, wildCard('-3.5'));
+        assert.deepStrictEqual(entry19().open, { at: W18_DONE, late: false });
+        assert.strictEqual(entry19().close, undefined, 'not closed with the Sunday night game');
+        await run(week18('post'), TUE_MIDNIGHT_ET - 60000, wildCard('-3'));
+        assert.strictEqual(entry19().close, undefined, 'still open at 11:59 PM ET Monday');
+        await run(week18('post'), TUE_MIDNIGHT_ET, wildCard('-3'));
+        assert.deepStrictEqual(entry19().close, { at: TUE_MIDNIGHT_ET }, 'closed once Monday is over');
+    });
+
+    await check('a playoff week can be guessed', async () => {
+        await run(week18('post'), W18_DONE, wildCard('-3.5'));
+        const r = await post({ mode: 'solo', season: 2026, week: 19, picker: 'Stephen', game: 'steelers_ravens', guess: -2.5 }, W18_DONE + 3600000);
+        assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+        assert.strictEqual(r.body.entry.line, -3.5);
     });
 
     await check('a week first seen on the current board is closed (late) at once', async () => {

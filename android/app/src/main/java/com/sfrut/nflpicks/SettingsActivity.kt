@@ -334,12 +334,19 @@ class SettingsActivity : ComponentActivity() {
                     }
                 }
 
+                var allOn by remember { mutableStateOf(prefs.notificationsAllOn) }
                 Card {
                     Label("Notifications")
                     when {
                         !NflPicksApp.pushConfigured ->
                             Body("This build of the app has no notification service set up.")
-                        notificationsOn -> StatusLine(on = true, "On for this phone. Choose which ones below.")
+                        // The phone allows them; this switch is the app's own on/off.
+                        notificationsOn -> ToggleRow(
+                            "Notifications",
+                            if (allOn) "On for this phone. Choose which ones below."
+                            else "Off. You won't see any notifications.",
+                            allOn
+                        ) { allOn = it; prefs.notificationsAllOn = it }
                         else -> {
                             StatusLine(on = false, "Off. You won't see any notifications.")
                             PrimaryButton("Turn on notifications") { turnOnNotifications() }
@@ -347,7 +354,7 @@ class SettingsActivity : ComponentActivity() {
                     }
                 }
 
-                if (NflPicksApp.pushConfigured) NotificationChoices()
+                if (NflPicksApp.pushConfigured && allOn) NotificationChoices()
 
                 TimeZoneChoice()
 
