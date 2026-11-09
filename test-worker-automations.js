@@ -135,6 +135,7 @@ globalThis.fetch = async (url, init = {}) => {
     }
     // The highlights step's YouTube feed (test-worker-highlights.js covers it).
     if (u.startsWith('https://www.youtube.com/feeds/')) return new Response('<feed></feed>');
+    if (u.startsWith('https://www.youtube.com/results')) return new Response('');
     throw new Error('unexpected fetch ' + u);
 };
 

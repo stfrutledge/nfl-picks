@@ -35,11 +35,17 @@ const NOTIFY_STATE = {
 let feed = '';          // what the fake YouTube feed answers
 let feedStatus = 200;
 let feedCalls = 0;
+let searchPage = '';    // what the fake YouTube search answers
+const searches = [];
 globalThis.fetch = async url => {
     const u = String(url);
     if (u.startsWith('https://www.youtube.com/feeds/videos.xml?channel_id=')) {
         feedCalls++;
         return new Response(feed, { status: feedStatus });
+    }
+    if (u.startsWith('https://www.youtube.com/results?')) {
+        searches.push(new URL(u).searchParams.get('search_query'));
+        return new Response(searchPage);
     }
     // Anything else the cron's other chains reach for: refuse, they cope.
     return new Response('nope', { status: 503 });
@@ -74,7 +80,7 @@ let failures = 0, total = 0;
 async function check(name, fn) {
     total++;
     store.clear(); kv.clear(); kvWrites.length = 0;
-    feed = ''; feedStatus = 200; feedCalls = 0;
+    feed = ''; feedStatus = 200; feedCalls = 0; searchPage = ''; searches.length = 0;
     try { await fn(); console.log(`  ok  ${name}`); }
     catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
@@ -140,6 +146,68 @@ function section(name) { console.log(`\n${name}`); }
         await tick();
         assert.strictEqual(feedCalls, 1);
         assert.deepStrictEqual(saved(2026), { '9:bears_buccaneers': 'keep0000001' });
+    });
+
+    section('A game the feed missed is looked up on YouTube search');
+
+    // The week as the automations save it (board:current): nicknames and kickoffs, no results.
+    // "Finished" is a Sunday 4pm kickoff; not finished, one 2 hours before the run.
+    const espnGame = (away, home, finished) => ({
+        away: away.split(' ').pop(), home: home.split(' ').pop(),
+        kickoff: Date.parse(finished ? '2026-11-08T21:05:00Z' : '2026-11-09T18:00:00Z')
+    });
+    const renderer = (id, title, channel) => `"videoRenderer":{"videoId":"${id}","thumbnail":{},"title":{"runs":[{"text":"${title}"}]},`
+        + `"ownerText":{"runs":[{"text":"x","navigationEndpoint":{"browseEndpoint":{"browseId":"${channel}"}}}]}},`;
+    const NFL = 'UCDVYQ4Zhbm3S2dlz7P1GBDg';
+    const week9 = games => kv.set('board:current', JSON.stringify({ savedAt: 0, season: 2026, seasonType: 2, week: 9, games }));
+    const realNow = Date.now;
+    async function tickAt(iso) {
+        Date.now = () => Date.parse(iso);
+        try { await tick(); } finally { Date.now = realNow; }
+    }
+
+    await check('the NFL\'s own upload is kept; re-uploads by other channels are not', async () => {
+        week9([espnGame('Arizona Cardinals', 'Seattle Seahawks', true)]);
+        searchPage = '<script>var ytInitialData = {'
+            + renderer('reupload001', 'Seattle Seahawks vs. Arizona Cardinals Highlights | 2026 Regular Season Week 9', 'UCzkFCRiMcOBeef8xcaqipmw')
+            + renderer('fakeNFL0001', 'Arizona Cardinals vs. Seattle Seahawks Game Highlights | 2026 NFL Season Week 9', 'UCnotTheNFL000000000000')
+            + renderer('de07dP1hlt8', 'Arizona Cardinals vs. Seattle Seahawks Game Highlights | 2026 NFL Season Week 9', NFL)
+            + '};</script>';
+        await tickAt('2026-11-09T20:00:00Z');
+        assert.deepStrictEqual(searches, ['Cardinals vs Seahawks Game Highlights 2026 NFL Season Week 9']);
+        assert.deepStrictEqual(saved(2026), { '9:cardinals_seahawks': 'de07dP1hlt8' });
+    });
+
+    await check('the NFL\'s other way of writing it, "| NFL 2026 Season Week 9", is read too', async () => {
+        week9([espnGame('Miami Dolphins', 'Detroit Lions', true)]);
+        searchPage = renderer('cfpgrM5JfsQ', 'Detroit Lions vs. Miami Dolphins Game Highlights | NFL 2026 Season Week 9', NFL);
+        await tickAt('2026-11-09T20:00:00Z');
+        assert.deepStrictEqual(saved(2026), { '9:dolphins_lions': 'cfpgrM5JfsQ' });
+    });
+
+    await check('a game not found is not searched again within the hour; a game kicked off under 4 hours ago never is', async () => {
+        week9([espnGame('Arizona Cardinals', 'Seattle Seahawks', true), espnGame('Dallas Cowboys', 'Indianapolis Colts', false)]);
+        searchPage = '<html>nothing</html>';
+        await tickAt('2026-11-09T20:00:00Z');
+        await tickAt('2026-11-09T20:15:00Z');
+        assert.deepStrictEqual(searches, ['Cardinals vs Seahawks Game Highlights 2026 NFL Season Week 9']);
+        assert.deepStrictEqual(saved(2026), {});
+    });
+
+    await check('a game the feed already has is not searched for', async () => {
+        week9([espnGame('Tampa Bay Buccaneers', 'Chicago Bears', true)]);
+        feed = feedOf(entry('abcDEF12345', 'Tampa Bay Buccaneers vs Chicago Bears Game Highlights | 2026 NFL Season Week 9'));
+        await tickAt('2026-11-09T20:00:00Z');
+        assert.deepStrictEqual(searches, []);
+        assert.deepStrictEqual(saved(2026), { '9:bears_buccaneers': 'abcDEF12345' });
+    });
+
+    await check('the feed being down does not stop the search', async () => {
+        week9([espnGame('Arizona Cardinals', 'Seattle Seahawks', true)]);
+        feedStatus = 500;
+        searchPage = renderer('de07dP1hlt8', 'Arizona Cardinals vs. Seattle Seahawks Game Highlights | 2026 NFL Season Week 9', NFL);
+        await tickAt('2026-11-09T20:00:00Z');
+        assert.deepStrictEqual(saved(2026), { '9:cardinals_seahawks': 'de07dP1hlt8' });
     });
 
     section('/highlights serves a week');

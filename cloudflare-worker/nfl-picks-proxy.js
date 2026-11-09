@@ -1412,7 +1412,19 @@ const NFL_YOUTUBE_FEED = 'https://www.youtube.com/feeds/videos.xml?channel_id=UC
 // The site's playoff weeks (PLAYOFF_WEEKS in app.js).
 const HIGHLIGHT_ROUNDS = { 'wild card': 19, 'divisional': 20, 'conference': 21, 'super bowl': 22 };
 
-const HIGHLIGHT_TITLE = /^(.+?)\s+vs\.?\s+(.+?)\s+(?:Game\s+)?Highlights\s*\|\s*(?:(\d{4})\s+)?NFL\s+(?:Season\s+)?(?:Week\s+(\d{1,2})|(Wild\s*Card|Divisional|Conference|Super\s*Bowl))/i;
+// "... Game Highlights | 2026 NFL Season Week 9", and the NFL's other way of
+// writing it, "| NFL 2026 Season Week 9"; a playoff title may only name the round.
+const HIGHLIGHT_TITLE = /^(.+?)\s+vs\.?\s+(.+?)\s+(?:Game\s+)?Highlights\s*\|\s*(?:(\d{4})\s+NFL|NFL(?:\s+(\d{4}))?)\s+(?:Season\s+)?(?:Week\s+(\d{1,2})|(Wild\s*Card|Divisional|Conference|Super\s*Bowl))/i;
+
+/** A game-highlights title read: { season, week, pair }, or null. `at` dates a title with no year. */
+function readHighlightTitle(title, at) {
+  const m = HIGHLIGHT_TITLE.exec(String(title).trim());
+  if (!m) return null;
+  const year = m[3] || m[4];
+  const week = m[5] ? Number(m[5]) : HIGHLIGHT_ROUNDS[m[6].toLowerCase().replace(/\s+/g, ' ')];
+  if (!week || week < 1 || week > 22) return null;
+  return { season: year ? Number(year) : seasonFor(at), week, pair: highlightPair(teamNickname(m[1]), teamNickname(m[2])) };
+}
 
 /** The two nicknames of a game, sorted: one key whichever side is home. */
 function highlightPair(a, b) {
@@ -1436,26 +1448,108 @@ function parseHighlightFeed(xml, now = Date.now()) {
     const id = /<yt:videoId>([\w-]{6,20})<\/yt:videoId>/.exec(entry);
     const titleTag = /<title>([^<]*)<\/title>/.exec(entry);
     if (!id || !titleTag) continue;
-    const m = HIGHLIGHT_TITLE.exec(decodeXml(titleTag[1]).trim());
-    if (!m) continue;
     const published = /<published>([^<]+)<\/published>/.exec(entry);
     const at = published ? Date.parse(published[1]) : now;
-    // "2026 NFL Season" is the season; a playoff title may only say the round,
-    // and a January upload belongs to the season before.
-    const season = m[3] ? Number(m[3]) : seasonFor(Number.isFinite(at) ? at : now);
-    const week = m[4] ? Number(m[4]) : HIGHLIGHT_ROUNDS[m[5].toLowerCase().replace(/\s+/g, ' ')];
-    if (!week || week < 1 || week > 22) continue;
-    out.push({ videoId: id[1], season, week, pair: highlightPair(teamNickname(m[1]), teamNickname(m[2])) });
+    // A playoff title may only say the round, and a January upload belongs to the season before.
+    const t = readHighlightTitle(decodeXml(titleTag[1]), Number.isFinite(at) ? at : now);
+    if (t) out.push({ videoId: id[1], ...t });
   }
   return out;
 }
 
-/** The cron's step: add any new game highlights in the feed to KV. */
-async function recordHighlights(env) {
+const NFL_CHANNEL_ID = 'UCDVYQ4Zhbm3S2dlz7P1GBDg';
+// A game searched for and not found is not searched again for this long.
+const HIGHLIGHT_SEARCH_RETRY_S = 3600;
+// A game is looked for from this long after kickoff (about when it has finished and been uploaded).
+const HIGHLIGHT_SEARCH_AFTER_KICKOFF_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * YouTube's search results page, read for the NFL's own "Game Highlights"
+ * upload: [{ videoId, season, week, pair }]. Re-uploads by other channels
+ * (there are several a game) are left out by the channel id. Scanned with
+ * regexes rather than parsing the page's ~2 MB of JSON.
+ */
+function parseHighlightSearch(html, now = Date.now()) {
+  const out = [];
+  const starts = [];
+  const re = /"videoRenderer":\{"videoId":"([\w-]{6,20})"/g;
+  let m;
+  while ((m = re.exec(html)) && starts.length < 30) starts.push({ at: m.index, id: m[1] });
+  starts.forEach((s, i) => {
+    const chunk = html.slice(s.at, Math.min(starts[i + 1]?.at ?? Infinity, s.at + 8000));
+    if (!chunk.includes(`"browseId":"${NFL_CHANNEL_ID}"`)) return;
+    const raw = /"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/.exec(chunk);
+    if (!raw) return;
+    let title;
+    try { title = JSON.parse(`"${raw[1]}"`); } catch { return; }
+    const t = readHighlightTitle(title, now);
+    if (t) out.push({ videoId: s.id, ...t });
+  });
+  return out;
+}
+
+/**
+ * The feed only reaches back half a day, so a game whose upload it missed
+ * (the worker was down, or deployed after) is looked up on YouTube search:
+ * one game a run, each at most once an hour, for games of the week the cron
+ * last saved (`board:current`) that kicked off 4 hours ago and have no video yet.
+ */
+async function searchMissingHighlights(env, saved, season, now) {
+  // The week's games as the automations last saved them (no extra ESPN call).
+  const board = JSON.parse(await env.NOTIFY_STATE.get(BOARD_KEY) || 'null');
+  // Regular season only: the playoffs' titles are not settled yet.
+  if (!board || board.seasonType !== 2 || !board.week || board.season !== season) return null;
+  for (const game of board.games) {
+    // The saved schedule has no results: long enough after kickoff counts as finished.
+    if (!(game.kickoff + HIGHLIGHT_SEARCH_AFTER_KICKOFF_MS < now)) continue;
+    const slot = `${board.week}:${highlightPair(game.away, game.home)}`;
+    if (saved[slot]) continue;
+    const tried = `highlights-tried:${season}:${slot}`;
+    if (await env.NOTIFY_STATE.get(tried)) continue;
+    await env.NOTIFY_STATE.put(tried, '1', { expirationTtl: HIGHLIGHT_SEARCH_RETRY_S });
+    const query = `${game.away} vs ${game.home} Game Highlights ${season} NFL Season Week ${board.week}`;
+    const response = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        // Past the EU cookie-consent page, which a European data centre would get.
+        'Cookie': 'SOCS=CAI; CONSENT=YES+cb',
+      },
+    });
+    if (!response.ok) throw new Error(`YouTube search answered ${response.status}`);
+    const hit = parseHighlightSearch(await response.text())
+      .find(v => v.week === board.week && v.season === season && `${v.week}:${v.pair}` === slot);
+    return { searched: slot, found: hit ? hit.videoId : null, hit };
+  }
+  return null;
+}
+
+/** The cron's step: add any new game highlights in the feed to KV, then look one missing game up. */
+async function recordHighlights(env, now = Date.now()) {
   if (!env.NOTIFY_STATE) return { skipped: 'no KV' };
-  const response = await fetch(NFL_YOUTUBE_FEED);
-  if (!response.ok) throw new Error(`YouTube feed answered ${response.status}`);
-  const found = parseHighlightFeed(await response.text());
+  const result = {};
+  let found = [];
+  try {
+    const response = await fetch(NFL_YOUTUBE_FEED);
+    if (!response.ok) throw new Error(`YouTube feed answered ${response.status}`);
+    found = parseHighlightFeed(await response.text());
+  } catch (error) {
+    result.feedError = error.message;
+  }
+  // Only games of the season in progress are searched for.
+  const season = seasonFor(now);
+  try {
+    const saved = JSON.parse(await env.NOTIFY_STATE.get(`highlights:${season}`) || '{}');
+    for (const v of found) if (v.season === season) saved[`${v.week}:${v.pair}`] = saved[`${v.week}:${v.pair}`] || v.videoId;
+    const search = await searchMissingHighlights(env, saved, season, now);
+    if (search) {
+      result.search = { game: search.searched, found: search.found };
+      if (search.hit) found.push(search.hit);
+    }
+  } catch (error) {
+    result.searchError = error.message;
+  }
+  if (result.feedError && result.searchError) throw new Error(`${result.feedError}; ${result.searchError}`);
   const bySeason = {};
   for (const v of found) (bySeason[v.season] = bySeason[v.season] || []).push(v);
   let added = 0;
@@ -1473,7 +1567,7 @@ async function recordHighlights(env) {
     }
     if (changed) await env.NOTIFY_STATE.put(key, JSON.stringify(saved));
   }
-  return { found: found.length, added };
+  return { ...result, found: found.length, added };
 }
 
 /** GET /highlights?season=YYYY&week=N -> { "<team>_<team>": videoId }. */
