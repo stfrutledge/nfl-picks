@@ -81,6 +81,19 @@ class MainActivity : ComponentActivity() {
     /** The picker the page was loaded with, to tell when Settings changed it. */
     private var loadedPicker: String? = null
 
+    /** Spoiler-free highlights as the page was loaded, to tell when Settings changed it. */
+    private var loadedHighlights = true
+
+    /**
+     * One highlights video (HighlightsActivity), opened from the page's
+     * spoiler-free panel; coming back, the page is told whether it played to the end.
+     */
+    private val highlights =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val ended = result.data?.getBooleanExtra(HighlightsActivity.EXTRA_ENDED, false) == true
+            web.evaluateJavascript("window.appHighlightsClosed && appHighlightsClosed($ended)", null)
+        }
+
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -273,6 +286,9 @@ class MainActivity : ComponentActivity() {
         if (prefs.picker != loadedPicker && prefs.picker != null) {
             load()
             askForNotifications()
+        } else if (prefs.spoilerHighlights != loadedHighlights) {
+            // The highlights switch decides what the page holds back as it opens.
+            load()
         }
     }
 
@@ -290,6 +306,7 @@ class MainActivity : ComponentActivity() {
 
     private fun load() {
         loadedPicker = prefs.picker
+        loadedHighlights = prefs.spoilerHighlights
         zoneShown = prefs.timeZone
         pageReady = false
         if (!online()) {
@@ -334,6 +351,18 @@ class MainActivity : ComponentActivity() {
         /** The IANA id the site draws kickoff times in (Settings > Time zone). */
         @JavascriptInterface
         fun timeZone(): String = prefs.timeZone
+
+        /** Spoiler-free highlights before the scores (Settings > Spoilers, 1.19+). */
+        @JavascriptInterface
+        fun spoilerHighlights(): Boolean = prefs.spoilerHighlights
+
+        /** Play one NFL highlights video, with nothing around it that could give a score away. */
+        @JavascriptInterface
+        fun playHighlights(videoId: String) = runOnUiThread {
+            if (!HighlightsActivity.isVideoId(videoId)) return@runOnUiThread
+            highlights.launch(Intent(this@MainActivity, HighlightsActivity::class.java)
+                .putExtra(HighlightsActivity.EXTRA_VIDEO, videoId))
+        }
 
         /** Keep the Live tab up whatever the schedule (Settings > Tabs). */
         @JavascriptInterface

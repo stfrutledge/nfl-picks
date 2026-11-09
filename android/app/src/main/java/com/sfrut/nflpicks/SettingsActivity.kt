@@ -413,6 +413,7 @@ class SettingsActivity : ComponentActivity() {
             Category.entries.forEach { put(it, prefs.categoryOn(it)) }
         } }
         var spoilerFree by remember { mutableStateOf(prefs.spoilerFree) }
+        var highlights by remember { mutableStateOf(prefs.spoilerHighlights) }
         var quietOn by remember { mutableStateOf(prefs.quietOn) }
         var quietStart by remember { mutableStateOf(prefs.quietStart) }
         var quietEnd by remember { mutableStateOf(prefs.quietEnd) }
@@ -435,7 +436,12 @@ class SettingsActivity : ComponentActivity() {
                 else "Results notifications show everyone's record.",
                 spoilerFree
             ) { spoilerFree = it; prefs.spoilerFree = it }
-            Body("The app itself still shows scores when you open it.", color = site.textLight, size = 12.sp)
+            ToggleRow(
+                "Spoiler-free highlights",
+                if (highlights) "When your Blazin' 5 games finish, the app shows your pick and the highlights before the score."
+                else "The app shows scores as soon as you open it.",
+                highlights
+            ) { highlights = it; prefs.spoilerHighlights = it }
         }
 
         Card {

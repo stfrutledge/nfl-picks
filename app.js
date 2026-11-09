@@ -2877,6 +2877,9 @@ function init() {
     trackTabsHeight();
     loadPicksFromStorage();
 
+    // The app's spoiler-free highlights cover the page before anything is drawn.
+    startHighlightsGate();
+
     // Show loading state
     showLoadingState();
 
@@ -2918,6 +2921,8 @@ async function openFromApp(target, week) {
     for (let i = 0; !initialLoadComplete && i < 150; i++) {
         await new Promise(resolve => setTimeout(resolve, 200));
     }
+    // Spoiler-free highlights first: the results land once the panel is down.
+    await whenHighlightsClosed();
     if (target === 'standings-blazin') {
         // A week with no results yet is not in the dropdown, and
         // populateStandingsWeeks() falls back to the latest one that is.
@@ -2961,6 +2966,467 @@ function appAlwaysShows(setting) {
 function appTabSettingsChanged() {
     updateLiveTabVisibility();
     updateGuessTabVisibility();
+}
+
+// ---------------------------------------------------------------------------
+// Spoiler-free highlights (Android app 1.19+)
+//
+// For the group in Ireland, who sleep through the night games: when the app
+// opens and some of the phone's picker's Blazin' 5 games have finished since
+// they last saw them, a full-screen panel covers the app before any score is
+// drawn. It quotes each pick back ("Your pick: Bears -2.5") and offers the
+// NFL's YouTube highlights first, revealing each result after its video, or
+// the results straight away.
+//
+// "Seen" is per phone (`highlightsSeen_<season>`, week:pickKey): a game is
+// seen once its result was revealed in the panel, or it went final while the
+// app was on screen without the panel. Only the app's switch turns it on
+// (bridge `spoilerHighlights()`), so a browser and an older app never see it.
+// The videos come from the worker's /highlights, which reads the NFL
+// channel's feed on its cron.
+// ---------------------------------------------------------------------------
+
+// The first time the panel runs, games that finished longer ago than this count as seen.
+const HIGHLIGHTS_FIRST_RUN_MS = 24 * 60 * 60 * 1000;
+// A check that has not finished after this offers the way out instead of hanging.
+const HIGHLIGHTS_CHECK_TIMEOUT_MS = 25000;
+
+let highlightsGate = null;      // { games, index, phase, deferred } while the panel is up
+let highlightsChecking = false; // the panel is up, deciding whether there is anything to show
+let highlightsCheckTimer = null;
+let highlightsCheckRunning = false; // runHighlightsCheck is in flight
+let highlightsClosedWaiters = [];
+let highlightsHistory = false;  // the panel's history entry (Back closes it)
+
+/** The app's Spoiler-free highlights switch (1.19+). Off in a browser and an older app. */
+function spoilerHighlightsOn() {
+    return appAlwaysShows('spoilerHighlights');
+}
+
+/** Whose Blazin' 5 the panel is about: the phone's own picker, not whoever is on screen. */
+function highlightsViewer() {
+    try {
+        const p = window.NFLPicksApp?.picker?.();
+        if (p) return p;
+    } catch { /* fall back to the page's picker */ }
+    return currentPicker;
+}
+
+function highlightsSeenStorageKey(season = CURRENT_SEASON) {
+    return `highlightsSeen_${season}`;
+}
+
+/** The seen set, or null when this phone has never run the panel this season. */
+function readHighlightsSeen() {
+    try {
+        const raw = localStorage.getItem(highlightsSeenStorageKey());
+        if (raw === null) return null;
+        const list = JSON.parse(raw);
+        return new Set(Array.isArray(list) ? list : []);
+    } catch {
+        return new Set();
+    }
+}
+
+function writeHighlightsSeen(seen) {
+    try { localStorage.setItem(highlightsSeenStorageKey(), JSON.stringify([...seen])); } catch { /* storage full or off */ }
+}
+
+function markHighlightsSeen(keys) {
+    const seen = readHighlightsSeen() || new Set();
+    let changed = false;
+    for (const key of keys) if (!seen.has(key)) { seen.add(key); changed = true; }
+    if (changed) writeHighlightsSeen(seen);
+}
+
+/** The weeks the panel looks at: last week, this week, and next (the page may have moved on). */
+function highlightsWeeks(base = CURRENT_NFL_WEEK) {
+    return [base - 1, base, base + 1].filter(w => w >= 1 && !isPlayoffWeek(w) && w <= TOTAL_WEEKS);
+}
+
+/**
+ * The viewer's Blazin' 5 games in those weeks: [{ week, game, pick, key, result }],
+ * by kickoff, `result` null for a game not finished. Blazin' 5 is regular season only.
+ */
+function viewerBlazinGames(viewer = highlightsViewer(), weeks = highlightsWeeks()) {
+    if (!viewer || viewer === 'Cowherd') return [];
+    const out = [];
+    for (const week of weeks) {
+        const games = NFL_GAMES_BY_WEEK[week] || [];
+        const picks = getPickerPicksForWeek(week, viewer);
+        for (const game of games) {
+            const pick = getPicksForGame(picks, game);
+            if (!pick.blazin || !pick.line) continue;
+            out.push({ week, game, pick, key: `${week}:${pickKey(game)}`, result: getGameResult(game, NFL_RESULTS_BY_WEEK[week]) });
+        }
+    }
+    const at = g => kickoffDate(g.game)?.getTime() ?? 0;
+    return out.sort((a, b) => at(a) - at(b));
+}
+
+/**
+ * The finished games the viewer has not seen yet. The first run of a season
+ * counts anything finished more than a day ago as seen, so the panel does not
+ * replay the season so far.
+ */
+function unseenFinishedBlazin(now = Date.now(), viewer = highlightsViewer()) {
+    const finished = viewerBlazinGames(viewer).filter(g => g.result);
+    let seen = readHighlightsSeen();
+    if (seen === null) {
+        seen = new Set(finished.filter(g => {
+            const kickoff = kickoffDate(g.game);
+            return !kickoff || now - kickoff.getTime() > HIGHLIGHTS_FIRST_RUN_MS;
+        }).map(g => g.key));
+        writeHighlightsSeen(seen);
+    }
+    return finished.filter(g => !seen.has(g.key));
+}
+
+/**
+ * The app is on screen with no panel over it: whatever has finished is in
+ * plain view, so it counts as seen. Called after every redraw.
+ */
+function markVisibleFinalsSeen() {
+    if (highlightsGate || highlightsChecking || !initialLoadComplete) return;
+    if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    if (!spoilerHighlightsOn()) return;
+    const finished = viewerBlazinGames().filter(g => g.result).map(g => g.key);
+    if (finished.length) markHighlightsSeen(finished);
+}
+
+/** "Bears_Buccaneers" either way round: the worker's key for a game's video. */
+function highlightsPair(game) {
+    return [normalizeTeamName(game.away), normalizeTeamName(game.home)].sort().join('_');
+}
+
+/** Each week's videos from the worker: { week: { pair: videoId } }. A failure is no videos. */
+async function loadHighlightVideos(weeks) {
+    const out = {};
+    await Promise.all([...new Set(weeks)].map(async week => {
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const r = await fetch(`${WORKER_PROXY_URL}/highlights?season=${CURRENT_SEASON}&week=${week}`, { signal: controller.signal });
+            clearTimeout(timer);
+            out[week] = r.ok ? ((await r.json()).videos || {}) : {};
+        } catch {
+            out[week] = {};
+        }
+    }));
+    return out;
+}
+
+// --- the panel ---------------------------------------------------------------
+
+function highlightsEl() {
+    let el = document.getElementById('highlights-gate');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'highlights-gate';
+        el.className = 'highlights-gate';
+        el.setAttribute('role', 'dialog');
+        el.setAttribute('aria-modal', 'true');
+        el.setAttribute('aria-label', 'Spoiler-free highlights');
+        el.addEventListener('click', onHighlightsClick);
+        document.body.appendChild(el);
+    }
+    return el;
+}
+
+/** Cover the app while it decides. Nothing behind the panel can be seen. */
+function holdForHighlights() {
+    highlightsChecking = true;
+    const el = highlightsEl();
+    el.innerHTML = `<div class="hl-checking"><div class="hl-spinner" aria-hidden="true"></div><p>Checking your Blazin' 5...</p></div>`;
+    el.classList.add('show');
+    document.body.classList.add('highlights-open');
+    clearTimeout(highlightsCheckTimer);
+    highlightsCheckTimer = setTimeout(() => {
+        if (!highlightsChecking) return;
+        el.innerHTML = `<div class="hl-checking"><p>Couldn't check for new results.</p>
+            <button type="button" class="hl-btn hl-btn-secondary" data-hl="release">Open the app (may show scores)</button></div>`;
+    }, HIGHLIGHTS_CHECK_TIMEOUT_MS);
+}
+
+/** Take the panel down and let anything waiting on it (a notification tap) carry on. */
+function releaseHighlights() {
+    highlightsChecking = false;
+    highlightsGate = null;
+    clearTimeout(highlightsCheckTimer);
+    const el = document.getElementById('highlights-gate');
+    if (el) { el.classList.remove('show'); el.innerHTML = ''; }
+    document.body.classList.remove('highlights-open');
+    if (highlightsHistory) {
+        highlightsHistory = false;
+        try { window.history.back(); } catch { /* nothing to undo */ }
+    }
+    const waiters = highlightsClosedWaiters;
+    highlightsClosedWaiters = [];
+    waiters.forEach(resolve => resolve());
+    markVisibleFinalsSeen();
+}
+
+/** Resolves once the panel is down (straight away when it is not up). */
+function whenHighlightsClosed() {
+    if (!highlightsChecking && !highlightsGate) return Promise.resolve();
+    return new Promise(resolve => highlightsClosedWaiters.push(resolve));
+}
+
+/**
+ * Decide, with the panel already covering the app: fresh scores for any week
+ * where one of the viewer's games may have finished, then the panel or nothing.
+ */
+async function runHighlightsCheck({ refresh = true, fresh = [] } = {}) {
+    if (highlightsCheckRunning) return;
+    highlightsCheckRunning = true;
+    try {
+        // The viewer's picks: a pick made on another device (or a phone whose
+        // storage was cleared) only arrives with the backup, which a cold
+        // start reads in the background. Wait for it, up to a point.
+        for (let i = 0; i < 60 && !(backupFetchedThisSession && !backupFetchInFlight); i++) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        if (refresh) {
+            const now = Date.now();
+            const stale = new Set();
+            for (const week of highlightsWeeks()) {
+                if (!NFL_GAMES_BY_WEEK[week]) { if (week <= CURRENT_NFL_WEEK) stale.add(week); continue; }
+            }
+            for (const g of viewerBlazinGames()) {
+                const kickoff = kickoffDate(g.game);
+                if (!g.result && kickoff && kickoff.getTime() < now) stale.add(g.week);
+            }
+            for (const week of stale) {
+                // A cold start has just fetched currentWeek fresh (`fresh`).
+                if (fresh.includes(week)) continue;
+                await loadWeekSchedule(week, true, true).catch(() => {});
+            }
+        }
+        if (!highlightsChecking && !highlightsGate) return;
+        const games = unseenFinishedBlazin();
+        if (!games.length) { releaseHighlights(); return; }
+        const videos = await loadHighlightVideos(games.map(g => g.week));
+        for (const g of games) g.videoId = videos[g.week]?.[highlightsPair(g.game)] || null;
+        if (!highlightsChecking) return;
+        openHighlightsGate(games);
+    } catch (err) {
+        console.error('[Highlights] Check failed:', err);
+        releaseHighlights();
+    } finally {
+        highlightsCheckRunning = false;
+    }
+}
+
+function openHighlightsGate(games) {
+    highlightsChecking = false;
+    clearTimeout(highlightsCheckTimer);
+    highlightsGate = { games, index: 0, phase: 'list', deferred: [] };
+    // Back (the phone's, or the app's) closes the panel like "Go straight to results".
+    if (!highlightsHistory) {
+        try { window.history.pushState({ highlights: true }, ''); highlightsHistory = true; } catch { /* Back leaves as before */ }
+    }
+    renderHighlightsGate();
+}
+
+function hlEscape(text) {
+    return String(text ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** Both teams' logos and names, away left, as the Game Details hero. */
+function highlightsMatchupHtml(game) {
+    const team = name => `<div class="hl-team"><img src="${hlEscape(getTeamLogoOnDark(name) || getTeamLogo(name))}" alt=""><span>${hlEscape(name)}</span></div>`;
+    return `<div class="hl-matchup">${team(game.away)}<span class="hl-at">@</span>${team(game.home)}</div>`;
+}
+
+function highlightsPickText(g) {
+    return describeLineForSide(g.game, g.pick.line, g.pick);
+}
+
+/** The reveal: the score, and how the viewer's pick did at the line it is graded at. */
+function highlightsResultHtml(g) {
+    const result = getGameResult(g.game, NFL_RESULTS_BY_WEEK[g.week]) || g.result;
+    const ats = atsWinnerForPick(g.game, g.pick, result);
+    const outcome = ats === null ? { cls: 'pending', text: 'No line to grade it at' }
+        : ats === 'push' ? { cls: 'push', text: 'Push' }
+        : ats === g.pick.line ? { cls: 'win', text: 'Your pick covered' }
+        : { cls: 'loss', text: 'Your pick lost' };
+    return `<div class="hl-score">
+            <span class="hl-score-team">${hlEscape(g.game.away)}</span><span class="hl-score-num">${result.awayScore}</span>
+            <span class="hl-score-dash">-</span>
+            <span class="hl-score-num">${result.homeScore}</span><span class="hl-score-team">${hlEscape(g.game.home)}</span>
+        </div>
+        <div class="hl-outcome hl-outcome-${outcome.cls}">${outcome.text}</div>`;
+}
+
+function renderHighlightsGate() {
+    const gate = highlightsGate;
+    const el = highlightsEl();
+    if (!gate) return;
+    let html;
+    if (gate.phase === 'list') {
+        const n = gate.games.length;
+        html = `<div class="hl-card">
+            <div class="hl-kicker">Spoiler-free</div>
+            <h2 class="hl-title">${n === 1 ? 'One of your Blazin’ 5 games has finished' : `${n} of your Blazin’ 5 games have finished`}</h2>
+            <ul class="hl-list">${gate.games.map(g => `<li class="hl-list-item">
+                ${highlightsMatchupHtml(g.game)}
+                <div class="hl-when">${hlEscape(displayGameDay(g.game))} ${hlEscape(displayGameTime(g.game))}</div>
+                <div class="hl-pick">Your pick: <strong>${hlEscape(highlightsPickText(g))}</strong></div>
+            </li>`).join('')}</ul>
+            <div class="hl-actions">
+                <button type="button" class="hl-btn hl-btn-primary" data-hl="watch">Watch highlights first</button>
+                <button type="button" class="hl-btn hl-btn-secondary" data-hl="results">Go straight to results</button>
+            </div>
+        </div>`;
+    } else if (gate.phase === 'done') {
+        const later = gate.deferred.length;
+        html = `<div class="hl-card">
+            <div class="hl-kicker">Spoiler-free</div>
+            <h2 class="hl-title">${later === 1 ? 'One game’s highlights aren’t up yet' : `${later} games’ highlights aren’t up yet`}</h2>
+            <p class="hl-note">Leave the app and come back later to watch ${later === 1 ? 'it' : 'them'} first. Opening the app shows every score.</p>
+            <div class="hl-actions">
+                <button type="button" class="hl-btn hl-btn-secondary" data-hl="results">Show the results now</button>
+            </div>
+        </div>`;
+    } else {
+        const g = gate.games[gate.index];
+        const step = `Game ${gate.index + 1} of ${gate.games.length}`;
+        const last = gate.index === gate.games.length - 1;
+        let body;
+        if (gate.phase === 'result') {
+            body = `${highlightsResultHtml(g)}
+                <div class="hl-actions">
+                    <button type="button" class="hl-btn hl-btn-primary" data-hl="next">${last ? 'Done' : 'Next game'}</button>
+                </div>`;
+        } else if (g.videoId) {
+            body = `<div class="hl-video" id="hl-video">
+                    <button type="button" class="hl-poster" data-hl="play" aria-label="Play the highlights">
+                        <span class="hl-play" aria-hidden="true"></span><span>${gate.watched ? 'Watch again' : 'Play highlights'}</span>
+                    </button>
+                </div>
+                <div class="hl-actions">
+                    <button type="button" class="hl-btn ${gate.watched ? 'hl-btn-primary' : 'hl-btn-secondary'}" data-hl="reveal">${gate.watched ? 'Show result' : 'Skip to the result'}</button>
+                </div>`;
+        } else {
+            body = `<p class="hl-note">The highlights aren’t up yet. The NFL usually posts them within a few hours of the game.</p>
+                <div class="hl-actions">
+                    <button type="button" class="hl-btn hl-btn-primary" data-hl="reveal">Show result</button>
+                    <button type="button" class="hl-btn hl-btn-secondary" data-hl="later">Keep it hidden</button>
+                </div>`;
+        }
+        html = `<div class="hl-card">
+            <div class="hl-kicker">${step}</div>
+            ${highlightsMatchupHtml(g.game)}
+            <div class="hl-pick">Your pick: <strong>${hlEscape(highlightsPickText(g))}</strong></div>
+            ${body}
+        </div>`;
+    }
+    el.innerHTML = html;
+    el.classList.add('show');
+    document.body.classList.add('highlights-open');
+    el.scrollTop = 0;
+}
+
+function onHighlightsClick(event) {
+    const action = event.target.closest('[data-hl]')?.dataset.hl;
+    if (!action) return;
+    const gate = highlightsGate;
+    if (action === 'release') { releaseHighlights(); return; }
+    if (!gate) return;
+    const g = gate.games[gate.index];
+    if (action === 'results') {
+        markHighlightsSeen(gate.games.map(x => x.key));
+        releaseHighlights();
+    } else if (action === 'watch') {
+        gate.phase = 'video';
+        gate.index = 0;
+        gate.ended = false;
+        gate.watched = false;
+        renderHighlightsGate();
+    } else if (action === 'play') {
+        playHighlightsVideo(g.videoId);
+    } else if (action === 'reveal') {
+        markHighlightsSeen([g.key]);
+        gate.phase = 'result';
+        renderHighlightsGate();
+    } else if (action === 'later') {
+        gate.deferred.push(g.key);
+        advanceHighlights();
+    } else if (action === 'next') {
+        advanceHighlights();
+    }
+}
+
+function advanceHighlights() {
+    const gate = highlightsGate;
+    gate.ended = false;
+    gate.watched = false;
+    if (gate.index < gate.games.length - 1) {
+        gate.index++;
+        gate.phase = 'video';
+        renderHighlightsGate();
+    } else if (gate.deferred.length) {
+        gate.phase = 'done';
+        renderHighlightsGate();
+    } else {
+        releaseHighlights();
+    }
+}
+
+/**
+ * Play a game's highlights. The NFL blocks its videos from YouTube's embedded
+ * player on other sites, so the app (1.19+) plays it on a screen of its own:
+ * YouTube's page with everything but the player hidden, closed as the video
+ * ends. Coming back, the app calls appHighlightsClosed().
+ */
+function playHighlightsVideo(videoId) {
+    try {
+        window.NFLPicksApp?.playHighlights?.(videoId);
+    } catch (err) {
+        console.error('[Highlights] Could not open the video:', err);
+    }
+}
+
+/** Back from the video (the app, 1.19+): `ended` when it played to the end. */
+function appHighlightsClosed(ended) {
+    const gate = highlightsGate;
+    if (!gate || gate.phase !== 'video') return;
+    gate.watched = true;
+    if (ended) gate.ended = true;
+    renderHighlightsGate();
+}
+
+/** Cold start: cover the app before the first draw (called from init). */
+function startHighlightsGate() {
+    if (!spoilerHighlightsOn()) return;
+    holdForHighlights();
+    window.addEventListener('popstate', () => {
+        if (highlightsHistory) {
+            highlightsHistory = false;
+            if (highlightsGate) markHighlightsSeen(highlightsGate.games.map(g => g.key));
+            releaseHighlights();
+        }
+    });
+}
+
+/**
+ * Going away and coming back. A page left open is resumed, not reloaded, and
+ * its scores can move while it is hidden, so: cover it on the way out when one
+ * of the viewer's games is still to finish, and check on the way back.
+ */
+function highlightsVisibilityChanged(state) {
+    if (!initialLoadComplete || !spoilerHighlightsOn() || highlightsGate) return;
+    if (state === 'hidden') {
+        if (highlightsChecking) return;
+        const pending = viewerBlazinGames().some(g => !g.result && !(readHighlightsSeen() || new Set()).has(g.key));
+        if (pending) holdForHighlights();
+    } else if (highlightsChecking && !highlightsCheckRunning) {
+        const now = Date.now();
+        const started = viewerBlazinGames().some(g => !g.result && (kickoffDate(g.game)?.getTime() ?? Infinity) < now);
+        const unseen = unseenFinishedBlazin(now).length > 0;
+        if (!started && !unseen) releaseHighlights();
+        else runHighlightsCheck();
+    }
 }
 
 /**
@@ -4865,6 +5331,7 @@ function setupPicksActions() {
     // Coming back is the other half: a resumed page still holds the picks it
     // opened with, so pick up anything the others have made since.
     document.addEventListener('visibilitychange', () => {
+        highlightsVisibilityChanged(document.visibilityState);
         if (document.visibilityState === 'hidden') {
             flushPendingSync({ keepalive: true });
         } else {
@@ -5116,6 +5583,9 @@ async function loadFromGoogleSheets() {
         // Now hide loading state after all data is loaded
         hideLoadingState();
 
+        // The app's spoiler-free highlights: anything of the viewer's finished unseen?
+        if (highlightsChecking) runHighlightsCheck({ fresh: [currentWeek] });
+
         // Background load remaining data (non-blocking)
         setTimeout(async () => {
             const bgStart = performance.now();
@@ -5198,6 +5668,7 @@ async function loadFromGoogleSheets() {
 
     } catch (err) {
         console.error('Failed to load data from Google Sheets:', err.message);
+        if (highlightsChecking) releaseHighlights();
         showErrorState('Unable to load picks data. Please check your internet connection and try again.');
     }
 }
@@ -6107,6 +6578,7 @@ function renderActiveTab() {
     if (currentCategory === 'standings') renderDashboard();
     if (currentCategory === 'live') renderLiveTab();
     if (currentCategory === 'history') refreshLiveHistoryView();
+    markVisibleFinalsSeen();
 }
 
 /** Guards refreshLiveHistoryView() against overlapping rebuilds. */

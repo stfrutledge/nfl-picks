@@ -177,6 +177,8 @@ export default {
         return await handleGuesses(request, url, env);
       } else if (path === '/picked-at') {
         return await handlePickedAt(request, url, env);
+      } else if (path === '/highlights') {
+        return await handleHighlights(request, url, env, ctx);
       } else if (path === '/espn-summary') {
         return await handleEspnSummary(request, url, ctx);
       } else if (path === '/notify') {
@@ -209,6 +211,11 @@ export default {
     ctx.waitUntil(runPicksDbMaintenance(env).then(
       result => console.log('[d1]', JSON.stringify(result)),
       error => console.error('[d1] maintenance failed:', error.message)));
+    // The NFL's YouTube highlights, for the app's spoiler-free highlights.
+    // Its own chain too: the feed being down is nobody's alert.
+    ctx.waitUntil(recordHighlights(env).then(
+      result => console.log('[highlights]', JSON.stringify(result)),
+      error => console.error('[highlights] failed:', error.message)));
   },
 };
 
@@ -1386,6 +1393,110 @@ async function handleEspn(request, url, ctx) {
       'Cache-Control': `public, max-age=${seconds}`,
       ...CORS_HEADERS,
     },
+  });
+  ctx.waitUntil(cache.put(cacheKey, out.clone()));
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// /highlights - the NFL's YouTube "Game Highlights" video for each finished
+// game, for the app's spoiler-free highlights. The channel's public RSS feed
+// needs no key but only holds its latest 15 uploads (about half a day), so
+// the cron reads it every run and keeps what it finds in KV
+// (`highlights:<season>`: { "<week>:<team>_<team>": videoId }, the two
+// nicknames sorted so home/away order never matters).
+// ---------------------------------------------------------------------------
+
+const NFL_YOUTUBE_FEED = 'https://www.youtube.com/feeds/videos.xml?channel_id=UCDVYQ4Zhbm3S2dlz7P1GBDg';
+
+// The site's playoff weeks (PLAYOFF_WEEKS in app.js).
+const HIGHLIGHT_ROUNDS = { 'wild card': 19, 'divisional': 20, 'conference': 21, 'super bowl': 22 };
+
+const HIGHLIGHT_TITLE = /^(.+?)\s+vs\.?\s+(.+?)\s+(?:Game\s+)?Highlights\s*\|\s*(?:(\d{4})\s+)?NFL\s+(?:Season\s+)?(?:Week\s+(\d{1,2})|(Wild\s*Card|Divisional|Conference|Super\s*Bowl))/i;
+
+/** The two nicknames of a game, sorted: one key whichever side is home. */
+function highlightPair(a, b) {
+  return [normalizeTeam(a), normalizeTeam(b)].sort().join('_');
+}
+
+function decodeXml(text) {
+  return String(text)
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+/**
+ * The game-highlight videos in the feed's XML: [{ videoId, season, week, pair }].
+ * Anything that isn't a "<Team> vs <Team> Game Highlights | <season> NFL
+ * Season Week N" (or a playoff round) is left out.
+ */
+function parseHighlightFeed(xml, now = Date.now()) {
+  const out = [];
+  for (const entry of String(xml).split('<entry>').slice(1)) {
+    const id = /<yt:videoId>([\w-]{6,20})<\/yt:videoId>/.exec(entry);
+    const titleTag = /<title>([^<]*)<\/title>/.exec(entry);
+    if (!id || !titleTag) continue;
+    const m = HIGHLIGHT_TITLE.exec(decodeXml(titleTag[1]).trim());
+    if (!m) continue;
+    const published = /<published>([^<]+)<\/published>/.exec(entry);
+    const at = published ? Date.parse(published[1]) : now;
+    // "2026 NFL Season" is the season; a playoff title may only say the round,
+    // and a January upload belongs to the season before.
+    const season = m[3] ? Number(m[3]) : seasonFor(Number.isFinite(at) ? at : now);
+    const week = m[4] ? Number(m[4]) : HIGHLIGHT_ROUNDS[m[5].toLowerCase().replace(/\s+/g, ' ')];
+    if (!week || week < 1 || week > 22) continue;
+    out.push({ videoId: id[1], season, week, pair: highlightPair(teamNickname(m[1]), teamNickname(m[2])) });
+  }
+  return out;
+}
+
+/** The cron's step: add any new game highlights in the feed to KV. */
+async function recordHighlights(env) {
+  if (!env.NOTIFY_STATE) return { skipped: 'no KV' };
+  const response = await fetch(NFL_YOUTUBE_FEED);
+  if (!response.ok) throw new Error(`YouTube feed answered ${response.status}`);
+  const found = parseHighlightFeed(await response.text());
+  const bySeason = {};
+  for (const v of found) (bySeason[v.season] = bySeason[v.season] || []).push(v);
+  let added = 0;
+  for (const [season, videos] of Object.entries(bySeason)) {
+    const key = `highlights:${season}`;
+    const saved = JSON.parse(await env.NOTIFY_STATE.get(key) || '{}');
+    let changed = false;
+    for (const v of videos) {
+      const slot = `${v.week}:${v.pair}`;
+      // The first upload wins: a re-upload later in the feed doesn't move it.
+      if (saved[slot]) continue;
+      saved[slot] = v.videoId;
+      changed = true;
+      added++;
+    }
+    if (changed) await env.NOTIFY_STATE.put(key, JSON.stringify(saved));
+  }
+  return { found: found.length, added };
+}
+
+/** GET /highlights?season=YYYY&week=N -> { "<team>_<team>": videoId }. */
+async function handleHighlights(request, url, env, ctx) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405);
+  const season = url.searchParams.get('season');
+  const week = url.searchParams.get('week');
+  if (!/^\d{4}$/.test(season || '')) return jsonResponse({ error: 'Bad season' }, 400);
+  if (!/^\d{1,2}$/.test(week || '')) return jsonResponse({ error: 'Bad week' }, 400);
+
+  const cache = caches.default;
+  const cacheKey = new Request(`${url.origin}/highlights?season=${season}&week=${Number(week)}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
+  const saved = env.NOTIFY_STATE ? JSON.parse(await env.NOTIFY_STATE.get(`highlights:${season}`) || '{}') : {};
+  const prefix = `${Number(week)}:`;
+  const videos = {};
+  for (const [slot, id] of Object.entries(saved)) {
+    if (slot.startsWith(prefix)) videos[slot.slice(prefix.length)] = id;
+  }
+  const out = new Response(JSON.stringify({ season: Number(season), week: Number(week), videos }), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300', ...CORS_HEADERS },
   });
   ctx.waitUntil(cache.put(cacheKey, out.clone()));
   return out;

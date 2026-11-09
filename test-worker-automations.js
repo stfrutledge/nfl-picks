@@ -133,6 +133,8 @@ globalThis.fetch = async (url, init = {}) => {
         sent.push(JSON.parse(init.body).message);
         return new Response(JSON.stringify({ name: 'projects/x/messages/1' }));
     }
+    // The highlights step's YouTube feed (test-worker-highlights.js covers it).
+    if (u.startsWith('https://www.youtube.com/feeds/')) return new Response('<feed></feed>');
     throw new Error('unexpected fetch ' + u);
 };
 

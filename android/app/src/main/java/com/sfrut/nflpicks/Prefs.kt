@@ -125,6 +125,16 @@ class Prefs(context: Context) {
         get() = prefs.getBoolean("notify.spoilerFree", true)
         set(value) = prefs.edit().putBoolean("notify.spoilerFree", value).apply()
 
+    /**
+     * Spoiler-free highlights (Settings > Spoilers, 1.19+): when this phone's
+     * picker's Blazin' 5 games finish, the site shows the pick and the NFL's
+     * YouTube highlights before the score. On by default; the page asks for
+     * it (Bridge.spoilerHighlights) and reloads when Settings changes it.
+     */
+    var spoilerHighlights: Boolean
+        get() = prefs.getBoolean("spoilerHighlights", true)
+        set(value) = prefs.edit().putBoolean("spoilerHighlights", value).apply()
+
     var quietOn: Boolean
         get() = prefs.getBoolean("notify.quietOn", true)
         set(value) = prefs.edit().putBoolean("notify.quietOn", value).apply()
