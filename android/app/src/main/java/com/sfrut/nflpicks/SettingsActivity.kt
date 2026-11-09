@@ -216,7 +216,7 @@ class SettingsActivity : ComponentActivity() {
         /** Out: an admin action for MainActivity to have the page run. */
         const val EXTRA_ADMIN_ACTION = "adminAction"
         /** The actions the page's runAppAdminAction() knows. */
-        val ADMIN_ACTIONS = setOf("refresh-spreads", "export-picks")
+        val ADMIN_ACTIONS = setOf("refresh-spreads", "export-picks", "replay-highlights")
     }
 
     private lateinit var prefs: Prefs
@@ -707,8 +707,14 @@ class SettingsActivity : ComponentActivity() {
                 enabled = running == null,
                 modifier = Modifier.fillMaxWidth()
             ) { run("export-picks") }
+            // Closes Settings: the panel opens on the page behind.
+            PrimaryButton(
+                "Test spoiler-free highlights",
+                enabled = running == null,
+                modifier = Modifier.fillMaxWidth()
+            ) { runOnSite("replay-highlights") }
             result?.let { StatusLine(on = it.ok, it.message) }
-            Body("Export copies the week on screen, ready to paste into WhatsApp.")
+            Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays your finished Blazin' 5 games from this week and last.")
         }
     }
 

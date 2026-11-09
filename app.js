@@ -3396,6 +3396,26 @@ function appHighlightsClosed(ended) {
     renderHighlightsGate();
 }
 
+/**
+ * Admin Settings' "Test spoiler-free highlights" (1.19+): forget that the
+ * viewer's finished Blazin' 5 games were seen and open the panel on them, so
+ * it can be tried without waiting for a game to finish.
+ */
+function replayHighlights() {
+    if (!initialLoadComplete || highlightsGate) return;
+    const finished = new Set(viewerBlazinGames().filter(g => g.result).map(g => g.key));
+    if (!finished.size) {
+        showToast('No finished Blazin’ 5 games of yours this week or last to replay.');
+        return;
+    }
+    const seen = readHighlightsSeen() || new Set();
+    finished.forEach(key => seen.delete(key));
+    writeHighlightsSeen(seen);
+    // Coming back from Settings may already have put the cover up and started a check.
+    if (!highlightsChecking) holdForHighlights();
+    runHighlightsCheck({ refresh: false });
+}
+
 /** Cold start: cover the app before the first draw (called from init). */
 function startHighlightsGate() {
     if (!spoilerHighlightsOn()) return;
@@ -3439,6 +3459,10 @@ function highlightsVisibilityChanged(state) {
  */
 async function runAppAdminAction(action) {
     const app = window.NFLPicksApp;
+    if (action === 'replay-highlights') {
+        replayHighlights();
+        return;
+    }
     if (!app || typeof app.adminResult !== 'function') {
         const id = { 'refresh-spreads': 'refresh-spreads-btn', 'export-picks': 'export-all-picks-btn' }[action];
         if (id) document.getElementById(id)?.click();
