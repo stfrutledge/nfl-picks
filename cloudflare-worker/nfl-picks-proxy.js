@@ -1500,6 +1500,8 @@ async function searchMissingHighlights(env, saved, season, now) {
   // Regular season only: the playoffs' titles are not settled yet.
   if (!board || board.seasonType !== 2 || !board.week || board.season !== season) return null;
   for (const game of board.games) {
+    // The app's panel covers night games only (7pm ET or later, as isHighlightsNightGame in app.js).
+    if (!(easternHour(game.kickoff) >= 19)) continue;
     // The saved schedule has no results: long enough after kickoff counts as finished.
     if (!(game.kickoff + HIGHLIGHT_SEARCH_AFTER_KICKOFF_MS < now)) continue;
     const slot = `${board.week}:${highlightPair(game.away, game.home)}`;

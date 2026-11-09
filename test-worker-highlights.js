@@ -151,10 +151,10 @@ function section(name) { console.log(`\n${name}`); }
     section('A game the feed missed is looked up on YouTube search');
 
     // The week as the automations save it (board:current): nicknames and kickoffs, no results.
-    // "Finished" is a Sunday 4pm kickoff; not finished, one 2 hours before the run.
+    // "Finished" is Sunday night's kickoff; not finished, Monday night's, still to come at the run.
     const espnGame = (away, home, finished) => ({
         away: away.split(' ').pop(), home: home.split(' ').pop(),
-        kickoff: Date.parse(finished ? '2026-11-08T21:05:00Z' : '2026-11-09T18:00:00Z')
+        kickoff: Date.parse(finished ? '2026-11-09T01:20:00Z' : '2026-11-10T01:15:00Z')
     });
     const renderer = (id, title, channel) => `"videoRenderer":{"videoId":"${id}","thumbnail":{},"title":{"runs":[{"text":"${title}"}]},`
         + `"ownerText":{"runs":[{"text":"x","navigationEndpoint":{"browseEndpoint":{"browseId":"${channel}"}}}]}},`;
@@ -192,6 +192,14 @@ function section(name) { console.log(`\n${name}`); }
         await tickAt('2026-11-09T20:15:00Z');
         assert.deepStrictEqual(searches, ['Cardinals vs Seahawks Game Highlights 2026 NFL Season Week 9']);
         assert.deepStrictEqual(saved(2026), {});
+    });
+
+    await check('a day game is never searched for: the app only covers night games', async () => {
+        kv.set('board:current', JSON.stringify({ savedAt: 0, season: 2026, seasonType: 2, week: 9,
+            games: [{ away: 'Jets', home: 'Bills', kickoff: Date.parse('2026-11-08T18:00:00Z') }] }));
+        searchPage = renderer('x0000000001', 'New York Jets vs. Buffalo Bills Game Highlights | 2026 NFL Season Week 9', NFL);
+        await tickAt('2026-11-09T20:00:00Z');
+        assert.deepStrictEqual(searches, []);
     });
 
     await check('a game the feed already has is not searched for', async () => {

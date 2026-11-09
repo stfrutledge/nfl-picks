@@ -438,7 +438,7 @@ class SettingsActivity : ComponentActivity() {
             ) { spoilerFree = it; prefs.spoilerFree = it }
             ToggleRow(
                 "Spoiler-free highlights",
-                if (highlights) "When your Blazin' 5 games finish, the app shows your pick and the highlights before the score."
+                if (highlights) "When your Blazin' 5 night games finish (Thursday, Sunday and Monday nights), the app shows your pick and the highlights before the score."
                 else "The app shows scores as soon as you open it.",
                 highlights
             ) { highlights = it; prefs.spoilerHighlights = it }
@@ -714,7 +714,7 @@ class SettingsActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             ) { runOnSite("replay-highlights") }
             result?.let { StatusLine(on = it.ok, it.message) }
-            Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays your finished Blazin' 5 games from this week and last.")
+            Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays your finished Blazin' 5 night games from this week and last.")
         }
     }
 

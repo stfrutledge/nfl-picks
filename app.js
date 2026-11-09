@@ -3044,8 +3044,25 @@ function highlightsWeeks(base = CURRENT_NFL_WEEK) {
     return [base - 1, base, base + 1].filter(w => w >= 1 && !isPlayoffWeek(w) && w <= TOTAL_WEEKS);
 }
 
+// A night game kicks off at this hour ET or later: past midnight in Ireland.
+const HIGHLIGHTS_NIGHT_HOUR_ET = 19;
+
 /**
- * The viewer's Blazin' 5 games in those weeks: [{ week, game, pick, key, result }],
+ * Whether the panel covers a game: the night games only (the owner's rule),
+ * the ones the group in Ireland sleeps through. Thursday, Sunday and Monday
+ * nights, late-season Saturday nights, a Monday double-header's early game.
+ * Read off the kickoff in ET, not the day: Thanksgiving's afternoon games are
+ * a Thursday, but early evening in Ireland.
+ */
+function isHighlightsNightGame(game) {
+    const kickoff = kickoffDate(game);
+    if (!kickoff) return isPrimetimeGame(game);
+    const hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/New_York' }).format(kickoff));
+    return hour >= HIGHLIGHTS_NIGHT_HOUR_ET;
+}
+
+/**
+ * The viewer's Blazin' 5 night games in those weeks: [{ week, game, pick, key, result }],
  * by kickoff, `result` null for a game not finished. Blazin' 5 is regular season only.
  */
 function viewerBlazinGames(viewer = highlightsViewer(), weeks = highlightsWeeks()) {
@@ -3055,6 +3072,7 @@ function viewerBlazinGames(viewer = highlightsViewer(), weeks = highlightsWeeks(
         const games = NFL_GAMES_BY_WEEK[week] || [];
         const picks = getPickerPicksForWeek(week, viewer);
         for (const game of games) {
+            if (!isHighlightsNightGame(game)) continue;
             const pick = getPicksForGame(picks, game);
             if (!pick.blazin || !pick.line) continue;
             out.push({ week, game, pick, key: `${week}:${pickKey(game)}`, result: getGameResult(game, NFL_RESULTS_BY_WEEK[week]) });
@@ -3405,7 +3423,7 @@ function replayHighlights() {
     if (!initialLoadComplete || highlightsGate) return;
     const finished = new Set(viewerBlazinGames().filter(g => g.result).map(g => g.key));
     if (!finished.size) {
-        showToast('No finished Blazin’ 5 games of yours this week or last to replay.');
+        showToast('No finished Blazin’ 5 night games of yours this week or last to replay.');
         return;
     }
     const seen = readHighlightsSeen() || new Set();

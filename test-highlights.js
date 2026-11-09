@@ -75,11 +75,13 @@ const APP = { spoilerHighlights: () => true, picker: () => 'Stephen' };
 function slate(api) {
     const week = api.CURRENT_NFL_WEEK;
     api.NFL_GAMES_BY_WEEK[week - 1] = [
-        game(1, 'Bengals', 'Falcons', '2026-11-08T18:00:00Z', [27, 20]),
+        game(1, 'Bengals', 'Falcons', '2026-11-06T01:15:00Z', [27, 20]),   // Thursday night
         game(2, 'Buccaneers', 'Bears', '2026-11-09T01:20:00Z', [17, 24]),
         game(3, 'Cowboys', 'Eagles', '2026-11-10T01:15:00Z', [20, 23], { spread: 3, favorite: 'home' }),
         game(4, 'Jets', 'Bills', '2026-11-08T18:00:00Z', [10, 30]),
-        game(9, 'Rams', 'Seahawks', '2026-11-01T18:00:00Z', [17, 16])
+        game(9, 'Rams', 'Seahawks', '2026-11-02T01:20:00Z', [17, 16]),     // last Sunday night
+        game(6, 'Lions', 'Packers', '2026-11-08T18:00:00Z', [30, 10]),     // Sunday 1pm: a day game
+        game(7, 'Giants', 'Cowboys', '2026-11-26T17:30:00Z', [20, 27])     // Thanksgiving afternoon: a Thursday, but not a night game
     ];
     api.NFL_GAMES_BY_WEEK[week] = [game(5, 'Steelers', 'Ravens', '2026-11-13T01:15:00Z', null)];
     const star = line => ({ line, winner: line, blazin: true });
@@ -90,6 +92,7 @@ function slate(api) {
                 Stephen: {
                     bengals_falcons: star('away'), buccaneers_bears: star('home'),
                     cowboys_eagles: star('away'), rams_seahawks: star('home'),
+                    lions_packers: star('away'), giants_cowboys: star('home'),
                     jets_bills: { line: 'home', winner: 'home' }   // not a Blazin' pick
                 },
                 Dylan: { jets_bills: star('away') }
@@ -134,6 +137,15 @@ check('in kickoff order, a game still to come with no result', () => {
     assert.deepStrictEqual(games.map(g => g.game.id), [9, 1, 2, 3, 5]);
     assert.strictEqual(games[4].week, week);
     assert.strictEqual(games[4].result, null);
+});
+
+check('night games only: a Sunday 1pm game and Thanksgiving afternoon are left out', () => {
+    const { api } = load(APP);
+    slate(api);
+    const ids = api.viewerBlazinGames().map(g => g.game.id);
+    assert.ok(!ids.includes(6), 'Sunday 1pm');
+    assert.ok(!ids.includes(7), 'Thanksgiving afternoon, a Thursday');
+    assert.ok(ids.includes(1) && ids.includes(2) && ids.includes(3), 'Thursday, Sunday and Monday nights');
 });
 
 check('no playoff weeks: the Blazin\' 5 is regular season only', () => {
