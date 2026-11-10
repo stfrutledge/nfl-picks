@@ -9315,6 +9315,33 @@ body.live-provisional #as-is-standings-table {
 body.highlights-open { overflow: hidden; }
 
 .hl-checking .hl-spinner { margin: 0; }
+
+/* The check before the panel: the site itself, header and tabs, with
+   everything under the tabs held back behind a spinner (holdForHighlights). */
+.hl-hold { display: none; }
+body.highlights-checking #dashboard > *:not(.category-tabs):not(.hl-hold) { display: none !important; }
+body.highlights-checking .category-tabs { pointer-events: none; }
+body.highlights-checking .hl-hold {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 72px 16px;
+    min-height: 75vh;
+    box-sizing: border-box;
+    color: var(--text-light);
+    text-align: center;
+}
+.hl-hold-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--nfl-blue);
+    border-radius: 50%;
+    animation: hl-spin 0.9s linear infinite;
+}
+[data-theme="dark"] .hl-hold-spinner { border-top-color: var(--text-primary); }
+.hl-hold-label { font-size: 0.9rem; margin: 0; }
 .hl-checking {
     min-height: 70vh;
     display: flex;

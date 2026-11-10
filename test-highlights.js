@@ -37,7 +37,7 @@ function load(bridge) {
         + fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8')
         + `;return { spoilerHighlightsOn, highlightsViewer, viewerBlazinGames, unseenFinishedBlazin, markHighlightsSeen,
             markVisibleFinalsSeen, readHighlightsSeen, highlightsPair, highlightsPickText, highlightsResultHtml,
-            highlightsWeeks, playHighlightsVideo, NFL_GAMES_BY_WEEK, CURRENT_NFL_WEEK, CURRENT_SEASON,
+            highlightsWeeks, playHighlightsVideo, highlightsNeedCheck, noteHighlightsLooked, NFL_GAMES_BY_WEEK, CURRENT_NFL_WEEK, CURRENT_SEASON,
             __setState: s => {
                 if ('allPicks' in s) allPicks = s.allPicks;
                 if ('currentPicker' in s) currentPicker = s.currentPicker;
@@ -250,6 +250,63 @@ check('the reveal grades the pick at its line: covered, lost, push', () => {
     assert.match(html(3), />Push</);             // Cowboys +3, lost by 3
     assert.match(html(9), /Your pick lost/);      // Seahawks -2.5, lost outright
     assert.ok(html(2).indexOf('>17<') < html(2).indexOf('>24<'), 'away score first');
+});
+
+section('When a cold start checks at all');
+
+const looked = (store, at, kickoffs) => store.set('highlightsLooked_2026', JSON.stringify({ at: Date.parse(at), kickoffs: kickoffs.map(Date.parse) }));
+// Week 10 of 2026: Thursday night Nov 12, Sunday night Nov 15, Monday night Nov 16 (UTC kickoffs).
+const WEEK10 = ['2026-11-13T01:15:00Z', '2026-11-16T01:20:00Z', '2026-11-17T01:15:00Z'];
+
+check('the first time ever: check', () => {
+    const { api } = load(APP);
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-11T12:00:00Z')), true);
+});
+
+check('Wednesday, opened Tuesday, Thursday night still to come: straight in', () => {
+    const { api, store } = load(APP);
+    looked(store, '2026-11-10T12:00:00Z', WEEK10);
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-11T12:00:00Z')), false);
+});
+
+check('Friday morning after Thursday night, not opened since Wednesday: check', () => {
+    const { api, store } = load(APP);
+    looked(store, '2026-11-11T12:00:00Z', WEEK10);
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-13T08:00:00Z')), true);
+});
+
+check('Friday afternoon, already opened Friday morning: straight in', () => {
+    const { api, store } = load(APP);
+    looked(store, '2026-11-13T08:00:00Z', WEEK10);
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-13T15:00:00Z')), false);
+});
+
+check('opened mid-game, then again the next morning: check (it finished after)', () => {
+    const { api, store } = load(APP);
+    looked(store, '2026-11-13T02:30:00Z', WEEK10);   // during Thursday night's game
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-13T08:00:00Z')), true);
+});
+
+check('past every night kickoff it knows of: check (a game it never heard of)', () => {
+    const { api, store } = load(APP);
+    looked(store, '2026-11-17T08:00:00Z', WEEK10);
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-18T12:00:00Z')), true);
+});
+
+check('not opened for a week: check', () => {
+    const { api, store } = load(APP);
+    looked(store, '2026-11-01T12:00:00Z', [...WEEK10, '2026-12-01T01:15:00Z']);
+    assert.strictEqual(api.highlightsNeedCheck(Date.parse('2026-11-12T12:00:00Z')), true);
+});
+
+check('looking at the app records the night kickoffs it knows, day games left out', () => {
+    const { api, store } = load(APP);
+    slate(api);
+    api.noteHighlightsLooked(Date.parse(NOW));
+    const saved = JSON.parse(store.get('highlightsLooked_2026'));
+    assert.strictEqual(saved.at, Date.parse(NOW));
+    assert.ok(saved.kickoffs.includes(Date.parse('2026-11-13T01:15:00Z')), 'next Thursday night');
+    assert.ok(!saved.kickoffs.includes(Date.parse('2026-11-08T18:00:00Z')), 'a Sunday 1pm game');
 });
 
 section('The video');

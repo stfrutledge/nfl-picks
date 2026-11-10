@@ -3118,12 +3118,58 @@ function unseenFinishedBlazin(now = Date.now(), viewer = highlightsViewer()) {
  * The app is on screen with no panel over it: whatever has finished is in
  * plain view, so it counts as seen. Called after every redraw.
  */
-function markVisibleFinalsSeen() {
+function markVisibleFinalsSeen(now = Date.now()) {
     if (highlightsGate || highlightsChecking || !initialLoadComplete) return;
     if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
     if (!spoilerHighlightsOn()) return;
     const finished = viewerBlazinGames().filter(g => g.result).map(g => g.key);
     if (finished.length) markHighlightsSeen(finished);
+    noteHighlightsLooked(now);
+}
+
+// --- when to check at all ------------------------------------------------------
+//
+// A cold start only holds the page back when a night game has kicked off since
+// the app was last on screen: the phone keeps the night kickoffs it knows
+// (every night game, picked or not, so a pick made on another device is
+// covered) and when it last looked (`highlightsLooked_<season>`). Opening the
+// app on a Wednesday goes straight in.
+
+// A night game is over within this long of kickoff.
+const HIGHLIGHTS_GAME_LENGTH_MS = 5 * 60 * 60 * 1000;
+// A record this old says nothing about the week now: check.
+const HIGHLIGHTS_LOOKED_STALE_MS = 6 * 24 * 60 * 60 * 1000;
+let highlightsLookedWrittenAt = 0;
+
+function highlightsLookedKey(season = CURRENT_SEASON) {
+    return `highlightsLooked_${season}`;
+}
+
+/** The app was on screen with nothing held back: note when, and the night kickoffs ahead. */
+function noteHighlightsLooked(now = Date.now()) {
+    if (now - highlightsLookedWrittenAt < 60000) return;   // after every redraw: once a minute is plenty
+    const kickoffs = [];
+    for (const week of highlightsWeeks().concat(CURRENT_NFL_WEEK + 2)) {
+        for (const game of NFL_GAMES_BY_WEEK[week] || []) {
+            const at = kickoffDate(game)?.getTime();
+            if (at && isHighlightsNightGame(game)) kickoffs.push(at);
+        }
+    }
+    try {
+        localStorage.setItem(highlightsLookedKey(), JSON.stringify({ at: now, kickoffs }));
+        highlightsLookedWrittenAt = now;
+    } catch { /* storage full or off: the next start checks */ }
+}
+
+/** Whether a cold start has to check: a night game kicked off since the app was last looked at. */
+function highlightsNeedCheck(now = Date.now()) {
+    let looked;
+    try { looked = JSON.parse(localStorage.getItem(highlightsLookedKey()) || 'null'); } catch { looked = null; }
+    if (!looked || !Number.isFinite(looked.at) || !Array.isArray(looked.kickoffs)) return true;
+    if (now - looked.at > HIGHLIGHTS_LOOKED_STALE_MS) return true;
+    // Past the last night kickoff it knew of: a game since then is one it never heard of.
+    if (!looked.kickoffs.some(k => k > now)) return true;
+    return looked.kickoffs.some(k => k <= now && k + HIGHLIGHTS_GAME_LENGTH_MS > looked.at);
 }
 
 /** "Bears_Buccaneers" either way round: the worker's key for a game's video. */
@@ -3165,18 +3211,30 @@ function highlightsEl() {
     return el;
 }
 
-/** Cover the app while it decides. Nothing behind the panel can be seen. */
+/**
+ * The site's own page while it decides: header and tabs as usual, everything
+ * under them held back (body.highlights-checking) behind a spinner, so it reads
+ * as the page loading rather than a different screen. No score shows.
+ */
 function holdForHighlights() {
     highlightsChecking = true;
-    const el = highlightsEl();
-    el.innerHTML = `<div class="hl-checking"><div class="hl-spinner" aria-hidden="true"></div><p>Checking your Blazin' 5...</p></div>`;
-    el.classList.add('show');
-    document.body.classList.add('highlights-open');
+    let hold = document.getElementById('highlights-hold');
+    if (!hold) {
+        hold = document.createElement('div');
+        hold.id = 'highlights-hold';
+        hold.className = 'hl-hold';
+        hold.setAttribute('role', 'status');
+        hold.addEventListener('click', onHighlightsClick);
+        const tabs = document.querySelector('#dashboard .category-tabs');
+        if (tabs) tabs.after(hold); else document.getElementById('dashboard')?.prepend(hold);
+    }
+    hold.innerHTML = '<div class="hl-hold-spinner" aria-hidden="true"></div><span class="hl-hold-label">Loading...</span>';
+    document.body.classList.add('highlights-checking');
     clearTimeout(highlightsCheckTimer);
     highlightsCheckTimer = setTimeout(() => {
         if (!highlightsChecking) return;
-        el.innerHTML = `<div class="hl-checking"><p>Couldn't check for new results.</p>
-            <button type="button" class="hl-btn hl-btn-secondary" data-hl="release">Open the app (may show scores)</button></div>`;
+        hold.innerHTML = `<p class="hl-hold-label">Couldn't check for new results.</p>
+            <button type="button" class="btn-primary" data-hl="release">Open anyway (may show scores)</button>`;
     }, HIGHLIGHTS_CHECK_TIMEOUT_MS);
 }
 
@@ -3187,7 +3245,7 @@ function releaseHighlights() {
     clearTimeout(highlightsCheckTimer);
     const el = document.getElementById('highlights-gate');
     if (el) { el.classList.remove('show'); el.innerHTML = ''; }
-    document.body.classList.remove('highlights-open');
+    document.body.classList.remove('highlights-open', 'highlights-checking');
     if (highlightsHistory) {
         highlightsHistory = false;
         try { window.history.back(); } catch { /* nothing to undo */ }
@@ -3451,7 +3509,7 @@ function replayHighlights() {
 /** Cold start: cover the app before the first draw (called from init). */
 function startHighlightsGate() {
     if (!spoilerHighlightsOn()) return;
-    holdForHighlights();
+    if (highlightsNeedCheck()) holdForHighlights();
     window.addEventListener('popstate', () => {
         if (highlightsHistory) {
             highlightsHistory = false;
