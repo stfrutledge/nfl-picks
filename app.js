@@ -3005,7 +3005,7 @@ const HIGHLIGHTS_FIRST_RUN_MS = 24 * 60 * 60 * 1000;
 // A check that has not finished after this offers the way out instead of hanging.
 const HIGHLIGHTS_CHECK_TIMEOUT_MS = 25000;
 
-let highlightsGate = null;      // { games, index, phase, deferred } while the panel is up
+let highlightsGate = null;      // { games (each with state), last, playing } while the panel is up
 let highlightsChecking = false; // the panel is up, deciding whether there is anything to show
 let highlightsCheckTimer = null;
 let highlightsCheckRunning = false; // runHighlightsCheck is in flight
@@ -3314,21 +3314,30 @@ async function runHighlightsCheck({ refresh = true, fresh = [] } = {}) {
 function openHighlightsGate(games) {
     highlightsChecking = false;
     clearTimeout(highlightsCheckTimer);
-    highlightsGate = { games, index: 0, phase: 'list', deferred: [] };
-    // Back (the phone's, or the app's) closes the panel like "Go straight to results".
-    if (!highlightsHistory) {
-        try { window.history.pushState({ highlights: true }, ''); highlightsHistory = true; } catch { /* Back leaves as before */ }
-    }
+    document.body.classList.remove('highlights-checking');
+    // Each game: 'new' (not watched), 'watched' (back from its video), 'revealed'.
+    games.forEach(g => { g.state = 'new'; });
+    highlightsGate = { games, last: null };
+    // Back (the phone's, or the app's) leaves the panel only once every result
+    // is out; before that it stays (see startHighlightsGate's popstate).
+    pushHighlightsHistory();
     renderHighlightsGate();
+}
+
+function pushHighlightsHistory() {
+    if (highlightsHistory) return;
+    try { window.history.pushState({ highlights: true }, ''); highlightsHistory = true; } catch { /* Back leaves as before */ }
 }
 
 function hlEscape(text) {
     return String(text ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/** Both teams' logos and names, away left, as the Game Details hero. */
+/** Both teams' logos and names, away left; the logo set follows the site's theme. */
 function highlightsMatchupHtml(game) {
-    const team = name => `<div class="hl-team"><img src="${hlEscape(getTeamLogoOnDark(name) || getTeamLogo(name))}" alt=""><span>${hlEscape(name)}</span></div>`;
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const logo = name => (dark && getTeamLogoOnDark(name)) || getTeamLogo(name);
+    const team = name => `<div class="hl-team"><img src="${hlEscape(logo(name))}" alt=""><span>${hlEscape(name)}</span></div>`;
     return `<div class="hl-matchup">${team(game.away)}<span class="hl-at">@</span>${team(game.home)}</div>`;
 }
 
@@ -3344,134 +3353,93 @@ function highlightsResultHtml(g) {
         : ats === 'push' ? { cls: 'push', text: 'Push' }
         : ats === g.pick.line ? { cls: 'win', text: 'Your pick covered' }
         : { cls: 'loss', text: 'Your pick lost' };
-    return `<div class="hl-score">
+    return `<div class="hl-result">
+        <div class="hl-score">
             <span class="hl-score-team">${hlEscape(g.game.away)}</span><span class="hl-score-num">${result.awayScore}</span>
             <span class="hl-score-dash">-</span>
             <span class="hl-score-num">${result.homeScore}</span><span class="hl-score-team">${hlEscape(g.game.home)}</span>
         </div>
-        <div class="hl-outcome hl-outcome-${outcome.cls}">${outcome.text}</div>`;
+        <div class="hl-outcome hl-outcome-${outcome.cls}">${outcome.text}</div>
+    </div>`;
+}
+
+/** One game's card: tap it to watch; its result only once asked for. */
+function highlightsCardHtml(g, i) {
+    let actions;
+    if (g.state === 'revealed') {
+        actions = highlightsResultHtml(g)
+            + (g.videoId ? `<button type="button" class="hl-link" data-hl="play" data-i="${i}">Watch again</button>` : '');
+    } else if (!g.videoId) {
+        actions = `<p class="hl-note">Highlights aren’t up yet. The NFL usually posts them within a few hours of the game.</p>
+            <button type="button" class="hl-btn hl-btn-secondary" data-hl="reveal" data-i="${i}">Show result</button>`;
+    } else if (g.state === 'watched') {
+        actions = `<button type="button" class="hl-btn hl-btn-primary" data-hl="reveal" data-i="${i}">Show result</button>
+            <button type="button" class="hl-link" data-hl="play" data-i="${i}">Watch again</button>`;
+    } else {
+        actions = `<div class="hl-watch"><span class="hl-play" aria-hidden="true"></span>Tap to watch the highlights</div>
+            <button type="button" class="hl-link" data-hl="reveal" data-i="${i}">Skip to the result</button>`;
+    }
+    const playable = g.videoId && g.state === 'new';
+    return `<li class="hl-game hl-game-${g.state}${playable ? ' hl-game-playable' : ''}" id="hl-game-${i}"${playable ? ` data-hl="play" data-i="${i}" role="button" tabindex="0"` : ''}>
+        ${highlightsMatchupHtml(g.game)}
+        <div class="hl-when">${hlEscape(displayGameDay(g.game))} ${hlEscape(displayGameTime(g.game))}</div>
+        <div class="hl-pick">Your pick: <strong>${hlEscape(highlightsPickText(g))}</strong></div>
+        <div class="hl-game-actions">${actions}</div>
+    </li>`;
 }
 
 function renderHighlightsGate() {
     const gate = highlightsGate;
     const el = highlightsEl();
     if (!gate) return;
-    let html;
-    if (gate.phase === 'list') {
-        const n = gate.games.length;
-        html = `<div class="hl-card">
-            <div class="hl-kicker">Spoiler-free</div>
-            <h2 class="hl-title">${n === 1 ? 'One of your Blazin’ 5 games has finished' : `${n} of your Blazin’ 5 games have finished`}</h2>
-            <ul class="hl-list">${gate.games.map(g => `<li class="hl-list-item">
-                ${highlightsMatchupHtml(g.game)}
-                <div class="hl-when">${hlEscape(displayGameDay(g.game))} ${hlEscape(displayGameTime(g.game))}</div>
-                <div class="hl-pick">Your pick: <strong>${hlEscape(highlightsPickText(g))}</strong></div>
-            </li>`).join('')}</ul>
-            <div class="hl-actions">
-                <button type="button" class="hl-btn hl-btn-primary" data-hl="watch">Watch highlights first</button>
-                <button type="button" class="hl-btn hl-btn-secondary" data-hl="results">Go straight to results</button>
-            </div>
-        </div>`;
-    } else if (gate.phase === 'done') {
-        const later = gate.deferred.length;
-        html = `<div class="hl-card">
-            <div class="hl-kicker">Spoiler-free</div>
-            <h2 class="hl-title">${later === 1 ? 'One game’s highlights aren’t up yet' : `${later} games’ highlights aren’t up yet`}</h2>
-            <p class="hl-note">Leave the app and come back later to watch ${later === 1 ? 'it' : 'them'} first. Opening the app shows every score.</p>
-            <div class="hl-actions">
-                <button type="button" class="hl-btn hl-btn-secondary" data-hl="results">Show the results now</button>
-            </div>
-        </div>`;
-    } else {
-        const g = gate.games[gate.index];
-        const step = `Game ${gate.index + 1} of ${gate.games.length}`;
-        const last = gate.index === gate.games.length - 1;
-        let body;
-        if (gate.phase === 'result') {
-            body = `${highlightsResultHtml(g)}
-                <div class="hl-actions">
-                    <button type="button" class="hl-btn hl-btn-primary" data-hl="next">${last ? 'Done' : 'Next game'}</button>
-                </div>`;
-        } else if (g.videoId) {
-            body = `<div class="hl-video" id="hl-video">
-                    <button type="button" class="hl-poster" data-hl="play" aria-label="Play the highlights">
-                        <span class="hl-play" aria-hidden="true"></span><span>${gate.watched ? 'Watch again' : 'Play highlights'}</span>
-                    </button>
-                </div>
-                <div class="hl-actions">
-                    <button type="button" class="hl-btn ${gate.watched ? 'hl-btn-primary' : 'hl-btn-secondary'}" data-hl="reveal">${gate.watched ? 'Show result' : 'Skip to the result'}</button>
-                </div>`;
-        } else {
-            body = `<p class="hl-note">The highlights aren’t up yet. The NFL usually posts them within a few hours of the game.</p>
-                <div class="hl-actions">
-                    <button type="button" class="hl-btn hl-btn-primary" data-hl="reveal">Show result</button>
-                    <button type="button" class="hl-btn hl-btn-secondary" data-hl="later">Keep it hidden</button>
-                </div>`;
-        }
-        html = `<div class="hl-card">
-            <div class="hl-kicker">${step}</div>
-            ${highlightsMatchupHtml(g.game)}
-            <div class="hl-pick">Your pick: <strong>${hlEscape(highlightsPickText(g))}</strong></div>
-            ${body}
-        </div>`;
-    }
-    el.innerHTML = html;
+    const n = gate.games.length;
+    const hidden = gate.games.filter(g => g.state !== 'revealed').length;
+    const label = highlightsReplayAll ? 'Blazin’ 5 games' : 'Blazin’ 5 night games';
+    el.innerHTML = `<div class="hl-card">
+        <div class="hl-kicker">Spoiler-free</div>
+        <h2 class="hl-title">${n === 1 ? `One of your ${label} has finished` : `${n} of your ${label} have finished`}</h2>
+        <p class="hl-sub">Tap a game to watch its highlights. Each result stays hidden until you ask for it.</p>
+        <ul class="hl-list">${gate.games.map(highlightsCardHtml).join('')}</ul>
+        <div class="hl-actions">${hidden
+            ? `<button type="button" class="hl-btn hl-btn-secondary" data-hl="results">Show all results</button>`
+            : `<button type="button" class="hl-btn hl-btn-primary" data-hl="done">Done</button>`}</div>
+    </div>`;
     el.classList.add('show');
     document.body.classList.add('highlights-open');
-    el.scrollTop = 0;
+    // Keep the game just played or revealed in view.
+    if (gate.last !== null) document.getElementById(`hl-game-${gate.last}`)?.scrollIntoView({ block: 'nearest' });
 }
 
 function onHighlightsClick(event) {
-    const action = event.target.closest('[data-hl]')?.dataset.hl;
+    const target = event.target.closest('[data-hl]');
+    const action = target?.dataset.hl;
     if (!action) return;
-    const gate = highlightsGate;
     if (action === 'release') { releaseHighlights(); return; }
+    const gate = highlightsGate;
     if (!gate) return;
-    const g = gate.games[gate.index];
-    if (action === 'results') {
+    const i = Number(target.dataset.i);
+    const g = gate.games[i];
+    if (action === 'results' || action === 'done') {
         markHighlightsSeen(gate.games.map(x => x.key));
         releaseHighlights();
-    } else if (action === 'watch') {
-        gate.phase = 'video';
-        gate.index = 0;
-        gate.ended = false;
-        gate.watched = false;
-        renderHighlightsGate();
-    } else if (action === 'play') {
+    } else if (action === 'play' && g?.videoId) {
+        event.stopPropagation();
+        gate.last = i;
+        gate.playing = i;
         playHighlightsVideo(g.videoId);
-    } else if (action === 'reveal') {
+    } else if (action === 'reveal' && g) {
+        event.stopPropagation();
         markHighlightsSeen([g.key]);
-        gate.phase = 'result';
+        g.state = 'revealed';
+        gate.last = i;
         renderHighlightsGate();
-    } else if (action === 'later') {
-        gate.deferred.push(g.key);
-        advanceHighlights();
-    } else if (action === 'next') {
-        advanceHighlights();
-    }
-}
-
-function advanceHighlights() {
-    const gate = highlightsGate;
-    gate.ended = false;
-    gate.watched = false;
-    if (gate.index < gate.games.length - 1) {
-        gate.index++;
-        gate.phase = 'video';
-        renderHighlightsGate();
-    } else if (gate.deferred.length) {
-        gate.phase = 'done';
-        renderHighlightsGate();
-    } else {
-        releaseHighlights();
     }
 }
 
 /**
  * Play a game's highlights. The NFL blocks its videos from YouTube's embedded
- * player on other sites, so the app (1.19+) plays it on a screen of its own:
- * YouTube's page with everything but the player hidden, closed as the video
- * ends. Coming back, the app calls appHighlightsClosed().
+ * player on other sites, so the app (1.19+) plays it on a screen of its own.
+ * Coming back, the app calls appHighlightsClosed().
  */
 function playHighlightsVideo(videoId) {
     try {
@@ -3481,12 +3449,13 @@ function playHighlightsVideo(videoId) {
     }
 }
 
-/** Back from the video (the app, 1.19+): `ended` when it played to the end. */
+/** Back from the video (the app, 1.19+): that game is watched, its result a tap away. */
 function appHighlightsClosed(ended) {
     const gate = highlightsGate;
-    if (!gate || gate.phase !== 'video') return;
-    gate.watched = true;
-    if (ended) gate.ended = true;
+    if (!gate || gate.playing == null) return;
+    const g = gate.games[gate.playing];
+    gate.playing = null;
+    if (g && g.state === 'new') g.state = 'watched';
     renderHighlightsGate();
 }
 
@@ -3519,11 +3488,18 @@ function startHighlightsGate() {
     if (!spoilerHighlightsOn()) return;
     if (highlightsNeedCheck()) holdForHighlights();
     window.addEventListener('popstate', () => {
-        if (highlightsHistory) {
-            highlightsHistory = false;
-            if (highlightsGate) markHighlightsSeen(highlightsGate.games.map(g => g.key));
-            releaseHighlights();
+        if (!highlightsHistory) return;
+        highlightsHistory = false;
+        if (!highlightsGate) return;
+        // Results still hidden: Back stays on the panel (the owner's ask);
+        // "Show all results" is the way out. All out: Back closes it.
+        if (highlightsGate.games.some(g => g.state !== 'revealed')) {
+            pushHighlightsHistory();
+            showToast('Tap Show all results to leave the highlights.');
+            return;
         }
+        markHighlightsSeen(highlightsGate.games.map(g => g.key));
+        releaseHighlights();
     });
 }
 

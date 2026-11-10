@@ -9298,14 +9298,15 @@ body.live-provisional #as-is-standings-table {
 
 /* ==========================================================================
    Spoiler-free highlights (Android app 1.19+): a full-screen panel over the
-   app, opaque so no score behind it shows. Dark like the Game Details hero.
+   app, opaque so no score behind it shows, in the site's own colours (light
+   or dark, following its theme toggle).
    ========================================================================== */
 .highlights-gate {
     position: fixed;
     inset: 0;
     z-index: 3000;
-    background: var(--bg-dark);
-    color: #fff;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     overflow-y: auto;
     display: none;
     padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
@@ -9314,7 +9315,7 @@ body.live-provisional #as-is-standings-table {
 .highlights-gate.show { display: block; }
 body.highlights-open { overflow: hidden; }
 
-.hl-checking .hl-spinner { margin: 0; }
+@keyframes hl-spin { to { transform: rotate(360deg); } }
 
 /* The check before the panel: the site itself, header and tabs, with
    everything under the tabs held back behind a spinner (holdForHighlights). */
@@ -9342,33 +9343,13 @@ body.highlights-checking .hl-hold {
 }
 [data-theme="dark"] .hl-hold-spinner { border-top-color: var(--text-primary); }
 .hl-hold-label { font-size: 0.9rem; margin: 0; }
-.hl-checking {
-    min-height: 70vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    color: #d4d4d4;
-    text-align: center;
-}
-.hl-spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid rgba(255, 255, 255, 0.2);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: hl-spin 0.9s linear infinite;
-    margin: auto;
-}
-@keyframes hl-spin { to { transform: rotate(360deg); } }
 
 .hl-card {
     max-width: 560px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
 }
 .hl-kicker {
     color: var(--accent-green);
@@ -9380,21 +9361,28 @@ body.highlights-checking .hl-hold {
     padding-bottom: 8px;
 }
 .hl-title {
-    font-size: 1.35rem;
+    font-size: 1.3rem;
     font-weight: 800;
     line-height: 1.25;
     margin: 0;
 }
+.hl-sub { margin: 0; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.4; }
+
 .hl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.hl-list-item {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+.hl-game {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 12px;
+    padding: 14px 12px;
     display: flex;
     flex-direction: column;
     gap: 6px;
+    box-shadow: var(--shadow-sm);
 }
+.hl-game-playable { cursor: pointer; }
+.hl-game-playable:active { background: var(--bg-hover); }
+.hl-game-revealed { border-color: var(--border-light); }
+
 .hl-matchup {
     display: flex;
     align-items: center;
@@ -9414,56 +9402,31 @@ body.highlights-checking .hl-hold {
     text-align: center;
 }
 .hl-team img { width: 48px; height: 48px; object-fit: contain; }
-.hl-card > .hl-matchup .hl-team img { width: 72px; height: 72px; }
-.hl-at { color: #a3a3a3; font-weight: 700; }
-.hl-when { color: #a3a3a3; font-size: 0.8rem; text-align: center; }
-.hl-pick { text-align: center; color: #e5e5e5; }
-.hl-pick strong { color: #fff; }
-.hl-note { color: #d4d4d4; text-align: center; margin: 0; line-height: 1.45; }
+.hl-at { color: var(--text-light); font-weight: 700; }
+.hl-when { color: var(--text-light); font-size: 0.8rem; text-align: center; }
+.hl-pick { text-align: center; color: var(--text-secondary); }
+.hl-pick strong { color: var(--text-primary); }
+.hl-note { color: var(--text-secondary); text-align: center; margin: 0; line-height: 1.45; font-size: 0.9rem; }
 
-.hl-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
-.hl-btn {
-    width: 100%;
-    min-height: 48px;
-    border-radius: 10px;
-    font: inherit;
-    font-weight: 700;
-    font-size: 1rem;
-    cursor: pointer;
-    border: 1px solid transparent;
-}
-.hl-btn-primary { background: #fff; color: #0a0a0a; }
-.hl-btn-secondary { background: transparent; color: #fff; border-color: rgba(255, 255, 255, 0.35); }
-.hl-btn:active { transform: scale(0.99); }
-
-.hl-video {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    background: #000;
-    border-radius: 12px;
-    overflow: hidden;
-    display: flex;
-}
-.hl-video iframe { width: 100%; height: 100%; border: 0; }
-/* Our own poster, not YouTube's thumbnail, which can give the result away. */
-.hl-poster {
-    flex: 1;
+.hl-game-actions {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background: radial-gradient(circle at center, #1f2937, #000);
-    color: #fff;
-    border: 0;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
+    gap: 8px;
+    margin-top: 4px;
 }
+.hl-watch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    color: var(--nfl-blue);
+}
+[data-theme="dark"] .hl-watch { color: var(--text-primary); }
 .hl-play {
-    width: 64px;
-    height: 64px;
+    flex: none;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     background: var(--nfl-red);
     position: relative;
@@ -9471,13 +9434,40 @@ body.highlights-checking .hl-hold {
 .hl-play::after {
     content: '';
     position: absolute;
-    left: 26px;
-    top: 20px;
+    left: 13px;
+    top: 10px;
     border-style: solid;
-    border-width: 12px 0 12px 20px;
+    border-width: 7px 0 7px 11px;
     border-color: transparent transparent transparent #fff;
 }
+.hl-link {
+    background: none;
+    border: 0;
+    padding: 6px;
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--text-light);
+    text-decoration: underline;
+    cursor: pointer;
+}
 
+.hl-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.hl-btn {
+    width: 100%;
+    min-height: 46px;
+    border-radius: 10px;
+    font: inherit;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.hl-btn-primary { background: var(--nfl-blue); color: #fff; }
+[data-theme="dark"] .hl-btn-primary { background: var(--text-primary); color: var(--bg-primary); }
+.hl-btn-secondary { background: transparent; color: var(--text-primary); border-color: var(--border-color); }
+.hl-btn:active { transform: scale(0.99); }
+
+.hl-result { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .hl-score {
     display: flex;
     align-items: baseline;
@@ -9486,16 +9476,16 @@ body.highlights-checking .hl-hold {
     font-weight: 800;
     flex-wrap: wrap;
 }
-.hl-score-team { text-transform: uppercase; font-size: 0.9rem; color: #d4d4d4; }
-.hl-score-num { font-size: 2.4rem; }
-.hl-score-dash { color: #737373; }
+.hl-score-team { text-transform: uppercase; font-size: 0.85rem; color: var(--text-secondary); }
+.hl-score-num { font-size: 2rem; }
+.hl-score-dash { color: var(--text-light); }
 .hl-outcome {
-    align-self: center;
-    padding: 6px 14px;
+    padding: 5px 14px;
     border-radius: 999px;
     font-weight: 800;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    color: #fff;
 }
 .hl-outcome-win { background: var(--accent-green); }
 .hl-outcome-loss { background: var(--accent-red); }
-.hl-outcome-push, .hl-outcome-pending { background: #525252; }
+.hl-outcome-push, .hl-outcome-pending { background: #737373; }

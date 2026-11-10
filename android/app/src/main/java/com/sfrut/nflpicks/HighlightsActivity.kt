@@ -6,6 +6,8 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -14,6 +16,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
@@ -51,9 +55,25 @@ class HighlightsActivity : ComponentActivity() {
         videoId = intent.getStringExtra(EXTRA_VIDEO)?.takeIf { isVideoId(it) } ?: run { finish(); return }
 
         web = WebView(this).apply { setBackgroundColor(Color.BLACK) }
-        setContentView(FrameLayout(this).apply {
+        // For when YouTube won't play it here ("Sign in to confirm you're not a
+        // bot", seen on hotel wifi): the YouTube app, where the phone is signed
+        // in. Its suggestions and comments can give results away, so it is the
+        // second choice, not the first.
+        val dp = { v: Float -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics).toInt() }
+        val openInApp = TextView(this).apply {
+            text = "Won't play? Open in the YouTube app"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            gravity = Gravity.CENTER
+            setBackgroundColor(0xFF1F2937.toInt())
+            setPadding(dp(16f), dp(12f), dp(16f), dp(12f))
+            setOnClickListener { openInYouTubeApp() }
+        }
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
-            addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(openInApp, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(web, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         })
 
         web.settings.javaScriptEnabled = true
@@ -87,6 +107,14 @@ class HighlightsActivity : ComponentActivity() {
             web.destroy()
         }
         super.onDestroy()
+    }
+
+    /** The video in the YouTube app (or the browser, without it); this screen closes behind it. */
+    private fun openInYouTubeApp() {
+        val app = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$videoId"))
+        val browser = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+        runCatching { startActivity(app) }.recoverCatching { startActivity(browser) }
+        done(false)
     }
 
     private fun done(ended: Boolean) {
