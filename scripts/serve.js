@@ -20,6 +20,7 @@ const TYPES = {
 
 http.createServer((req, res) => {
     let p = decodeURIComponent(req.url.split('?')[0]);
+    if (p === '/' || p.endsWith('.html')) console.log(new Date().toLocaleTimeString(), req.method, req.url, req.headers['user-agent']?.includes('wv') ? '(app)' : '');
     if (p.endsWith('/')) p += 'index.html';
     const file = path.normalize(path.join(ROOT, p));
     if (!file.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
