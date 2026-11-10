@@ -84,6 +84,9 @@ class MainActivity : ComponentActivity() {
     /** Spoiler-free highlights as the page was loaded, to tell when Settings changed it. */
     private var loadedHighlights = true
 
+    /** Whether the page was loaded from the admin's PC, to tell when Settings changed it. */
+    private var loadedDevSite = false
+
     /**
      * One highlights video (HighlightsActivity), opened from the page's
      * spoiler-free panel; coming back, the page is told whether it played to the end.
@@ -187,7 +190,7 @@ class MainActivity : ComponentActivity() {
         // it loads, so setting it here is all it takes for the page to open as
         // the right person - the site needs no change to know about the app.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(web, START_SCRIPT, setOf(SITE_ORIGIN))
+            WebViewCompat.addDocumentStartJavaScript(web, START_SCRIPT, setOf(SITE_ORIGIN, DEV_ORIGIN))
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -286,7 +289,7 @@ class MainActivity : ComponentActivity() {
         if (prefs.picker != loadedPicker && prefs.picker != null) {
             load()
             askForNotifications()
-        } else if (prefs.spoilerHighlights != loadedHighlights) {
+        } else if (prefs.spoilerHighlights != loadedHighlights || prefs.devSite != loadedDevSite) {
             // The highlights switch decides what the page holds back as it opens.
             load()
         }
@@ -307,6 +310,7 @@ class MainActivity : ComponentActivity() {
     private fun load() {
         loadedPicker = prefs.picker
         loadedHighlights = prefs.spoilerHighlights
+        loadedDevSite = prefs.devSite
         zoneShown = prefs.timeZone
         pageReady = false
         if (!online()) {
@@ -320,7 +324,7 @@ class MainActivity : ComponentActivity() {
         // site from before the last push. The scripts and styles it loads are
         // named by content hash, so they still come from the cache. The site
         // reads no query string.
-        web.loadUrl("$SITE_URL?app=${System.currentTimeMillis()}")
+        web.loadUrl("${if (prefs.devSite) DEV_SITE_URL else SITE_URL}?app=${System.currentTimeMillis()}")
     }
 
     private fun askForNotifications() {
@@ -387,6 +391,7 @@ class MainActivity : ComponentActivity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
             if (url.host == SITE_HOST && url.path.orEmpty().startsWith("/nfl-picks")) return false
+            if (prefs.devSite && url.host == DEV_HOST) return false
             // Anything else - the backup sheet, a WhatsApp link - belongs in
             // its own app, not inside this one.
             return try {
@@ -414,7 +419,10 @@ class MainActivity : ComponentActivity() {
             if (mainFrameFailed || url == null || url.startsWith("data:") || url == "about:blank") return
             pageReady = true
             swipe.isRefreshing = false
-            if (!fromCache) {
+            if (prefs.devSite) {
+                // Never the copy an offline start reopens; and always say where it came from.
+                showBanner(DEV_SITE)
+            } else if (!fromCache) {
                 // A good load: the one an offline start reopens.
                 prefs.lastPageUrl = url
                 hideBanner()
@@ -453,8 +461,12 @@ class MainActivity : ComponentActivity() {
         private const val BACK_ONLINE = "Back online. Pull down to load the latest."
         private const val NOTHING_SAVED = "The site is offline. Pull down to retry."
 
+        private const val DEV_SITE = "Test site: loading from the PC. Pull down to reload."
+
         private val SITE_HOST = Uri.parse(SITE_URL).host
         private val SITE_ORIGIN = "https://$SITE_HOST"
+        private val DEV_HOST = Uri.parse(DEV_SITE_URL).host
+        private val DEV_ORIGIN = DEV_SITE_URL.trimEnd('/')
 
         private val START_SCRIPT = """
             (function () {

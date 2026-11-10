@@ -716,6 +716,17 @@ class SettingsActivity : ComponentActivity() {
             result?.let { StatusLine(on = it.ok, it.message) }
             Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays all your finished Blazin' 5 games from this week and last, day games too.")
         }
+
+        Card {
+            Label("Testing")
+            var devSite by remember { mutableStateOf(prefs.devSite) }
+            ToggleRow(
+                "Load the site from this PC",
+                if (devSite) "The app loads the copy on the PC (plugged in by USB, adb reverse tcp:8000 tcp:8000, the site served on port 8000). Picks can't be saved from it. Turn off to go back to the live site."
+                else "The live site, as everyone sees it.",
+                devSite
+            ) { devSite = it; prefs.devSite = it }
+        }
     }
 
     /** What an unlock will undo, for the confirmation: whose picks, which games. */

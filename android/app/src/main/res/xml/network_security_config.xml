@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain http only to the phone's own localhost: the admin's PC, reached
+     through `adb reverse tcp:8000 tcp:8000` (Admin Settings > Load the site
+     from this PC). Everything else stays https-only. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

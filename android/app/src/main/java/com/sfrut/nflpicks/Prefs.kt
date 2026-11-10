@@ -10,6 +10,12 @@ const val ADMIN_PICKER = "Stephen"
 
 const val SITE_URL = "https://stfrutledge.github.io/nfl-picks/"
 const val WORKER_URL = "https://nfl-picks-proxy.stfrutledge.workers.dev"
+/**
+ * The site served from the admin's PC, for trying a change on a phone before
+ * it goes live (Admin Settings > Load the site from this PC). The phone reaches
+ * it as its own localhost through `adb reverse tcp:8000 tcp:8000`.
+ */
+const val DEV_SITE_URL = "http://localhost:8000/"
 
 /** Everyone's phone subscribes to this one FCM topic, so a message to it reaches the group. */
 const val GROUP_TOPIC = "group"
@@ -131,6 +137,11 @@ class Prefs(context: Context) {
      * YouTube highlights before the score. On by default; the page asks for
      * it (Bridge.spoilerHighlights) and reloads when Settings changes it.
      */
+    /** Load the site from the admin's PC ([DEV_SITE_URL]) instead of the live one. Off by default. */
+    var devSite: Boolean
+        get() = prefs.getBoolean("devSite", false)
+        set(value) = prefs.edit().putBoolean("devSite", value).apply()
+
     var spoilerHighlights: Boolean
         get() = prefs.getBoolean("spoilerHighlights", true)
         set(value) = prefs.edit().putBoolean("spoilerHighlights", value).apply()
