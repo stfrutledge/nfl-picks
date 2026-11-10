@@ -6886,6 +6886,23 @@ function soloDraft(week, key) {
     return { draft: draftFromValue(podcast), fromPodcast: podcast !== undefined };
 }
 
+/**
+ * A game's podcast row as shown and scored: your solo guess stands in for
+ * yours until one is typed in podcast mode (the owner's ask, November 2026;
+ * soloDraft is the other way round). Typing here replaces it.
+ */
+function podcastRow(week, key) {
+    const row = guessState.weeks[week]?.podcast?.[key] || {};
+    const solo = guessState.weeks[week]?.solo?.[key]?.guess;
+    return row.you === undefined && solo !== undefined ? { ...row, you: solo } : row;
+}
+
+/** A week's podcast rows, each through podcastRow. */
+function podcastRows(week) {
+    const podcast = guessState.weeks[week]?.podcast || {};
+    return Object.fromEntries(Object.keys(podcast).map(key => [key, podcastRow(week, key)]));
+}
+
 /** A stored home spread as a box: { favorite, text }. */
 function draftFromValue(value) {
     if (value === null || value === undefined) return { favorite: null, text: '' };
@@ -7163,7 +7180,7 @@ function soloControlsHtml(game, week, editable) {
 /** A podcast card's bottom: a row for you, Sal, Bill and the line read out; the closest to the line marked. */
 function podcastControlsHtml(game, week) {
     const key = pickKey(game);
-    const row = guessState.weeks[week]?.podcast?.[key] || {};
+    const row = podcastRow(week, key);
     const rows = PODCAST_FIELDS.map(p => {
         const draft = guessState.drafts.get(`${week}|${key}|${p.field}`) || draftFromValue(row[p.field]);
         return `<div class="podcast-entry${p.field === 'line' ? ' podcast-line' : ''}" data-field="${p.field}">
@@ -7177,7 +7194,7 @@ function podcastControlsHtml(game, week) {
 
 /** Mark each row of a podcast card: points off, and +1 for whoever took the game. */
 function updatePodcastCard(card, week, key) {
-    const row = guessState.weeks[week]?.podcast?.[key] || {};
+    const row = podcastRow(week, key);
     const winners = podcastGameWinners(row) || [];
     card.querySelectorAll('.podcast-entry').forEach(entry => {
         const field = entry.dataset.field;
@@ -7218,7 +7235,7 @@ function guessWeekSelectHtml(weeks, week) {
 
 function guessGameDone(mode, week, key) {
     if (mode === 'solo') return !!guessState.weeks[week]?.solo?.[key];
-    return podcastGameWinners(guessState.weeks[week]?.podcast?.[key]) !== null;
+    return podcastGameWinners(podcastRow(week, key)) !== null;
 }
 
 /** The games in card order for a full draw, marking each finished one settled. */
@@ -7395,7 +7412,7 @@ async function podcastHtml() {
             <div id="podcast-episode-slot"></div>
             <div class="podcast-week">
                 <div class="guess-results-head">${guessWeekSelectHtml(weeks, week)}</div>
-                <div class="podcast-live" id="podcast-live">${podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast))}</div>
+                <div class="podcast-live" id="podcast-live">${podcastLiveTableHtml(podcastWeekScore(podcastRows(week)))}</div>
             </div>
         </div>
         <div class="guess-cards" data-week="${week}">${cards || '<p class="as-is-note">No games found for this week yet.</p>'}</div>`;
@@ -7404,7 +7421,7 @@ async function podcastHtml() {
 /** The week's table, in place. */
 function refreshPodcastScores(week) {
     const live = document.getElementById('podcast-live');
-    if (live) live.innerHTML = podcastLiveTableHtml(podcastWeekScore(guessState.weeks[week]?.podcast));
+    if (live) live.innerHTML = podcastLiveTableHtml(podcastWeekScore(podcastRows(week)));
 }
 
 /** Change one podcast field and save the game's row once the typing stops. */
@@ -7423,7 +7440,8 @@ function setPodcastField(week, key, field, value) {
     const save = async () => {
         podcastSaveTimers.delete(id);
         if (guessState.picker !== picker) return;
-        const current = guessState.weeks[week]?.podcast?.[key] || {};
+        // Your solo guess goes with the row when it stands in for yours.
+        const current = podcastRow(week, key);
         try {
             await postGuess({ picker, mode: 'podcast', week, game: key,
                 ...Object.fromEntries(PODCAST_FIELDS.map(p => [p.field, current[p.field] ?? null])) });

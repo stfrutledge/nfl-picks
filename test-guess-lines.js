@@ -74,7 +74,7 @@ function loadSiteScoring() {
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
     return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage', 'pickKey',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, guessState, orderGuessGames, parseGuessEpisode, parseGuessEpisodes, podcastEpisodeWeek, podcastPlayerName, PODCAST_PLAYERS, guessOffBand };`)(
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, podcastRow, podcastRows, guessState, orderGuessGames, parseGuessEpisode, parseGuessEpisodes, podcastEpisodeWeek, podcastPlayerName, PODCAST_PLAYERS, guessOffBand };`)(
         name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null },
         game => `${game.away.toLowerCase()}_${game.home.toLowerCase()}`);
 }
@@ -303,6 +303,20 @@ let mod;
         assert.strictEqual(site.soloDraft(8, 'jets_patriots').fromPodcast, false, 'nothing guessed there');
         site.guessState.drafts.set('8|ravens_bills|solo', { favorite: 'away', text: '1' });
         assert.deepStrictEqual(site.soloDraft(8, 'ravens_bills'), { draft: { favorite: 'away', text: '1' }, fromPodcast: false }, 'what was typed wins');
+    });
+
+    await check('podcast starts from your solo guess, and it counts until you type your own', () => {
+        site.guessState.weeks = { 8: {
+            solo: { ravens_bills: { guess: -4.5, line: -3, at: 1 }, jets_patriots: { guess: 2, line: 3, at: 1 } },
+            podcast: { ravens_bills: { sal: -3, line: -3.5 }, jets_patriots: { you: 1, bill: 6, line: 2.5 } } } };
+        assert.strictEqual(site.podcastRow(8, 'ravens_bills').you, -4.5, 'your solo guess stands in');
+        assert.strictEqual(site.podcastRow(8, 'jets_patriots').you, 1, 'what was typed in podcast wins');
+        assert.strictEqual(site.podcastRow(8, 'chiefs_raiders').you, undefined, 'nothing guessed either way');
+        // Ravens-Bills, line -3.5: you 1 off, Sal 0.5 (Sal). Jets-Patriots, line 2.5: you 1.5, Bill 3.5 (you).
+        const score = site.podcastWeekScore(site.podcastRows(8));
+        assert.strictEqual(score.you.games, 2, 'the solo guess is scored');
+        assert.strictEqual(score.you.points, 1);
+        assert.strictEqual(score.sal.points, 1);
     });
 
     await check('the cards: finished games first, then the rest, each by kickoff', () => {
