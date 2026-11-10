@@ -7489,8 +7489,8 @@ function guessTabHasFocus() {
 
 /**
  * Which week is open for solo guesses, and the picker's season. Both this
- * week and next are checked: in Ireland the site's week turns at midnight,
- * during Monday night's game, while the window is still open.
+ * week and next are checked: the window closes after Monday night's game,
+ * and the site's week can be either side of that.
  */
 async function loadGuessTheLines() {
     if (!GUESS_TAB_ENABLED) return;
