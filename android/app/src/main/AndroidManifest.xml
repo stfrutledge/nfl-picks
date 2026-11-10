@@ -26,12 +26,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Spoiler-free highlights: one NFL video, YouTube's page with only the player showing. -->
-        <activity
-            android:name=".HighlightsActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode" />
-
         <activity
             android:name=".SettingsActivity"
             android:exported="false"

@@ -216,7 +216,7 @@ class SettingsActivity : ComponentActivity() {
         /** Out: an admin action for MainActivity to have the page run. */
         const val EXTRA_ADMIN_ACTION = "adminAction"
         /** The actions the page's runAppAdminAction() knows. */
-        val ADMIN_ACTIONS = setOf("refresh-spreads", "export-picks", "replay-highlights")
+        val ADMIN_ACTIONS = setOf("refresh-spreads", "export-picks")
     }
 
     private lateinit var prefs: Prefs
@@ -413,7 +413,6 @@ class SettingsActivity : ComponentActivity() {
             Category.entries.forEach { put(it, prefs.categoryOn(it)) }
         } }
         var spoilerFree by remember { mutableStateOf(prefs.spoilerFree) }
-        var highlights by remember { mutableStateOf(prefs.spoilerHighlights) }
         var quietOn by remember { mutableStateOf(prefs.quietOn) }
         var quietStart by remember { mutableStateOf(prefs.quietStart) }
         var quietEnd by remember { mutableStateOf(prefs.quietEnd) }
@@ -436,12 +435,7 @@ class SettingsActivity : ComponentActivity() {
                 else "Results notifications show everyone's record.",
                 spoilerFree
             ) { spoilerFree = it; prefs.spoilerFree = it }
-            ToggleRow(
-                "Spoiler-free highlights",
-                if (highlights) "When your Blazin' 5 night games finish (Thursday, Sunday and Monday nights), the app shows your pick and the highlights before the score."
-                else "The app shows scores as soon as you open it.",
-                highlights
-            ) { highlights = it; prefs.spoilerHighlights = it }
+            Body("The app itself still shows scores when you open it.", color = site.textLight, size = 12.sp)
         }
 
         Card {
@@ -707,14 +701,8 @@ class SettingsActivity : ComponentActivity() {
                 enabled = running == null,
                 modifier = Modifier.fillMaxWidth()
             ) { run("export-picks") }
-            // Closes Settings: the panel opens on the page behind.
-            PrimaryButton(
-                "Test spoiler-free highlights",
-                enabled = running == null,
-                modifier = Modifier.fillMaxWidth()
-            ) { runOnSite("replay-highlights") }
             result?.let { StatusLine(on = it.ok, it.message) }
-            Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays all your finished Blazin' 5 games from this week and last, day games too.")
+            Body("Export copies the week on screen, ready to paste into WhatsApp.")
         }
 
         Card {
