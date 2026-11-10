@@ -86,5 +86,32 @@ check('after the clocks go back, Monday Night Football stays in its week', () =>
     assert.strictEqual(weekOn(2026, 2026, 11, 3, 0, 0), 9);
 });
 
+section('A phone in Ireland');
+
+// Node picks up a TZ change straight away. The week follows New York's
+// calendar whatever the phone's: Irish midnight is 7pm ET, mid Monday Night
+// Football (week 9 of 2026: Bills at Vikings, 8:15pm ET on Monday Nov 9).
+process.env.TZ = 'Europe/Dublin';
+
+check('Monday Night Football after Irish midnight is still its own week', () => {
+    // 01:51 on Tuesday in Dublin, 8:51pm Monday in New York.
+    assert.strictEqual(api.calculateCurrentNFLWeek(new Date(Date.UTC(2026, 10, 10, 1, 51)), 2026), 9);
+});
+
+check('the week turns at midnight in New York: 5am in Dublin', () => {
+    assert.strictEqual(api.calculateCurrentNFLWeek(new Date(Date.UTC(2026, 10, 10, 4, 59)), 2026), 9);
+    assert.strictEqual(api.calculateCurrentNFLWeek(new Date(Date.UTC(2026, 10, 10, 5, 0)), 2026), 10);
+});
+
+check('the playoffs turn on New York\'s calendar too', () => {
+    // Wild card week of the 2026 season starts Tuesday Jan 12 2027 (ET midnight = 05:00 UTC).
+    const wc = api.getSeasonDates(2026).wildCardStart;
+    const etMidnight = Date.UTC(wc.getFullYear(), wc.getMonth(), wc.getDate(), 5, 0);
+    assert.strictEqual(api.calculateCurrentNFLWeek(new Date(etMidnight - 60000), 2026), 18);
+    assert.strictEqual(api.calculateCurrentNFLWeek(new Date(etMidnight), 2026), 19);
+});
+
+process.env.TZ = 'America/New_York';
+
 console.log(`\n${failures ? `${failures} of ${total} CHECKS FAILED` : `all ${total} checks passed`}`);
 process.exit(failures ? 1 : 0);

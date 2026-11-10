@@ -2,6 +2,12 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry in the same push as every change players will notice, and every significant behind-the-scenes change (start those with 'Behind the scenes:'). Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-10",
+      "items": [
+        "In Ireland the site moved on to next week at midnight, in the middle of Monday Night Football, and the Live tab disappeared. The week now changes at midnight New York time, after the Monday game."
+      ]
+    },
+    {
       "date": "2026-11-09",
       "items": [
         "Behind the scenes: groundwork for spoiler-free highlights, which arrive with a later app update. The site now collects the NFL's YouTube highlights for each finished game."

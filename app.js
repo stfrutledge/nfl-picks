@@ -236,6 +236,15 @@ function getSeasonDates(seasonYear) {
     };
 }
 
+/** The calendar day it is in New York at `now`, as a local midnight like getSeasonDates' days. */
+function easternCalendarDay(now) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric'
+    }).formatToParts(now);
+    const get = type => Number(parts.find(p => p.type === type).value);
+    return new Date(get('year'), get('month') - 1, get('day'));
+}
+
 /**
  * The NFL week `now` falls in: 1 before the season, 22 from the Super Bowl
  * week on.
@@ -244,17 +253,22 @@ function getSeasonDates(seasonYear) {
  * a week's worth of ms counts from midnight in September, so once the clocks
  * go back in November the week turned at 11pm Monday - during Monday Night
  * Football.
+ *
+ * The day is the day in New York, not on the phone's clock: in Ireland local
+ * midnight is 7pm ET, so the week turned during Monday Night Football there
+ * and the Live tab went with it (reported November 2026, Bills at Vikings).
+ * Every week's last game is a US Monday night, so ET midnight is after it.
  */
 function calculateCurrentNFLWeek(now = new Date(), season = CURRENT_SEASON) {
     const dates = getSeasonDates(season);
-    if (now < dates.seasonStart) return 1;
+    const today = easternCalendarDay(now);
+    if (today < dates.seasonStart) return 1;
 
-    if (now >= dates.superBowlStart) return 22;
-    if (now >= dates.conferenceStart) return 21;
-    if (now >= dates.divisionalStart) return 20;
-    if (now >= dates.wildCardStart) return 19;
+    if (today >= dates.superBowlStart) return 22;
+    if (today >= dates.conferenceStart) return 21;
+    if (today >= dates.divisionalStart) return 20;
+    if (today >= dates.wildCardStart) return 19;
 
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const days = Math.round((today - dates.seasonStart) / (24 * 60 * 60 * 1000));
     return Math.min(Math.floor(days / 7) + 1, TOTAL_WEEKS);
 }
