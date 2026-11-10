@@ -714,7 +714,7 @@ class SettingsActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             ) { runOnSite("replay-highlights") }
             result?.let { StatusLine(on = it.ok, it.message) }
-            Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays your finished Blazin' 5 night games from this week and last.")
+            Body("Export copies the week on screen, ready to paste into WhatsApp. Test spoiler-free highlights replays all your finished Blazin' 5 games from this week and last, day games too.")
         }
     }
 

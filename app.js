@@ -3011,6 +3011,7 @@ let highlightsCheckTimer = null;
 let highlightsCheckRunning = false; // runHighlightsCheck is in flight
 let highlightsClosedWaiters = [];
 let highlightsHistory = false;  // the panel's history entry (Back closes it)
+let highlightsReplayAll = false; // Admin Settings' test: day games too, until the panel closes
 
 /** The app's Spoiler-free highlights switch (1.19+). Off in a browser and an older app. */
 function spoilerHighlightsOn() {
@@ -3086,7 +3087,7 @@ function viewerBlazinGames(viewer = highlightsViewer(), weeks = highlightsWeeks(
         const games = NFL_GAMES_BY_WEEK[week] || [];
         const picks = getPickerPicksForWeek(week, viewer);
         for (const game of games) {
-            if (!isHighlightsNightGame(game)) continue;
+            if (!highlightsReplayAll && !isHighlightsNightGame(game)) continue;
             const pick = getPicksForGame(picks, game);
             if (!pick.blazin || !pick.line) continue;
             out.push({ week, game, pick, key: `${week}:${pickKey(game)}`, result: getGameResult(game, NFL_RESULTS_BY_WEEK[week]) });
@@ -3241,6 +3242,7 @@ function holdForHighlights() {
 /** Take the panel down and let anything waiting on it (a notification tap) carry on. */
 function releaseHighlights() {
     highlightsChecking = false;
+    highlightsReplayAll = false;
     highlightsGate = null;
     clearTimeout(highlightsCheckTimer);
     const el = document.getElementById('highlights-gate');
@@ -3298,7 +3300,9 @@ async function runHighlightsCheck({ refresh = true, fresh = [] } = {}) {
         const videos = await loadHighlightVideos(games.map(g => g.week));
         for (const g of games) g.videoId = videos[g.week]?.[highlightsPair(g.game)] || null;
         if (!highlightsChecking) return;
-        openHighlightsGate(games);
+        // The test button: only games with a video, so there is something to watch.
+        const withVideo = games.filter(g => g.videoId);
+        openHighlightsGate(highlightsReplayAll && withVideo.length ? withVideo : games);
     } catch (err) {
         console.error('[Highlights] Check failed:', err);
         releaseHighlights();
@@ -3493,9 +3497,13 @@ function appHighlightsClosed(ended) {
  */
 function replayHighlights() {
     if (!initialLoadComplete || highlightsGate) return;
+    // A test: every finished Blazin' 5 game of the last two weeks, day games too,
+    // so there are videos to watch whatever the week's night games were.
+    highlightsReplayAll = true;
     const finished = new Set(viewerBlazinGames().filter(g => g.result).map(g => g.key));
     if (!finished.size) {
-        showToast('No finished Blazin’ 5 night games of yours this week or last to replay.');
+        highlightsReplayAll = false;
+        showToast('No finished Blazin’ 5 games of yours this week or last to replay.');
         return;
     }
     const seen = readHighlightsSeen() || new Set();
