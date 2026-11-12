@@ -2,6 +2,12 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry in the same push as every change players will notice, and every significant behind-the-scenes change (start those with 'Behind the scenes:'). Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-12",
+      "items": [
+        "History: Records & Analysis now has Blazin' 5, Line Picks and Straight Up buttons, so the team, spread, home/away and favorite/underdog tables can be seen for every line pick and for straight-up picks too."
+      ]
+    },
+    {
       "date": "2026-11-10",
       "items": [
         "Guess Lines: a line you guessed in Solo now fills in your guess on the With Bill Simmons podcast tab, so it is not typed twice. Type over it to change it.",

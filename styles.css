@@ -6451,6 +6451,11 @@ body.live-provisional #as-is-standings-table {
 
 .history-blazin-section .consolidated-header {
     padding: 0 0 16px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
 }
 
 .history-blazin-section .consolidated-title {

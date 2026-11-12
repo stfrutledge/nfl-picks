@@ -8472,7 +8472,7 @@ function teamRecordName(team) {
  * Cowherd pick shows its own number, and a pick'em reads "Pick'em" rather than
  * "-0".
  */
-function pickDetail(row, { side = row.pick.line, outcome = OUTCOME_LABEL[row.lineOutcome], showLine = true } = {}) {
+function pickDetail(row, { side = row.pick.line, outcome = OUTCOME_LABEL[row.lineOutcome], showLine = !row.straightUpOnly || hasUsableLine(row.line?.spread) } = {}) {
     const { game, pick, result } = row;
     return {
         week: row.week,
@@ -10101,56 +10101,94 @@ function renderBlazinSpreadRecords(picker = null) {
 }
 
 /**
- * Calculate historical Blazin' 5 team pick records for a specific picker and season
+ * The category the History tab's Records & Analysis tables show: 'blazin'
+ * (starred line picks), 'line' (every line pick) or 'su' (straight up).
+ * Module state, so a live refresh of the tab keeps it.
  */
-function calculateHistoryBlazinTeamRecords(picker, season) {
-    if (!getSeasonData(season)) return {};
-    return bucketRecords(gradedLinePicks(pickersFor(picker), season, { blazinOnly: true }), teamsInGame);
+let historyRecordsCategory = 'blazin';
+
+const HISTORY_RECORDS_LABELS = { blazin: "Blazin' 5", line: 'Line Picks', su: 'Straight Up' };
+
+/**
+ * The graded picks a History records table counts, for one category. A
+ * straight-up row is reshaped to read like a line row - its side is the
+ * winner picked, its outcome the straight-up one - so every analysis below
+ * (team, spread, home/away, favourite/underdog) and pickDetail() take it
+ * unchanged. Its `line` stays the line the picker was graded at for that
+ * game, which is what By Spread and Favorite/Underdog bucket a winner by.
+ */
+function historyRecordRows(picker, season, category = 'blazin') {
+    if (category !== 'su') {
+        return gradedLinePicks(pickersFor(picker), season, { blazinOnly: category === 'blazin' });
+    }
+    const { first, last } = regularSeasonWeekRangeFor(season);
+    return gradedPicks(first, last, { pickers: pickersFor(picker), season })
+        .filter(row => row.straightUp && row.pick.winner)
+        .map(row => ({
+            ...row,
+            pick: { ...row.pick, line: row.pick.winner },
+            lineOutcome: row.straightUp,
+            straightUpOnly: true
+        }));
+}
+
+/** A row with a line to bucket by: always for a line pick, not always straight up. */
+function rowHasLine(row) {
+    return hasUsableLine(row.line?.spread);
 }
 
 /**
- * Calculate historical Blazin' 5 records when PICKING a specific team
+ * Calculate historical team records (both teams in the game) for a specific picker and season
  */
-function calculateHistoryBlazinTeamPicked(picker, season) {
+function calculateHistoryBlazinTeamRecords(picker, season, category = 'blazin') {
+    if (!getSeasonData(season)) return {};
+    return bucketRecords(historyRecordRows(picker, season, category), teamsInGame);
+}
+
+/**
+ * Calculate historical records when PICKING a specific team
+ */
+function calculateHistoryBlazinTeamPicked(picker, season, category = 'blazin') {
     if (!getSeasonData(season)) return {};
     return bucketRecords(
-        gradedLinePicks(pickersFor(picker), season, { blazinOnly: true }),
+        historyRecordRows(picker, season, category),
         row => teamRecordName(row.pick.line === 'away' ? row.game.away : row.game.home));
 }
 
 /**
- * Calculate historical Blazin' 5 records when FADING (picking against) a specific team
+ * Calculate historical records when FADING (picking against) a specific team
  */
-function calculateHistoryBlazinTeamFaded(picker, season) {
+function calculateHistoryBlazinTeamFaded(picker, season, category = 'blazin') {
     if (!getSeasonData(season)) return {};
     return bucketRecords(
-        gradedLinePicks(pickersFor(picker), season, { blazinOnly: true }),
+        historyRecordRows(picker, season, category),
         row => teamRecordName(row.pick.line === 'away' ? row.game.home : row.game.away));
 }
 
 /**
- * Calculate historical Blazin' 5 records by Home vs Away picks
+ * Calculate historical records by Home vs Away picks
  */
-function calculateHistoryBlazinHomeAway(picker, season) {
+function calculateHistoryBlazinHomeAway(picker, season, category = 'blazin') {
     if (!getSeasonData(season)) return {};
     return bucketRecords(
-        gradedLinePicks(pickersFor(picker), season, { blazinOnly: true }),
+        historyRecordRows(picker, season, category),
         row => (row.pick.line === 'home' ? 'Home' : 'Away'));
 }
 
 /**
- * Calculate historical Blazin' 5 records by Favorite vs Underdog picks
+ * Calculate historical records by Favorite vs Underdog picks
  *
  * The favourite is the one at the line the pick was graded at, and a pick'em
  * has none - the same rule as the Line tab's chart
- * (favoritesVsUnderdogsFromPicks), which this used to disagree with.
+ * (favoritesVsUnderdogsFromPicks), which this used to disagree with. A
+ * straight-up pick on a game with no line is left out.
  */
-function calculateHistoryBlazinFavDog(picker, season) {
+function calculateHistoryBlazinFavDog(picker, season, category = 'blazin') {
     if (!getSeasonData(season)) return {};
     return bucketRecords(
-        gradedLinePicks(pickersFor(picker), season, { blazinOnly: true }),
+        historyRecordRows(picker, season, category),
         row => {
-            if (Number(row.line.spread) === 0) return null;
+            if (!rowHasLine(row) || Number(row.line.spread) === 0) return null;
             return row.line.favorite === row.pick.line ? 'Favorite' : 'Underdog';
         });
 }
@@ -10181,14 +10219,14 @@ function renderHistoryBlazinTeamRecords(picker = null) {
         let seasonRecords;
         switch (analysisType) {
             case 'picked':
-                seasonRecords = calculateHistoryBlazinTeamPicked(selectedPicker, season);
+                seasonRecords = calculateHistoryBlazinTeamPicked(selectedPicker, season, historyRecordsCategory);
                 break;
             case 'faded':
-                seasonRecords = calculateHistoryBlazinTeamFaded(selectedPicker, season);
+                seasonRecords = calculateHistoryBlazinTeamFaded(selectedPicker, season, historyRecordsCategory);
                 break;
             case 'involved':
             default:
-                seasonRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season);
+                seasonRecords = calculateHistoryBlazinTeamRecords(selectedPicker, season, historyRecordsCategory);
                 break;
         }
         // Merge season records into aggregate
@@ -10208,18 +10246,18 @@ function renderHistoryBlazinTeamRecords(picker = null) {
     tbody.innerHTML = recordsRowsHtml(rows, 'hist-blazin-', teamLabelCell, { withSeason: isLifetime, withPicker: selectedPicker === 'All' });
 
     if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
+        tbody.innerHTML = historyRecordsEmptyRow();
     }
 }
 
 /**
  * Calculate historical Blazin' 5 spread records for a specific picker and season
  */
-function calculateHistoryBlazinSpreadRecords(picker, season) {
+function calculateHistoryBlazinSpreadRecords(picker, season, category = 'blazin') {
     if (!getSeasonData(season)) return {};
     return bucketRecords(
-        gradedLinePicks(pickersFor(picker), season, { blazinOnly: true }),
-        row => pickedSpread(row).key,
+        historyRecordRows(picker, season, category),
+        row => (rowHasLine(row) ? pickedSpread(row).key : null),
         row => ({ spreadValue: pickedSpread(row).value }));
 }
 
@@ -10270,14 +10308,14 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
         let seasonRecords;
         switch (analysisType) {
             case 'homeaway':
-                seasonRecords = calculateHistoryBlazinHomeAway(selectedPicker, season);
+                seasonRecords = calculateHistoryBlazinHomeAway(selectedPicker, season, historyRecordsCategory);
                 break;
             case 'favdog':
-                seasonRecords = calculateHistoryBlazinFavDog(selectedPicker, season);
+                seasonRecords = calculateHistoryBlazinFavDog(selectedPicker, season, historyRecordsCategory);
                 break;
             case 'spread':
             default:
-                seasonRecords = calculateHistoryBlazinSpreadRecords(selectedPicker, season);
+                seasonRecords = calculateHistoryBlazinSpreadRecords(selectedPicker, season, historyRecordsCategory);
                 break;
         }
         // Merge season records into aggregate
@@ -10297,14 +10335,37 @@ function renderHistoryBlazinSpreadRecords(picker = null) {
     tbody.innerHTML = recordsRowsHtml(rows, 'hist-spread-', spreadLabelCell, { withSeason: isLifetime, withPicker: selectedPicker === 'All' });
 
     if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No Blazin\' 5 picks data available</td></tr>';
+        tbody.innerHTML = historyRecordsEmptyRow();
     }
 }
 
 /**
  * Setup history Blazin' 5 records dropdown and sorting
  */
+/** The History records tables' empty state, named for the category shown. */
+function historyRecordsEmptyRow() {
+    const label = HISTORY_RECORDS_LABELS[historyRecordsCategory] || HISTORY_RECORDS_LABELS.blazin;
+    return `<tr><td colspan="4" style="text-align: center; color: var(--text-light);">No ${label} picks data available</td></tr>`;
+}
+
+/** Switch the History records tables between Blazin' 5, Line Picks and Straight Up. */
+function setHistoryRecordsCategory(category) {
+    if (!HISTORY_RECORDS_LABELS[category]) return;
+    historyRecordsCategory = category;
+    document.querySelectorAll('[data-records-category]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.recordsCategory === category);
+    });
+    const title = document.getElementById('history-records-title');
+    if (title) title.textContent = HISTORY_RECORDS_LABELS[category];
+    renderHistoryBlazinTeamRecords();
+    renderHistoryBlazinSpreadRecords();
+}
+
 function setupHistoryBlazinRecords() {
+    document.querySelectorAll('[data-records-category]').forEach(btn => {
+        btn.addEventListener('click', () => setHistoryRecordsCategory(btn.dataset.recordsCategory));
+    });
+
     const dropdown = document.getElementById('history-blazin-picker');
     if (dropdown) {
         dropdown.addEventListener('change', (e) => {

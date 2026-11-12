@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://stfrutledge.github.io/nfl-picks/og-image.png?v=1">
 
     <link rel="icon" type="image/svg+xml" href="https://static.www.nfl.com/image/upload/v1554321393/league/nvfr7ogywskqrfaiu38m.svg">
-    <link rel="stylesheet" href="styles.css?v=1663a2b7">
+    <link rel="stylesheet" href="styles.css?v=7ef16511">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -819,10 +819,16 @@
                     </div>
                 </section>
 
-                <!-- Blazin' 5 Records & Analysis Section -->
+                <!-- Records & Analysis: the tables below for Blazin' 5, every
+                     line pick, or straight-up picks (historyRecordsCategory). -->
                 <section class="history-blazin-section" id="history-blazin-section">
                     <div class="consolidated-header">
-                        <h2 class="consolidated-title">Blazin' 5 Records & Analysis</h2>
+                        <h2 class="consolidated-title"><span id="history-records-title">Blazin' 5</span> Records & Analysis</h2>
+                        <div class="scope-toggle" role="group" aria-label="Category">
+                            <button type="button" class="subtab active" data-records-category="blazin">Blazin' 5</button>
+                            <button type="button" class="subtab" data-records-category="line">Line Picks</button>
+                            <button type="button" class="subtab" data-records-category="su">Straight Up</button>
+                        </div>
                     </div>
                     <div class="blazin-records-controls">
                         <label for="history-blazin-picker">Picker:</label>
@@ -1003,6 +1009,6 @@
     <script src="charts.js?v=bb13d172"></script>
     <script src="historical-data.js?v=a01d0328"></script>
     <!-- historical-2024.js is lazy-loaded when History tab is clicked -->
-    <script src="app.js?v=03c949f9"></script>
+    <script src="app.js?v=162ca995"></script>
 </body>
 </html>

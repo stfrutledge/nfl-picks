@@ -62,6 +62,7 @@ function makeEnv() {
         calculateTeamPickRecords, calculateBlazinTeamPickRecords, calculateBlazinSpreadRecords,
         calculateHistoryBlazinSpreadRecords, calculateHistoryBlazinFavDog,
         calculateHistoryBlazinTeamPicked, calculateHistoryBlazinTeamFaded,
+        calculateHistoryBlazinHomeAway,
         calculateWorstBlazinWeeks,
         calculateLoneWolfPicksWithDetails, calculateStraightUpLoneWolfPicks, calculateBlazinLoneWolfPicks,
         recordsTableData, winPctCell, renderPickerCard, renderSuperBowlPicksSummary,
@@ -309,6 +310,64 @@ check("'All' adds up the five pickers", () => {
     const picked = api.calculateHistoryBlazinTeamPicked('All', 2026);
     assert.strictEqual(picked.Seahawks.wins, 1);
     assert.strictEqual(picked.Rams.losses, 1);
+});
+
+section('History records: Blazin\' 5, Line Picks and Straight Up');
+
+// Two games. Stephen stars the Seahawks (-3, win by 10: covers and wins) and
+// takes the Rams' line too (+3, lose by 1: covers, loses outright). Straight
+// up he picks the Rams in game 1 and the Bills in game 2.
+const CATEGORY_WEEKS = { 1: [
+    game(1, 'Rams', 'Seahawks', final(10, 20)),
+    game(2, 'Bills', 'Chiefs', final(20, 21))
+] };
+const CATEGORY_PICKS = { 1: { Stephen: {
+    rams_seahawks: { line: 'home', blazin: true, winner: 'away' },
+    bills_chiefs: { line: 'away', winner: 'away' }
+} } };
+
+check("Blazin' 5 counts the starred line pick alone (the default)", () => {
+    const api = setup({ weeks: CATEGORY_WEEKS, picks: CATEGORY_PICKS });
+    assert.deepStrictEqual(Object.keys(api.calculateHistoryBlazinTeamPicked('Stephen', 2026)), ['Seahawks']);
+    assert.deepStrictEqual(Object.keys(api.calculateHistoryBlazinTeamPicked('Stephen', 2026, 'blazin')), ['Seahawks']);
+});
+
+check('Line Picks counts every line pick', () => {
+    const api = setup({ weeks: CATEGORY_WEEKS, picks: CATEGORY_PICKS });
+    const picked = api.calculateHistoryBlazinTeamPicked('Stephen', 2026, 'line');
+    assert.deepStrictEqual(Object.keys(picked).sort(), ['Bills', 'Seahawks']);
+    assert.strictEqual(picked.Bills.wins, 1, 'Bills +3 losing by 1 covers');
+});
+
+check('Straight Up files the winner picked, graded straight up', () => {
+    const api = setup({ weeks: CATEGORY_WEEKS, picks: CATEGORY_PICKS });
+    const picked = api.calculateHistoryBlazinTeamPicked('Stephen', 2026, 'su');
+    assert.deepStrictEqual(Object.keys(picked).sort(), ['Bills', 'Rams']);
+    assert.strictEqual(picked.Rams.losses, 1);
+    assert.strictEqual(picked.Bills.losses, 1, 'covered, but lost outright');
+    const faded = api.calculateHistoryBlazinTeamFaded('Stephen', 2026, 'su');
+    assert.deepStrictEqual(Object.keys(faded).sort(), ['Chiefs', 'Seahawks']);
+});
+
+check('Straight Up splits by the winner picked: underdogs, away, +3', () => {
+    const api = setup({ weeks: CATEGORY_WEEKS, picks: CATEGORY_PICKS });
+    const favDog = api.calculateHistoryBlazinFavDog('Stephen', 2026, 'su');
+    assert.deepStrictEqual(Object.keys(favDog), ['Underdog']);
+    assert.strictEqual(favDog.Underdog.losses, 2);
+    assert.deepStrictEqual(Object.keys(api.calculateHistoryBlazinHomeAway('Stephen', 2026, 'su')), ['Away']);
+    assert.deepStrictEqual(Object.keys(api.calculateHistoryBlazinSpreadRecords('Stephen', 2026, 'su')), ['+3']);
+});
+
+check('a straight-up pick with no line counts by team, not by spread', () => {
+    const api = setup({
+        weeks: { 1: [game(1, 'Rams', 'Seahawks', { spread: null, ...final(10, 20) })] },
+        picks: { 1: { Stephen: { rams_seahawks: { winner: 'home' } } } }
+    });
+    const picked = api.calculateHistoryBlazinTeamPicked('Stephen', 2026, 'su');
+    assert.strictEqual(picked.Seahawks.wins, 1);
+    assert.strictEqual(picked.Seahawks.games[0].line, '', 'no line to quote');
+    assert.deepStrictEqual(api.calculateHistoryBlazinSpreadRecords('Stephen', 2026, 'su'), {});
+    assert.deepStrictEqual(api.calculateHistoryBlazinFavDog('Stephen', 2026, 'su'), {});
 });
 
 section('Worst week');
