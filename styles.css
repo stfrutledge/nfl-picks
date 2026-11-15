@@ -7735,6 +7735,26 @@ body.live-provisional #as-is-standings-table {
     cursor: pointer;
 }
 
+/* The Group line: a gap, then the five pickers' week added together. The gap
+   is an empty row with no borders or hover; the row above it keeps its own
+   bottom border, which closes the table before the gap. */
+.standings-table tbody tr.as-is-gap td {
+    padding: 0;
+    height: 14px;
+    border-bottom: none;
+    background: transparent;
+}
+
+.standings-table tbody tr.as-is-gap:hover {
+    background: none;
+}
+
+.standings-table tbody tr.as-is-group-row td {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    font-weight: 600;
+}
+
 /* A row that changed place on a score: it slides there (slideAsIsRows) and
    its cells flash green for a climb, red for a fall, then fade back. The
    flash is opaque while the rows are passing each other, and a climber

@@ -302,6 +302,8 @@ Which rows are open lives in `asIsExpanded`, **outside the render**: the table i
 
 **The as-is column set is the record plus a Move.** Last 3-Wk, Best Week and Year Chg describe the shape of a season, which says nothing about where an afternoon is heading. Move is the position now — live games counted as they stand — against the table as it finished **last week**, from `asIsPositionChange()`. Equal records share a place (`rankStandings`), or five pickers level on 0-0 get five arbitrary places and the season's first result reads as a four-place climb. A dash covers both "level" and "nothing to compare against", which is every row in week 1.
 
+**The Group line** (November 2026, the owner's ask) sits under the table after a gap: the five pickers' records added together over the same weeks as the table (Season to Date or This Week), games in progress counted as they stand, **never Cowherd** (`asIsGroupRecord`, drawn by `asIsGroupRowHtml`). It has no `data-picker`, so the row slide and the expansion leave it alone.
+
 `asIsPositionChange()` takes its week range as a parameter, defaulting to `regularSeasonWeekRange()`. That is the only reason a later week can be tested at all: `CURRENT_NFL_WEEK` comes off the clock, and week 1 is the one week where this column does nothing.
 
 Live scores drive both this tab and the pick cards, so `stopLiveScoresRefresh()` runs only when neither is on screen, and the refresh loop goes through `refreshLiveViews()` rather than calling `renderGames()` directly. A stale score is the whole problem on this tab.
