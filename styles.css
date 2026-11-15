@@ -7735,23 +7735,18 @@ body.live-provisional #as-is-standings-table {
     cursor: pointer;
 }
 
-/* The Group line: a gap, then the five pickers' week added together. The gap
-   is an empty row with no borders or hover; the row above it keeps its own
-   bottom border, which closes the table before the gap. */
-.standings-table tbody tr.as-is-gap td {
-    padding: 0;
-    height: 14px;
-    border-bottom: none;
-    background: transparent;
+/* The Group line: its own table under the as-is one, no header, columns
+   set from the table above (syncAsIsGroupColumns). */
+.as-is-group-container {
+    margin-top: 12px;
 }
 
-.standings-table tbody tr.as-is-gap:hover {
-    background: none;
+.as-is-group-table {
+    table-layout: fixed;
 }
 
 .standings-table tbody tr.as-is-group-row td {
     background: var(--bg-secondary);
-    border-top: 1px solid var(--border-color);
     font-weight: 600;
 }
 

@@ -8098,6 +8098,7 @@ function renderAsIsStandings(category = liveSubcategory, scope = liveScope) {
         : regularSeasonWeekRange();
     const computed = calculateStatsForWeeks(
         first, last, PICKERS_WITH_COWHERD, { includeLive: true });
+    const weekRecord = asIsWeekRecord(currentWeek, category);
     renderStandingsTable(standingsFromComputed(computed, category), {
         tableId: 'as-is-standings-table',
         tbodyId: 'as-is-standings-body',
@@ -8108,9 +8109,10 @@ function renderAsIsStandings(category = liveSubcategory, scope = liveScope) {
         positionChange: thisWeek ? null : asIsPositionChange(undefined, category),
         // currentWeek, not `last`: it is the week the detail rows open onto,
         // and the box is the summary of what is behind them.
-        weekRecord: asIsWeekRecord(currentWeek, category),
-        groupRecord: asIsGroupRecord({ first, last }, category)
+        weekRecord
     });
+    renderAsIsGroupTable(asIsGroupRecord({ first, last }, category), !thisWeek,
+        sumGroupRecords(weekRecord));
 }
 
 /**
@@ -8120,15 +8122,22 @@ function renderAsIsStandings(category = liveSubcategory, scope = liveScope) {
  * follows its scope: this week, or the season to date.
  */
 function asIsGroupRecord({ first, last }, category = COWHERD_CATEGORY) {
-    const stats = standingsFromComputed(
-        calculateStatsForWeeks(first, last, PICKERS, { includeLive: true }), category);
+    return sumGroupRecords(standingsFromComputed(
+        calculateStatsForWeeks(first, last, PICKERS, { includeLive: true }), category));
+}
+
+/**
+ * The five pickers' records in a { name: record } map added together, never
+ * Cowherd: the Group line's record, and its live box from asIsWeekRecord.
+ */
+function sumGroupRecords(byPicker) {
     const total = { wins: 0, losses: 0, pushes: 0 };
     PICKERS.forEach(name => {
-        const s = stats[name];
-        if (!s) return;
-        total.wins += s.wins || 0;
-        total.losses += s.losses || 0;
-        total.pushes += s.pushes || 0;
+        const r = byPicker?.[name];
+        if (!r) return;
+        total.wins += r.wins || 0;
+        total.losses += r.losses || 0;
+        total.pushes += r.pushes || 0;
     });
     total.totalPicks = total.wins + total.losses + total.pushes;
     total.percentage = recordPercentage(total);
@@ -11504,28 +11513,74 @@ function slideAsIsRows(tbody, before) {
  * always the Blazin' 5 one whatever the Standings tab happens to be showing.
  */
 /**
- * The Group line under the as-is table, after a gap: the five pickers added
- * together over the table's weeks (asIsGroupRecord). No data-picker, so the slide and the
- * row expansion leave it alone, and nothing to click.
+ * The Group line: a table of its own under the as-is table, with no header,
+ * holding the five pickers added together over the table's weeks
+ * (asIsGroupRecord). Its columns are set to the widths of the table above
+ * (syncAsIsGroupColumns), and on a phone the two scroll sideways together.
  */
-function asIsGroupRowHtml(record, colspan) {
-    if (!record) return '';
+function renderAsIsGroupTable(record, showMove, inPlay = null) {
+    const tbody = document.getElementById('as-is-group-body');
+    if (!tbody) return;
+    if (!record) {
+        tbody.innerHTML = '';
+        return;
+    }
     const pct = typeof record.percentage === 'number'
         ? record.percentage.toFixed(2) + '%' : '-';
-    return `
-        <tr class="as-is-gap" aria-hidden="true"><td colspan="${colspan}"></td></tr>
+    // The games in play, as they stand, in the same box the pickers' rows have.
+    const tone = weekRecordTone(inPlay);
+    const box = inPlay && weekRecordInPlay(inPlay) ? `
+                <span class="week-record${tone ? ' ' + tone : ''}" title="Games in progress, as they stand">`
+                    + `${formatWeekRecord(inPlay)}</span>` : '';
+    tbody.innerHTML = `
         <tr class="as-is-group-row">
             <td class="picker-name"><div class="as-is-name-cell">
-                <span class="as-is-name">Group</span>
+                <span class="as-is-name">Group</span>${box}
             </div></td>
             <td>${record.wins}</td>
             <td>${record.losses}</td>
             <td>${record.pushes}</td>
             <td class="${pctCellClass(record.percentage)}">${pct}</td>
             <td>${record.totalPicks}</td>
-            ${colspan === 7 ? '<td></td>' : ''}
+            ${showMove ? '<td></td>' : ''}
         </tr>
     `;
+    wireAsIsGroupTable();
+    syncAsIsGroupColumns();
+}
+
+/**
+ * Give the Group table the column widths of the as-is table's header, and
+ * its overall width, so its numbers sit under the columns above. Nothing to
+ * measure while the tab is hidden; renderLiveTab runs again when it is shown.
+ */
+function syncAsIsGroupColumns() {
+    const main = document.getElementById('as-is-standings-table');
+    const group = document.getElementById('as-is-group-table');
+    const cols = document.getElementById('as-is-group-cols');
+    if (!main || !group || !cols) return;
+    const widths = [...main.querySelectorAll('thead th')]
+        .map(th => th.getBoundingClientRect().width);
+    if (!widths.length || widths.every(w => w === 0)) return;
+    cols.innerHTML = widths.map(w => `<col style="width:${w}px">`).join('');
+    group.style.width = main.getBoundingClientRect().width + 'px';
+}
+
+let asIsGroupSyncWired = false;
+/** Keep the Group table under the as-is table on resize and sideways scroll. */
+function wireAsIsGroupTable() {
+    if (asIsGroupSyncWired) return;
+    const mainBox = document.getElementById('as-is-standings-table')?.parentElement;
+    const groupBox = document.getElementById('as-is-group-container');
+    if (!mainBox || !groupBox) return;
+    asIsGroupSyncWired = true;
+    window.addEventListener('resize', syncAsIsGroupColumns);
+    // Only when they differ, so the copy does not echo back and forth.
+    const follow = (from, to) => from.addEventListener('scroll', () => {
+        if (to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+    }, { passive: true });
+    follow(mainBox, groupBox);
+    follow(groupBox, mainBox);
 }
 
 function renderStandingsTable(stats, {
@@ -11537,8 +11592,7 @@ function renderStandingsTable(stats, {
     positionChange = null,
     weekRecord = null,
     week = null,
-    showMove = true,
-    groupRecord = null
+    showMove = true
 } = {}) {
     const tbody = document.getElementById(tbodyId);
     const thead = document.querySelector(`#${tableId} thead`);
@@ -11638,7 +11692,7 @@ function renderStandingsTable(stats, {
                     </td>
                 </tr>` : ''}
             `;
-        }).join('') + asIsGroupRowHtml(groupRecord, showMove ? 7 : 6);
+        }).join('');
         slideAsIsRows(tbody, before);
         return;
     }
