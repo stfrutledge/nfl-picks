@@ -8,6 +8,11 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { fixedClock } = require('./fixed-clock');
+
+// Wednesday of 2026 week 5, the week the games below are in. Off the real
+// clock week 5 becomes a past week, and every card reads as kicked off.
+const TEST_NOW = '2026-10-07T12:00:00Z';
 
 function makeStar(key, { active = false, locked = false } = {}) {
     const card = { classList: { contains: c => locked && c === 'game-locked' } };
@@ -69,8 +74,7 @@ function makeEnv(stars, nodes = {}) {
     env.globalThis = env;
 
     const snapshot = `
-        const HISTORICAL_DATA_SEASON = ${new Date().getMonth() >= 6
-            ? new Date().getFullYear() : new Date().getFullYear() - 1};
+        const HISTORICAL_DATA_SEASON = 2026;
         const HISTORICAL_GAMES = {};
         const HISTORICAL_RESULTS = {};
         const HISTORICAL_PICKS = {};
@@ -80,7 +84,7 @@ function makeEnv(stars, nodes = {}) {
     const exports = `;return ({
         CURRENT_SEASON, FIRST_PLAYOFF_WEEK,
         pickKey, getPicksForGame, getPickerPicksForWeek, countBlazinPicks,
-        updateBlazinStarStates, updateBlazinProgress, handlePickSelect,
+        updateBlazinStarStates, updateBlazinProgress, handlePickSelect, handleBlazinToggle,
         noteBlazinCompleted, BLAZIN_COMPLETE_HOLD_MS,
         // The release timer is a real setTimeout; a held bar would otherwise
         // keep this process alive for a minute after the checks are done.
@@ -96,12 +100,12 @@ function makeEnv(stars, nodes = {}) {
     });`;
     const fn = new Function(
         'window', 'document', 'localStorage', 'navigator', 'fetch', 'console',
-        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia',
+        'performance', 'alert', 'confirm', 'addEventListener', 'matchMedia', 'Date',
         parserSrc + '\n' + snapshot + '\n' + appSrc + exports
     );
     const api = fn(env.window, env.document, env.localStorage, env.navigator,
         (...a) => env.fetch(...a), env.console, env.performance, env.alert,
-        env.confirm, env.addEventListener, env.matchMedia);
+        env.confirm, env.addEventListener, env.matchMedia, fixedClock(TEST_NOW));
     return { api, env };
 }
 
@@ -260,6 +264,64 @@ check('a locked game is disabled even with a line pick', () => {
     t.api.updateBlazinStarStates();
     assert.strictEqual(t.stars[0].disabled, true);
     assert.strictEqual(t.stars[0].title, 'Game is locked');
+});
+
+section('A locked pick (Lock Pick) keeps its star as it is');
+
+// Reported 15 November 2026: a star was added to a game the picker had locked.
+// The card is drawn with its star disabled, but updateBlazinStarStates runs on
+// every pick or star tap and only knew about kickoff, so it switched a locked
+// pick's star back on.
+check("a locked pick's star stays disabled after another tap", () => {
+    const t = setup({
+        picks: { rams_seahawks: { line: 'home', winner: 'home', frozenAt: '2026-11-15T11:00:00Z' } }
+    });
+    t.api.updateBlazinStarStates();
+    assert.strictEqual(t.stars[0].disabled, true, 'a locked pick cannot gain a star');
+    assert.strictEqual(t.stars[0].title, 'Pick is frozen');
+});
+
+check("a locked pick's star cannot be taken off either", () => {
+    const t = setup({
+        picks: { rams_seahawks: { line: 'home', blazin: true, frozenAt: '2026-11-15T11:00:00Z' } },
+        starOpts: { rams_seahawks: { active: true } }
+    });
+    t.api.updateBlazinStarStates();
+    assert.strictEqual(t.stars[0].disabled, true);
+    assert.strictEqual(t.stars[0].title, 'Pick is frozen');
+});
+
+function tapStar(t, key) {
+    const classes = new Set();
+    const btn = {
+        dataset: { pickKey: key }, disabled: false, innerHTML: '', title: '',
+        classList: { toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
+                     contains: c => classes.has(c) }
+    };
+    t.api.handleBlazinToggle({ preventDefault() {}, stopPropagation() {}, currentTarget: btn });
+    return t.api.__state().allPicks[WEEK].Stephen[key];
+}
+
+check('a tap on an enabled star still refuses a locked pick', () => {
+    const t = setup({
+        picks: { rams_seahawks: { line: 'home', frozenAt: '2026-11-15T11:00:00Z' } }
+    });
+    const pick = tapStar(t, 'rams_seahawks');
+    assert.ok(!pick.blazin, 'the star must not be saved');
+});
+
+check('a tap on an enabled star refuses a game that has kicked off', () => {
+    const t = setup({ picks: { rams_seahawks: { line: 'home' } } });
+    t.api.NFL_GAMES_BY_WEEK[WEEK][0].kickoff = new Date(Date.parse(TEST_NOW) - 60000).toISOString();
+    const pick = tapStar(t, 'rams_seahawks');
+    assert.ok(!pick.blazin, 'the star must not be saved');
+});
+
+check('a tap on an open pick still stars it', () => {
+    const t = setup({ picks: { rams_seahawks: { line: 'home' } } });
+    t.api.NFL_GAMES_BY_WEEK[WEEK][0].kickoff = new Date(Date.parse(TEST_NOW) + 3600000).toISOString();
+    const pick = tapStar(t, 'rams_seahawks');
+    assert.strictEqual(pick.blazin, true);
 });
 
 section('The sheet cache and local picks are one view');

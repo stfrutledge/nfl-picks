@@ -8108,8 +8108,31 @@ function renderAsIsStandings(category = liveSubcategory, scope = liveScope) {
         positionChange: thisWeek ? null : asIsPositionChange(undefined, category),
         // currentWeek, not `last`: it is the week the detail rows open onto,
         // and the box is the summary of what is behind them.
-        weekRecord: asIsWeekRecord(currentWeek, category)
+        weekRecord: asIsWeekRecord(currentWeek, category),
+        groupRecord: asIsGroupRecord({ first, last }, category)
     });
+}
+
+/**
+ * The whole group's record in a category over the table's weeks, live games
+ * counted as they stand: the five pickers added together, never Cowherd (the
+ * owner's ask, November 2026). It is the Group line under the as-is table and
+ * follows its scope: this week, or the season to date.
+ */
+function asIsGroupRecord({ first, last }, category = COWHERD_CATEGORY) {
+    const stats = standingsFromComputed(
+        calculateStatsForWeeks(first, last, PICKERS, { includeLive: true }), category);
+    const total = { wins: 0, losses: 0, pushes: 0 };
+    PICKERS.forEach(name => {
+        const s = stats[name];
+        if (!s) return;
+        total.wins += s.wins || 0;
+        total.losses += s.losses || 0;
+        total.pushes += s.pushes || 0;
+    });
+    total.totalPicks = total.wins + total.losses + total.pushes;
+    total.percentage = recordPercentage(total);
+    return total;
 }
 
 /**
@@ -11480,6 +11503,31 @@ function slideAsIsRows(tbody, before) {
  * lookalike that drifts from it - and passes its own category, since it is
  * always the Blazin' 5 one whatever the Standings tab happens to be showing.
  */
+/**
+ * The Group line under the as-is table, after a gap: the five pickers added
+ * together over the table's weeks (asIsGroupRecord). No data-picker, so the slide and the
+ * row expansion leave it alone, and nothing to click.
+ */
+function asIsGroupRowHtml(record, colspan) {
+    if (!record) return '';
+    const pct = typeof record.percentage === 'number'
+        ? record.percentage.toFixed(2) + '%' : '-';
+    return `
+        <tr class="as-is-gap" aria-hidden="true"><td colspan="${colspan}"></td></tr>
+        <tr class="as-is-group-row">
+            <td class="picker-name"><div class="as-is-name-cell">
+                <span class="as-is-name">Group</span>
+            </div></td>
+            <td>${record.wins}</td>
+            <td>${record.losses}</td>
+            <td>${record.pushes}</td>
+            <td class="${pctCellClass(record.percentage)}">${pct}</td>
+            <td>${record.totalPicks}</td>
+            ${colspan === 7 ? '<td></td>' : ''}
+        </tr>
+    `;
+}
+
 function renderStandingsTable(stats, {
     tableId = 'standings-table',
     tbodyId = 'standings-table-body',
@@ -11489,7 +11537,8 @@ function renderStandingsTable(stats, {
     positionChange = null,
     weekRecord = null,
     week = null,
-    showMove = true
+    showMove = true,
+    groupRecord = null
 } = {}) {
     const tbody = document.getElementById(tbodyId);
     const thead = document.querySelector(`#${tableId} thead`);
@@ -11589,7 +11638,7 @@ function renderStandingsTable(stats, {
                     </td>
                 </tr>` : ''}
             `;
-        }).join('');
+        }).join('') + asIsGroupRowHtml(groupRecord, showMove ? 7 : 6);
         slideAsIsRows(tbody, before);
         return;
     }
@@ -14002,6 +14051,29 @@ function simulatePickClick(gameId, pickType, team) {
     }
 }
 
+/**
+ * The tap-time check for the pick buttons and the Blazin' star: a locked pick
+ * (Lock Pick) or a game that has kicked off cannot be changed, whatever state
+ * the button happens to be in. Buttons are only disabled when a card is drawn
+ * or by updateBlazinStarStates, so they can be stale: a game kicks off on an
+ * open page, and the card is not redrawn until the next live-score poll.
+ * Returns true, with a toast, when the edit is refused. Cowherd is never
+ * refused: his picks are entered after the games (see "Entry never locks").
+ */
+function refusePickEdit(key, week = currentWeek, picker = currentPicker) {
+    if (picker === COWHERD) return false;
+    const game = getGamesForWeek(week).find(g => pickKey(g) === key);
+    if (game && isGameLocked(game, week)) {
+        showToast('This game has started, picks are locked', 'warning');
+        return true;
+    }
+    if (isPickFrozen(getPickerPicksForWeek(week, picker)[key])) {
+        showToast('This pick is locked', 'warning');
+        return true;
+    }
+    return false;
+}
+
 // Track last selected pick for animation
 let lastSelectedPick = null;
 
@@ -14031,6 +14103,7 @@ function handlePickSelect(e) {
     const team = btn.dataset.team; // 'away' or 'home'
 
     if (!key) return;
+    if (refusePickEdit(key)) return;
 
     // The game object is still needed for the "picked the favorite" auto-winner rule
     const weekGames = getGamesForWeek(currentWeek);
@@ -14210,7 +14283,13 @@ function updateBlazinStarStates() {
         const starGamePicks = pickerPicks[starBtn.dataset.pickKey] || {};
         const hasStarLinePick = Boolean(starGamePicks.line);
 
-        if (isLocked) {
+        // A locked pick (Lock Pick) is read-only, star included, exactly as
+        // renderGames draws it. Before November 2026 this only knew about
+        // kickoff, so any tap elsewhere switched a locked pick's star back on.
+        if (isPickFrozen(starGamePicks)) {
+            starBtn.disabled = true;
+            starBtn.title = 'Pick is frozen';
+        } else if (isLocked) {
             starBtn.disabled = true;
             starBtn.title = 'Game is locked';
         } else if (!hasStarLinePick && !isActive) {
@@ -14381,6 +14460,7 @@ function handleBlazinToggle(e) {
     const key = btn.dataset.pickKey;
 
     if (!key || btn.disabled) return;
+    if (refusePickEdit(key)) return;
 
     // Initialize picks structure
     if (!allPicks[currentWeek]) {
