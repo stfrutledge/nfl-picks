@@ -7746,8 +7746,12 @@ body.live-provisional #as-is-standings-table {
 }
 
 .standings-table tbody tr.as-is-group-row td {
-    background: var(--bg-secondary);
     font-weight: 600;
+}
+
+/* Not clickable, so no hover shade: it stays the table's own colour. */
+.standings-table tbody tr.as-is-group-row:hover {
+    background: none;
 }
 
 /* A row that changed place on a score: it slides there (slideAsIsRows) and

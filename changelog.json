@@ -7,7 +7,8 @@
         "Fixed: after you locked a pick, its Blazin' 5 star could be turned back on or off by tapping another game. A locked pick's star now stays as it was locked.",
         "Fixed: a pick or star could be changed in the first minute or two after kickoff if the page was already open. A game that has started now refuses the change straight away.",
         "Live: under the table there is now a Group line, everyone's record added together (not Cowherd), for the season to date or this week, whichever the table is showing.",
-        "Live: the Group line now sits in its own box under the table, with a live win-loss-push bubble for the group's games in progress, like everyone else's."
+        "Live: the Group line now sits in its own box under the table, with a live win-loss-push bubble for the group's games in progress, like everyone else's. It is now the same colour as the rest of the table.",
+        "Standings: Best Week now shows that week's record as well, like \"7 (4-1)\"."
       ]
     },
     {
