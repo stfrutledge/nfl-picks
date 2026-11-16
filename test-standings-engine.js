@@ -327,7 +327,7 @@ check('best week and last-3-week form come off the weekly rows', () => {
         }
     });
     const row = api.standingsFromComputed(api.calculateStatsForWeeks(1, 4), 'line').Stephen;
-    assert.strictEqual(row.bestWeek, '2', 'first week reaching the highest pct');
+    assert.strictEqual(row.bestWeek, '2 (1-0)', 'first week reaching the highest pct, with its record');
     assert.strictEqual(Math.round(row.last3WeekPct), 67, 'weeks 2-4: 100, 0, 100');
 });
 

@@ -8859,6 +8859,16 @@ function yearChangeFor(currentRecord, priorRecord) {
  *
  * `prior` is the same shape for last season over the same weeks, or null.
  */
+/**
+ * The Best Week cell: the week and its record, "7 (4-1)", with a push only
+ * when there was one, "7 (4-0-1)" (the owner's ask, November 2026).
+ */
+function bestWeekLabel({ week, record }) {
+    const r = record || {};
+    const pushes = r.pushes ? `-${r.pushes}` : '';
+    return `${week} (${r.wins || 0}-${r.losses || 0}${pushes})`;
+}
+
 function standingsFromComputed(computed, category, prior = null) {
     const out = {};
     Object.keys(computed).forEach(picker => {
@@ -8902,7 +8912,7 @@ function standingsFromComputed(computed, category, prior = null) {
             percentage: recordPercentage(rec),
             totalPicks: rec.wins + rec.losses + rec.pushes,
             last3WeekPct: last3Pct,
-            bestWeek: best ? String(best.week) : '',
+            bestWeek: best ? bestWeekLabel(best) : '',
             yearChange: yearChangeFor(rec, prior?.[picker]?.[category] || null)
         };
     });
