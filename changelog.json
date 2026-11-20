@@ -2,6 +2,12 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry in the same push as every change players will notice, and every significant behind-the-scenes change (start those with 'Behind the scenes:'). Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-19",
+      "items": [
+        "Behind the scenes: saving a pick now does far less work in the picks database. On Thursday evening the database briefly turned saves away as too busy; picks went to the backup sheet meanwhile, so nothing was lost."
+      ]
+    },
+    {
       "date": "2026-11-15",
       "items": [
         "Fixed: after you locked a pick, its Blazin' 5 star could be turned back on or off by tapping another game. A locked pick's star now stays as it was locked.",

@@ -2378,7 +2378,11 @@ const CURRENT_UPSERT = `INSERT INTO current_picks (season, week, picker, game_ke
  * arrive in (a queued save replayed late included).
  */
 async function refreshCurrentPicks(session, week, picker, ts) {
-  const rows = await session.all('SELECT * FROM pick_rows WHERE week = ?1 AND picker = ?2 ORDER BY ts, id', String(week), String(picker));
+  // season leads the index (season, week, picker): without it this read was a
+  // scan of the whole log on every save, and a Thursday's run of saves got D1
+  // to refuse with "too much load" (19 November 2026).
+  const rows = await session.all('SELECT * FROM pick_rows WHERE season = ?1 AND week = ?2 AND picker = ?3 ORDER BY ts, id',
+    seasonOfPickWeek(week), String(week), String(picker));
   const folded = foldPickRows(rows)[String(week)]?.[String(picker)] || {};
   await session.batch(Object.entries(folded).map(([key, payload]) =>
     [CURRENT_UPSERT, [seasonOfPickWeek(week), String(week), String(picker), key, JSON.stringify(payload), ts]]));
@@ -2667,7 +2671,8 @@ async function d1WeekPicks(session, week, picker) {
       picks[r.game_key] = JSON.parse(r.payload);
     }
   } else {
-    const rows = await session.all('SELECT * FROM pick_rows WHERE week = ?1 AND picker = ?2 ORDER BY ts, id', String(week), String(picker));
+    const rows = await session.all('SELECT * FROM pick_rows WHERE season = ?1 AND week = ?2 AND picker = ?3 ORDER BY ts, id',
+      season, String(week), String(picker));
     picks = foldPickRows(rows)[String(week)]?.[String(picker)] || {};
   }
   const cleared = await session.first('SELECT cleared FROM pick_cleared WHERE week = ?1 AND picker = ?2', String(week), String(picker));
