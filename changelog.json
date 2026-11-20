@@ -4,7 +4,8 @@
     {
       "date": "2026-11-19",
       "items": [
-        "Behind the scenes: saving a pick now does far less work in the picks database. On Thursday evening the database briefly turned saves away as too busy; picks went to the backup sheet meanwhile, so nothing was lost."
+        "Behind the scenes: saving a pick now does far less work in the picks database. On Thursday evening the database briefly turned saves away as too busy; picks went to the backup sheet meanwhile, so nothing was lost.",
+        "Behind the scenes: saving a game's final score to the backup sheet is now quick, and no longer slows down as the season goes on."
       ]
     },
     {
