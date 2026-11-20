@@ -509,6 +509,8 @@ The standings, Lone Wolf and the leaderboard still rank by win %. Those compare 
 
 Offseason checklist (the only manual step): archive the finished season to `historical-<year>.js` **including playoff weeks 19-22** (historical-2025.js has them; 2016-2024 are regular-season only), and paste in the Cowherd block that `exportCowherdResults()` prints from the browser console. His week-by-week record is the one piece that cannot be re-derived once the season's picks are cleared.
 
+Then trim the Backup sheet (the owner's decision, November 2026): it is never trimmed otherwise, and every fallback read (D1 refusing) pulls the whole tab, all seasons - 16,495 rows on 19 November 2026, growing ~1,300 a week. After the season's archive is in and July 1st has passed: copy the Backup tab to a separate archive spreadsheet, then delete every row that is not the new season's (keep the header row), including the plain numeric-week 2025 rows. D1's `pick_rows` still holds every season's log, and `/admin/picks/import` reads by season, so nothing it needs goes. Run `?action=diagnose` before and after to check the row count.
+
 Run `node test-offseason-reset.js` to smoke-test the rollover behavior.
 
 ## Android app
