@@ -5,6 +5,7 @@
       "date": "2026-11-23",
       "items": [
         "Guess Lines: a Solo guess you have typed but not yet submitted now fills in your guess on the With Bill Simmons podcast tab too, so you can play along with the show and submit Solo afterwards. Typed Solo guesses are also kept if the app is closed or reloaded.",
+        "Guess Lines: an empty spread box now shows a dash instead of an example \"-3.5\", so it does not suggest a guess.",
         "Guess Lines: fixed the layout on a computer. The up arrow was missing from the spread boxes, and the rows did not line up from card to card."
       ]
     },

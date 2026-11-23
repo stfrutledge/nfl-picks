@@ -7180,7 +7180,7 @@ function spreadControlHtml(game, week, field, draft, { compact = false, disabled
         <div class="spread-stepper">
             <button type="button" class="spread-step" data-step="-0.5" aria-label="Half a point less"${disabled ? ' disabled' : ''}>&#9660;</button>
             <input type="text" class="spread-text${Number.isNaN(points) ? ' invalid' : ''}" inputmode="decimal" autocomplete="off"
-                placeholder="${compact ? '&ndash;' : '-3.5'}" value="${draft.text}" aria-label="${label} spread: ${game.away} at ${game.home}"${disabled ? ' disabled' : ''}>
+                placeholder="&ndash;" value="${draft.text}" aria-label="${label} spread: ${game.away} at ${game.home}"${disabled ? ' disabled' : ''}>
             <button type="button" class="spread-step" data-step="0.5" aria-label="Half a point more"${disabled ? ' disabled' : ''}>&#9650;</button>
         </div>
     </div>`;
