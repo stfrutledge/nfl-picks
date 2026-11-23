@@ -8780,12 +8780,15 @@ body.live-provisional #as-is-standings-table {
 
 .guess-cards {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    /* Wide enough for a podcast row on one line: name, box, then "+1 · 0.5 off". */
+    grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
     gap: 16px;
     margin: 12px 0 8px;
 }
 
 .guess-card {
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--border-color);
     border-radius: 14px;
@@ -8793,7 +8796,13 @@ body.live-provisional #as-is-standings-table {
     box-shadow: var(--shadow-md);
 }
 
+/* The header takes up any extra height, so a kicker that wraps onto two
+   lines does not push one card's rows below its neighbours'. */
 .guess-card .gd-hero {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     border-bottom-width: 3px;
 }
 
@@ -8860,6 +8869,7 @@ body.live-provisional #as-is-standings-table {
 }
 
 .spread-stepper {
+    flex: 0 0 auto;   /* never squeezed: it hides its overflow, so a squeeze cut off ▲ */
     display: flex;
     align-items: stretch;
     border: 1px solid var(--border-color);
@@ -9060,7 +9070,7 @@ body.live-provisional #as-is-standings-table {
 
 .podcast-entry {
     display: grid;
-    grid-template-columns: 66px minmax(0, 1fr) 72px;
+    grid-template-columns: 66px auto minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     padding: 4px 6px;
@@ -9105,6 +9115,7 @@ body.live-provisional #as-is-standings-table {
 .podcast-result {
     font-size: 0.72rem;
     font-weight: 700;
+    white-space: nowrap;
     text-align: right;
     color: var(--text-secondary);
 }

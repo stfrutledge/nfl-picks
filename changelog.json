@@ -2,6 +2,13 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry in the same push as every change players will notice, and every significant behind-the-scenes change (start those with 'Behind the scenes:'). Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-23",
+      "items": [
+        "Guess Lines: a Solo guess you have typed but not yet submitted now fills in your guess on the With Bill Simmons podcast tab too, so you can play along with the show and submit Solo afterwards. Typed Solo guesses are also kept if the app is closed or reloaded.",
+        "Guess Lines: fixed the layout on a computer. The up arrow was missing from the spread boxes, and the rows did not line up from card to card."
+      ]
+    },
+    {
       "date": "2026-11-19",
       "items": [
         "Behind the scenes: saving a pick now does far less work in the picks database. On Thursday evening the database briefly turned saves away as too busy; picks went to the backup sheet meanwhile, so nothing was lost.",

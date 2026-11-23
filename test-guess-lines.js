@@ -67,6 +67,15 @@ async function get(query) {
 
 // The site's half, out of app.js: everything between the block's heading and
 // the next section, with the few globals it reads stubbed.
+function memoryStorage() {
+    const items = new Map();
+    return {
+        getItem: k => (items.has(k) ? items.get(k) : null),
+        setItem: (k, v) => items.set(k, String(v)),
+        removeItem: k => items.delete(k),
+    };
+}
+
 function loadSiteScoring() {
     const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
     const start = app.indexOf('// Guess the Lines - the game');
@@ -74,8 +83,8 @@ function loadSiteScoring() {
     assert.ok(start > 0 && end > start, 'Guess the Lines block found in app.js');
     const body = app.slice(start, end);
     return new Function('getTeamAbbreviation', 'WORKER_PROXY_URL', 'CURRENT_SEASON', 'localStorage', 'pickKey',
-        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, podcastRow, podcastRows, guessState, orderGuessGames, parseGuessEpisode, parseGuessEpisodes, podcastEpisodeWeek, podcastPlayerName, PODCAST_PLAYERS, guessOffBand };`)(
-        name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, { getItem: () => null },
+        `${body}\nreturn { soloWeekScore, podcastWeekScore, podcastGameWinners, podcastWeekWinners, formatGuess, guessWindowOpen, parseSpreadText, draftValue, draftFromValue, favoriteSpreadText, needsFavorite, soloDraft, writeSoloDraft, podcastRow, podcastRows, guessState, orderGuessGames, parseGuessEpisode, parseGuessEpisodes, podcastEpisodeWeek, podcastPlayerName, PODCAST_PLAYERS, guessOffBand };`)(
+        name => ({ Ravens: 'BAL', Bills: 'BUF', Jets: 'NYJ', Patriots: 'NE' }[name] || name), '', 2026, memoryStorage(),
         game => `${game.away.toLowerCase()}_${game.home.toLowerCase()}`);
 }
 
@@ -317,6 +326,25 @@ let mod;
         assert.strictEqual(score.you.games, 2, 'the solo guess is scored');
         assert.strictEqual(score.you.points, 1);
         assert.strictEqual(score.sal.points, 1);
+    });
+
+    await check('a solo guess typed but not submitted fills your podcast guess, and survives a reload', () => {
+        site.guessState.picker = 'Stephen';
+        site.guessState.weeks = { 8: { podcast: { ravens_bills: { sal: -3 }, jets_patriots: { you: 1 } } } };
+        site.guessState.drafts.clear();
+        site.writeSoloDraft(8, 'ravens_bills', { favorite: 'home', text: '-6' });
+        site.writeSoloDraft(8, 'jets_patriots', { favorite: 'away', text: '-2' });
+        site.writeSoloDraft(8, 'chiefs_raiders', { favorite: null, text: '-4' });
+        assert.strictEqual(site.podcastRow(8, 'ravens_bills').you, -6, 'the typed solo guess stands in');
+        assert.strictEqual(site.podcastRow(8, 'jets_patriots').you, 1, 'what was typed in podcast wins');
+        assert.strictEqual(site.podcastRow(8, 'chiefs_raiders').you, undefined, 'no favourite tapped: not a guess');
+        assert.deepStrictEqual(site.soloDraft(8, 'ravens_bills').draft, { favorite: 'home', text: '-6' }, 'kept on the device');
+        site.writeSoloDraft(8, 'ravens_bills', null);
+        assert.strictEqual(site.podcastRow(8, 'ravens_bills').you, undefined, 'cleared once submitted');
+        site.guessState.picker = 'Sean';
+        assert.strictEqual(site.podcastRow(8, 'jets_patriots').you, 1);
+        assert.strictEqual(site.soloDraft(8, 'chiefs_raiders').draft.text, '', 'another guesser does not see them');
+        site.guessState.picker = null;
     });
 
     await check('the cards: finished games first, then the rest, each by kickoff', () => {

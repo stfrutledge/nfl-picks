@@ -6880,21 +6880,58 @@ function needsFavorite(draft) {
  * the game in podcast mode, so a slate entered there is one tap a game here.
  */
 function soloDraft(week, key) {
-    const typed = guessState.drafts.get(`${week}|${key}|solo`);
+    const typed = soloTypedDraft(week, key);
     if (typed) return { draft: typed, fromPodcast: false };
     const podcast = guessState.weeks[week]?.podcast?.[key]?.you;
     return { draft: draftFromValue(podcast), fromPodcast: podcast !== undefined };
 }
 
 /**
+ * Solo guesses typed and not yet submitted are kept on this device, per
+ * season and guesser (`guessSoloDrafts_<season>_<picker>`), so they survive
+ * a reload: the owner types a slate in solo, plays along with the podcast,
+ * and submits solo afterwards (November 2026).
+ */
+function soloDraftsStoreKey() {
+    return `guessSoloDrafts_${CURRENT_SEASON}_${guessState.picker}`;
+}
+
+function readSoloDrafts() {
+    if (!guessState.picker) return {};
+    try { return JSON.parse(localStorage.getItem(soloDraftsStoreKey()) || '{}') || {}; } catch { return {}; }
+}
+
+function writeSoloDraft(week, key, draft) {
+    if (!guessState.picker) return;
+    const all = readSoloDrafts();
+    if (draft && (draft.text || draft.favorite)) all[`${week}|${key}`] = draft;
+    else delete all[`${week}|${key}`];
+    try {
+        if (Object.keys(all).length) localStorage.setItem(soloDraftsStoreKey(), JSON.stringify(all));
+        else localStorage.removeItem(soloDraftsStoreKey());
+    } catch {}
+}
+
+/** What was typed in a game's solo box and not submitted: this page's, else this device's saved copy. Null if nothing. */
+function soloTypedDraft(week, key) {
+    return guessState.drafts.get(`${week}|${key}|solo`) || readSoloDrafts()[`${week}|${key}`] || null;
+}
+
+/**
  * A game's podcast row as shown and scored: your solo guess stands in for
  * yours until one is typed in podcast mode (the owner's ask, November 2026;
- * soloDraft is the other way round). Typing here replaces it.
+ * soloDraft is the other way round). Typing here replaces it. The solo guess
+ * is the submitted one, else a whole one typed and not yet submitted.
  */
 function podcastRow(week, key) {
     const row = guessState.weeks[week]?.podcast?.[key] || {};
-    const solo = guessState.weeks[week]?.solo?.[key]?.guess;
-    return row.you === undefined && solo !== undefined ? { ...row, you: solo } : row;
+    if (row.you !== undefined) return row;
+    let solo = guessState.weeks[week]?.solo?.[key]?.guess;
+    if (solo === undefined) {
+        const typed = draftValue(soloTypedDraft(week, key));
+        if (typed !== undefined && typed !== null) solo = typed;
+    }
+    return solo !== undefined ? { ...row, you: solo } : row;
 }
 
 /** A week's podcast rows, each through podcastRow. */
@@ -7358,11 +7395,13 @@ async function submitSoloGuess(week, key) {
         ((guessState.weeks[week] ||= {}).solo ||= {})[key] = data.entry;
         scheduleGuessSettle('solo', week, key);
         guessState.drafts.delete(`${id}|solo`);
+        writeSoloDraft(week, key, null);
     } catch (error) {
         // Already submitted on another device: show that one.
         if (error.data?.entry) {
             ((guessState.weeks[week] ||= {}).solo ||= {})[key] = error.data.entry;
             guessState.drafts.delete(`${id}|solo`);
+            writeSoloDraft(week, key, null);
         } else {
             guessState.errors.set(id, `Not submitted: ${error.message}`);
             if (/not open/.test(error.message)) loadGuessTheLines();
@@ -7829,6 +7868,7 @@ function spreadControlChanged(control) {
     const card = control.closest('.guess-card');
 
     if (field === 'solo') {
+        writeSoloDraft(week, key, draft);
         const submit = card.querySelector('.guess-submit');
         if (submit) submit.disabled = value === undefined || value === null;
         return;
