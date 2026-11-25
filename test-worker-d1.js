@@ -123,7 +123,7 @@ function installFetch() {
                 net.sheetPosts.push(data);
                 const results = {};
                 if (typeof data.cleared === 'boolean') results.cleared = sheet.saveClearedStatus(data.week, data.picker, data.cleared);
-                if (data.picks?.length) results.picks = sheet.savePicks(data.week, data.picker, data.picks);
+                if (data.picks?.length) results.picks = sheet.savePicks(data.week, data.picker, data.picks, data.savedAt);
                 return new Response(JSON.stringify({ success: true, results }));
             }
             const p = url.searchParams;
@@ -210,6 +210,41 @@ async function check(name, fn) {
         assert.strictEqual(out.copiedToSheet, 1);
         assert.ok(!kv.m.has('mirror:pending'));
         assert.strictEqual(sheet.sheets.Backup.length, 2);
+    });
+
+    await check('a sheet copy that lands after a later save does not fold over it (22 Nov 2026)', async () => {
+        fresh();
+        const e = env({ PICKS_READ: 'd1' });
+        const realNow = Date.now;
+        try {
+            // An early save whose copy fails, so it reaches the sheet late...
+            Date.now = () => Date.parse('2026-11-22T16:15:12.000Z');
+            net.sheetDown = true;
+            await post(e, { week: '2026_11', picker: 'Jason', picks: [pick('Packers', 'Lions', ''), pick('Rams', 'Bears', '')] });
+            await settle();
+            // ...after the finished slate, whose copy lands at once.
+            Date.now = () => Date.parse('2026-11-22T16:16:12.000Z');
+            net.sheetDown = false;
+            await post(e, { week: '2026_11', picker: 'Jason', picks: [pick('Packers', 'Lions', 'Lions'), pick('Rams', 'Bears', 'Rams', { blazin: true })] });
+            await settle();
+        } finally {
+            Date.now = realNow;
+        }
+        const out = await mod.runPicksDbMaintenance(env(), Date.parse('2026-11-22T16:30:00Z'));
+        assert.strictEqual(out.copiedToSheet, 1, 'the early save, replayed last');
+        const late = sheet.sheets.Backup[sheet.sheets.Backup.length - 1];
+        assert.strictEqual(late[0], '2026-11-22T16:15:12.000Z', 'stamped with its save time, not its arrival');
+        const picks = sheet.getAllPicks(2026).picks['2026_11'].Jason;
+        assert.strictEqual(picks.packers_lions.line, 'home');
+        assert.strictEqual(picks.rams_bears.line, 'away');
+        assert.strictEqual(picks.rams_bears.blazin, true);
+    });
+
+    await check('the sheet ignores a savedAt that is not a worker timestamp', async () => {
+        fresh();
+        sheet.savePicks('2026_11', 'Jason', [pick('Packers', 'Lions', 'Lions')], 'yesterday');
+        assert.match(sheet.sheets.Backup[1][0], /^\d{4}-\d\d-\d\dT/);
+        assert.notStrictEqual(sheet.sheets.Backup[1][0], 'yesterday');
     });
 
     await check('a body with spreads in it still goes to the sheet whole', async () => {

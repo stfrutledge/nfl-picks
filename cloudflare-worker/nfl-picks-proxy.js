@@ -2809,7 +2809,12 @@ async function syncPostWithD1(env, ctx, body, now = Date.now()) {
   // answered now, and the sheet gets its copy after.
   const results = await writeD1();
   if (results && syncIsPicksOnly(data)) {
-    ctx?.waitUntil?.(mirrorToSheet(env, body, now));
+    // The copy carries D1's time for the save (savedAt), which the sheet
+    // stamps its rows with: copies run side by side and one can land after a
+    // later save, which by arrival time would read as the newest (22 November
+    // 2026: Jason's 4-pick save landed after his 13-pick slate). The queued
+    // retry keeps the same body, so a late replay is placed right too.
+    ctx?.waitUntil?.(mirrorToSheet(env, JSON.stringify({ ...data, savedAt: ts }), now));
     return jsonResponse({ success: true, results, store: 'd1' });
   }
 

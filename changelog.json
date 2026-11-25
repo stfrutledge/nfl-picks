@@ -2,6 +2,12 @@
   "_note": "Shown in the app's Settings > Change log, newest first. Add an entry in the same push as every change players will notice, and every significant behind-the-scenes change (start those with 'Behind the scenes:'). Plain words, one line each; no app rebuild needed.",
   "entries": [
     {
+      "date": "2026-11-25",
+      "items": [
+        "Behind the scenes: when two saves of your picks reached the backup sheet out of order, the sheet could keep the older one (on 22 November it showed 4 of Jason's picks instead of his 13). Each save now carries the time it was made, so the newest always wins."
+      ]
+    },
+    {
       "date": "2026-11-23",
       "items": [
         "Guess Lines: a Solo guess you have typed but not yet submitted now fills in your guess on the With Bill Simmons podcast tab too, so you can play along with the show and submit Solo afterwards. Typed Solo guesses are also kept if the app is closed or reloaded.",

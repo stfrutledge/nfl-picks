@@ -110,7 +110,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { week, picker, picks, spreads, cleared, results: gameResults, source, splits } = data;
+    const { week, picker, picks, spreads, cleared, results: gameResults, source, splits, savedAt } = data;
 
     const response = {};
 
@@ -121,7 +121,7 @@ function doPost(e) {
 
     // Save picks if provided
     if (picks && picks.length > 0 && picker) {
-      response.picks = savePicks(week, picker, picks);
+      response.picks = savePicks(week, picker, picks, savedAt);
     }
 
     // Save spreads if provided
@@ -353,7 +353,15 @@ function pickPayload(row) {
  * re-sent, and the sync debounce collapses a burst of clicking into one
  * write. See CLAUDE.md.
  */
-function savePicks(week, picker, picks) {
+/**
+ * savedAt: when the worker stored this save in D1, sent with its copy here.
+ * The copy runs in the background and several can be in flight at once, so
+ * one can land after a later save; stamped with its arrival time it would then
+ * read as the newest and fold over the later picks. 22 November 2026: Jason's
+ * 4-pick save landed 70s late, after his 13-pick slate, and the sheet showed 4.
+ * Anything not a worker timestamp is ignored and the row gets the time now.
+ */
+function savePicks(week, picker, picks, savedAt) {
   if (!week || !picker) {
     return { error: 'Missing week or picker' };
   }
@@ -382,7 +390,8 @@ function savePicks(week, picker, picks) {
     }
   }
 
-  const timestamp = new Date().toISOString();
+  const timestamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(String(savedAt || ''))
+    ? savedAt : new Date().toISOString();
   let rowsAdded = 0;
 
   for (const pick of picks) {
