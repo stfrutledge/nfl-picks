@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity() {
         })
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState)
-        else load()
+        else load(siteLink(intent))
         takeOpenRequest(intent)
 
         // Nobody chosen yet: that is the first question.
@@ -195,11 +195,28 @@ class MainActivity : ComponentActivity() {
         else askForNotifications()
     }
 
-    /** A notification tapped while the app was already open (singleTask). */
+    /** A notification or a link to the site tapped while the app was already open (singleTask). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        siteLink(intent)?.let { load(it) }
         takeOpenRequest(intent)
+    }
+
+    /**
+     * A link to the site tapped in another app (an App Link, 1.20+: the
+     * manifest claims https://stfrutledge.github.io/nfl-picks/, proved by
+     * .well-known/assetlinks.json in the stfrutledge.github.io repo). Its
+     * address, to load in place of the front page so a link to a page lands
+     * there; null for anything else, a launcher tap included. Taken once, so
+     * a recreated activity does not reload it.
+     */
+    private fun siteLink(intent: Intent?): Uri? {
+        if (intent?.action != Intent.ACTION_VIEW) return null
+        val uri = intent.data ?: return null
+        if (uri.scheme != "https" || uri.host != SITE_HOST) return null
+        intent.action = null
+        return uri
     }
 
     /**
@@ -294,7 +311,8 @@ class MainActivity : ComponentActivity() {
         web.saveState(outState)
     }
 
-    private fun load() {
+    /** [link]: a tapped link to the site (see siteLink), loaded with its path, query and #part. */
+    private fun load(link: Uri? = null) {
         loadedPicker = prefs.picker
         loadedDevSite = prefs.devSite
         zoneShown = prefs.timeZone
@@ -309,8 +327,14 @@ class MainActivity : ComponentActivity() {
         // Pages lets it be cached for 10 minutes, and a cached copy runs the
         // site from before the last push. The scripts and styles it loads are
         // named by content hash, so they still come from the cache. The site
-        // reads no query string.
-        web.loadUrl("${if (prefs.devSite) DEV_SITE_URL else SITE_URL}?app=${System.currentTimeMillis()}")
+        // reads no query string. The test site (Admin Settings) wins over a
+        // link: a link is always to the live site.
+        val stamp = System.currentTimeMillis().toString()
+        if (link != null && !prefs.devSite) {
+            web.loadUrl(link.buildUpon().appendQueryParameter("app", stamp).build().toString())
+            return
+        }
+        web.loadUrl("${if (prefs.devSite) DEV_SITE_URL else SITE_URL}?app=$stamp")
     }
 
     private fun askForNotifications() {

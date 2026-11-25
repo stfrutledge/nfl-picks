@@ -54,6 +54,20 @@ three things a web page cannot do:
   made in the meantime mean it is dropped, and anything still to do is
   reworded for now. No answer (offline, an older worker) shows it as it was.
 
+- **Links open the app (1.20+).** A tapped link to
+  `https://stfrutledge.github.io/nfl-picks/...` in another app (Messages,
+  WhatsApp, Gmail) opens the app at that address instead of the browser: an
+  Android App Link, an `autoVerify` intent filter in the manifest. Android
+  only honours it because `https://stfrutledge.github.io/.well-known/assetlinks.json`
+  names this package and the release key's SHA-256; that file has to sit at
+  the domain root, out of this repo's reach, so it lives in its own repo,
+  `stfrutledge/stfrutledge.github.io` (local `personal/stfrutledge.github.io`).
+  **A new signing key means updating that file**, or links go back to the
+  browser. Check it with Google's tester:
+  `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://stfrutledge.github.io&relation=delegate_permission/common.handle_all_urls`,
+  and on a phone with `adb shell pm get-app-links com.sfrut.nflpicks`
+  (`verified`). In-app browsers (Instagram, Facebook) keep links to themselves.
+
 The page sees the app as `window.NFLPicksApp` (`picker()`, `copy(text)`,
 `openSettings()`, `hasAdminTools()`, and from 1.16 `temperatureUnit()`, "F" or
 "C" from Settings > Weather, which the site's Game Details asks each time it

@@ -24,6 +24,19 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- App Link (1.20+): a tapped link to the site opens the app, not
+                 the browser. Android checks it against
+                 https://stfrutledge.github.io/.well-known/assetlinks.json
+                 (repo stfrutledge/stfrutledge.github.io), which names this
+                 package and the release key's SHA-256. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="stfrutledge.github.io" />
+                <data android:pathPrefix="/nfl-picks" />
+            </intent-filter>
         </activity>
 
         <activity

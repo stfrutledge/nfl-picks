@@ -4,6 +4,7 @@
     {
       "date": "2026-11-25",
       "items": [
+        "App 1.20: tapping a link to the site in a text, WhatsApp or email now opens the app instead of the browser.",
         "Behind the scenes: when two saves of your picks reached the backup sheet out of order, the sheet could keep the older one (on 22 November it showed 4 of Jason's picks instead of his 13). Each save now carries the time it was made, so the newest always wins."
       ]
     },
